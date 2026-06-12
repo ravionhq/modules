@@ -16,7 +16,7 @@ This module creates an Amazon ECS service with a placeholder task definition, lo
 - Application Auto Scaling with target tracking and scheduled scaling
 - AWS Cloud Map service discovery integration
 - Blue/green deployment infrastructure (managed by an external deployment controller)
-- Support for EFS and Docker volume configurations
+- Support for EFS, S3 Files, Docker, and EC2 host path volume configurations
 - Capacity provider strategy support for mixed Fargate/EC2 deployments
 
 ## Usage
@@ -291,7 +291,7 @@ module "worker_service" {
 | network_mode | Docker networking mode (awsvpc, bridge, host, none) | `string` | `"awsvpc"` | no |
 | requires_compatibilities | Launch type compatibility requirements | `list(string)` | `["FARGATE"]` | no |
 | runtime_platform | Runtime platform configuration (OS family, CPU architecture) | `object` | `{}` | no |
-| volumes | List of volume definitions (EFS or Docker) | `list(object)` | `[]` | no |
+| volumes | List of volume definitions (EFS, S3 Files, Docker, or EC2 host path) | `list(object)` | `[]` | no |
 
 ### CloudWatch Logs
 
@@ -471,7 +471,7 @@ The `service_discovery` object includes:
 │  │                        Task Definition                                  │  │
 │  │  • Container definitions (placeholder)   • CPU/Memory allocation       │  │
 │  │  • Execution role                        • Task role                   │  │
-│  │  • Network mode (awsvpc)                 • Volumes (EFS/Docker)        │  │
+│  │  • Network mode (awsvpc)                 • Volumes (EFS/S3/Docker/Host)│  │
 │  └────────────────────────────────────────────────────────────────────────┘  │
 │                                     │                                         │
 │                                     ▼                                         │
@@ -613,7 +613,7 @@ The `service_discovery` object includes:
 ║    │                                    aws_ecs_task_definition.this                                             │    ║
 ║    ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────┤    ║
 ║    │ Configures: family, CPU, memory, network mode, container definitions (placeholder),                         │    ║
-║    │             execution_role_arn, task_role_arn, runtime_platform, volumes (EFS/Docker)                       │    ║
+║    │             execution_role_arn, task_role_arn, runtime_platform, volumes (EFS/S3/Docker/Host)               │    ║
 ║    │ Lifecycle: ignore_changes = all (external deployment controller manages updates)                            │    ║
 ║    └──────────────────────────────────────────────────────────────────────┬──────────────────────────────────────┘    ║
 ║                                                                           │                                            ║
@@ -925,6 +925,44 @@ volumes = [
 ```
 
 Note: The placeholder task definition does not mount volumes. Your application task definition (deployed by the external controller) should include the volume mounts.
+
+### How do I attach S3 Files volumes to my tasks?
+
+Configure the `volumes` variable with an S3 Files configuration:
+
+```hcl
+volumes = [
+  {
+    name = "my-s3files-volume"
+    s3files_volume_configuration = {
+      file_system_arn         = "arn:aws:s3files:us-east-1:123456789012:file-system/fs-12345678"
+      root_directory          = "/"
+      access_point_arn        = "arn:aws:s3files:us-east-1:123456789012:file-system/fs-12345678/access-point/fsap-12345678"
+      transit_encryption_port = 2999
+    }
+  }
+]
+```
+
+The task definition must include a task IAM role with the permissions required to attach the S3 Files file system to ECS tasks. If `task_role_arn` is null, attach the required permissions with `task_role_policies` or `task_role_inline_policies`.
+
+### How do I attach an EC2 host path to my tasks?
+
+Configure the `volumes` variable with a `host_path`. Host path volumes are supported only for EC2-compatible ECS tasks.
+
+```hcl
+launch_type              = "EC2"
+requires_compatibilities = ["EC2"]
+
+volumes = [
+  {
+    name      = "host-data"
+    host_path = "/var/lib/app-data"
+  }
+]
+```
+
+Mount the named volume from your deployed application task definition using a container mount point. Data remains on the EC2 container instance path and does not move with the task if ECS places a replacement task on another instance.
 
 ### How do I enable ECS Exec for debugging?
 

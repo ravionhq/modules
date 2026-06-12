@@ -3,8 +3,8 @@ definition:
   name: ECS Web Server
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 0.4.0
-  description: Add pre- and post-deploy commands.
+  version: 0.5.0
+  description: Add S3 file mounts with required access points and EC2 host path task volumes.
 module:
   inputs:
     - id: section_cluster
@@ -625,6 +625,35 @@ module:
       placeholder: |-
         - name: DATABASE_URL
           valueFrom: arn:aws:ssm:...
+    - id: mount_points
+      label: App mount points
+      type: object_array
+      description: Optional task volume mounts for the app container. The source volume must match a task volume name configured under task volumes.
+      collapsible: true
+      item_inputs:
+        - id: source_volume
+          label: Source volume
+          type: string
+          description: Task volume name to mount into the app container.
+          placeholder: shared-data
+          required: true
+        - id: container_path
+          label: Container path
+          type: string
+          description: Path inside the app container where the volume is mounted.
+          placeholder: /data
+          required: true
+          patterns:
+            - message: Use an absolute container path.
+              pattern: ^/
+        - id: read_only
+          label: Read only
+          type: boolean
+          description: Mount the volume as read-only inside the app container.
+          default: false
+      item_label: Mount point
+      required: false
+      default: []
     - id: section_deploy_commands
       label: Pre and post deploy
       type: section
@@ -1132,7 +1161,7 @@ module:
     - id: volumes
       label: Task volumes
       type: object_array
-      description: Optional ECS task volumes. Use EFS for persistent shared storage that can be mounted by Fargate or EC2 Linux tasks, such as user uploads or shared application data. Use Docker volumes only for EC2 launch type tasks when data can live on the container instance and does not need Fargate support. Each volume can use either EFS or Docker, not both.
+      description: Optional ECS task volumes. Use EFS for persistent shared storage, S3 Files for mounting an existing Amazon S3 Files file system, Docker volumes for EC2-local Docker-managed storage, or Host path for binding an EC2 container instance directory. Each volume can use only one backing type.
       item_inputs:
         - id: name
           label: Volume name
@@ -1156,6 +1185,12 @@ module:
             - description: Local Docker-managed volume for EC2 launch type tasks only.
               label: Docker
               value: docker
+            - description: Bind a directory from the EC2 container instance into the task. EC2 launch type only.
+              label: Host path
+              value: host
+            - description: Amazon S3 Files file system mounted into ECS tasks.
+              label: S3 Files
+              value: s3files
         - id: efs_volume_configuration
           label: EFS volume configuration
           type: object
@@ -1183,6 +1218,60 @@ module:
           required: true
           show_when:
             volume_type: docker
+        - id: host_path
+          label: Host path
+          type: string
+          description: Absolute path on the EC2 container instance to bind into the ECS task. ECS creates the directory if it does not exist. Host path volumes are not supported on Fargate.
+          placeholder: /var/lib/app-data
+          required: true
+          show_when:
+            volume_type: host
+          patterns:
+            - message: Use an absolute Linux host path.
+              pattern: ^/
+        - id: s3files_file_system_arn
+          label: S3 Files file system ARN
+          type: string
+          description: Full ARN of the Amazon S3 Files file system to mount.
+          placeholder: arn:aws:s3files:us-east-1:123456789012:file-system/fs-abc123
+          required: true
+          show_when:
+            volume_type: s3files
+          patterns:
+            - message: Use a valid S3 Files file system ARN.
+              pattern: ^arn:aws[a-zA-Z-]*:s3files:[a-z0-9-]+:[0-9]{12}:file-system\/.+
+        - id: s3files_root_directory
+          label: S3 Files root directory
+          type: string
+          description: Directory within the S3 Files file system to mount as the root directory. Use `/` for the file system root.
+          placeholder: /
+          required: false
+          default: /
+          show_when:
+            volume_type: s3files
+          patterns:
+            - message: Use an absolute S3 Files path.
+              pattern: ^/
+        - id: s3files_access_point_arn
+          label: S3 Files access point ARN
+          type: string
+          description: Full ARN of the S3 Files access point to use. When set, the root directory must be blank or `/`.
+          placeholder: arn:aws:s3files:us-east-1:123456789012:file-system/fs-abc123/access-point/fsap-abc123
+          required: true
+          show_when:
+            volume_type: s3files
+          patterns:
+            - message: Use a valid S3 Files access point ARN.
+              pattern: ^arn:aws[a-zA-Z-]*:s3files:[a-z0-9-]+:[0-9]{12}:file-system\/.+\/access-point\/.+
+        - id: s3files_transit_encryption_port
+          label: S3 Files transit encryption port
+          type: number
+          description: Optional port used for encrypted traffic between the ECS host and the S3 Files file system. Leave blank to use the S3 Files mount helper default.
+          min: 1
+          max: 65535
+          required: false
+          show_when:
+            volume_type: s3files
       item_label: Volume
       required: false
       default: []
@@ -1356,7 +1445,11 @@ module:
             task_role_policies: << module.input.task_role_policies >>
             volumes: >-
               << module.input.volumes != nil ? map(module.input.volumes, #.volume_type == "efs" ? {"name":
-              #.name, "efs_volume_configuration": #.efs_volume_configuration} : {"name": #.name,
+              #.name, "efs_volume_configuration": #.efs_volume_configuration} : #.volume_type == "s3files" ?
+              {"name": #.name, "s3files_volume_configuration": {"file_system_arn": #.s3files_file_system_arn,
+              "root_directory": #.s3files_root_directory || "/", "access_point_arn": #.s3files_access_point_arn,
+              "transit_encryption_port": #.s3files_transit_encryption_port || nil}} : #.volume_type ==
+              "host" ? {"name": #.name, "host_path": #.host_path} : {"name": #.name,
               "docker_volume_configuration": #.docker_volume_configuration}) : [] >>
             vpc_id: << module.input.vpc_id >>
             wait_for_steady_state: false
@@ -1423,7 +1516,8 @@ module:
         stack.output.ecr_repository_url + ":" + deploy.input.image_ref)), "linux_parameters":
         {"init_process_enabled": true}, "log_configuration": {"log_driver": "awsfirelens"}, "memory":
         (module.input.capacity_provider == "ec2" ? int(float(module.input.task_memory) * 1024) :
-        int(float(module.input.fargate_size.memory_gb) * 1024)), "name": (stack.output.container_name),
+        int(float(module.input.fargate_size.memory_gb) * 1024)), "mount_points":
+        (module.input.mount_points != nil ? module.input.mount_points : []), "name": (stack.output.container_name),
         "port_mappings": [{"app_protocol": "http", "container_port": (module.input.container_port),
         "protocol": "tcp"}], "readonly_root_filesystem": false, "repository_credentials":
         (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
@@ -1458,7 +1552,8 @@ module:
         stack.output.log_group_name, "awslogs-region": stack.output.region, "awslogs-stream-prefix":
         stack.output.log_stream_prefix}}, "memory": (module.input.capacity_provider == "ec2" ?
         int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) *
-        1024)), "name": (stack.output.container_name), "port_mappings": [{"app_protocol": "http",
+        1024)), "mount_points": (module.input.mount_points != nil ? module.input.mount_points : []),
+        "name": (stack.output.container_name), "port_mappings": [{"app_protocol": "http",
         "container_port": (module.input.container_port), "protocol": "tcp"}], "readonly_root_filesystem":
         false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
@@ -1480,8 +1575,12 @@ module:
       task_role_arn: <<stack.output.task_role_arn>>
       volumes: >-
         << module.input.volumes != nil ? map(module.input.volumes, #.volume_type == "efs" ? {"name": #.name,
-        "efs_volume_configuration": #.efs_volume_configuration} : {"name": #.name,
-        "docker_volume_configuration": #.docker_volume_configuration}) : [] >>
+        "efs_volume_configuration": #.efs_volume_configuration} : #.volume_type == "s3files" ? {"name":
+        #.name, "s3files_volume_configuration": {"file_system_arn": #.s3files_file_system_arn,
+        "root_directory": #.s3files_root_directory || "/", "access_point_arn": #.s3files_access_point_arn,
+        "transit_encryption_port": #.s3files_transit_encryption_port || nil}} : #.volume_type ==
+        "host" ? {"name": #.name, "host_path": #.host_path} : {"name":
+        #.name, "docker_volume_configuration": #.docker_volume_configuration}) : [] >>
     pre_deploy: >-
       << module.input.pre_deploy_enabled && len(module.input.pre_deploy_command) > 0 ? {"container_overrides": [{"name": stack.output.container_name,
       "command": module.input.pre_deploy_command, "environment": module.input.pre_deploy_environment_variables,
@@ -1768,6 +1867,21 @@ module:
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 
+    ## Storage
+
+    Use Task volumes to define storage available to the ECS task, then use App mount points to mount a named task volume into the app container. Sidecars can also mount the same named volumes with their own mount points.
+
+    | Volume type | When to use it |
+    | ----------- | -------------- |
+    | EFS         | Persistent shared file storage for Fargate or EC2 Linux tasks |
+    | S3 Files    | Mount an existing Amazon S3 Files file system into the task |
+    | Docker      | Local Docker-managed storage for EC2 launch type tasks only |
+    | Host path   | Bind an EC2 container instance directory into the task |
+
+    S3 Files volumes require the S3 Files file system ARN and access point ARN. Root directory and transit encryption port are optional fields. The task role must include the IAM permissions required to attach the S3 Files file system to ECS tasks.
+
+    Host path volumes require EC2 capacity. The host path is an absolute Linux path on the EC2 container instance. Data remains on that instance and does not follow the task if ECS places a replacement task on a different instance.
+
     ## Deployment
 
     Deployment type defaults to Rolling. Blue/green is available when you need separate target groups for CodeDeploy-style traffic shifting.
@@ -1824,6 +1938,8 @@ module:
     | App memory in GB                | Yes*     | 3.5                        | Required for EC2 capacity                          |
     | CPU architecture                | No       | X86_64                     | x86_64 compatibility or ARM64 cost optimization    |
     | ECS exec                        | No       | false                      | Enable ECS Exec for debugging containers           |
+    | App mount points                | No       | []                         | Mount named task volumes into the app container    |
+    | Task volumes                    | No       | []                         | Define EFS, S3 Files, Docker, or Host path task volumes |
     | Run pre-deploy command          | No       | false                      | Enable a task before each deployment               |
     | Pre-deploy command arguments    | Yes*     | []                         | Command arguments run before each deployment       |
     | Pre-deploy environment variables| No       | []                         | Extra environment variables for the pre-deploy task |

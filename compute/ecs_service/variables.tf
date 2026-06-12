@@ -210,9 +210,40 @@ variable "volumes" {
       driver_opts   = optional(map(string), null)
       labels        = optional(map(string), null)
     }), null)
+
+    host_path = optional(string, null)
+
+    s3files_volume_configuration = optional(object({
+      file_system_arn         = string
+      access_point_arn        = string
+      root_directory          = optional(string, "/")
+      transit_encryption_port = optional(number, null)
+    }), null)
   }))
   description = "List of volume definitions for the task."
   default     = []
+
+  validation {
+    condition = alltrue([
+      for volume in var.volumes : length(compact([
+        volume.efs_volume_configuration != null ? "efs" : "",
+        volume.docker_volume_configuration != null ? "docker" : "",
+        volume.host_path != null ? "host" : "",
+        volume.s3files_volume_configuration != null ? "s3files" : ""
+      ])) == 1
+    ])
+    error_message = "Each volume must specify exactly one of efs_volume_configuration, docker_volume_configuration, host_path, or s3files_volume_configuration."
+  }
+
+  validation {
+    condition     = alltrue([for volume in var.volumes : volume.host_path == null || startswith(volume.host_path, "/")])
+    error_message = "Each host_path volume must use an absolute Linux path."
+  }
+
+  validation {
+    condition     = alltrue([for volume in var.volumes : volume.host_path == null || var.launch_type == "EC2" || contains(var.requires_compatibilities, "EC2")])
+    error_message = "Host path volumes are supported only for EC2-compatible ECS tasks."
+  }
 }
 
 ################################################################################

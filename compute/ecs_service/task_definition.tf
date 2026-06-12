@@ -212,7 +212,8 @@ resource "aws_ecs_task_definition" "this" {
   dynamic "volume" {
     for_each = var.volumes
     content {
-      name = volume.value.name
+      name      = volume.value.name
+      host_path = volume.value.host_path
 
       dynamic "efs_volume_configuration" {
         for_each = volume.value.efs_volume_configuration != null ? [volume.value.efs_volume_configuration] : []
@@ -242,6 +243,16 @@ resource "aws_ecs_task_definition" "this" {
           labels        = docker_volume_configuration.value.labels
         }
       }
+
+      dynamic "s3files_volume_configuration" {
+        for_each = volume.value.s3files_volume_configuration != null ? [volume.value.s3files_volume_configuration] : []
+        content {
+          file_system_arn         = s3files_volume_configuration.value.file_system_arn
+          access_point_arn        = s3files_volume_configuration.value.access_point_arn
+          root_directory          = s3files_volume_configuration.value.root_directory
+          transit_encryption_port = s3files_volume_configuration.value.transit_encryption_port
+        }
+      }
     }
   }
 
@@ -255,4 +266,3 @@ resource "aws_ecs_task_definition" "this" {
     ignore_changes = all
   }
 }
-
