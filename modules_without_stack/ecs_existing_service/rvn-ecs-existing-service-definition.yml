@@ -1,0 +1,199 @@
+definition:
+  type: rvn-ecs-existing-service
+  name: Existing ECS Service
+  description: Deploys releases to an existing, externally managed Amazon ECS service using a user-provided task definition template.
+release:
+  version: 0.0.1
+  description: Initial existing ECS service module definition.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_service
+      label: ECS service
+      type: section
+      description: Identify the existing ECS cluster and service Ravion should deploy to. Ravion does not create, change, or destroy these resources.
+    - id: cluster_name
+      immutable: true
+      label: Cluster name
+      type: string
+      description: Name of the existing ECS cluster that contains the service.
+      placeholder: production-cluster
+      required: true
+      patterns:
+        - message: "Use 1-255 characters: letters, numbers, hyphens, and underscores only."
+          pattern: ^[A-Za-z0-9_-]{1,255}$
+    - id: service_name
+      immutable: true
+      label: Service name
+      type: string
+      description: Name of the existing ECS service to update on each deployment.
+      placeholder: my-service
+      required: true
+      patterns:
+        - message: "Use 1-255 characters: letters, numbers, hyphens, and underscores only."
+          pattern: ^[A-Za-z0-9_-]{1,255}$
+    - id: target_group_arn_suffix
+      label: Target group ARN suffix
+      type: string
+      description: ARN suffix of the load balancer target group serving this service, such as `targetgroup/my-tg/1234567890abcdef`. Used only for load balancer metrics; leave blank if the service is not behind a load balancer.
+      collapsible: true
+      placeholder: targetgroup/my-tg/1234567890abcdef
+      required: false
+    - id: section_image
+      label: Image registry
+      type: section
+      description: Images are built outside Ravion. Configure the registry repository here and provide only the tag or digest at deploy time.
+    - id: image_repository
+      label: Image repository
+      type: string
+      description: Image repository without a tag or digest, such as `nginx`, `ghcr.io/org/app`, or `123456789012.dkr.ecr.us-east-1.amazonaws.com/app`.
+      placeholder: 123456789012.dkr.ecr.us-east-1.amazonaws.com/app
+      required: true
+    - id: image_registry_credentials_secret_arn
+      label: Registry credentials secret ARN
+      type: string
+      description: Secrets Manager secret ARN for private registries such as GHCR or Docker Hub. The secret must use the ECS repository credentials JSON format. Not needed for public images or normal same-account ECR.
+      collapsible: true
+      placeholder: arn:aws:secretsmanager:us-east-1:123456789012:secret:registry-creds
+      required: false
+    - id: section_task_definition
+      label: Task definition
+      type: section
+      description: Each deployment registers a new task definition revision from the template below, in the template's family, and updates the service to use it.
+    - id: container_name
+      label: Deploy target container name
+      type: string
+      description: Name of the container in the task definition template that receives the deployed image. The template image value for this container is overridden at deploy time.
+      placeholder: app
+      required: true
+      patterns:
+        - message: "Use 1-255 characters: letters, numbers, hyphens, and underscores only."
+          pattern: ^[A-Za-z0-9_-]{1,255}$
+    - id: task_definition_template
+      label: Task definition template
+      type: object
+      description: Task definition body registered on every deployment, using snake_case keys (family, container_definitions, port_mappings, log_configuration, and so on). Must include family, usually the family the service already uses. The whole template is registered as written, except the image of the deploy target container is replaced at deploy time.
+      placeholder: |-
+        family: my-service
+        container_definitions:
+          - name: app
+            image: overridden-at-deploy-time
+            essential: true
+            port_mappings:
+              - container_port: 80
+                protocol: tcp
+            environment:
+              - name: NODE_ENV
+                value: production
+            secrets:
+              - name: DATABASE_URL
+                value_from: arn:aws:ssm:us-east-1:123456789012:parameter/database-url
+            log_configuration:
+              log_driver: awslogs
+              options:
+                awslogs-group: /ecs/my-service
+                awslogs-region: us-east-1
+                awslogs-stream-prefix: app
+        cpu: "512"
+        memory: "1024"
+        network_mode: awsvpc
+        requires_compatibilities:
+          - FARGATE
+        runtime_platform:
+          cpu_architecture: X86_64
+          operating_system_family: LINUX
+        execution_role_arn: arn:aws:iam::123456789012:role/my-execution-role
+        task_role_arn: arn:aws:iam::123456789012:role/my-task-role
+      required: true
+  deploy:
+    type: aws:ecs
+    concurrency:
+      queue_overflow: oldest
+      queue_size: 1
+    infrastructure:
+      ecs_cluster_arn: arn:aws:ecs:<<module.input.aws_region>>:<<module.input.aws_account_id>>:cluster/<<module.input.cluster_name>>
+      ecs_service_arns:
+        - arn:aws:ecs:<<module.input.aws_region>>:<<module.input.aws_account_id>>:service/<<module.input.cluster_name>>/<<module.input.service_name>>
+    inputs:
+      - id: image_ref
+        label: Image tag or digest
+        type: string
+        description: Image tag or digest to deploy, resolved in the image repository configured on the module. Do not pass a full image URI.
+        placeholder: sha256:... or v1.2.3
+        required: true
+    task_definition: >-
+      << merge(module.input.task_definition_template, {"container_definitions":
+      (module.input.task_definition_template.container_definitions != nil ?
+      map(module.input.task_definition_template.container_definitions, #.name ==
+      module.input.container_name ? merge(#,
+      {"image": imageUri(module.input.image_repository, deploy.input.image_ref)},
+      module.input.image_registry_credentials_secret_arn ? {"repository_credentials":
+      {"credentials_parameter": module.input.image_registry_credentials_secret_arn}} : nil) : #) : [])}) >>
+    timeout: 1800
+  ui:
+    links:
+      - name: ECS service console
+        href: https://<<module.input.aws_region>>.console.aws.amazon.com/ecs/v2/clusters/<<module.input.cluster_name>>/services/<<module.input.service_name>>
+    metrics:
+      - $template: ../../partials/templates/ecs-service-metrics.yml
+        with:
+          aws_account_id: << module.input.aws_account_id >>
+          cluster_name: << module.input.cluster_name >>
+          region: << module.input.aws_region >>
+          service_name: << module.input.service_name >>
+          target_group: << module.input.target_group_arn_suffix >>
+  readme: |
+    Deploys releases to an existing, externally managed Amazon ECS service using a user-provided task definition template.
+
+    ## Overview
+
+    The Existing ECS Service module connects Ravion deployments to an ECS service that was created outside Ravion. There is no infrastructure stack: Ravion does not create, change, or destroy the cluster, service, load balancer, IAM roles, or networking. You provide the AWS account, region, cluster name, service name, and a task definition template.
+
+    On each deployment, Ravion renders the template, replaces the image of the deploy target container with the image provided at deploy time, registers a new task definition revision in the template's family, and updates the existing ECS service to use it.
+
+    ## What you must provide
+
+    | Field                        | Required | Description                                                        |
+    | ---------------------------- | -------- | ------------------------------------------------------------------ |
+    | AWS account                  | Yes      | Connected AWS account that owns the ECS service                    |
+    | Region                       | Yes      | Region where the cluster and service run                           |
+    | Cluster name                 | Yes      | Existing ECS cluster name                                          |
+    | Service name                 | Yes      | Existing ECS service name                                          |
+    | Target group ARN suffix      | No       | Enables load balancer metrics for the service                      |
+    | Image repository             | Yes      | Image repository without a tag or digest                           |
+    | Registry credentials secret ARN | No    | ECS repository credentials secret for private registries           |
+    | Deploy target container name | Yes      | Container in the template that receives the deployed image         |
+    | Task definition template     | Yes      | Full task definition body registered on every deployment           |
+
+    ## Image registry
+
+    Configure the image repository on the module without a tag or digest, such as `nginx`, `ghcr.io/org/app`, or `123456789012.dkr.ecr.us-east-1.amazonaws.com/app`. For private registries such as GHCR or Docker Hub, provide a Secrets Manager secret ARN in the ECS repository credentials JSON format; it is attached to the deploy target container as repository credentials. Same-account ECR repositories normally need no credentials, but the template's execution role must be able to pull the image.
+
+    ## Task definition template
+
+    The template is the task definition body in snake_case, mirroring the ECS RegisterTaskDefinition API: family, container_definitions, cpu, memory, network_mode, requires_compatibilities, runtime_platform, task_role_arn, execution_role_arn, volumes, and so on. It must include family, usually the family the service already uses, so new revisions land in the right place.
+
+    The entire template is passed through as the registered task definition. Ravion overrides only the deploy target container: its image is replaced with the image resolved at deploy time, and registry credentials are attached to it when a registry credentials secret ARN is configured. Everything else, including additional containers and sidecars, is registered exactly as written.
+
+    Because the service and its IAM roles are externally managed, the template must reference an execution role that can pull the deployed image and write to the configured log destination, and a task role with whatever AWS permissions the application needs.
+
+    ## Deployment
+
+    At deploy time, provide only the image tag or digest, such as `v1.2.3` or `sha256:...`. It is resolved in the image repository configured on the module: digests are joined with `@` and tags with `:`. Image builds happen outside Ravion in your own pipeline.
+
+    Deployments are queued one at a time per module instance; stale queued deployments are collapsed in favor of the newest.
+
+    ## Design decisions
+
+    - No stack: the module never owns or mutates the underlying AWS resources, so destroying the module instance leaves the ECS service untouched.
+    - No build: images come from an external pipeline. The registry repository is module configuration; deploys only choose the tag or digest, mirroring the prebuilt-image mode of the ECS Web Server module.
+    - The task definition template is the single source of truth for everything except the deployed image, keeping drift between Ravion and the external service explicit and reviewable.
+    - The Running tasks, Network in, and Network out metrics use ECS Container Insights and only report data when Container Insights is enabled on the cluster.
+    - Load balancer metrics (request count, 4xx/5xx errors, response time, healthy/unhealthy hosts) read from the optional target group ARN suffix and stay empty when it is not configured.
+
+    ## Learn more
+
+    - [Amazon ECS services](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs_services.html)
+    - [RegisterTaskDefinition API](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_RegisterTaskDefinition.html)
+    - [Amazon ECS Container Insights](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ContainerInsights.html)

@@ -1,0 +1,137 @@
+- id: cpu_utilization
+  name: CPU utilization
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      ClusterName: $with.cluster_name
+      ServiceName: $with.service_name
+    name: CPUUtilization
+    namespace: AWS/ECS
+    region: $with.region
+    statistic: Average
+- id: memory_utilization
+  name: Memory utilization
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      ClusterName: $with.cluster_name
+      ServiceName: $with.service_name
+    name: MemoryUtilization
+    namespace: AWS/ECS
+    region: $with.region
+    statistic: Average
+- id: running_tasks
+  name: Running tasks
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      ClusterName: $with.cluster_name
+      ServiceName: $with.service_name
+    name: RunningTaskCount
+    namespace: ECS/ContainerInsights
+    region: $with.region
+    statistic: Average
+- id: request_count
+  name: Request count
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      TargetGroup: $with.target_group
+    name: RequestCount
+    namespace: AWS/ApplicationELB
+    region: $with.region
+    statistic: Sum
+- id: target_5xx_errors
+  name: 5xx errors
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      TargetGroup: $with.target_group
+    name: HTTPCode_Target_5XX_Count
+    namespace: AWS/ApplicationELB
+    region: $with.region
+    statistic: Sum
+- id: target_4xx_errors
+  name: 4xx errors
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      TargetGroup: $with.target_group
+    name: HTTPCode_Target_4XX_Count
+    namespace: AWS/ApplicationELB
+    region: $with.region
+    statistic: Sum
+- id: target_response_time
+  name: Target response time
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      TargetGroup: $with.target_group
+    name: TargetResponseTime
+    namespace: AWS/ApplicationELB
+    region: $with.region
+    statistic: Average
+- id: healthy_hosts
+  name: Healthy hosts
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      TargetGroup: $with.target_group
+    name: HealthyHostCount
+    namespace: AWS/ApplicationELB
+    region: $with.region
+    statistic: Average
+- id: unhealthy_hosts
+  name: Unhealthy hosts
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      TargetGroup: $with.target_group
+    name: UnHealthyHostCount
+    namespace: AWS/ApplicationELB
+    region: $with.region
+    statistic: Average
+- id: network_in
+  name: Network in
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      ClusterName: $with.cluster_name
+      ServiceName: $with.service_name
+    name: NetworkRxBytes
+    namespace: ECS/ContainerInsights
+    region: $with.region
+    statistic: Sum
+- id: network_out
+  name: Network out
+  type: line
+  source:
+    type: cloudwatch
+    aws_account_id: $with.aws_account_id
+    dimensions:
+      ClusterName: $with.cluster_name
+      ServiceName: $with.service_name
+    name: NetworkTxBytes
+    namespace: ECS/ContainerInsights
+    region: $with.region
+    statistic: Sum

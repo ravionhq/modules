@@ -33,6 +33,7 @@ const MODULE_CATEGORIES = new Set([
   "hosting",
   "kubernetes",
   "messaging",
+  "modules_without_stack",
   "monitoring",
   "networking",
   "security",
