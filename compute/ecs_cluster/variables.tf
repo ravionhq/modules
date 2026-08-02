@@ -686,3 +686,43 @@ variable "region" {
   description = "AWS region. When null, the provider's configured region is used."
   default     = null
 }
+
+################################################################################
+# Ravion-managed domains (optional)
+################################################################################
+
+variable "use_ravion_managed_domains" {
+  type        = bool
+  description = "Allocate a Ravion-managed wildcard domain for the cluster and serve its certificate from the selected ALB's existing HTTPS listener. Requires exactly one HTTPS-enabled ALB."
+  default     = false
+}
+
+variable "ravion_cluster_name" {
+  type        = string
+  description = "Free-form name leaf for the cluster's Ravion wildcard domain (becomes <name>-<hash>.<ravion-apex>). Defaults to the module instance given id."
+  default     = null
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the default leaf for the Ravion wildcard domain."
+  default     = null
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns this cluster's Ravion-managed certificate. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external/API-key runs. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*) the wildcard ACM cert is issued in. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_region" {
+  type        = string
+  description = "AWS region the cluster wildcard cert lives in. Defaults to the module region."
+  default     = null
+}

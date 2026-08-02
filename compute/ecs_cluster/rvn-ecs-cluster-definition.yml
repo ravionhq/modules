@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 0.5.0
-  description: "BREAKING: Rename ec2_managed_termination_protection to ec2_managed_termination_protection_enabled and ec2_managed_scaling_status to ec2_managed_scaling_enabled; both inputs now accept booleans instead of ENABLED or DISABLED strings."
+  version: 0.6.2
+  description: "Managed domains keeps every BYO certificate attached via SNI when the Ravion wildcard takes over as the default certificate, so enabling it never drops TLS for existing custom hostnames."
 module:
   inputs:
     - id: network
@@ -51,6 +51,25 @@ module:
           value: enabled
         - label: Disabled
           value: disabled
+    - id: section_managed_domains
+      label: Managed domains
+      type: section
+    - default: false
+      description: Have Ravion issue and manage a shared wildcard TLS certificate and DNS for this cluster. The selected ALB HTTPS listener serves the wildcard certificate, and services get automatic domains under the cluster apex. Requires exactly one HTTPS-enabled ALB.
+      id: use_ravion_managed_domains
+      label: Ravion-managed domains
+      type: boolean
+    - description: Subdomain for the cluster's wildcard domain. Defaults to the module given ID when empty.
+      id: ravion_cluster_name
+      label: Cluster subdomain
+      patterns:
+        - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+      required: false
+      show_when:
+        use_ravion_managed_domains: true
+      suffix: ".<< platform.apex >>"
+      type: string
     - id: section_capacity
       label: Capacity providers
       type: section
@@ -245,6 +264,7 @@ module:
         show_when:
           public_alb_enabled: true
           public_alb_https_enabled: true
+          use_ravion_managed_domains: false
     - collapsible: true
       description: SSL policy for public ALB HTTPS.
       id: public_alb_ssl_policy
@@ -315,6 +335,7 @@ module:
         show_when:
           private_alb_enabled: true
           private_alb_https_enabled: true
+          use_ravion_managed_domains: false
     - collapsible: true
       description: SSL policy for private ALB HTTPS.
       id: private_alb_ssl_policy
@@ -696,6 +717,10 @@ module:
         public_nlb_security_group_ids: << module.input.public_nlb_security_group_ids >>
         public_subnet_ids: << module.input.public_subnet_ids || [] >>
         region: << module.input.aws_region >>
+        use_ravion_managed_domains: << module.input.use_ravion_managed_domains >>
+        ravion_cluster_name: << module.input.ravion_cluster_name >>
+        ravion_aws_account_id: << module.input.aws_account_id >>
+        ravion_aws_region: << module.input.aws_region >>
         tags:
           $include: ../stack/ravion-tags.yml
         vpc_id: << module.input.vpc_id >>

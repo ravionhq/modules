@@ -113,7 +113,7 @@ mock_provider "aws" {
   }
 
   override_resource {
-    target = module.public_alb.aws_security_group.this
+    target = module.public_alb.module.security_group.aws_security_group.this
     values = {
       arn = "arn:aws:ec2:us-east-1:123456789012:security-group/sg-publicalb123456"
       id  = "sg-publicalb123456"
@@ -154,7 +154,7 @@ mock_provider "aws" {
   }
 
   override_resource {
-    target = module.private_alb.aws_security_group.this
+    target = module.private_alb.module.security_group.aws_security_group.this
     values = {
       arn = "arn:aws:ec2:us-east-1:123456789012:security-group/sg-privatealb123456"
       id  = "sg-privatealb123456"
@@ -169,6 +169,13 @@ mock_provider "aws" {
     }
   }
 }
+
+# Default (BYO) runs never create ravion_aws_acm_certificate.cluster (count = 0), but
+# Terraform still configures the ravion provider because the module declares it.
+# An empty mock prevents the provider's real Configure (which requires
+# RAVION_API_KEY) from failing the plan. managed_domains.tftest.hcl mocks it with
+# overrides because those runs actually issue the wildcard cert.
+mock_provider "ravion" {}
 
 variables {
   name               = "test-cluster"
@@ -565,13 +572,16 @@ run "ec2_security_group_egress" {
   }
 
   assert {
-    condition     = length(aws_vpc_security_group_egress_rule.ecs_instance_all) == 1
-    error_message = "EC2 security group should have egress rule"
+    condition     = length(module.ecs_instance_security_group) == 1
+    error_message = "EC2 instances should get a dedicated security group"
   }
 
+  # The allow-all shape (ip_protocol -1) is asserted inside the
+  # networking/security-groups module's own coverage; from here only the
+  # module's outputs are addressable.
   assert {
-    condition     = aws_vpc_security_group_egress_rule.ecs_instance_all[0].ip_protocol == "-1"
-    error_message = "EC2 security group should allow all outbound traffic"
+    condition     = length(module.ecs_instance_security_group[0].all_egress_rule_ids) >= 1
+    error_message = "EC2 security group should have an allow-all egress rule"
   }
 }
 
@@ -589,7 +599,7 @@ run "ec2_spot_disabled_by_default" {
   }
 
   assert {
-    condition     = length(module.ecs_autoscaling[0].aws_autoscaling_group.this.mixed_instances_policy) == 0
+    condition     = module.ecs_autoscaling[0].mixed_instances_policy_enabled == false
     error_message = "ASG should not use mixed instances policy when Spot disabled"
   }
 }
@@ -607,17 +617,17 @@ run "ec2_spot_enabled" {
   }
 
   assert {
-    condition     = length(module.ecs_autoscaling[0].aws_autoscaling_group.this.mixed_instances_policy) == 1
+    condition     = module.ecs_autoscaling[0].mixed_instances_policy_enabled == true
     error_message = "ASG should use mixed instances policy when Spot enabled"
   }
 
   assert {
-    condition     = module.ecs_autoscaling[0].aws_autoscaling_group.this.mixed_instances_policy[0].instances_distribution[0].on_demand_base_capacity == 1
+    condition     = module.ecs_autoscaling[0].spot_instances_distribution.on_demand_base_capacity == 1
     error_message = "ASG should have correct on-demand base capacity"
   }
 
   assert {
-    condition     = module.ecs_autoscaling[0].aws_autoscaling_group.this.mixed_instances_policy[0].instances_distribution[0].on_demand_percentage_above_base_capacity == 25
+    condition     = module.ecs_autoscaling[0].spot_instances_distribution.on_demand_percentage_above_base_capacity == 25
     error_message = "ASG should have correct on-demand percentage above base"
   }
 }
@@ -813,7 +823,7 @@ run "ec2_with_public_alb_ingress" {
   }
 
   assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_public_alb) == 1
+    condition     = length(module.ecs_instance_security_group[0].ingress_rule_ids) == 1
     error_message = "EC2 security group should have ingress rule from public ALB"
   }
 }
@@ -828,7 +838,7 @@ run "ec2_with_private_alb_ingress" {
   }
 
   assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_private_alb) == 1
+    condition     = length(module.ecs_instance_security_group[0].ingress_rule_ids) == 1
     error_message = "EC2 security group should have ingress rule from private ALB"
   }
 }
@@ -844,13 +854,8 @@ run "ec2_without_albs_no_ingress" {
   }
 
   assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_public_alb) == 0
-    error_message = "EC2 security group should not have public ALB ingress rule when ALB disabled"
-  }
-
-  assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_private_alb) == 0
-    error_message = "EC2 security group should not have private ALB ingress rule when ALB disabled"
+    condition     = length(module.ecs_instance_security_group[0].ingress_rule_ids) == 0
+    error_message = "EC2 security group should have no ALB ingress rules when both ALBs are disabled"
   }
 }
 
@@ -954,7 +959,7 @@ run "asg_uses_private_subnets" {
   }
 
   assert {
-    condition     = length(module.ecs_autoscaling[0].aws_autoscaling_group.this.vpc_zone_identifier) == 3
+    condition     = length(module.ecs_autoscaling[0].autoscaling_group_vpc_zone_identifier) == 3
     error_message = "ASG should be deployed to all private subnets"
   }
 }

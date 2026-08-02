@@ -101,10 +101,20 @@ resource "aws_ecs_service" "this" {
         for_each = local.traffic_shift_infrastructure_enabled ? [1] : []
         content {
           alternate_target_group_arn = aws_lb_target_group.tg_2[0].arn
+          # Ravion-managed services route via the module-created rules on the
+          # cluster HTTPS listener, so chunk "0" is the rule the ECS deployment
+          # controller rewrites during native traffic-shift deploys.
           production_listener_rule = (
             local.enable_nlb_listener
             ? aws_lb_listener.nlb[0].arn
-            : aws_lb_listener_rule.alb["0"].arn
+            : (
+              local.ravion_managed
+              # Absent only when the cluster exposes no HTTPS listener, which the
+              # precondition below reports; null keeps that message readable
+              # instead of failing here with "Invalid index".
+              ? (length(aws_lb_listener_rule.ravion) > 0 ? aws_lb_listener_rule.ravion["0"].arn : null)
+              : aws_lb_listener_rule.alb["0"].arn
+            )
           )
           test_listener_rule = local.test_listener_rule_arn
           role_arn           = aws_iam_role.ecs_infrastructure[0].arn
@@ -157,6 +167,7 @@ resource "aws_ecs_service" "this" {
     aws_iam_role_policy_attachment.execution_base,
     aws_iam_role_policy_attachment.ecs_infrastructure_elb,
     aws_lb_listener_rule.alb,
+    aws_lb_listener_rule.ravion,
     aws_lb_listener_rule.test,
     aws_lb_listener.nlb_additional,
   ]
@@ -179,22 +190,43 @@ resource "aws_ecs_service" "this" {
       condition = (
         !local.enable_load_balancer
         || local.enable_nlb_listener
+        || local.ravion_managed
         || length(var.load_balancer_attachment.listener_rules) > 0
       )
-      error_message = "load_balancer_attachment requires either listener_rules for ALB or nlb_listeners for NLB."
+      error_message = "load_balancer_attachment requires either listener_rules for ALB or nlb_listeners for NLB. (A Ravion-managed service creates its own listener rules from its domains.)"
+    }
+
+    # Managed mode routes every hostname via module-created rules on the
+    # cluster HTTPS listener; without that listener's ARN no rule (and no
+    # production rule for advanced_configuration) can exist, and every
+    # request would fall through to the listener's fixed-response 404.
+    precondition {
+      condition = (
+        !local.ravion_managed
+        || !local.enable_load_balancer
+        || local.enable_nlb_listener
+        || var.cluster_https_listener_arn != null
+      )
+      error_message = "A Ravion-managed ALB service (cluster_parent_fqdn set) requires cluster_https_listener_arn (the cluster's HTTPS listener) so its hostname listener rules can be created."
     }
 
     # The ECS advanced_configuration API accepts a single production
     # listener rule, so during native traffic-shift deployments only the
     # first rule is rewritten — any additional rules would keep
-    # forwarding to the old revision for the entire deployment.
+    # forwarding to the old revision for the entire deployment. For a
+    # Ravion-managed service the rules are the module-created host-header
+    # chunks, so the same constraint caps it at one chunk (<=5 hostnames).
     precondition {
       condition = (
         !local.is_native_traffic_shift
         || local.enable_nlb_listener
-        || length(try(var.load_balancer_attachment.listener_rules, [])) <= 1
+        || (
+          local.ravion_managed
+          ? length(local.ravion_host_header_chunks) <= 1
+          : length(try(var.load_balancer_attachment.listener_rules, [])) <= 1
+        )
       )
-      error_message = "Native traffic-shift strategies (blue_green/linear/canary) rewrite a single production listener rule; additional listener rules would keep serving the old revision throughout the deployment. Use at most one listener rule with these strategies."
+      error_message = "Native traffic-shift strategies (blue_green/linear/canary) rewrite a single production listener rule; additional listener rules would keep serving the old revision throughout the deployment. Use at most one listener rule with these strategies (for a Ravion-managed service: at most 5 hostnames, so all fit one rule)."
     }
 
     precondition {

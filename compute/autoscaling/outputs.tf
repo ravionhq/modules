@@ -152,3 +152,13 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "mixed_instances_policy_enabled" {
+  description = "Whether the ASG uses a mixed-instances (spot) policy."
+  value       = length(aws_autoscaling_group.this.mixed_instances_policy) > 0
+}
+
+output "spot_instances_distribution" {
+  description = "The instances_distribution of the mixed-instances policy, null when spot is disabled."
+  value       = try(aws_autoscaling_group.this.mixed_instances_policy[0].instances_distribution[0], null)
+}

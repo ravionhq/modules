@@ -12,7 +12,11 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 6.0"
     }
+    # Ravion domains provider — only exercised when
+    # var.use_ravion_managed_domains = true (see ravion_domains.tf).
+    ravion = {
+      source  = "provider-cf.siddharthsuresh.dev/ravion/ravion"
+      version = ">= 1.0.2"
+    }
   }
 }
-
-

@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for running TCP, UDP, or TLS workloads behind an ECS cluster Network Load Balancer.
 release:
-  version: 0.3.1
-  description: Improve build source, Railpack command, and builder instance guidance.
+  version: 0.3.2
+  description: "Pick up the shared ecs_service module source updates from the managed-domains work (no NLB-facing input changes)."
 module:
   inputs:
     - id: section_cluster

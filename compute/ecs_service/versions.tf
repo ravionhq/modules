@@ -14,7 +14,9 @@ terraform {
       # aws_ecs_service deployment_configuration block.
       version = ">= 6.21"
     }
+    ravion = {
+      source  = "provider-cf.siddharthsuresh.dev/ravion/ravion"
+      version = ">= 1.0.2"
+    }
   }
 }
-
-

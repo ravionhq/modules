@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          modules=$(find . -mindepth 2 -maxdepth 2 -name versions.tf -exec dirname {} \; | sort)
+          modules=$(find . -mindepth 3 -maxdepth 3 -name versions.tf -exec dirname {} \; | sort)
 
           for module in $modules; do
             echo "Validating ${module}"
@@ -51,6 +51,13 @@ jobs:
         run: |
           tofu -chdir=cdn/cloudfront init -backend=false
           tofu -chdir=cdn/cloudfront test
+
+      - name: Test ECS managed domains
+        run: |
+          tofu -chdir=compute/ecs_cluster init -backend=false
+          tofu -chdir=compute/ecs_cluster test -filter=tests/managed_domains.tftest.hcl
+          tofu -chdir=compute/ecs_service init -backend=false
+          tofu -chdir=compute/ecs_service test -filter=tests/managed_domains.tftest.hcl
 
       - name: Test CloudFront redirect function
         run: node --test cdn/cloudfront/functions/redirect.test.js

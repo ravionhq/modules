@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 0.8.4
-  description: Improve build source, Railpack command, and builder instance guidance.
+  version: 0.9.1
+  description: "Add Ravion-managed domains: service domains ride the cluster wildcard certificate automatically, and custom domains get a dedicated certificate with DNS validation, when the selected cluster has managed domains enabled. The Domains section sits right after the service basics."
 module:
   inputs:
     - id: section_cluster
@@ -17,6 +17,47 @@ module:
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
         - $include: ../../partials/inputs/ecs-service-cluster-alb-mapped-inputs.yml
+        - id: ravion_managed_domains_enabled
+          label: Cluster-managed domains
+          type: boolean
+          description: Whether the selected cluster has Ravion-managed domains enabled (its ALB HTTPS listener serves the cluster wildcard certificate).
+          collapsible: true
+          default: << ref.stack.output.ravion_managed_domains_enabled || false >>
+        - id: cluster_parent_fqdn
+          label: Cluster domain apex
+          type: string
+          description: Wildcard apex of the selected cluster. Service domains one label under it ride the cluster wildcard certificate automatically.
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.ravion_cluster_domain_fqdn>>
+        - id: public_alb_dns_name
+          immutable: true
+          label: Public ALB DNS name
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.public_alb_dns_name>>
+        - id: public_alb_zone_id
+          immutable: true
+          label: Public ALB hosted zone ID
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.public_alb_zone_id>>
+        - id: private_alb_dns_name
+          immutable: true
+          label: Private ALB DNS name
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.private_alb_dns_name>>
+        - id: private_alb_zone_id
+          immutable: true
+          label: Private ALB hosted zone ID
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.private_alb_zone_id>>
       required: true
     - id: section_service
       label: Web service
@@ -37,6 +78,20 @@ module:
       description: Expose this service through the public ALB. Turn off to use the private ALB.
       default: true
     - $include: ../../partials/inputs/private-subnet-placement.yml
+    - id: section_domains
+      label: Domains
+      show_when:
+        ravion_managed_domains_enabled: true
+      type: section
+    - add_button_label: Add domain
+      description: Fully-qualified domains for this service. A name one label under the cluster apex rides the cluster wildcard certificate automatically; any other name gets a dedicated certificate with DNS validation records you add at your DNS host. Empty = an automatic <service>.<cluster apex> domain.
+      id: domains
+      label: Domains
+      max_length: 10
+      placeholder: app.example.com
+      show_when:
+        ravion_managed_domains_enabled: true
+      type: string_array
     - $include: ../../partials/inputs/ecs-service-build-inputs.yml
     - id: section_deployment
       label: Deployment
@@ -281,7 +336,11 @@ module:
         target_group_stickiness_type: app_cookie
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
-        field_overrides: {}
+        # Managed mode discards caller listener rules (the module creates
+        # host-header rules from `domains`), so hide the manual routing inputs.
+        field_overrides:
+          show_when:
+            ravion_managed_domains_enabled: false
     - $include: ../../partials/inputs/ecs-service-capacity-inputs.yml
     - $include: ../../partials/inputs/ecs-service-autoscaling-inputs.yml
     - $template: ../../partials/templates/ecs-service-runtime-env-inputs.yml
@@ -348,6 +407,19 @@ module:
                 load_balancer_security_group_id: >-
                   << module.input.public_web_service_enabled ? module.input.public_alb_security_group_id :
                   module.input.private_alb_security_group_id >>
+                cluster_parent_fqdn: << module.input.cluster_parent_fqdn >>
+                domains: << module.input.domains || [] >>
+                cluster_https_listener_arn: >-
+                  << module.input.public_web_service_enabled ? module.input.public_alb_https_listener_arn :
+                  module.input.private_alb_https_listener_arn >>
+                cluster_alb_dns_name: >-
+                  << module.input.public_web_service_enabled ? module.input.public_alb_dns_name :
+                  module.input.private_alb_dns_name >>
+                cluster_alb_zone_id: >-
+                  << module.input.public_web_service_enabled ? module.input.public_alb_zone_id :
+                  module.input.private_alb_zone_id >>
+                ravion_aws_account_id: << module.input.aws_account_id >>
+                ravion_aws_region: << module.input.aws_region >>
           tool: opentofu
           tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
         variant: standard

@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 0.1.0
-  description: Initial module definition.
+  version: 0.1.1
+  description: "Ship the managed-domains groundwork in the module source: force_http_to_https_redirect removed in favor of listener-owned redirects, HTTPS listener certificate precondition, and the https_listener_certificate_arn output."
 module:
   inputs:
     - id: network

@@ -178,9 +178,16 @@ output "nlb_target_group_arns" {
 }
 
 output "production_listener_rule_arn" {
-  description = "ARN of the production ALB listener rule or primary NLB listener. The ECS deployment controller rewrites this value only for ALB traffic-shift deployments (null if load balancer disabled)."
+  description = "ARN of the production ALB listener rule or primary NLB listener. The ECS deployment controller rewrites this value only for ALB traffic-shift deployments (null if load balancer disabled). For a Ravion-managed service this is the first module-created host-header rule on the cluster HTTPS listener."
+  # The ravion rules are absent when the cluster has no HTTPS listener to put
+  # them on; degrade to null rather than an "Invalid index" that would bury the
+  # actionable cluster_https_listener_arn precondition on aws_ecs_service.
   value = local.enable_load_balancer ? (
-    local.enable_nlb_listener ? aws_lb_listener.nlb[0].arn : aws_lb_listener_rule.alb["0"].arn
+    local.enable_nlb_listener ? aws_lb_listener.nlb[0].arn : (
+      local.ravion_managed
+      ? (length(aws_lb_listener_rule.ravion) > 0 ? aws_lb_listener_rule.ravion["0"].arn : null)
+      : aws_lb_listener_rule.alb["0"].arn
+    )
   ) : null
 }
 
@@ -302,4 +309,23 @@ output "aws_account_id" {
 output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
+}
+
+################################################################################
+# Ravion-managed domains
+################################################################################
+
+output "ravion_domain_fqdn" {
+  description = "Primary FQDN for this service (first entry in the domains list; the auto-FQDN under the cluster wildcard when present). Null when the cluster has no Ravion-managed domains."
+  value       = length(local.effective_domains) > 0 ? local.effective_domains[0] : null
+}
+
+output "ravion_domain_url" {
+  description = "https URL for the primary FQDN."
+  value       = length(local.effective_domains) > 0 ? "https://${local.effective_domains[0]}" : null
+}
+
+output "ravion_custom_cert_arn" {
+  description = "ACM ARN of the per-service instance cert covering the custom (non-wildcard) domains. Null when there are none."
+  value       = length(local.custom_domains) > 0 ? ravion_aws_acm_certificate.svc[0].arn : null
 }

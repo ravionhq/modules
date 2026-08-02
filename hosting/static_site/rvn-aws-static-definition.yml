@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 0.3.5
-  description: Document cache header defaults as the blank module inputs they are, with the applied value explained.
+  version: 0.3.6
+  description: "Surface the Domains section (aliases + ACM certificate) right after the hosting basics instead of inside CloudFront settings."
 module:
   build:
     builder: >-
@@ -92,6 +92,25 @@ module:
       label: Default version prefix
       required: true
       type: string
+    - id: section_domains
+      label: Domains
+      type: section
+    - add_button_label: Add domain alias
+      default: []
+      description: Custom domain names like app.example.com. Leave empty to use the default cloudfront.net domain.
+      id: distribution_aliases
+      label: Domain aliases
+      type: string_array
+    - description: Required if using domain aliases. The certificate module must be in us-east-1.
+      id: distribution_acm_certificate
+      label: ACM certificate
+      mapped_inputs:
+        - default: <<ref.stack.output.certificate_arn>>
+          id: distribution_acm_certificate_arn
+          label: CloudFront certificate ARN
+          type: string
+      required: false
+      type: $ref:rvn-acm-certificate
     - id: section_build
       label: Build config
       type: section
@@ -149,22 +168,6 @@ module:
     - id: section_cloudfront
       label: CloudFront settings
       type: section
-    - description: Required if using domain aliases. The certificate module must be in us-east-1.
-      id: distribution_acm_certificate
-      label: ACM certificate
-      mapped_inputs:
-        - default: <<ref.stack.output.certificate_arn>>
-          id: distribution_acm_certificate_arn
-          label: CloudFront certificate ARN
-          type: string
-      required: false
-      type: $ref:rvn-acm-certificate
-    - add_button_label: Add domain alias
-      default: []
-      description: Custom domain names like app.example.com. Leave empty to use the default cloudfront.net domain.
-      id: distribution_aliases
-      label: Domain aliases
-      type: string_array
     - default: PriceClass_All
       description: You can reduce edge locations for some cost savings if it becomes an issue.
       id: price_class

@@ -49,10 +49,14 @@ locals {
   # created. Drives the advanced_configuration.test_listener_rule wiring
   # and the TEST_TRAFFIC_SHIFT lifecycle stages on native traffic-shift
   # deploys. ALB-only — requires a production listener rule to mirror; a
-  # no-op for NLB services.
+  # no-op for NLB services. Suppressed for Ravion-managed services: the
+  # mirrored conditions come from caller listener_rules, which managed
+  # mode discards in favour of the module-created host-header rules, so
+  # the test rule would orphan on the caller's listener.
   green_alb_listener_rule_enabled = (
     local.enable_load_balancer
     && !local.enable_nlb_listener
+    && !local.ravion_managed
     && var.green_alb_listener_rule_enabled
     && length(var.load_balancer_attachment.listener_rules) > 0
   )

@@ -28,4 +28,3 @@ locals {
   # sources, internal allows none (RFC1918 has no IPv6 equivalent).
   ingress_ipv6_cidr_blocks = var.ingress_ipv6_cidr_blocks != null ? var.ingress_ipv6_cidr_blocks : (var.internal_load_balancer_enabled ? [] : ["::/0"])
 }
-

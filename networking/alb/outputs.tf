@@ -41,6 +41,11 @@ output "https_listener_arn" {
   value       = local.create_https_listener ? aws_lb_listener.https[0].arn : null
 }
 
+output "https_listener_certificate_arn" {
+  description = "The default certificate ARN on the HTTPS listener (null if disabled)."
+  value       = local.create_https_listener ? aws_lb_listener.https[0].certificate_arn : null
+}
+
 ################################################################################
 # Security Group
 ################################################################################
@@ -81,4 +86,9 @@ output "aws_account_id" {
 output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
+}
+
+output "additional_certificate_arns" {
+  description = "Certificate ARNs attached to the HTTPS listener via SNI (certificate_arns[1..]). Empty when at most one certificate is configured."
+  value       = [for c in aws_lb_listener_certificate.additional : c.certificate_arn]
 }
