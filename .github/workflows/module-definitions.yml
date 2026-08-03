@@ -77,7 +77,7 @@ jobs:
       - name: Generate publish dry-run plan
         id: publish_plan
         continue-on-error: true
-        run: node tools/ravion-modules/dist/src/cli.js publish --format markdown --output publish-plan.md 2> publish-plan.err
+        run: node tools/ravion-modules/dist/src/cli.js publish --validate-remote --format markdown --output publish-plan.md 2> publish-plan.err
 
       - name: Comment publish dry-run plan
         uses: actions/github-script@v7
@@ -136,7 +136,7 @@ jobs:
         working-directory: tools/ravion-modules
 
       - name: Dry-run publish plan
-        run: node tools/ravion-modules/dist/src/cli.js publish
+        run: node tools/ravion-modules/dist/src/cli.js publish --validate-remote
 
       - name: Configure Git tag author
         run: |

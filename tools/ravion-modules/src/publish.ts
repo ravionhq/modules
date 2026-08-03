@@ -28,6 +28,7 @@ export interface PublishResult {
   dryRun: boolean;
   items: PublishPlanItem[];
   errors?: PublishPlanErrorItem[];
+  validationErrors?: PublishValidationErrorItem[];
 }
 
 export interface PublishPlanErrorItem {
@@ -36,6 +37,12 @@ export interface PublishPlanErrorItem {
   message: string;
   latestVersion?: string;
   diff?: string;
+}
+
+export interface PublishValidationErrorItem {
+  type: string;
+  version: string;
+  message: string;
 }
 
 export interface ModuleDefinitionInput {
@@ -66,6 +73,7 @@ export interface RavionApiClientOptions {
 
 export interface PublishOptions {
   dryRun?: boolean;
+  validateRemote?: boolean;
   localDev?: boolean;
   localDevForce?: boolean;
   localDevSourceRef?: string;
@@ -80,6 +88,7 @@ export interface RavionModuleApiClient {
   patchModuleDefinition(input: ModuleDefinitionPatchInput): Promise<RemoteModuleDefinition>;
   listModuleVersions(moduleDefinitionId: string): Promise<RemoteModuleVersion[]>;
   createModuleVersion(input: ModuleVersionInput): Promise<RemoteModuleVersion>;
+  validateModuleVersion(input: ModuleVersionInput): Promise<void>;
 }
 
 export class PublishError extends Error {
@@ -127,6 +136,7 @@ export async function publishDefinitions(
     inventory.definitions.map((definition) => [definition.type, definition]),
   );
   const items: PublishPlanItem[] = [];
+  const validationErrors: PublishValidationErrorItem[] = [];
 
   for (const definition of [...definitionsToPublish].sort((left, right) =>
     left.type.localeCompare(right.type),
@@ -225,6 +235,31 @@ export async function publishDefinitions(
         latestRemoteVersion?.version,
       ),
     );
+    if (dryRun && options.validateRemote) {
+      if (!remoteDefinition) {
+        options.logger?.(
+          `Skipping remote validation for ${definition.type}@${definition.version}; the module definition does not exist remotely yet.`,
+        );
+      } else {
+        try {
+          await client.validateModuleVersion({
+            moduleDefinitionId: remoteDefinition.id,
+            version: definition.version,
+            description: definition.releaseDescription,
+            config: definition.module,
+          });
+          options.logger?.(
+            `Remote validation passed for ${definition.type}@${definition.version}.`,
+          );
+        } catch (error) {
+          validationErrors.push({
+            type: definition.type,
+            version: definition.version,
+            message: formatUnknownError(error),
+          });
+        }
+      }
+    }
     if (!dryRun) {
       if (!remoteDefinition) {
         throw new PublishError(
@@ -233,6 +268,13 @@ export async function publishDefinitions(
       }
       await createVersionOrConfirmDuplicate(client, remoteDefinition.id, definition);
     }
+  }
+
+  if (validationErrors.length > 0) {
+    throw new PublishPlanError(
+      `Remote validation failed for ${validationErrors.length} module version(s).`,
+      { dryRun, items, validationErrors },
+    );
   }
 
   return { dryRun, items };
@@ -294,6 +336,24 @@ export function formatPublishPlanMarkdown(result: PublishResult): string {
       : "Applied publish changes to the Ravion API.",
     "",
   ];
+
+  if (result.validationErrors && result.validationErrors.length > 0) {
+    lines.push(
+      "### 🚨 Remote Validation Failures 🚨",
+      "",
+      "The Ravion API rejected these module version configs during dry-run validation. Fix the module definition config before merging.",
+      "",
+      "| Module | Release Version | Error |",
+      "| --- | --- | --- |",
+    );
+    for (const error of result.validationErrors) {
+      lines.push(
+        `| \`${escapeMarkdownTableCell(error.type)}\` | \`${escapeMarkdownTableCell(error.version)}\` | ${escapeMarkdownTableCell(error.message)} |`,
+      );
+    }
+    lines.push("");
+    return lines.join("\n");
+  }
 
   if (result.errors && result.errors.length > 0) {
     lines.push(
@@ -771,6 +831,17 @@ class HttpRavionModuleApiClient implements RavionModuleApiClient {
     return this.call<RemoteModuleVersion>("POST", "/module-versions", { data: input });
   }
 
+  async validateModuleVersion(input: ModuleVersionInput): Promise<void> {
+    const { status } = await this.request("POST", "/module-versions", {
+      data: { ...input, dryRun: true },
+    });
+    if (status !== 202) {
+      throw new PublishError(
+        `POST /module-versions dry-run validation returned HTTP ${status} instead of 202. The Ravion API may not support dryRun yet, and the module version may have been created for real.`,
+      );
+    }
+  }
+
   private async list<T>(path: string, query: Record<string, string> = {}): Promise<T[]> {
     const items: T[] = [];
     let cursor: string | undefined;
@@ -797,6 +868,16 @@ class HttpRavionModuleApiClient implements RavionModuleApiClient {
     query: Record<string, string> = {},
     options: { unwrap?: boolean } = {},
   ): Promise<T> {
+    const { payload } = await this.request(method, path, input, query);
+    return (options.unwrap === false ? payload : unwrapApiPayload(payload)) as T;
+  }
+
+  private async request(
+    method: string,
+    path: string,
+    input?: unknown,
+    query: Record<string, string> = {},
+  ): Promise<{ status: number; payload: unknown }> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.token) {
       headers.Authorization = `Bearer ${this.token}`;
@@ -823,7 +904,7 @@ class HttpRavionModuleApiClient implements RavionModuleApiClient {
         `${method} ${url} failed with HTTP ${response.status}: ${message}\nResponse body:\n${formatResponsePayload(payload)}`,
       );
     }
-    return (options.unwrap === false ? payload : unwrapApiPayload(payload)) as T;
+    return { status: response.status, payload };
   }
 }
 

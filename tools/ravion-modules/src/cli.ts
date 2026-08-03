@@ -91,7 +91,7 @@ if (command === "validate") {
   const outputPath = getArgValue(args, "--output");
   let result;
   try {
-    result = await publishDefinitions(compiled, client, { dryRun: localDev ? args.includes("--dry-run") : !args.includes("--apply"), localDev, localDevForce: args.includes("--force"), localDevSourceRef, logger: (message) => console.error(`[publish] ${message}`) });
+    result = await publishDefinitions(compiled, client, { dryRun: localDev ? args.includes("--dry-run") : !args.includes("--apply"), validateRemote: args.includes("--validate-remote"), localDev, localDevForce: args.includes("--force"), localDevSourceRef, logger: (message) => console.error(`[publish] ${message}`) });
   } catch (error) {
     if (isPublishPlanError(error)) {
       const output = format === "markdown" ? formatPublishPlanMarkdown(error.result) : JSON.stringify(error.result, null, 2);

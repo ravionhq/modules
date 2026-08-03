@@ -53,6 +53,64 @@ describe("publish", () => {
     assert.equal(client.createdVersions.length, 0);
   });
 
+  it("validates create-version items remotely during dry run when requested", async () => {
+    const client = new MockRavionClient({
+      definitions: [{ id: "vpc", type: "ravion-aws-vpc", name: "AWS VPC", description: "AWS VPC and subnets." }],
+    });
+
+    const result = await publishDefinitions([createCompiledDefinition()], client, { dryRun: true, validateRemote: true });
+
+    assert.deepEqual(result.items.map(({ action, dryRun }) => ({ action, dryRun })), [{ action: "create-version", dryRun: true }]);
+    assert.deepEqual(client.validatedVersions, [
+      { moduleDefinitionId: "vpc", version: "1.2.3", description: "Add subnet options.", config: { inputs: [{ id: "name", type: "string", label: "Name" }] } },
+    ]);
+    assert.equal(client.createdVersions.length, 0);
+  });
+
+  it("fails the dry run with validation details when the API rejects a config", async () => {
+    const client = new MockRavionClient({
+      definitions: [{ id: "vpc", type: "ravion-aws-vpc", name: "AWS VPC", description: "AWS VPC and subnets." }],
+    });
+    client.onValidateVersion = async () => {
+      throw new Error('POST /module-versions failed with HTTP 422: inputs.0.required: field is not allowed');
+    };
+
+    await assert.rejects(
+      publishDefinitions([createCompiledDefinition()], client, { dryRun: true, validateRemote: true }),
+      (error: unknown) => {
+        assert.ok(error instanceof PublishPlanError);
+        assert.deepEqual(error.result.validationErrors, [
+          { type: "ravion-aws-vpc", version: "1.2.3", message: "Error: POST /module-versions failed with HTTP 422: inputs.0.required: field is not allowed" },
+        ]);
+        const markdown = formatPublishPlanMarkdown(error.result);
+        assert.match(markdown, /Remote Validation Failures/);
+        assert.match(markdown, /field is not allowed/);
+        return true;
+      },
+    );
+    assert.equal(client.createdVersions.length, 0);
+  });
+
+  it("skips remote validation for definitions that do not exist remotely yet", async () => {
+    const client = new MockRavionClient();
+
+    const result = await publishDefinitions([createCompiledDefinition()], client, { dryRun: true, validateRemote: true });
+
+    assert.deepEqual(result.items.map(({ action }) => action), ["create-definition", "create-version"]);
+    assert.equal(client.validatedVersions.length, 0);
+    assert.equal(client.createdVersions.length, 0);
+  });
+
+  it("does not validate remotely during dry run when not requested", async () => {
+    const client = new MockRavionClient({
+      definitions: [{ id: "vpc", type: "ravion-aws-vpc", name: "AWS VPC", description: "AWS VPC and subnets." }],
+    });
+
+    await publishDefinitions([createCompiledDefinition()], client, { dryRun: true });
+
+    assert.equal(client.validatedVersions.length, 0);
+  });
+
   it("fails with structured conflict details when an existing version has different config", async () => {
     const remoteConfig = {
       inputs: [
@@ -439,8 +497,10 @@ class MockRavionClient implements RavionModuleApiClient {
   createdDefinitions: ModuleDefinitionInput[] = [];
   patchedDefinitions: ModuleDefinitionPatchInput[] = [];
   createdVersions: ModuleVersionInput[] = [];
+  validatedVersions: ModuleVersionInput[] = [];
   onListModuleVersions?: (moduleDefinitionId: string) => Promise<RemoteModuleVersion[]>;
   onCreateVersion?: (input: ModuleVersionInput) => Promise<void>;
+  onValidateVersion?: (input: ModuleVersionInput) => Promise<void>;
 
   constructor(options: { definitions?: RemoteModuleDefinition[]; versionsByDefinitionId?: Record<string, RemoteModuleVersion[]> } = {}) {
     this.definitions = options.definitions ?? [];
@@ -484,5 +544,12 @@ class MockRavionClient implements RavionModuleApiClient {
     const version = { ...input };
     this.versionsByDefinitionId[input.moduleDefinitionId] = [...(this.versionsByDefinitionId[input.moduleDefinitionId] ?? []), version];
     return version;
+  }
+
+  async validateModuleVersion(input: ModuleVersionInput): Promise<void> {
+    if (this.onValidateVersion) {
+      await this.onValidateVersion(input);
+    }
+    this.validatedVersions.push(input);
   }
 }
