@@ -1,16 +1,33 @@
 - id: section_cluster_alb
   label: Cluster load balancers
   type: section
+- id: public_albs_by_name
+  label: Public load balancers by name
+  type: object
+  description: Public load balancer records from the selected cluster keyed by name, including listener ARNs and security group IDs.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.public_albs_by_name>>
+- id: private_albs_by_name
+  label: Private load balancers by name
+  type: object
+  description: Private load balancer records from the selected cluster keyed by name, including listener ARNs and security group IDs.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.private_albs_by_name>>
 - id: public_alb_http_listener_arn
   immutable: true
   label: Public ALB HTTP listener ARN
   type: string
+  description: HTTP listener ARN from the cluster's first public ALB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.public_alb_http_listener_arn>>
 - id: public_alb_https_listener_arn
   immutable: true
   label: Public ALB HTTPS listener ARN
   type: string
-  description: HTTPS listener ARN from the selected public ALB. Ravion uses it when present, otherwise falls back to HTTP.
+  description: HTTPS listener ARN from the cluster's first public ALB. Ravion uses it when present, otherwise falls back to HTTP.
   collapsible: true
   required: false
   default: <<ref.stack.output.public_alb_https_listener_arn>>
@@ -18,17 +35,31 @@
   immutable: true
   label: Public ALB security group ID
   type: string
+  description: Security group ID of the cluster's first public ALB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.public_alb_security_group_id>>
+- id: public_alb_arn_suffix
+  immutable: true
+  label: Public ALB ARN suffix
+  type: string
+  description: ARN suffix of the cluster's first public ALB for CloudWatch metrics.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.public_alb_arn_suffix>>
 - id: private_alb_http_listener_arn
   immutable: true
   label: Private ALB HTTP listener ARN
   type: string
+  description: HTTP listener ARN from the cluster's first private ALB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.private_alb_http_listener_arn>>
 - id: private_alb_https_listener_arn
   immutable: true
   label: Private ALB HTTPS listener ARN
   type: string
-  description: HTTPS listener ARN from the selected private ALB. Ravion uses it when present, otherwise falls back to HTTP.
+  description: HTTPS listener ARN from the cluster's first private ALB. Ravion uses it when present, otherwise falls back to HTTP.
   collapsible: true
   required: false
   default: <<ref.stack.output.private_alb_https_listener_arn>>
@@ -36,4 +67,15 @@
   immutable: true
   label: Private ALB security group ID
   type: string
+  description: Security group ID of the cluster's first private ALB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.private_alb_security_group_id>>
+- id: private_alb_arn_suffix
+  immutable: true
+  label: Private ALB ARN suffix
+  type: string
+  description: ARN suffix of the cluster's first private ALB for CloudWatch metrics.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.private_alb_arn_suffix>>

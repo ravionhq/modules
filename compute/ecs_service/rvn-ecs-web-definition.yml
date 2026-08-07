@@ -3,11 +3,12 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.0.0
+  version: 2.0.0
   description: >-
-    First stable release. Assign ALB listener rule priorities at apply time when
-    no explicit priority is set, so multiple services can share a listener
-    without priority conflicts.
+    Support ECS clusters with multiple public and private load balancers. Adds
+    public/private load balancer selectors under the cluster reference; the
+    service uses the selected load balancer's listeners and security group, and
+    defaults to the cluster's first load balancer when none is selected.
 module:
   inputs:
     - id: section_cluster
@@ -20,16 +21,22 @@ module:
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
         - $include: ../../partials/inputs/ecs-service-cluster-alb-mapped-inputs.yml
-        - default: <<ref.stack.output.public_alb_arn_suffix>>
-          id: public_alb_arn_suffix
-          immutable: true
-          label: Public ALB ARN suffix
+        - id: public_alb_name
+          label: Public load balancer
           type: string
-        - default: <<ref.stack.output.private_alb_arn_suffix>>
-          id: private_alb_arn_suffix
-          immutable: true
-          label: Private ALB ARN suffix
+          description: Which of the cluster's public load balancers this service uses. Defaults to the first one when unset; a name that no longer exists on the cluster fails the deployment instead of silently using another load balancer.
+          required: false
+          show_when:
+            public_web_service_enabled: true
+          values: $values:ravion/module_input_options?module_type=rvn-ecs-cluster&module_instance_id=<<module.input.cluster>>&input=public_albs&value_field=name
+        - id: private_alb_name
+          label: Private load balancer
           type: string
+          description: Which of the cluster's private load balancers this service uses. Defaults to the first one when unset; a name that no longer exists on the cluster fails the deployment instead of silently using another load balancer.
+          required: false
+          show_when:
+            public_web_service_enabled: false
+          values: $values:ravion/module_input_options?module_type=rvn-ecs-cluster&module_instance_id=<<module.input.cluster>>&input=private_albs&value_field=name
       required: true
     - id: section_service
       label: Web service
@@ -333,10 +340,15 @@ module:
                     attachment_control:
                       enabled: true
                     listener_arn: >-
-                      << module.input.public_web_service_enabled ? (module.input.public_alb_https_listener_arn ||
-                      module.input.public_alb_http_listener_arn) :
-                      (module.input.private_alb_https_listener_arn ||
-                      module.input.private_alb_http_listener_arn) >>
+                      << module.input.public_web_service_enabled ?
+                      ((module.input.public_alb_name || "") == "" ?
+                      (module.input.public_alb_https_listener_arn || module.input.public_alb_http_listener_arn) :
+                      (get(get(module.input.public_albs_by_name, module.input.public_alb_name), "https_listener_arn") ||
+                      get(get(module.input.public_albs_by_name, module.input.public_alb_name), "http_listener_arn"))) :
+                      ((module.input.private_alb_name || "") == "" ?
+                      (module.input.private_alb_https_listener_arn || module.input.private_alb_http_listener_arn) :
+                      (get(get(module.input.private_albs_by_name, module.input.private_alb_name), "https_listener_arn") ||
+                      get(get(module.input.private_albs_by_name, module.input.private_alb_name), "http_listener_arn"))) >>
                     target_group:
                       health_check:
                         enabled: true
@@ -359,8 +371,13 @@ module:
                         type: '<< module.input.target_group_stickiness_enabled ? module.input.target_group_stickiness_type : "lb_cookie" >>'
                       target_type: ip
                 load_balancer_security_group_id: >-
-                  << module.input.public_web_service_enabled ? module.input.public_alb_security_group_id :
-                  module.input.private_alb_security_group_id >>
+                  << module.input.public_web_service_enabled ?
+                  ((module.input.public_alb_name || "") == "" ?
+                  module.input.public_alb_security_group_id :
+                  get(get(module.input.public_albs_by_name, module.input.public_alb_name), "security_group_id")) :
+                  ((module.input.private_alb_name || "") == "" ?
+                  module.input.private_alb_security_group_id :
+                  get(get(module.input.private_albs_by_name, module.input.private_alb_name), "security_group_id")) >>
           tool: opentofu
           tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
         variant: standard
@@ -497,8 +514,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
-              module.input.private_alb_arn_suffix >>
+              << module.input.public_web_service_enabled ?
+              ((module.input.public_alb_name || "") == "" ?
+              module.input.public_alb_arn_suffix :
+              get(get(module.input.public_albs_by_name, module.input.public_alb_name), "arn_suffix")) :
+              ((module.input.private_alb_name || "") == "" ?
+              module.input.private_alb_arn_suffix :
+              get(get(module.input.private_albs_by_name, module.input.private_alb_name), "arn_suffix")) >>
           name: RequestCount
           namespace: AWS/ApplicationELB
           region: << stack.output.region >>
@@ -512,8 +534,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
-              module.input.private_alb_arn_suffix >>
+              << module.input.public_web_service_enabled ?
+              ((module.input.public_alb_name || "") == "" ?
+              module.input.public_alb_arn_suffix :
+              get(get(module.input.public_albs_by_name, module.input.public_alb_name), "arn_suffix")) :
+              ((module.input.private_alb_name || "") == "" ?
+              module.input.private_alb_arn_suffix :
+              get(get(module.input.private_albs_by_name, module.input.private_alb_name), "arn_suffix")) >>
           name: HTTPCode_Target_5XX_Count
           namespace: AWS/ApplicationELB
           region: << stack.output.region >>
@@ -527,8 +554,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
-              module.input.private_alb_arn_suffix >>
+              << module.input.public_web_service_enabled ?
+              ((module.input.public_alb_name || "") == "" ?
+              module.input.public_alb_arn_suffix :
+              get(get(module.input.public_albs_by_name, module.input.public_alb_name), "arn_suffix")) :
+              ((module.input.private_alb_name || "") == "" ?
+              module.input.private_alb_arn_suffix :
+              get(get(module.input.private_albs_by_name, module.input.private_alb_name), "arn_suffix")) >>
           name: HTTPCode_Target_4XX_Count
           namespace: AWS/ApplicationELB
           region: << stack.output.region >>
@@ -542,8 +574,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
-              module.input.private_alb_arn_suffix >>
+              << module.input.public_web_service_enabled ?
+              ((module.input.public_alb_name || "") == "" ?
+              module.input.public_alb_arn_suffix :
+              get(get(module.input.public_albs_by_name, module.input.public_alb_name), "arn_suffix")) :
+              ((module.input.private_alb_name || "") == "" ?
+              module.input.private_alb_arn_suffix :
+              get(get(module.input.private_albs_by_name, module.input.private_alb_name), "arn_suffix")) >>
           name: TargetResponseTime
           namespace: AWS/ApplicationELB
           region: << stack.output.region >>
@@ -557,8 +594,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
-              module.input.private_alb_arn_suffix >>
+              << module.input.public_web_service_enabled ?
+              ((module.input.public_alb_name || "") == "" ?
+              module.input.public_alb_arn_suffix :
+              get(get(module.input.public_albs_by_name, module.input.public_alb_name), "arn_suffix")) :
+              ((module.input.private_alb_name || "") == "" ?
+              module.input.private_alb_arn_suffix :
+              get(get(module.input.private_albs_by_name, module.input.private_alb_name), "arn_suffix")) >>
           name: HealthyHostCount
           namespace: AWS/ApplicationELB
           region: << stack.output.region >>
@@ -572,8 +614,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
-              module.input.private_alb_arn_suffix >>
+              << module.input.public_web_service_enabled ?
+              ((module.input.public_alb_name || "") == "" ?
+              module.input.public_alb_arn_suffix :
+              get(get(module.input.public_albs_by_name, module.input.public_alb_name), "arn_suffix")) :
+              ((module.input.private_alb_name || "") == "" ?
+              module.input.private_alb_arn_suffix :
+              get(get(module.input.private_albs_by_name, module.input.private_alb_name), "arn_suffix")) >>
           name: UnHealthyHostCount
           namespace: AWS/ApplicationELB
           region: << stack.output.region >>

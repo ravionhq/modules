@@ -3,8 +3,12 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for running TCP, UDP, or TLS workloads behind an ECS cluster Network Load Balancer.
 release:
-  version: 1.0.0
-  description: First stable release.
+  version: 2.0.0
+  description: >-
+    Support ECS clusters with multiple public and private network load balancers.
+    Adds public/private NLB selectors under the cluster reference; the service uses
+    the selected NLB's ARN and security group, and defaults to the cluster's first
+    NLB when none is selected.
 module:
   inputs:
     - id: section_cluster
@@ -294,14 +298,24 @@ module:
                   << module.input.public_nlb_service_enabled ? module.input.load_balancer_ingress_cidr_blocks :
                   module.input.private_load_balancer_ingress_cidr_blocks >>
                 load_balancer_security_group_id: >-
-                  << module.input.public_nlb_service_enabled ? module.input.public_nlb_security_group_id :
-                  module.input.private_nlb_security_group_id >>
+                  << module.input.public_nlb_service_enabled ?
+                  ((module.input.public_nlb_name || "") == "" ?
+                  module.input.public_nlb_security_group_id :
+                  get(get(module.input.public_nlbs_by_name, module.input.public_nlb_name), "security_group_id")) :
+                  ((module.input.private_nlb_name || "") == "" ?
+                  module.input.private_nlb_security_group_id :
+                  get(get(module.input.private_nlbs_by_name, module.input.private_nlb_name), "security_group_id")) >>
                 load_balancer_attachment:
                   container_port: << module.input.listeners[0].container_port >>
                   enabled: true
                   nlb_listeners: >-
                     << map(module.input.listeners, {"nlb_arn": (module.input.public_nlb_service_enabled ?
-                    module.input.public_nlb_arn : module.input.private_nlb_arn), "port": #.listener_port,
+                    ((module.input.public_nlb_name || "") == "" ?
+                    module.input.public_nlb_arn :
+                    get(get(module.input.public_nlbs_by_name, module.input.public_nlb_name), "arn")) :
+                    ((module.input.private_nlb_name || "") == "" ?
+                    module.input.private_nlb_arn :
+                    get(get(module.input.private_nlbs_by_name, module.input.private_nlb_name), "arn"))), "port": #.listener_port,
                     "protocol": #.listener_protocol, "container_port": #.container_port, "target_protocol":
                     (#.listener_protocol == "TLS" ? #.tls_target_protocol : #.listener_protocol),
                     "certificate_arn": (#.listener_protocol == "TLS" ? #.tls_certificate_arn : nil),
@@ -424,8 +438,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_nlb_service_enabled ? module.input.public_nlb_arn_suffix :
-              module.input.private_nlb_arn_suffix >>
+              << module.input.public_nlb_service_enabled ?
+              ((module.input.public_nlb_name || "") == "" ?
+              module.input.public_nlb_arn_suffix :
+              get(get(module.input.public_nlbs_by_name, module.input.public_nlb_name), "arn_suffix")) :
+              ((module.input.private_nlb_name || "") == "" ?
+              module.input.private_nlb_arn_suffix :
+              get(get(module.input.private_nlbs_by_name, module.input.private_nlb_name), "arn_suffix")) >>
           name: HealthyHostCount
           namespace: AWS/NetworkELB
           region: << stack.output.region >>
@@ -439,8 +458,13 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_nlb_service_enabled ? module.input.public_nlb_arn_suffix :
-              module.input.private_nlb_arn_suffix >>
+              << module.input.public_nlb_service_enabled ?
+              ((module.input.public_nlb_name || "") == "" ?
+              module.input.public_nlb_arn_suffix :
+              get(get(module.input.public_nlbs_by_name, module.input.public_nlb_name), "arn_suffix")) :
+              ((module.input.private_nlb_name || "") == "" ?
+              module.input.private_nlb_arn_suffix :
+              get(get(module.input.private_nlbs_by_name, module.input.private_nlb_name), "arn_suffix")) >>
           name: UnHealthyHostCount
           namespace: AWS/NetworkELB
           region: << stack.output.region >>

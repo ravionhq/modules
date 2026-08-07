@@ -1,33 +1,81 @@
 - id: section_cluster_nlb
   label: Cluster network load balancers
   type: section
+- id: public_nlb_name
+  label: Public NLB
+  type: string
+  description: Which of the cluster's public network load balancers this service uses. Defaults to the first one when unset; a name that no longer exists on the cluster fails the deployment instead of silently using another load balancer.
+  required: false
+  show_when:
+    public_nlb_service_enabled: true
+  values: $values:ravion/module_input_options?module_type=rvn-ecs-cluster&module_instance_id=<<module.input.cluster>>&input=public_nlbs&value_field=name
+- id: private_nlb_name
+  label: Private NLB
+  type: string
+  description: Which of the cluster's private network load balancers this service uses. Defaults to the first one when unset; a name that no longer exists on the cluster fails the deployment instead of silently using another load balancer.
+  required: false
+  show_when:
+    public_nlb_service_enabled: false
+  values: $values:ravion/module_input_options?module_type=rvn-ecs-cluster&module_instance_id=<<module.input.cluster>>&input=private_nlbs&value_field=name
+- id: public_nlbs_by_name
+  label: Public NLBs by name
+  type: object
+  description: Public network load balancer records from the selected cluster keyed by name, including ARNs and security group IDs.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.public_nlbs_by_name>>
+- id: private_nlbs_by_name
+  label: Private NLBs by name
+  type: object
+  description: Private network load balancer records from the selected cluster keyed by name, including ARNs and security group IDs.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.private_nlbs_by_name>>
 - id: public_nlb_arn
   immutable: true
   label: Public NLB ARN
   type: string
+  description: ARN of the cluster's first public NLB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.public_nlb_arn>>
-- id: public_nlb_arn_suffix
-  immutable: true
-  label: Public NLB ARN suffix
-  type: string
-  default: <<ref.stack.output.public_nlb_arn_suffix>>
 - id: public_nlb_security_group_id
   immutable: true
   label: Public NLB security group ID
   type: string
+  description: Security group ID of the cluster's first public NLB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.public_nlb_security_group_id>>
+- id: public_nlb_arn_suffix
+  immutable: true
+  label: Public NLB ARN suffix
+  type: string
+  description: ARN suffix of the cluster's first public NLB for CloudWatch metrics.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.public_nlb_arn_suffix>>
 - id: private_nlb_arn
   immutable: true
   label: Private NLB ARN
   type: string
+  description: ARN of the cluster's first private NLB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.private_nlb_arn>>
-- id: private_nlb_arn_suffix
-  immutable: true
-  label: Private NLB ARN suffix
-  type: string
-  default: <<ref.stack.output.private_nlb_arn_suffix>>
 - id: private_nlb_security_group_id
   immutable: true
   label: Private NLB security group ID
   type: string
+  description: Security group ID of the cluster's first private NLB.
+  collapsible: true
+  required: false
   default: <<ref.stack.output.private_nlb_security_group_id>>
+- id: private_nlb_arn_suffix
+  immutable: true
+  label: Private NLB ARN suffix
+  type: string
+  description: ARN suffix of the cluster's first private NLB for CloudWatch metrics.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.private_nlb_arn_suffix>>

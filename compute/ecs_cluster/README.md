@@ -50,9 +50,13 @@ module "ecs" {
   fargate_spot_weight = 3
 
   # Public ALB with HTTPS
-  public_alb_enabled          = true
-  public_alb_https_enabled    = true
-  public_alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/abc123"]
+  public_albs = [
+    {
+      name             = "my-app-pub"
+      https_enabled    = true
+      certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/abc123"]
+    }
+  ]
 }
 ```
 
@@ -84,7 +88,7 @@ module "ecs" {
   ec2_on_demand_percentage_above_base = 25
 
   # Public ALB
-  public_alb_enabled = true
+  public_albs = [{ name = "my-app-pub" }]
 }
 ```
 
@@ -114,14 +118,27 @@ module "ecs" {
   ec2_max_size         = 20
   ec2_desired_capacity = 2
 
-  # Both ALBs
-  public_alb_enabled           = true
-  public_alb_https_enabled     = true
-  public_alb_certificate_arns  = ["arn:aws:acm:us-east-1:123456789012:certificate/abc123"]
+  # Multiple ALBs: services pick one by name
+  public_albs = [
+    {
+      name             = "my-app-pub"
+      https_enabled    = true
+      certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/abc123"]
+    },
+    {
+      name             = "my-app-pub-api"
+      https_enabled    = true
+      certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/def456"]
+    }
+  ]
 
-  private_alb_enabled           = true
-  private_alb_https_enabled     = true
-  private_alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/xyz789"]
+  private_albs = [
+    {
+      name             = "my-app-priv"
+      https_enabled    = true
+      certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/xyz789"]
+    }
+  ]
 
   tags = {
     Environment = "production"
@@ -143,7 +160,7 @@ module "ecs" {
   public_subnet_ids  = ["subnet-public-1", "subnet-public-2"]
 
   # Public NLB (listeners and target groups created by service modules)
-  public_nlb_enabled = true
+  public_nlbs = [{ name = "my-app-pub-nlb" }]
 }
 ```
 
@@ -160,8 +177,12 @@ module "ecs" {
   public_subnet_ids  = ["subnet-public-1", "subnet-public-2"]
 
   # Public NLB (listeners and target groups created by service modules)
-  public_nlb_enabled = true
-  public_nlb_cross_zone_load_balancing_enabled = true
+  public_nlbs = [
+    {
+      name                              = "my-app-pub-nlb"
+      cross_zone_load_balancing_enabled = true
+    }
+  ]
 }
 
 # Service modules create their own listeners and target groups
@@ -171,7 +192,7 @@ module "api_service" {
   # ... service configuration ...
 
   load_balancer_attachment = {
-    nlb_arn = module.ecs.public_nlb_arn
+    nlb_arn = module.ecs.public_nlbs[0].arn
     nlb_listener = {
       port            = 443
       protocol        = "TLS"
@@ -253,58 +274,49 @@ module "api_service" {
 | ec2_managed_scaling_target_capacity | Target capacity percentage | `number` | `100` | no |
 | ec2_security_group_ids | Additional security groups for EC2 | `list(string)` | `[]` | no |
 
-### Public ALB
+### Application load balancers
+
+Each cluster can create any number of public and private ALBs. Services select one by name.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| public_alb_enabled | Enable public ALB | `bool` | `false` | no |
-| public_alb_https_enabled | Enable HTTPS listener | `bool` | `false` | no |
-| public_alb_certificate_arns | ACM certificate ARNs for HTTPS. First ARN is the default certificate; the rest are attached for SNI | `list(string)` | `[]` | no |
-| public_alb_ssl_policy | SSL policy for HTTPS | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
-| public_alb_idle_timeout | Idle timeout in seconds | `number` | `60` | no |
-| public_alb_ingress_cidr_blocks | Allowed IPv4 CIDR blocks | `list(string)` | `["0.0.0.0/0"]` | no |
-| public_alb_ingress_security_group_ids | Security group IDs allowed to access the public ALB | `list(string)` | `[]` | no |
-| public_alb_access_logs_enabled | Enable access logs | `bool` | `false` | no |
-| public_alb_access_logs_bucket_arn | S3 bucket ARN for access logs | `string` | `null` | no |
-| public_alb_web_acl_arn | WAFv2 Web ACL ARN | `string` | `null` | no |
+| public_albs | Public (internet-facing) ALBs, one per entry | `list(object)` | `[]` | no |
+| private_albs | Private (internal) ALBs, one per entry | `list(object)` | `[]` | no |
 
-### Private ALB
+Each ALB object supports:
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| private_alb_enabled | Enable private ALB | `bool` | `false` | no |
-| private_alb_https_enabled | Enable HTTPS listener | `bool` | `false` | no |
-| private_alb_certificate_arns | ACM certificate ARNs for HTTPS. First ARN is the default certificate; the rest are attached for SNI | `list(string)` | `[]` | no |
-| private_alb_ssl_policy | SSL policy for HTTPS | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
-| private_alb_idle_timeout | Idle timeout in seconds | `number` | `60` | no |
-| private_alb_ingress_cidr_blocks | Allowed IPv4 CIDR blocks | `list(string)` | `["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]` | no |
-| private_alb_ingress_security_group_ids | Security group IDs allowed to access the private ALB (e.g., CloudFront VPC origins) | `list(string)` | `[]` | no |
-| private_alb_access_logs_enabled | Enable access logs | `bool` | `false` | no |
-| private_alb_access_logs_bucket_arn | S3 bucket ARN for access logs | `string` | `null` | no |
+| Name | Description | Type | Default |
+|------|-------------|------|---------|
+| name | Load balancer name (defaults to a deterministic name derived from the cluster name and index) | `string` | `null` |
+| https_enabled | Enable HTTPS listener | `bool` | `false` |
+| certificate_arns | ACM certificate ARNs for HTTPS. First ARN is the default certificate; the rest are attached for SNI | `list(string)` | `[]` |
+| ssl_policy | SSL policy for HTTPS | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` |
+| idle_timeout | Idle timeout in seconds | `number` | `60` |
+| ingress_cidr_blocks | Allowed IPv4 CIDR blocks | `list(string)` | public: `["0.0.0.0/0"]`, private: RFC1918 ranges |
+| ingress_ipv6_cidr_blocks | Allowed IPv6 CIDR blocks | `list(string)` | public: `["::/0"]`, private: `[]` |
+| ingress_security_group_ids | Security group IDs allowed to access the ALB | `list(string)` | `[]` |
+| access_logs_enabled | Enable access logs | `bool` | `false` |
+| access_logs_bucket_arn | S3 bucket ARN for access logs | `string` | `null` |
+| web_acl_arn | WAFv2 Web ACL ARN (public ALBs only) | `string` | `null` |
 
-### Public NLB
+### Network load balancers
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| public_nlb_enabled | Enable public NLB | `bool` | `false` | no |
-| public_nlb_cross_zone_load_balancing_enabled | Enable cross-zone load balancing | `bool` | `false` | no |
-| public_nlb_security_group_ids | Security groups to attach | `list(string)` | `[]` | no |
-| public_nlb_access_logs_enabled | Enable access logs | `bool` | `false` | no |
-| public_nlb_access_logs_bucket_arn | S3 bucket ARN for access logs | `string` | `null` | no |
-| public_nlb_elastic_ips_enabled | Enable static IPs | `bool` | `false` | no |
-| public_nlb_elastic_ip_allocation_ids | Elastic IP allocation IDs | `list(string)` | `[]` | no |
+| public_nlbs | Public (internet-facing) NLBs, one per entry | `list(object)` | `[]` | no |
+| private_nlbs | Private (internal) NLBs, one per entry | `list(object)` | `[]` | no |
 
-### Private NLB
+Each NLB object supports:
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| private_nlb_enabled | Enable private NLB | `bool` | `false` | no |
-| private_nlb_cross_zone_load_balancing_enabled | Enable cross-zone load balancing | `bool` | `false` | no |
-| private_nlb_security_group_ids | Security groups to attach | `list(string)` | `[]` | no |
-| private_nlb_access_logs_enabled | Enable access logs | `bool` | `false` | no |
-| private_nlb_access_logs_bucket_arn | S3 bucket ARN for access logs | `string` | `null` | no |
-| private_nlb_elastic_ips_enabled | Enable static IPs | `bool` | `false` | no |
-| private_nlb_elastic_ip_allocation_ids | Elastic IP allocation IDs | `list(string)` | `[]` | no |
+| Name | Description | Type | Default |
+|------|-------------|------|---------|
+| name | Load balancer name (defaults to a deterministic name derived from the cluster name and index) | `string` | `null` |
+| cross_zone_load_balancing_enabled | Enable cross-zone load balancing | `bool` | `false` |
+| security_group_ids | Security groups to attach | `list(string)` | `[]` |
+| access_logs_enabled | Enable access logs | `bool` | `false` |
+| access_logs_bucket_arn | S3 bucket ARN for access logs | `string` | `null` |
+| elastic_ips_enabled | Enable static IPs (public NLBs only) | `bool` | `false` |
+| elastic_ip_allocation_ids | Elastic IP allocation IDs (public NLBs only) | `list(string)` | `[]` |
 
 ## Outputs
 
@@ -337,51 +349,23 @@ module "api_service" {
 | ecs_instance_role_name | IAM role name for EC2 instances |
 | ecs_instance_security_group_id | Security group ID for EC2 instances |
 
-### Public ALB
+### Load balancers
 
 | Name | Description |
 |------|-------------|
-| public_alb_arn | Public ALB ARN |
-| public_alb_id | Public ALB ID |
-| public_alb_dns_name | Public ALB DNS name |
-| public_alb_zone_id | Public ALB hosted zone ID |
-| public_alb_arn_suffix | Public ALB ARN suffix |
-| public_alb_security_group_id | Public ALB security group ID |
-| public_alb_http_listener_arn | Public ALB HTTP listener ARN |
-| public_alb_https_listener_arn | Public ALB HTTPS listener ARN |
+| public_albs | List of public ALB records (name, arn, id, dns_name, zone_id, arn_suffix, security_group_id, http_listener_arn, https_listener_arn, https_enabled) |
+| private_albs | List of private ALB records (same shape as public_albs) |
+| public_albs_by_name | Public ALB records keyed by name |
+| private_albs_by_name | Private ALB records keyed by name |
+| public_alb_options / private_alb_options | ALB names, for selection UIs |
+| public_nlbs | List of public NLB records (name, arn, id, dns_name, zone_id, arn_suffix, security_group_id) |
+| private_nlbs | List of private NLB records (same shape as public_nlbs) |
+| public_nlbs_by_name / private_nlbs_by_name | NLB records keyed by name |
+| public_nlb_options / private_nlb_options | NLB names, for selection UIs |
 
-### Private ALB
+### Deprecated singleton outputs
 
-| Name | Description |
-|------|-------------|
-| private_alb_arn | Private ALB ARN |
-| private_alb_id | Private ALB ID |
-| private_alb_dns_name | Private ALB DNS name |
-| private_alb_zone_id | Private ALB hosted zone ID |
-| private_alb_arn_suffix | Private ALB ARN suffix |
-| private_alb_security_group_id | Private ALB security group ID |
-| private_alb_http_listener_arn | Private ALB HTTP listener ARN |
-| private_alb_https_listener_arn | Private ALB HTTPS listener ARN |
-
-### Public NLB
-
-| Name | Description |
-|------|-------------|
-| public_nlb_arn | Public NLB ARN |
-| public_nlb_id | Public NLB ID |
-| public_nlb_dns_name | Public NLB DNS name |
-| public_nlb_zone_id | Public NLB hosted zone ID |
-| public_nlb_arn_suffix | Public NLB ARN suffix |
-
-### Private NLB
-
-| Name | Description |
-|------|-------------|
-| private_nlb_arn | Private NLB ARN |
-| private_nlb_id | Private NLB ID |
-| private_nlb_dns_name | Private NLB DNS name |
-| private_nlb_zone_id | Private NLB hosted zone ID |
-| private_nlb_arn_suffix | Private NLB ARN suffix |
+The pre-2.0 singleton outputs (`public_alb_arn`, `public_alb_dns_name`, `public_alb_http_listener_arn`, `private_alb_arn`, `public_nlb_arn`, etc.) are still exposed for backward compatibility and return the first load balancer of the corresponding list, or `null` when the list is empty.
 
 ## Architecture
 
@@ -472,8 +456,8 @@ module "api_service" {
 ║  ├────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┤  ║
 ║  │           PUBLIC ALB                       │                    PRIVATE ALB                                      │  ║
 ║  ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤  ║
-║  │ • public_alb_enabled                        │ • private_alb_enabled                                                │  ║
-║  │ • public_alb_https_enabled                  │ • private_alb_https_enabled                                          │  ║
+║  │ • public_albs (array)                       │ • private_albs (array)                                              │  ║
+║  │ • per-item https_enabled                    │ • per-item settings (below)                                          │  ║
 ║  │ • public_alb_certificate_arns              │ • private_alb_certificate_arns                                      │  ║
 ║  │ • public_alb_ssl_policy                    │ • private_alb_ssl_policy                                            │  ║
 ║  │ • public_alb_idle_timeout                  │ • private_alb_idle_timeout                                          │  ║
@@ -484,7 +468,7 @@ module "api_service" {
 ║  ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤  ║
 ║  │           PUBLIC NLB                       │                    PRIVATE NLB                                      │  ║
 ║  ├────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤  ║
-║  │ • public_nlb_enabled                        │ • private_nlb_enabled                                                │  ║
+║  │ • public_nlbs (array)                       │ • private_nlbs (array)                                              │  ║
 ║  │ • public_nlb_enable_cross_zone_load_bal... │ • private_nlb_cross_zone_load_balancing_enabled                      │  ║
 ║  │ • public_nlb_security_group_ids            │ • private_nlb_security_group_ids                                    │  ║
 ║  │ • public_nlb_access_logs_enabled            │ • private_nlb_access_logs_enabled                                    │  ║
@@ -596,7 +580,7 @@ module "api_service" {
 ║    ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────┤   ║
 ║    │                                                                                                               │   ║
 ║    │  ┌────────────────────────────────┐  ┌────────────────────────────────┐                                      │   ║
-║    │  │  module.public_alb[0]          │  │  module.private_alb[0]         │                                      │   ║
+║    │  │  module.public_alb["name"]     │  │  module.private_alb["name"]    │                                      │   ║
 ║    │  │  (networking/alb)              │  │  (networking/alb)              │                                      │   ║
 ║    │  ├────────────────────────────────┤  ├────────────────────────────────┤                                      │   ║
 ║    │  │ • Internet-facing              │  │ • Internal                     │                                      │   ║
@@ -607,7 +591,7 @@ module "api_service" {
 ║    │  └────────────────────────────────┘  └────────────────────────────────┘                                      │   ║
 ║    │                                                                                                               │   ║
 ║    │  ┌────────────────────────────────┐  ┌────────────────────────────────┐                                      │   ║
-║    │  │  module.public_nlb[0]          │  │  module.private_nlb[0]         │                                      │   ║
+║    │  │  module.public_nlb["name"]     │  │  module.private_nlb["name"]    │                                      │   ║
 ║    │  │  (networking/nlb)              │  │  (networking/nlb)              │                                      │   ║
 ║    │  ├────────────────────────────────┤  ├────────────────────────────────┤                                      │   ║
 ║    │  │ • Internet-facing              │  │ • Internal                     │                                      │   ║
@@ -725,20 +709,20 @@ module "api_service" {
 ║              │                        │                 LOAD BALANCERS                     │                           ║
 ║              │                        └────────────────────────────────────────────────────┘                           ║
 ║              │                                                                                                         ║
-║              │    var.public_alb_enabled ────►┌──────────────────────────┐                                              ║
-║              │    var.public_alb_* ─────────►│ module.public_alb        │                                              ║
+║              │    length(var.public_albs) ───►┌──────────────────────────┐                                              ║
+║              │    var.public_albs[*] ───────►│ module.public_alb        │                                              ║
 ║              │    var.public_subnet_ids ────►└──────────────────────────┘                                              ║
 ║              │                                                                                                         ║
-║              │    var.private_alb_enabled ───►┌──────────────────────────┐                                              ║
-║              │    var.private_alb_* ────────►│ module.private_alb       │                                              ║
+║              │    length(var.private_albs) ──►┌──────────────────────────┐                                              ║
+║              │    var.private_albs[*] ──────►│ module.private_alb       │                                              ║
 ║              └──────────────────────────────►└──────────────────────────┘                                              ║
 ║              │                                                                                                         ║
-║              │    var.public_nlb_enabled ────►┌──────────────────────────┐                                              ║
-║              │    var.public_nlb_* ─────────►│ module.public_nlb        │                                              ║
+║              │    length(var.public_nlbs) ───►┌──────────────────────────┐                                              ║
+║              │    var.public_nlbs[*] ───────►│ module.public_nlb        │                                              ║
 ║              │    var.public_subnet_ids ────►└──────────────────────────┘                                              ║
 ║              │                                                                                                         ║
-║              │    var.private_nlb_enabled ───►┌──────────────────────────┐                                              ║
-║              │    var.private_nlb_* ────────►│ module.private_nlb       │                                              ║
+║              │    length(var.private_nlbs) ──►┌──────────────────────────┐                                              ║
+║              │    var.private_nlbs[*] ──────►│ module.private_nlb       │                                              ║
 ║              └──────────────────────────────►└──────────────────────────┘                                              ║
 ║                                                                                                                        ║
 ║                                                         │                                                              ║
@@ -760,10 +744,10 @@ module "api_service" {
 | `aws_iam_role_policy_attachment` | 0 or 2 | ECS and SSM policy attachments |
 | `module.ecs_autoscaling` | 0 or 1 | Auto Scaling Group for EC2 instances |
 | `module.ecs_instance_security_group` | 0 or 1 | Security group for EC2 instances |
-| `module.public_alb` | 0 or 1 | Public Application Load Balancer |
-| `module.private_alb` | 0 or 1 | Private Application Load Balancer |
-| `module.public_nlb` | 0 or 1 | Public Network Load Balancer |
-| `module.private_nlb` | 0 or 1 | Private Network Load Balancer |
+| `module.public_alb` | 0 to N (one per entry, keyed by name) | Public Application Load Balancers |
+| `module.private_alb` | 0 to N (one per entry, keyed by name) | Private Application Load Balancers |
+| `module.public_nlb` | 0 to N (one per entry, keyed by name) | Public Network Load Balancers |
+| `module.private_nlb` | 0 to N (one per entry, keyed by name) | Private Network Load Balancers |
 
 ## FAQ
 
@@ -895,14 +879,22 @@ module "ecs" {
   source = "..."
 
   # ALB for HTTP/HTTPS traffic with path-based routing
-  public_alb_enabled          = true
-  public_alb_https_enabled    = true
-  public_alb_certificate_arns = ["arn:aws:acm:..."]
+  public_albs = [
+    {
+      name             = "my-app-pub"
+      https_enabled    = true
+      certificate_arns = ["arn:aws:acm:..."]
+    }
+  ]
 
   # NLB for TCP/UDP traffic or static IPs
-  public_nlb_enabled           = true
-  public_nlb_elastic_ips_enabled = true
-  public_nlb_elastic_ip_allocation_ids = ["eipalloc-abc123", "eipalloc-def456"]
+  public_nlbs = [
+    {
+      name                      = "my-app-pub-nlb"
+      elastic_ips_enabled       = true
+      elastic_ip_allocation_ids = ["eipalloc-abc123", "eipalloc-def456"]
+    }
+  ]
 }
 ```
 
@@ -962,8 +954,8 @@ The module automatically creates a security group for EC2 instances that:
 │  │  Egress: 0.0.0.0/0 (all traffic)                                    │    │
 │  │                                                                      │    │
 │  │  Ingress (dynamic):                                                  │    │
-│  │    ├─ From Public ALB SG (if public_alb_enabled = true)              │    │
-│  │    └─ From Private ALB SG (if private_alb_enabled = true)            │    │
+│  │    ├─ From each public ALB security group                             │    │
+│  │    └─ From each private ALB security group                           │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │  Additional security groups can be attached via:                             │
@@ -986,3 +978,20 @@ The module automatically creates a security group for EC2 instances that:
 - The `name` variable is limited to 28 characters to ensure ALB names don't exceed AWS limits
 - EBS volumes on EC2 instances are encrypted by default
 - Managed termination protection prevents ECS from terminating instances with running tasks
+
+## Migrating from 1.x (single load balancer inputs)
+
+Version 2.0.0 replaces the singleton `public_alb_*`/`private_alb_*`/`*_nlb_*` variables with the
+`public_albs`, `private_albs`, `public_nlbs`, and `private_nlbs` object arrays. Load balancer module
+instances are keyed by their resolved name (`for_each`) instead of a positional index (`count`), so
+Terraform addresses change from `module.public_alb[0]` to `module.public_alb["<name>"]`.
+
+For existing state, move each load balancer to its new address before applying, e.g.:
+
+```bash
+tofu state mv 'module.public_alb[0]' 'module.public_alb["my-cluster-pub"]'
+```
+
+The default resolved name for the first entry is `<name>-pub` (public ALB), `<name>-priv`
+(private ALB), `<name>-pub-nlb` (public NLB), and `<name>-priv-nlb` (private NLB) when no explicit
+`name` is set. Without the state move, Terraform plans to destroy and recreate the load balancer.

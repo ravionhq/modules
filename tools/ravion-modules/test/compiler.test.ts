@@ -261,32 +261,39 @@ describe("compiler", () => {
     assert.deepEqual(additionalCertificateArns.show_when, { https_listener_enabled: true });
 
     const clusterInputs = getModuleInputs(cluster.module);
-    for (const [inputId, mappedInputId, additionalInputId] of [
-      ["public_alb_certificate", "public_alb_certificate_arns", "public_alb_additional_certificate_arns"],
-      ["private_alb_certificate", "private_alb_certificate_arns", "private_alb_additional_certificate_arns"],
-    ]) {
-      const clusterCertificate = findInput(clusterInputs, inputId);
-      assert.equal(clusterCertificate.type, "$ref:rvn-acm-certificate");
-      const mappedInputs = clusterCertificate.mapped_inputs;
-      assert.ok(Array.isArray(mappedInputs), `${inputId}.mapped_inputs should be an array`);
-      const mappedInput = assertRecord(mappedInputs[0], `${inputId} ARN mapped input`);
-      assert.equal(mappedInput.id, mappedInputId);
+    for (const arrayInputId of ["public_albs", "private_albs"]) {
+      const albArray = findInput(clusterInputs, arrayInputId);
+      assert.equal(albArray.type, "object_array");
+      const itemInputs = albArray.item_inputs;
+      assert.ok(Array.isArray(itemInputs), `${arrayInputId}.item_inputs should be an array`);
+      const certificate = assertRecord(
+        itemInputs.find((item) => assertRecord(item, "item input").id === "certificate"),
+        `${arrayInputId} certificate item input`,
+      );
+      assert.equal(certificate.type, "$ref:rvn-acm-certificate");
+      const mappedInputs = certificate.mapped_inputs;
+      assert.ok(Array.isArray(mappedInputs), `${arrayInputId} certificate.mapped_inputs should be an array`);
+      const mappedInput = assertRecord(mappedInputs[0], `${arrayInputId} certificate ARN mapped input`);
+      assert.equal(mappedInput.id, "certificate_arns");
       assert.equal(mappedInput.type, "string_array");
-      assert.deepEqual(findInput(clusterInputs, additionalInputId).default, []);
+      const additionalCertificates = assertRecord(
+        itemInputs.find(
+          (item) => assertRecord(item, "item input").id === "additional_certificate_arns",
+        ),
+        `${arrayInputId} additional certificate ARNs item input`,
+      );
+      assert.equal(additionalCertificates.type, "string_array");
     }
 
     assert.match(
       assertString(getTerraformVariable(alb.module, "certificate_arns")),
       /concat\(module\.input\.additional_certificate_arns/,
     );
-    assert.match(
-      assertString(getTerraformVariable(cluster.module, "public_alb_certificate_arns")),
-      /concat\(module\.input\.public_alb_additional_certificate_arns/,
-    );
-    assert.match(
-      assertString(getTerraformVariable(cluster.module, "private_alb_certificate_arns")),
-      /concat\(module\.input\.private_alb_additional_certificate_arns/,
-    );
+    for (const arrayInputId of ["public_albs", "private_albs"]) {
+      const mapping = assertString(getTerraformVariable(cluster.module, arrayInputId));
+      assert.match(mapping, /certificate_arns/);
+      assert.match(mapping, /additional_certificate_arns/);
+    }
 
     const ipv4Ingress = assertString(getTerraformVariable(alb.module, "ingress_cidr_blocks"));
     assert.match(ipv4Ingress, /ingress_cidr_blocks != nil/);

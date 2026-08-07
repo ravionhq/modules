@@ -3,8 +3,11 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 1.0.0
-  description: First stable release.
+  version: 2.0.0
+  description: >-
+    Support multiple public and private load balancers per cluster. Public/private
+    ALBs and NLBs are now configured as arrays with per-load-balancer settings, and
+    cluster outputs expose the full load balancer lists so services can pick one by name.
 module:
   inputs:
     - id: network
@@ -219,283 +222,310 @@ module:
           not: ""
         ec2_managed_scaling_enabled: true
       type: number
-    - description: Creates an internet-facing Application Load Balancer for services that should receive traffic from the public internet, such as websites, public APIs, and webhook endpoints.
-      id: section_public_alb
-      label: Public application load balancer
+    - description: Internet-facing Application Load Balancers for services that should receive traffic from the public internet, such as websites, public APIs, and webhook endpoints.
+      id: section_public_albs
+      label: Public application load balancers
       type: section
-    - default: true
-      id: public_alb_enabled
-      label: Public load balancer
-      type: boolean
-    - default: true
-      description: Enable HTTPS listener on the public ALB.
-      id: public_alb_https_enabled
-      label: HTTPS
-      show_when:
-        public_alb_enabled: true
-      type: boolean
-    - $template: ../../partials/templates/alb-certificate-input.yml
-      with:
-        additional_certificate_arns_description: Additional ACM certificate ARNs attached to the public ALB HTTPS listener for SNI.
-        additional_certificate_arns_input_id: public_alb_additional_certificate_arns
-        certificate_arns_description: ACM certificate ARNs resolved from the selected module. The first ARN is the default certificate.
-        certificate_arns_input_id: public_alb_certificate_arns
-        certificate_description: Primary ACM certificate module for public ALB HTTPS.
-        certificate_input_id: public_alb_certificate
-        show_when:
-          public_alb_enabled: true
-          public_alb_https_enabled: true
-    - collapsible: true
-      description: SSL policy for public ALB HTTPS.
-      id: public_alb_ssl_policy
-      label: SSL policy
-      placeholder: ELBSecurityPolicy-TLS13-1-2-2021-06
-      show_when:
-        public_alb_enabled: true
-        public_alb_https_enabled: true
-      type: string
-    - collapsible: true
-      description: Idle timeout for the public ALB.
-      id: public_alb_idle_timeout
-      label: Idle timeout (seconds)
-      max: 4000
-      min: 1
-      placeholder: "60"
-      show_when:
-        public_alb_enabled: true
-      type: number
-    - collapsible: true
-      description: WAFv2 Web ACL ARN for the public ALB.
-      id: public_alb_web_acl_arn
-      label: WAF web ACL ARN
-      placeholder: arn:aws:wafv2:...
-      show_when:
-        public_alb_enabled: true
-      type: string
-    - collapsible: true
-      default: false
-      description: Enable public ALB access logging.
-      id: public_alb_access_logs_enabled
-      label: Access logs
-      show_when:
-        public_alb_enabled: true
-      type: boolean
-    - collapsible: true
-      description: Existing S3 bucket ARN for public ALB access logs.
-      id: public_alb_access_logs_bucket_arn
-      label: Access logs bucket ARN
-      placeholder: arn:aws:s3:::my-bucket
-      show_when:
-        public_alb_enabled: true
-        public_alb_access_logs_enabled: true
-      type: string
-    - description: Creates an internal Application Load Balancer for services that should only be reachable inside the VPC or private network, such as internal APIs, admin tools, and service-to-service traffic.
-      id: section_private_alb
-      label: Private application load balancer
+    - label: Public load balancers
+      default:
+        - name: <<project.given_id>>-<<environment.given_id>>-pub
+          https_enabled: true
+      description: Each entry creates one internet-facing Application Load Balancer. Services on this cluster choose a load balancer by name.
+      id: public_albs
+      item_label: Public load balancer
+      item_title:
+        template: "{name}"
+      item_inputs:
+        - description: Unique load balancer name.
+          id: name
+          label: Name
+          patterns:
+            - message: The name must be 1-32 characters, contain only letters, numbers, and hyphens, and start and end with a letter or number.
+              pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?$
+          required: true
+          type: string
+        - default: true
+          description: Enable an HTTPS listener on this load balancer.
+          id: https_enabled
+          label: HTTPS
+          type: boolean
+        - $template: ../../partials/templates/alb-certificate-input.yml
+          with:
+            additional_certificate_arns_description: Additional ACM certificate ARNs attached to the HTTPS listener for SNI.
+            additional_certificate_arns_input_id: additional_certificate_arns
+            certificate_arns_description: ACM certificate ARNs resolved from the selected module. The first ARN is the default certificate.
+            certificate_arns_input_id: certificate_arns
+            certificate_description: Primary ACM certificate module for HTTPS.
+            certificate_input_id: certificate
+            show_when:
+              https_enabled: true
+        - collapsible: true
+          description: SSL policy for the HTTPS listener.
+          id: ssl_policy
+          label: SSL policy
+          placeholder: ELBSecurityPolicy-TLS13-1-2-2021-06
+          show_when:
+            https_enabled: true
+          type: string
+        - add_button_label: Add CIDR block
+          collapsible: true
+          description: Allowed IPv4 CIDRs. Defaults to allowing all IPv4 traffic.
+          id: ingress_cidr_blocks
+          label: Ingress CIDRs
+          placeholder: 0.0.0.0/0
+          type: string_array
+        - add_button_label: Add IPv6 CIDR block
+          collapsible: true
+          description: Allowed IPv6 CIDRs. Defaults to allowing all IPv6 traffic.
+          id: ingress_ipv6_cidr_blocks
+          label: Ingress IPv6 CIDRs
+          placeholder: ::/0
+          type: string_array
+        - add_button_label: Add security group
+          collapsible: true
+          description: Security groups whose members can access this load balancer. Useful for sources without static CIDRs, such as CloudFront VPC origins.
+          id: ingress_security_group_ids
+          label: Ingress security groups
+          placeholder: sg-...
+          type: string_array
+        - collapsible: true
+          description: Idle timeout for this load balancer.
+          id: idle_timeout
+          label: Idle timeout (seconds)
+          max: 4000
+          min: 1
+          placeholder: "60"
+          type: number
+        - collapsible: true
+          description: WAFv2 Web ACL ARN for this load balancer.
+          id: web_acl_arn
+          label: WAF web ACL ARN
+          placeholder: arn:aws:wafv2:...
+          type: string
+        - collapsible: true
+          default: false
+          description: Enable access logging for this load balancer.
+          id: access_logs_enabled
+          label: Access logs
+          type: boolean
+        - collapsible: true
+          description: Existing S3 bucket ARN for access logs.
+          id: access_logs_bucket_arn
+          label: Access logs bucket ARN
+          placeholder: arn:aws:s3:::my-bucket
+          show_when:
+            access_logs_enabled: true
+          type: string
+      type: object_array
+    - description: Internal Application Load Balancers for services that should only be reachable inside the VPC or private network, such as internal APIs, admin tools, and service-to-service traffic.
+      id: section_private_albs
+      label: Private application load balancers
       type: section
-    - default: false
-      id: private_alb_enabled
-      label: Private load balancer
-      type: boolean
-    - default: false
-      description: Enable HTTPS listener on the private ALB.
-      id: private_alb_https_enabled
-      label: HTTPS
-      show_when:
-        private_alb_enabled: true
-      type: boolean
-    - $template: ../../partials/templates/alb-certificate-input.yml
-      with:
-        additional_certificate_arns_description: Additional ACM certificate ARNs attached to the private ALB HTTPS listener for SNI.
-        additional_certificate_arns_input_id: private_alb_additional_certificate_arns
-        certificate_arns_description: ACM certificate ARNs resolved from the selected module. The first ARN is the default certificate.
-        certificate_arns_input_id: private_alb_certificate_arns
-        certificate_description: Primary ACM certificate module for private ALB HTTPS.
-        certificate_input_id: private_alb_certificate
-        show_when:
-          private_alb_enabled: true
-          private_alb_https_enabled: true
-    - collapsible: true
-      description: SSL policy for private ALB HTTPS.
-      id: private_alb_ssl_policy
-      label: SSL policy
-      placeholder: ELBSecurityPolicy-TLS13-1-2-2021-06
-      show_when:
-        private_alb_enabled: true
-        private_alb_https_enabled: true
-      type: string
-    - add_button_label: Add CIDR block
-      collapsible: true
-      description: Allowed IPv4 CIDRs for private ALB access. Terraform defaults to RFC1918 private ranges.
-      id: private_alb_ingress_cidr_blocks
-      label: Ingress CIDRs
-      placeholder: 10.0.0.0/8
-      show_when:
-        private_alb_enabled: true
-      type: string_array
-    - add_button_label: Add IPv6 CIDR block
-      collapsible: true
-      description: Allowed IPv6 CIDRs for private ALB access. Defaults to no IPv6 ingress.
-      id: private_alb_ingress_ipv6_cidr_blocks
-      label: Ingress IPv6 CIDRs
-      placeholder: fd00::/8
-      show_when:
-        private_alb_enabled: true
-      type: string_array
-    - add_button_label: Add security group
-      collapsible: true
-      description: Security groups whose members can access the private ALB. Useful for sources without static CIDRs, such as CloudFront VPC origins.
-      id: private_alb_ingress_security_group_ids
-      label: Ingress security groups
-      placeholder: sg-...
-      show_when:
-        private_alb_enabled: true
-      type: string_array
-    - collapsible: true
-      description: Idle timeout for the private ALB.
-      id: private_alb_idle_timeout
-      label: Idle timeout (seconds)
-      max: 4000
-      min: 1
-      placeholder: "60"
-      show_when:
-        private_alb_enabled: true
-      type: number
-    - collapsible: true
-      default: false
-      description: Enable private ALB access logging.
-      id: private_alb_access_logs_enabled
-      label: Access logs
-      show_when:
-        private_alb_enabled: true
-      type: boolean
-    - collapsible: true
-      description: Existing S3 bucket ARN for private ALB access logs.
-      id: private_alb_access_logs_bucket_arn
-      label: Access logs bucket ARN
-      placeholder: arn:aws:s3:::my-bucket
-      show_when:
-        private_alb_enabled: true
-        private_alb_access_logs_enabled: true
-      type: string
+    - label: Private load balancers
+      default: []
+      description: Each entry creates one internal Application Load Balancer. Services on this cluster choose a load balancer by name.
+      id: private_albs
+      item_label: Private load balancer
+      item_title:
+        template: "{name}"
+      item_inputs:
+        - description: Unique load balancer name.
+          id: name
+          label: Name
+          patterns:
+            - message: The name must be 1-32 characters, contain only letters, numbers, and hyphens, and start and end with a letter or number.
+              pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?$
+          required: true
+          type: string
+        - default: false
+          description: Enable an HTTPS listener on this load balancer.
+          id: https_enabled
+          label: HTTPS
+          type: boolean
+        - $template: ../../partials/templates/alb-certificate-input.yml
+          with:
+            additional_certificate_arns_description: Additional ACM certificate ARNs attached to the HTTPS listener for SNI.
+            additional_certificate_arns_input_id: additional_certificate_arns
+            certificate_arns_description: ACM certificate ARNs resolved from the selected module. The first ARN is the default certificate.
+            certificate_arns_input_id: certificate_arns
+            certificate_description: Primary ACM certificate module for HTTPS.
+            certificate_input_id: certificate
+            show_when:
+              https_enabled: true
+        - collapsible: true
+          description: SSL policy for the HTTPS listener.
+          id: ssl_policy
+          label: SSL policy
+          placeholder: ELBSecurityPolicy-TLS13-1-2-2021-06
+          show_when:
+            https_enabled: true
+          type: string
+        - add_button_label: Add CIDR block
+          collapsible: true
+          description: Allowed IPv4 CIDRs. Terraform defaults to RFC1918 private ranges.
+          id: ingress_cidr_blocks
+          label: Ingress CIDRs
+          placeholder: 10.0.0.0/8
+          type: string_array
+        - add_button_label: Add IPv6 CIDR block
+          collapsible: true
+          description: Allowed IPv6 CIDRs. Defaults to no IPv6 ingress.
+          id: ingress_ipv6_cidr_blocks
+          label: Ingress IPv6 CIDRs
+          placeholder: fd00::/8
+          type: string_array
+        - add_button_label: Add security group
+          collapsible: true
+          description: Security groups whose members can access this load balancer. Useful for sources without static CIDRs, such as CloudFront VPC origins.
+          id: ingress_security_group_ids
+          label: Ingress security groups
+          placeholder: sg-...
+          type: string_array
+        - collapsible: true
+          description: Idle timeout for this load balancer.
+          id: idle_timeout
+          label: Idle timeout (seconds)
+          max: 4000
+          min: 1
+          placeholder: "60"
+          type: number
+        - collapsible: true
+          default: false
+          description: Enable access logging for this load balancer.
+          id: access_logs_enabled
+          label: Access logs
+          type: boolean
+        - collapsible: true
+          description: Existing S3 bucket ARN for access logs.
+          id: access_logs_bucket_arn
+          label: Access logs bucket ARN
+          placeholder: arn:aws:s3:::my-bucket
+          show_when:
+            access_logs_enabled: true
+          type: string
+      type: object_array
     - description: Use Network Load Balancers for TCP/UDP workloads, static IP requirements, very high-throughput connections, or protocols that do not need HTTP routing. For normal web apps and HTTP APIs, prefer the Application Load Balancer sections above.
       id: section_nlb
       label: Network load balancers
       type: section
-    - default: false
-      description: Create an internet-facing Network Load Balancer.
-      id: public_nlb_enabled
-      label: Public NLB
-      type: boolean
-    - add_button_label: Add security group ID
-      collapsible: true
-      description: Security groups for the public NLB.
-      id: public_nlb_security_group_ids
-      label: Security groups
-      placeholder: sg-...
-      show_when:
-        public_nlb_enabled: true
-      type: string_array
-    - collapsible: true
-      default: false
-      description: Enable cross-zone load balancing for the public NLB.
-      id: public_nlb_cross_zone_load_balancing_enabled
-      label: Cross-zone load balancing
-      show_when:
-        public_nlb_enabled: true
-      type: boolean
-    - collapsible: true
-      default: false
-      description: Assign static Elastic IPs to the public NLB.
-      id: public_nlb_elastic_ips_enabled
-      label: Use elastic IPs
-      show_when:
-        public_nlb_enabled: true
-      type: boolean
-    - add_button_label: Add allocation ID
-      collapsible: true
-      description: Elastic IP allocation IDs for the public NLB, one per subnet.
-      id: public_nlb_elastic_ip_allocation_ids
-      label: Elastic IP allocation IDs
-      placeholder: eipalloc-...
-      show_when:
-        public_nlb_enabled: true
-        public_nlb_elastic_ips_enabled: true
-      type: string_array
-    - collapsible: true
-      default: false
-      description: Enable public NLB access logging.
-      id: public_nlb_access_logs_enabled
-      label: Access logs
-      show_when:
-        public_nlb_enabled: true
-      type: boolean
-    - collapsible: true
-      description: Existing S3 bucket ARN for public NLB access logs.
-      id: public_nlb_access_logs_bucket_arn
-      label: Access logs bucket ARN
-      placeholder: arn:aws:s3:::my-bucket
-      show_when:
-        public_nlb_enabled: true
-        public_nlb_access_logs_enabled: true
-      type: string
-    - default: false
-      description: Create an internal Network Load Balancer.
-      id: private_nlb_enabled
-      label: Private NLB
-      type: boolean
-    - add_button_label: Add security group ID
-      collapsible: true
-      description: Security groups for the private NLB.
-      id: private_nlb_security_group_ids
-      label: Security groups
-      placeholder: sg-...
-      show_when:
-        private_nlb_enabled: true
-      type: string_array
-    - collapsible: true
-      default: false
-      description: Enable cross-zone load balancing for the private NLB.
-      id: private_nlb_cross_zone_load_balancing_enabled
-      label: Cross-zone load balancing
-      show_when:
-        private_nlb_enabled: true
-      type: boolean
-    - collapsible: true
-      default: false
-      description: Assign static Elastic IPs to the private NLB.
-      id: private_nlb_elastic_ips_enabled
-      label: Use elastic IPs
-      show_when:
-        private_nlb_enabled: true
-      type: boolean
-    - add_button_label: Add allocation ID
-      collapsible: true
-      description: Elastic IP allocation IDs for the private NLB, one per subnet.
-      id: private_nlb_elastic_ip_allocation_ids
-      label: Elastic IP allocation IDs
-      placeholder: eipalloc-...
-      show_when:
-        private_nlb_enabled: true
-        private_nlb_elastic_ips_enabled: true
-      type: string_array
-    - collapsible: true
-      default: false
-      description: Enable private NLB access logging.
-      id: private_nlb_access_logs_enabled
-      label: Access logs
-      show_when:
-        private_nlb_enabled: true
-      type: boolean
-    - collapsible: true
-      description: Existing S3 bucket ARN for private NLB access logs.
-      id: private_nlb_access_logs_bucket_arn
-      label: Access logs bucket ARN
-      placeholder: arn:aws:s3:::my-bucket
-      show_when:
-        private_nlb_enabled: true
-        private_nlb_access_logs_enabled: true
-      type: string
+    - label: Public network load balancers
+      default: []
+      description: Each entry creates one internet-facing Network Load Balancer. Services on this cluster choose a load balancer by name.
+      id: public_nlbs
+      item_label: Public NLB
+      item_title:
+        template: "{name}"
+      item_inputs:
+        - description: Unique load balancer name.
+          id: name
+          label: Name
+          patterns:
+            - message: The name must be 1-32 characters, contain only letters, numbers, and hyphens, and start and end with a letter or number.
+              pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?$
+          required: true
+          type: string
+        - add_button_label: Add security group ID
+          collapsible: true
+          description: Security groups for this load balancer.
+          id: security_group_ids
+          label: Security groups
+          placeholder: sg-...
+          type: string_array
+        - collapsible: true
+          default: false
+          description: Enable cross-zone load balancing.
+          id: cross_zone_load_balancing_enabled
+          label: Cross-zone load balancing
+          type: boolean
+        - collapsible: true
+          default: false
+          description: Assign static Elastic IPs to this load balancer.
+          id: elastic_ips_enabled
+          label: Use elastic IPs
+          type: boolean
+        - add_button_label: Add allocation ID
+          collapsible: true
+          description: Elastic IP allocation IDs, one per subnet.
+          id: elastic_ip_allocation_ids
+          label: Elastic IP allocation IDs
+          placeholder: eipalloc-...
+          show_when:
+            elastic_ips_enabled: true
+          type: string_array
+        - collapsible: true
+          default: false
+          description: Enable access logging for this load balancer.
+          id: access_logs_enabled
+          label: Access logs
+          type: boolean
+        - collapsible: true
+          description: Existing S3 bucket ARN for access logs.
+          id: access_logs_bucket_arn
+          label: Access logs bucket ARN
+          placeholder: arn:aws:s3:::my-bucket
+          show_when:
+            access_logs_enabled: true
+          type: string
+      type: object_array
+    - label: Private network load balancers
+      default: []
+      description: Each entry creates one internal Network Load Balancer. Services on this cluster choose a load balancer by name.
+      id: private_nlbs
+      item_label: Private NLB
+      item_title:
+        template: "{name}"
+      item_inputs:
+        - description: Unique load balancer name.
+          id: name
+          label: Name
+          patterns:
+            - message: The name must be 1-32 characters, contain only letters, numbers, and hyphens, and start and end with a letter or number.
+              pattern: ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,30}[a-zA-Z0-9])?$
+          required: true
+          type: string
+        - add_button_label: Add security group ID
+          collapsible: true
+          description: Security groups for this load balancer.
+          id: security_group_ids
+          label: Security groups
+          placeholder: sg-...
+          type: string_array
+        - collapsible: true
+          default: false
+          description: Enable cross-zone load balancing.
+          id: cross_zone_load_balancing_enabled
+          label: Cross-zone load balancing
+          type: boolean
+        - collapsible: true
+          default: false
+          description: Assign static Elastic IPs to this load balancer.
+          id: elastic_ips_enabled
+          label: Use elastic IPs
+          type: boolean
+        - add_button_label: Add allocation ID
+          collapsible: true
+          description: Elastic IP allocation IDs, one per subnet.
+          id: elastic_ip_allocation_ids
+          label: Elastic IP allocation IDs
+          placeholder: eipalloc-...
+          show_when:
+            elastic_ips_enabled: true
+          type: string_array
+        - collapsible: true
+          default: false
+          description: Enable access logging for this load balancer.
+          id: access_logs_enabled
+          label: Access logs
+          type: boolean
+        - collapsible: true
+          description: Existing S3 bucket ARN for access logs.
+          id: access_logs_bucket_arn
+          label: Access logs bucket ARN
+          placeholder: arn:aws:s3:::my-bucket
+          show_when:
+            access_logs_enabled: true
+          type: string
+      type: object_array
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -545,33 +575,33 @@ module:
 
     ## Load balancers
 
-    ### Public application load balancer
+    ### Public application load balancers
 
-    Creates an internet-facing Application Load Balancer for services that should receive public HTTP or HTTPS traffic, such as websites, public APIs, and webhook endpoints.
+    Creates internet-facing Application Load Balancers for services that should receive public HTTP or HTTPS traffic, such as websites, public APIs, and webhook endpoints. Add multiple entries when services need separate load balancers; each entry has its own name, HTTPS/certificate, timeout, WAF, and access log settings, and services select one by name.
 
-    Use the public ALB for:
+    Use a public ALB for:
 
     - Websites and browser apps
     - Public APIs
     - Webhooks
     - HTTP/HTTPS traffic with host or path routing
 
-    ### Private application load balancer
+    ### Private application load balancers
 
-    Creates an internal Application Load Balancer for services reachable only inside the VPC or private network, such as internal APIs, admin tools, and service-to-service traffic.
+    Creates internal Application Load Balancers for services reachable only inside the VPC or private network, such as internal APIs, admin tools, and service-to-service traffic. Add multiple entries when services need separate load balancers.
 
-    Use the private ALB for:
+    Use a private ALB for:
 
     - Internal APIs
     - Admin dashboards
     - Backend services
     - Private HTTP/HTTPS routing
 
-    For either ALB, the selected Certificate is the default HTTPS certificate. Use Additional certificate ARNs to attach more ACM certificates to the same listener through SNI.
+    For any ALB entry, the selected Certificate is the default HTTPS certificate. Use Additional certificate ARNs to attach more ACM certificates to the same listener through SNI.
 
     ### Network load balancers
 
-    Use Network Load Balancers for TCP/UDP workloads, static IP requirements, very high-throughput connections, or protocols that do not need HTTP routing. For normal web apps and HTTP APIs, prefer an Application Load Balancer.
+    Use Network Load Balancers for TCP/UDP workloads, static IP requirements, very high-throughput connections, or protocols that do not need HTTP routing. For normal web apps and HTTP APIs, prefer an Application Load Balancer. Public and private NLBs are also configured as arrays, so one cluster can own several NLBs and services select one by name.
 
     ## Observability
 
@@ -596,10 +626,10 @@ module:
     | Fargate               | No       | `true`               | Allow services to use Fargate capacity                        |
     | Fargate Spot          | No       | `true`               | Allow services to use lower-cost interruptible Fargate Spot   |
     | EC2 instance type     | No       | —                    | Enables EC2 capacity when selected                            |
-    | Public load balancer  | No       | `true`               | Create an internet-facing ALB                                 |
-    | Private load balancer | No       | `false`              | Create an internal ALB                                        |
-    | Public NLB            | No       | `false`              | Create an internet-facing Network Load Balancer               |
-    | Private NLB           | No       | `false`              | Create an internal Network Load Balancer                      |
+    | Public load balancers  | No      | one ALB              | Array of internet-facing ALBs with per-entry settings         |
+    | Private load balancers | No      | `[]`                 | Array of internal ALBs with per-entry settings                |
+    | Public NLBs           | No       | `[]`                 | Array of internet-facing Network Load Balancers               |
+    | Private NLBs          | No       | `[]`                 | Array of internal Network Load Balancers                      |
     | Tags                  | No       | Environment, Project | Custom tags applied to all resources                          |
 
     ## EC2 capacity settings
@@ -623,7 +653,7 @@ module:
 
     - **Fargate-first defaults:** Fargate and Fargate Spot are enabled so services can start without managing instances
     - **EC2 opt-in:** EC2 capacity is created only when an instance type is selected
-    - **Shared load balancers:** Cluster-level ALBs and NLBs can be reused by services in the environment
+    - **Shared load balancers:** Cluster-level ALBs and NLBs can be reused by services in the environment, and each cluster can own several of each so services can select a specific one by name
     - **Private subnet placement:** ECS tasks and EC2 capacity use private subnets from the selected VPC
     - **Public ingress by default:** Public ALBs use Terraform's default internet ingress unless overridden in Terraform
     - **Private ingress by default:** Private ALBs use Terraform's default RFC1918 private CIDR ranges and no IPv6 ingress unless overridden
@@ -666,44 +696,48 @@ module:
         container_insights: << module.input.container_insights >>
         fargate_enabled: << module.input.fargate_enabled >>
         fargate_spot_enabled: << module.input.fargate_spot_enabled >>
-        private_alb_enabled: << module.input.private_alb_enabled >>
-        private_nlb_enabled: << module.input.private_nlb_enabled >>
-        public_alb_enabled: << module.input.public_alb_enabled >>
-        public_nlb_enabled: << module.input.public_nlb_enabled >>
         name: << module.input.name >>
-        private_alb_access_logs_bucket_arn: << module.input.private_alb_access_logs_bucket_arn >>
-        private_alb_certificate_arns: >-
-          << (module.input.private_alb_certificate_arns != nil ? module.input.private_alb_certificate_arns : []) |
-          concat(module.input.private_alb_additional_certificate_arns != nil ? module.input.private_alb_additional_certificate_arns : []) >>
-        private_alb_access_logs_enabled: << module.input.private_alb_access_logs_enabled >>
-        private_alb_https_enabled: << module.input.private_alb_https_enabled >>
-        private_alb_idle_timeout: << module.input.private_alb_idle_timeout >>
-        private_alb_ingress_cidr_blocks: << module.input.private_alb_ingress_cidr_blocks >>
-        private_alb_ingress_ipv6_cidr_blocks: << module.input.private_alb_ingress_ipv6_cidr_blocks >>
-        private_alb_ingress_security_group_ids: << module.input.private_alb_ingress_security_group_ids >>
-        private_alb_ssl_policy: << module.input.private_alb_ssl_policy >>
-        private_nlb_access_logs_bucket_arn: << module.input.private_nlb_access_logs_bucket_arn >>
-        private_nlb_elastic_ip_allocation_ids: << module.input.private_nlb_elastic_ip_allocation_ids >>
-        private_nlb_access_logs_enabled: << module.input.private_nlb_access_logs_enabled >>
-        private_nlb_cross_zone_load_balancing_enabled: << module.input.private_nlb_cross_zone_load_balancing_enabled >>
-        private_nlb_elastic_ips_enabled: << module.input.private_nlb_elastic_ips_enabled >>
-        private_nlb_security_group_ids: << module.input.private_nlb_security_group_ids >>
+        public_albs: >-
+          << map(module.input.public_albs != nil ? module.input.public_albs : [], {"name": #.name,
+          "https_enabled": #.https_enabled, "certificate_arns": ((#.certificate_arns != nil ?
+          #.certificate_arns : []) | concat(#.additional_certificate_arns != nil ?
+          #.additional_certificate_arns : [])), "ssl_policy": #.ssl_policy, "idle_timeout":
+          #.idle_timeout, "ingress_cidr_blocks": (#.ingress_cidr_blocks != nil &&
+          len(#.ingress_cidr_blocks) > 0 ? #.ingress_cidr_blocks : nil), "ingress_ipv6_cidr_blocks":
+          (#.ingress_ipv6_cidr_blocks != nil && len(#.ingress_ipv6_cidr_blocks) > 0 ?
+          #.ingress_ipv6_cidr_blocks : nil), "ingress_security_group_ids":
+          (#.ingress_security_group_ids != nil ? #.ingress_security_group_ids : []),
+          "web_acl_arn": #.web_acl_arn, "access_logs_enabled": #.access_logs_enabled,
+          "access_logs_bucket_arn": #.access_logs_bucket_arn}) >>
+        private_albs: >-
+          << map(module.input.private_albs != nil ? module.input.private_albs : [], {"name": #.name,
+          "https_enabled": #.https_enabled, "certificate_arns": ((#.certificate_arns != nil ?
+          #.certificate_arns : []) | concat(#.additional_certificate_arns != nil ?
+          #.additional_certificate_arns : [])), "ssl_policy": #.ssl_policy, "idle_timeout":
+          #.idle_timeout, "ingress_cidr_blocks": (#.ingress_cidr_blocks != nil &&
+          len(#.ingress_cidr_blocks) > 0 ? #.ingress_cidr_blocks : nil), "ingress_ipv6_cidr_blocks":
+          (#.ingress_ipv6_cidr_blocks != nil && len(#.ingress_ipv6_cidr_blocks) > 0 ?
+          #.ingress_ipv6_cidr_blocks : nil), "ingress_security_group_ids":
+          (#.ingress_security_group_ids != nil ? #.ingress_security_group_ids : []),
+          "access_logs_enabled": #.access_logs_enabled, "access_logs_bucket_arn":
+          #.access_logs_bucket_arn}) >>
+        public_nlbs: >-
+          << map(module.input.public_nlbs != nil ? module.input.public_nlbs : [], {"name": #.name,
+          "cross_zone_load_balancing_enabled": #.cross_zone_load_balancing_enabled,
+          "security_group_ids": (#.security_group_ids != nil ? #.security_group_ids : []),
+          "elastic_ips_enabled": #.elastic_ips_enabled, "elastic_ip_allocation_ids":
+          (#.elastic_ip_allocation_ids != nil ? #.elastic_ip_allocation_ids : []),
+          "access_logs_enabled": #.access_logs_enabled, "access_logs_bucket_arn":
+          #.access_logs_bucket_arn}) >>
+        private_nlbs: >-
+          << map(module.input.private_nlbs != nil ? module.input.private_nlbs : [], {"name": #.name,
+          "cross_zone_load_balancing_enabled": #.cross_zone_load_balancing_enabled,
+          "security_group_ids": (#.security_group_ids != nil ? #.security_group_ids : []),
+          "elastic_ips_enabled": #.elastic_ips_enabled, "elastic_ip_allocation_ids":
+          (#.elastic_ip_allocation_ids != nil ? #.elastic_ip_allocation_ids : []),
+          "access_logs_enabled": #.access_logs_enabled, "access_logs_bucket_arn":
+          #.access_logs_bucket_arn}) >>
         private_subnet_ids: << module.input.private_subnet_ids >>
-        public_alb_access_logs_bucket_arn: << module.input.public_alb_access_logs_bucket_arn >>
-        public_alb_certificate_arns: >-
-          << (module.input.public_alb_certificate_arns != nil ? module.input.public_alb_certificate_arns : []) |
-          concat(module.input.public_alb_additional_certificate_arns != nil ? module.input.public_alb_additional_certificate_arns : []) >>
-        public_alb_access_logs_enabled: << module.input.public_alb_access_logs_enabled >>
-        public_alb_https_enabled: << module.input.public_alb_https_enabled >>
-        public_alb_idle_timeout: << module.input.public_alb_idle_timeout >>
-        public_alb_ssl_policy: << module.input.public_alb_ssl_policy >>
-        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn >>
-        public_nlb_access_logs_bucket_arn: << module.input.public_nlb_access_logs_bucket_arn >>
-        public_nlb_elastic_ip_allocation_ids: << module.input.public_nlb_elastic_ip_allocation_ids >>
-        public_nlb_access_logs_enabled: << module.input.public_nlb_access_logs_enabled >>
-        public_nlb_cross_zone_load_balancing_enabled: << module.input.public_nlb_cross_zone_load_balancing_enabled >>
-        public_nlb_elastic_ips_enabled: << module.input.public_nlb_elastic_ips_enabled >>
-        public_nlb_security_group_ids: << module.input.public_nlb_security_group_ids >>
         public_subnet_ids: << module.input.public_subnet_ids || [] >>
         region: << module.input.aws_region >>
         tags:
@@ -712,10 +746,10 @@ module:
   ui:
     links: |-
       <<
-      (module.input.public_alb_enabled && stack.output.public_alb_dns_name ? [{"name":"Public ALB","href":(module.input.public_alb_https_enabled ? "https://" : "http://") + stack.output.public_alb_dns_name}] : []) +
-      (module.input.private_alb_enabled && stack.output.private_alb_dns_name ? [{"name":"Private ALB","href":(module.input.private_alb_https_enabled ? "https://" : "http://") + stack.output.private_alb_dns_name}] : []) +
-      (module.input.public_nlb_enabled && stack.output.public_nlb_dns_name ? [{"name":"Public NLB","href":"http://" + stack.output.public_nlb_dns_name}] : []) +
-      (module.input.private_nlb_enabled && stack.output.private_nlb_dns_name ? [{"name":"Private NLB","href":"http://" + stack.output.private_nlb_dns_name}] : [])
+      map(stack.output.public_albs != nil ? stack.output.public_albs : [], {"name": "Public ALB " + #.name, "href": (#.https_enabled ? "https://" : "http://") + #.dns_name}) +
+      map(stack.output.private_albs != nil ? stack.output.private_albs : [], {"name": "Private ALB " + #.name, "href": (#.https_enabled ? "https://" : "http://") + #.dns_name}) +
+      map(stack.output.public_nlbs != nil ? stack.output.public_nlbs : [], {"name": "Public NLB " + #.name, "href": "http://" + #.dns_name}) +
+      map(stack.output.private_nlbs != nil ? stack.output.private_nlbs : [], {"name": "Private NLB " + #.name, "href": "http://" + #.dns_name})
       >>
     metrics:
       - id: task_cpu_utilization

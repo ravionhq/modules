@@ -11,25 +11,6 @@ variable "name" {
     error_message = "The name must not be empty."
   }
 
-  validation {
-    condition     = !var.public_alb_enabled || length(var.name) <= 28
-    error_message = "The name must be 28 characters or less when public_alb_enabled is true so the public ALB name does not exceed the 32 character AWS limit."
-  }
-
-  validation {
-    condition     = !var.private_alb_enabled || length(var.name) <= 27
-    error_message = "The name must be 27 characters or less when private_alb_enabled is true so the private ALB name does not exceed the 32 character AWS limit."
-  }
-
-  validation {
-    condition     = !var.public_nlb_enabled || length(var.name) <= 24
-    error_message = "The name must be 24 characters or less when public_nlb_enabled is true so the public NLB name does not exceed the 32 character AWS limit."
-  }
-
-  validation {
-    condition     = !var.private_nlb_enabled || length(var.name) <= 23
-    error_message = "The name must be 23 characters or less when private_nlb_enabled is true so the private NLB name does not exceed the 32 character AWS limit."
-  }
 }
 
 variable "tags" {
@@ -73,14 +54,14 @@ variable "private_subnet_ids" {
   }
 
   validation {
-    condition     = !var.private_alb_enabled || length(var.private_subnet_ids) >= 2
-    error_message = "At least 2 private_subnet_ids are required when private_alb_enabled is true. ALBs require subnets in at least 2 availability zones for high availability."
+    condition     = length(var.private_albs) == 0 || length(var.private_subnet_ids) >= 2
+    error_message = "At least 2 private_subnet_ids are required when private_albs is non-empty. ALBs require subnets in at least 2 availability zones for high availability."
   }
 }
 
 variable "public_subnet_ids" {
   type        = list(string)
-  description = "A list of public subnet IDs for the public ALB/NLB. Required if public_alb_enabled or public_nlb_enabled is true."
+  description = "A list of public subnet IDs for the public ALBs/NLBs. Required if public_albs or public_nlbs is non-empty."
   default     = []
 
   validation {
@@ -89,13 +70,13 @@ variable "public_subnet_ids" {
   }
 
   validation {
-    condition     = !var.public_alb_enabled || length(var.public_subnet_ids) >= 2
-    error_message = "At least 2 public_subnet_ids are required when public_alb_enabled is true. ALBs require subnets in at least 2 availability zones for high availability."
+    condition     = length(var.public_albs) == 0 || length(var.public_subnet_ids) >= 2
+    error_message = "At least 2 public_subnet_ids are required when public_albs is non-empty. ALBs require subnets in at least 2 availability zones for high availability."
   }
 
   validation {
-    condition     = !var.public_nlb_enabled || length(var.public_subnet_ids) >= 1
-    error_message = "At least 1 public_subnet_id is required when public_nlb_enabled is true."
+    condition     = length(var.public_nlbs) == 0 || length(var.public_subnet_ids) >= 1
+    error_message = "At least 1 public_subnet_id is required when public_nlbs is non-empty."
   }
 }
 
@@ -393,313 +374,218 @@ variable "ec2_security_group_ids" {
 }
 
 ################################################################################
-# Public ALB
+# Load Balancers
 ################################################################################
 
-variable "public_alb_enabled" {
-  type        = bool
-  description = "Enable a public (internet-facing) Application Load Balancer."
-  default     = false
-}
-
-variable "public_alb_https_enabled" {
-  type        = bool
-  description = "Enable HTTPS listener on the public ALB."
-  default     = false
-}
-
-variable "public_alb_certificate_arns" {
-  type        = list(string)
-  description = "ACM certificate ARNs for the public ALB HTTPS listener. The first ARN is used as the default certificate; the rest are attached for SNI."
+variable "public_albs" {
+  type = list(object({
+    name                       = optional(string)
+    https_enabled              = optional(bool, false)
+    certificate_arns           = optional(list(string), [])
+    ssl_policy                 = optional(string, "ELBSecurityPolicy-TLS13-1-2-2021-06")
+    idle_timeout               = optional(number, 60)
+    ingress_cidr_blocks        = optional(list(string), ["0.0.0.0/0"])
+    ingress_ipv6_cidr_blocks   = optional(list(string), ["::/0"])
+    ingress_security_group_ids = optional(list(string), [])
+    access_logs_enabled        = optional(bool, false)
+    access_logs_bucket_arn     = optional(string)
+    web_acl_arn                = optional(string)
+  }))
+  description = "Public (internet-facing) Application Load Balancers. Each entry creates one ALB with its own configuration. When name is null, the first entry is named '<name>-pub' and later entries '<name>-pub-<index+1>'."
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.public_alb_certificate_arns : can(regex("^arn:aws:acm:", arn))])
-    error_message = "All public_alb_certificate_arns must be valid ACM certificate ARNs."
+    condition     = alltrue([for lb in var.public_albs : alltrue([for arn in lb.certificate_arns : can(regex("^arn:aws:acm:", arn))])])
+    error_message = "All public_albs certificate_arns must be valid ACM certificate ARNs."
   }
-}
-
-variable "public_alb_ssl_policy" {
-  type        = string
-  description = "The SSL policy for the public ALB HTTPS listener."
-  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-}
-
-variable "public_alb_idle_timeout" {
-  type        = number
-  description = "The idle timeout for the public ALB in seconds."
-  default     = 60
 
   validation {
-    condition     = var.public_alb_idle_timeout >= 1 && var.public_alb_idle_timeout <= 4000
-    error_message = "The public_alb_idle_timeout must be between 1 and 4000 seconds."
+    condition     = alltrue([for lb in var.public_albs : lb.idle_timeout >= 1 && lb.idle_timeout <= 4000])
+    error_message = "Each public_albs idle_timeout must be between 1 and 4000 seconds."
   }
-}
-
-variable "public_alb_ingress_cidr_blocks" {
-  type        = list(string)
-  description = "IPv4 CIDR blocks allowed to access the public ALB."
-  default     = ["0.0.0.0/0"]
 
   validation {
-    condition     = alltrue([for cidr in var.public_alb_ingress_cidr_blocks : can(cidrhost(cidr, 0))])
-    error_message = "All public_alb_ingress_cidr_blocks must be valid IPv4 CIDR blocks."
+    condition     = alltrue([for lb in var.public_albs : alltrue([for cidr in lb.ingress_cidr_blocks : can(cidrhost(cidr, 0))])])
+    error_message = "All public_albs ingress_cidr_blocks must be valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition     = alltrue([for lb in var.public_albs : alltrue([for sg in lb.ingress_security_group_ids : can(regex("^sg-", sg))])])
+    error_message = "All public_albs ingress_security_group_ids must be valid security group IDs starting with 'sg-'."
+  }
+
+  validation {
+    condition     = alltrue([for lb in var.public_albs : lb.access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", coalesce(lb.access_logs_bucket_arn, "invalid")))])
+    error_message = "Each public_albs access_logs_bucket_arn must be a valid S3 bucket ARN."
+  }
+
+  validation {
+    condition     = alltrue([for lb in var.public_albs : lb.web_acl_arn == null || can(regex("^arn:aws:wafv2:", coalesce(lb.web_acl_arn, "invalid")))])
+    error_message = "Each public_albs web_acl_arn must be a valid WAFv2 Web ACL ARN."
+  }
+
+  validation {
+    condition = alltrue([
+      for idx, lb in var.public_albs :
+      length(coalesce(lb.name, idx == 0 ? "${var.name}-pub" : "${var.name}-pub-${idx + 1}")) <= 32
+    ])
+    error_message = "Each public ALB name (explicit or derived from the module name) must be 32 characters or less."
+  }
+
+  validation {
+    condition = length(distinct([
+      for idx, lb in var.public_albs :
+      coalesce(lb.name, idx == 0 ? "${var.name}-pub" : "${var.name}-pub-${idx + 1}")
+    ])) == length(var.public_albs)
+    error_message = "Each public ALB must have a unique name."
   }
 }
 
-variable "public_alb_ingress_ipv6_cidr_blocks" {
-  type        = list(string)
-  description = "IPv6 CIDR blocks allowed to access the public ALB."
-  default     = ["::/0"]
-}
-
-variable "public_alb_ingress_security_group_ids" {
-  type        = list(string)
-  description = "Security group IDs whose members are allowed to access the public ALB."
+variable "private_albs" {
+  type = list(object({
+    name                       = optional(string)
+    https_enabled              = optional(bool, false)
+    certificate_arns           = optional(list(string), [])
+    ssl_policy                 = optional(string, "ELBSecurityPolicy-TLS13-1-2-2021-06")
+    idle_timeout               = optional(number, 60)
+    ingress_cidr_blocks        = optional(list(string), ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"])
+    ingress_ipv6_cidr_blocks   = optional(list(string), [])
+    ingress_security_group_ids = optional(list(string), [])
+    access_logs_enabled        = optional(bool, false)
+    access_logs_bucket_arn     = optional(string)
+  }))
+  description = "Private (internal) Application Load Balancers. Each entry creates one ALB with its own configuration. When name is null, the first entry is named '<name>-priv' and later entries '<name>-priv-<index+1>'."
   default     = []
 
   validation {
-    condition     = alltrue([for sg in var.public_alb_ingress_security_group_ids : can(regex("^sg-", sg))])
-    error_message = "All public_alb_ingress_security_group_ids must be valid security group IDs starting with 'sg-'."
+    condition     = alltrue([for lb in var.private_albs : alltrue([for arn in lb.certificate_arns : can(regex("^arn:aws:acm:", arn))])])
+    error_message = "All private_albs certificate_arns must be valid ACM certificate ARNs."
   }
-}
-
-variable "public_alb_access_logs_enabled" {
-  type        = bool
-  description = "Enable access logging for the public ALB."
-  default     = false
-}
-
-variable "public_alb_access_logs_bucket_arn" {
-  type        = string
-  description = "The ARN of an existing S3 bucket for public ALB access logs."
-  default     = null
 
   validation {
-    condition     = var.public_alb_access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", var.public_alb_access_logs_bucket_arn))
-    error_message = "The public_alb_access_logs_bucket_arn must be a valid S3 bucket ARN."
+    condition     = alltrue([for lb in var.private_albs : lb.idle_timeout >= 1 && lb.idle_timeout <= 4000])
+    error_message = "Each private_albs idle_timeout must be between 1 and 4000 seconds."
   }
-}
-
-variable "public_alb_web_acl_arn" {
-  type        = string
-  description = "The ARN of a WAFv2 Web ACL to associate with the public ALB."
-  default     = null
 
   validation {
-    condition     = var.public_alb_web_acl_arn == null || can(regex("^arn:aws:wafv2:", var.public_alb_web_acl_arn))
-    error_message = "The public_alb_web_acl_arn must be a valid WAFv2 Web ACL ARN."
+    condition     = alltrue([for lb in var.private_albs : alltrue([for cidr in lb.ingress_cidr_blocks : can(cidrhost(cidr, 0))])])
+    error_message = "All private_albs ingress_cidr_blocks must be valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition     = alltrue([for lb in var.private_albs : alltrue([for sg in lb.ingress_security_group_ids : can(regex("^sg-", sg))])])
+    error_message = "All private_albs ingress_security_group_ids must be valid security group IDs starting with 'sg-'."
+  }
+
+  validation {
+    condition     = alltrue([for lb in var.private_albs : lb.access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", coalesce(lb.access_logs_bucket_arn, "invalid")))])
+    error_message = "Each private_albs access_logs_bucket_arn must be a valid S3 bucket ARN."
+  }
+
+  validation {
+    condition = alltrue([
+      for idx, lb in var.private_albs :
+      length(coalesce(lb.name, idx == 0 ? "${var.name}-priv" : "${var.name}-priv-${idx + 1}")) <= 32
+    ])
+    error_message = "Each private ALB name (explicit or derived from the module name) must be 32 characters or less."
+  }
+
+  validation {
+    condition = length(distinct([
+      for idx, lb in var.private_albs :
+      coalesce(lb.name, idx == 0 ? "${var.name}-priv" : "${var.name}-priv-${idx + 1}")
+    ])) == length(var.private_albs)
+    error_message = "Each private ALB must have a unique name."
   }
 }
 
-################################################################################
-# Private ALB
-################################################################################
-
-variable "private_alb_enabled" {
-  type        = bool
-  description = "Enable a private (internal) Application Load Balancer."
-  default     = false
-}
-
-variable "private_alb_https_enabled" {
-  type        = bool
-  description = "Enable HTTPS listener on the private ALB."
-  default     = false
-}
-
-variable "private_alb_certificate_arns" {
-  type        = list(string)
-  description = "ACM certificate ARNs for the private ALB HTTPS listener. The first ARN is used as the default certificate; the rest are attached for SNI."
+variable "public_nlbs" {
+  type = list(object({
+    name                              = optional(string)
+    cross_zone_load_balancing_enabled = optional(bool, false)
+    security_group_ids                = optional(list(string), [])
+    access_logs_enabled               = optional(bool, false)
+    access_logs_bucket_arn            = optional(string)
+    elastic_ips_enabled               = optional(bool, false)
+    elastic_ip_allocation_ids         = optional(list(string), [])
+  }))
+  description = "Public (internet-facing) Network Load Balancers. Each entry creates one NLB with its own configuration. When name is null, the first entry is named '<name>-pub-nlb' and later entries '<name>-pub-nlb-<index+1>'."
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.private_alb_certificate_arns : can(regex("^arn:aws:acm:", arn))])
-    error_message = "All private_alb_certificate_arns must be valid ACM certificate ARNs."
+    condition     = alltrue([for lb in var.public_nlbs : alltrue([for sg in lb.security_group_ids : can(regex("^sg-", sg))])])
+    error_message = "All public_nlbs security_group_ids must be valid security group IDs starting with 'sg-'."
   }
-}
-
-variable "private_alb_ssl_policy" {
-  type        = string
-  description = "The SSL policy for the private ALB HTTPS listener."
-  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-}
-
-variable "private_alb_idle_timeout" {
-  type        = number
-  description = "The idle timeout for the private ALB in seconds."
-  default     = 60
 
   validation {
-    condition     = var.private_alb_idle_timeout >= 1 && var.private_alb_idle_timeout <= 4000
-    error_message = "The private_alb_idle_timeout must be between 1 and 4000 seconds."
+    condition     = alltrue([for lb in var.public_nlbs : lb.access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", coalesce(lb.access_logs_bucket_arn, "invalid")))])
+    error_message = "Each public_nlbs access_logs_bucket_arn must be a valid S3 bucket ARN."
   }
-}
-
-variable "private_alb_ingress_cidr_blocks" {
-  type        = list(string)
-  description = "IPv4 CIDR blocks allowed to access the private ALB."
-  default     = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 
   validation {
-    condition     = alltrue([for cidr in var.private_alb_ingress_cidr_blocks : can(cidrhost(cidr, 0))])
-    error_message = "All private_alb_ingress_cidr_blocks must be valid IPv4 CIDR blocks."
+    condition     = alltrue([for lb in var.public_nlbs : alltrue([for eip in lb.elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])])
+    error_message = "All public_nlbs elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
   }
-}
-
-variable "private_alb_ingress_ipv6_cidr_blocks" {
-  type        = list(string)
-  description = "IPv6 CIDR blocks allowed to access the private ALB. Defaults to no IPv6 ingress; RFC1918 has no IPv6 equivalent."
-  default     = []
-}
-
-variable "private_alb_ingress_security_group_ids" {
-  type        = list(string)
-  description = "Security group IDs whose members are allowed to access the private ALB. Useful for sources without static CIDRs, such as CloudFront VPC origins."
-  default     = []
 
   validation {
-    condition     = alltrue([for sg in var.private_alb_ingress_security_group_ids : can(regex("^sg-", sg))])
-    error_message = "All private_alb_ingress_security_group_ids must be valid security group IDs starting with 'sg-'."
+    condition = alltrue([
+      for idx, lb in var.public_nlbs :
+      length(coalesce(lb.name, idx == 0 ? "${var.name}-pub-nlb" : "${var.name}-pub-nlb-${idx + 1}")) <= 32
+    ])
+    error_message = "Each public NLB name (explicit or derived from the module name) must be 32 characters or less."
   }
-}
-
-variable "private_alb_access_logs_enabled" {
-  type        = bool
-  description = "Enable access logging for the private ALB."
-  default     = false
-}
-
-variable "private_alb_access_logs_bucket_arn" {
-  type        = string
-  description = "The ARN of an existing S3 bucket for private ALB access logs."
-  default     = null
 
   validation {
-    condition     = var.private_alb_access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", var.private_alb_access_logs_bucket_arn))
-    error_message = "The private_alb_access_logs_bucket_arn must be a valid S3 bucket ARN."
+    condition = length(distinct([
+      for idx, lb in var.public_nlbs :
+      coalesce(lb.name, idx == 0 ? "${var.name}-pub-nlb" : "${var.name}-pub-nlb-${idx + 1}")
+    ])) == length(var.public_nlbs)
+    error_message = "Each public NLB must have a unique name."
   }
 }
 
-################################################################################
-# Public NLB
-################################################################################
-
-variable "public_nlb_enabled" {
-  type        = bool
-  description = "Enable a public (internet-facing) Network Load Balancer."
-  default     = false
-}
-
-variable "public_nlb_cross_zone_load_balancing_enabled" {
-  type        = bool
-  description = "Enable cross-zone load balancing for the public NLB."
-  default     = false
-}
-
-variable "public_nlb_security_group_ids" {
-  type        = list(string)
-  description = "A list of security group IDs to attach to the public NLB."
+variable "private_nlbs" {
+  type = list(object({
+    name                              = optional(string)
+    cross_zone_load_balancing_enabled = optional(bool, false)
+    security_group_ids                = optional(list(string), [])
+    access_logs_enabled               = optional(bool, false)
+    access_logs_bucket_arn            = optional(string)
+    elastic_ips_enabled               = optional(bool, false)
+    elastic_ip_allocation_ids         = optional(list(string), [])
+  }))
+  description = "Private (internal) Network Load Balancers. Each entry creates one NLB with its own configuration. When name is null, the first entry is named '<name>-priv-nlb' and later entries '<name>-priv-nlb-<index+1>'."
   default     = []
 
   validation {
-    condition     = alltrue([for sg in var.public_nlb_security_group_ids : can(regex("^sg-", sg))])
-    error_message = "All public_nlb_security_group_ids must be valid security group IDs starting with 'sg-'."
+    condition     = alltrue([for lb in var.private_nlbs : alltrue([for sg in lb.security_group_ids : can(regex("^sg-", sg))])])
+    error_message = "All private_nlbs security_group_ids must be valid security group IDs starting with 'sg-'."
   }
-}
-
-variable "public_nlb_access_logs_enabled" {
-  type        = bool
-  description = "Enable access logging for the public NLB."
-  default     = false
-}
-
-variable "public_nlb_access_logs_bucket_arn" {
-  type        = string
-  description = "The ARN of an existing S3 bucket for public NLB access logs."
-  default     = null
 
   validation {
-    condition     = var.public_nlb_access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", var.public_nlb_access_logs_bucket_arn))
-    error_message = "The public_nlb_access_logs_bucket_arn must be a valid S3 bucket ARN."
+    condition     = alltrue([for lb in var.private_nlbs : lb.access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", coalesce(lb.access_logs_bucket_arn, "invalid")))])
+    error_message = "Each private_nlbs access_logs_bucket_arn must be a valid S3 bucket ARN."
   }
-}
-
-variable "public_nlb_elastic_ips_enabled" {
-  type        = bool
-  description = "Enable static IP addresses for the public NLB using Elastic IPs."
-  default     = false
-}
-
-variable "public_nlb_elastic_ip_allocation_ids" {
-  type        = list(string)
-  description = "A list of Elastic IP allocation IDs for the public NLB, one per subnet."
-  default     = []
 
   validation {
-    condition     = alltrue([for eip in var.public_nlb_elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])
-    error_message = "All public_nlb_elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
+    condition     = alltrue([for lb in var.private_nlbs : alltrue([for eip in lb.elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])])
+    error_message = "All private_nlbs elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
   }
-}
-
-################################################################################
-# Private NLB
-################################################################################
-
-variable "private_nlb_enabled" {
-  type        = bool
-  description = "Enable a private (internal) Network Load Balancer."
-  default     = false
-}
-
-variable "private_nlb_cross_zone_load_balancing_enabled" {
-  type        = bool
-  description = "Enable cross-zone load balancing for the private NLB."
-  default     = false
-}
-
-variable "private_nlb_security_group_ids" {
-  type        = list(string)
-  description = "A list of security group IDs to attach to the private NLB."
-  default     = []
 
   validation {
-    condition     = alltrue([for sg in var.private_nlb_security_group_ids : can(regex("^sg-", sg))])
-    error_message = "All private_nlb_security_group_ids must be valid security group IDs starting with 'sg-'."
+    condition = alltrue([
+      for idx, lb in var.private_nlbs :
+      length(coalesce(lb.name, idx == 0 ? "${var.name}-priv-nlb" : "${var.name}-priv-nlb-${idx + 1}")) <= 32
+    ])
+    error_message = "Each private NLB name (explicit or derived from the module name) must be 32 characters or less."
   }
-}
-
-variable "private_nlb_access_logs_enabled" {
-  type        = bool
-  description = "Enable access logging for the private NLB."
-  default     = false
-}
-
-variable "private_nlb_access_logs_bucket_arn" {
-  type        = string
-  description = "The ARN of an existing S3 bucket for private NLB access logs."
-  default     = null
 
   validation {
-    condition     = var.private_nlb_access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", var.private_nlb_access_logs_bucket_arn))
-    error_message = "The private_nlb_access_logs_bucket_arn must be a valid S3 bucket ARN."
-  }
-}
-
-variable "private_nlb_elastic_ips_enabled" {
-  type        = bool
-  description = "Enable static IP addresses for the private NLB using Elastic IPs."
-  default     = false
-}
-
-variable "private_nlb_elastic_ip_allocation_ids" {
-  type        = list(string)
-  description = "A list of Elastic IP allocation IDs for the private NLB, one per subnet."
-  default     = []
-
-  validation {
-    condition     = alltrue([for eip in var.private_nlb_elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])
-    error_message = "All private_nlb_elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
+    condition = length(distinct([
+      for idx, lb in var.private_nlbs :
+      coalesce(lb.name, idx == 0 ? "${var.name}-priv-nlb" : "${var.name}-priv-nlb-${idx + 1}")
+    ])) == length(var.private_nlbs)
+    error_message = "Each private NLB must have a unique name."
   }
 }
 

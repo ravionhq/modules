@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.0.0
-  description: First stable release.
+  version: 2.0.0
+  description: ECS cluster references now expose the cluster's load balancer arrays; the shared ALB fields default to the cluster's first public or private load balancer.
 module:
   inputs:
     - id: network
@@ -271,16 +271,6 @@ module:
       description: Attach listener rules to the ALB in this cluster.
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-alb-mapped-inputs.yml
-        - default: <<ref.stack.output.public_alb_arn_suffix>>
-          id: public_alb_arn_suffix
-          immutable: true
-          label: Public ALB ARN suffix
-          type: string
-        - default: <<ref.stack.output.private_alb_arn_suffix>>
-          id: private_alb_arn_suffix
-          immutable: true
-          label: Private ALB ARN suffix
-          type: string
       required: true
       show_when:
         http_traffic_enabled: true

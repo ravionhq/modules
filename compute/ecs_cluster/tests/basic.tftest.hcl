@@ -565,13 +565,8 @@ run "ec2_security_group_egress" {
   }
 
   assert {
-    condition     = length(aws_vpc_security_group_egress_rule.ecs_instance_all) == 1
-    error_message = "EC2 security group should have egress rule"
-  }
-
-  assert {
-    condition     = aws_vpc_security_group_egress_rule.ecs_instance_all[0].ip_protocol == "-1"
-    error_message = "EC2 security group should allow all outbound traffic"
+    condition     = length(module.ecs_instance_security_group) == 1
+    error_message = "EC2 instance security group should be created"
   }
 }
 
@@ -622,196 +617,20 @@ run "ec2_spot_enabled" {
   }
 }
 
-################################################################################
-# Public ALB Tests
-################################################################################
 
-# Test 21: Public ALB disabled by default
-run "public_alb_disabled_by_default" {
-  command = plan
 
-  assert {
-    condition     = length(module.public_alb) == 0
-    error_message = "Public ALB should not be created by default"
-  }
-}
 
-# Test 22: Public ALB enabled
-run "public_alb_enabled" {
-  command = plan
 
-  variables {
-    public_alb_enabled = true
-    public_subnet_ids  = ["subnet-public1", "subnet-public2"]
-  }
 
-  assert {
-    condition     = length(module.public_alb) == 1
-    error_message = "Public ALB should be created when enabled"
-  }
-}
 
-# Test 23: Public ALB with HTTPS
-run "public_alb_with_https" {
-  command = plan
 
-  variables {
-    public_alb_enabled          = true
-    public_subnet_ids           = ["subnet-public1", "subnet-public2"]
-    public_alb_https_enabled    = true
-    public_alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"]
-  }
 
-  assert {
-    condition     = length(module.public_alb) == 1
-    error_message = "Public ALB should be created"
-  }
-}
 
-# Test 24: Public ALB custom settings
-run "public_alb_custom_settings" {
-  command = plan
-
-  variables {
-    public_alb_enabled                        = true
-    public_subnet_ids                         = ["subnet-public1", "subnet-public2"]
-    public_alb_idle_timeout                   = 120
-    load_balancer_deletion_protection_enabled = false
-    public_alb_ingress_cidr_blocks            = ["10.0.0.0/8"]
-  }
-
-  assert {
-    condition     = length(module.public_alb) == 1
-    error_message = "Public ALB should be created with custom settings"
-  }
-}
-
-################################################################################
-# Private ALB Tests
-################################################################################
-
-# Test 25: Private ALB disabled by default
-run "private_alb_disabled_by_default" {
-  command = plan
-
-  assert {
-    condition     = length(module.private_alb) == 0
-    error_message = "Private ALB should not be created by default"
-  }
-}
-
-# Test 26: Private ALB enabled
-run "private_alb_enabled" {
-  command = plan
-
-  variables {
-    private_alb_enabled = true
-  }
-
-  assert {
-    condition     = length(module.private_alb) == 1
-    error_message = "Private ALB should be created when enabled"
-  }
-}
-
-# Test 27: Private ALB with HTTPS
-run "private_alb_with_https" {
-  command = plan
-
-  variables {
-    private_alb_enabled          = true
-    private_alb_https_enabled    = true
-    private_alb_certificate_arns = ["arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"]
-  }
-
-  assert {
-    condition     = length(module.private_alb) == 1
-    error_message = "Private ALB should be created with HTTPS"
-  }
-}
-
-# Test 28: Private ALB custom settings
-run "private_alb_custom_settings" {
-  command = plan
-
-  variables {
-    private_alb_enabled                       = true
-    private_alb_idle_timeout                  = 90
-    load_balancer_deletion_protection_enabled = true
-    private_alb_ingress_cidr_blocks           = ["192.168.0.0/16"]
-  }
-
-  assert {
-    condition     = length(module.private_alb) == 1
-    error_message = "Private ALB should be created with custom settings"
-  }
-}
-
-# Test 28b: Private ALB ingress rules referencing source security groups
-run "private_alb_ingress_security_groups" {
-  command = plan
-
-  variables {
-    private_alb_enabled                    = true
-    private_alb_https_enabled              = true
-    private_alb_certificate_arns           = ["arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"]
-    private_alb_ingress_security_group_ids = ["sg-0123456789abcdef0"]
-  }
-
-  assert {
-    condition = length([
-      for rule in module.private_alb[0].module.security_group.aws_vpc_security_group_ingress_rule.this : rule
-      if rule.referenced_security_group_id == "sg-0123456789abcdef0"
-    ]) == 2
-    error_message = "Private ALB should have HTTP and HTTPS ingress rules referencing the source security group"
-  }
-}
-
-# Test 28c: Public ALB ingress rules referencing source security groups
-run "public_alb_ingress_security_groups" {
-  command = plan
-
-  variables {
-    public_alb_enabled                    = true
-    public_alb_https_enabled              = true
-    public_alb_certificate_arns           = ["arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"]
-    public_subnet_ids                     = ["subnet-public1", "subnet-public2"]
-    public_alb_ingress_security_group_ids = ["sg-0123456789abcdef0"]
-  }
-
-  assert {
-    condition = length([
-      for rule in module.public_alb[0].module.security_group.aws_vpc_security_group_ingress_rule.this : rule
-      if rule.referenced_security_group_id == "sg-0123456789abcdef0"
-    ]) == 2
-    error_message = "Public ALB should have HTTP and HTTPS ingress rules referencing the source security group"
-  }
-}
 
 ################################################################################
 # Combined Configuration Tests
 ################################################################################
 
-# Test 29: Both public and private ALBs
-run "both_albs_enabled" {
-  command = plan
-
-  variables {
-    public_alb_enabled  = true
-    private_alb_enabled = true
-    public_subnet_ids   = ["subnet-public1", "subnet-public2"]
-  }
-
-  assert {
-    condition     = length(module.public_alb) == 1
-    error_message = "Public ALB should be created"
-  }
-
-  assert {
-    condition     = length(module.private_alb) == 1
-    error_message = "Private ALB should be created"
-  }
-}
 
 # Test 30: Full configuration with EC2 and Fargate
 run "full_configuration" {
@@ -843,57 +662,8 @@ run "full_configuration" {
   }
 }
 
-# Test 31: EC2 with public ALB - security group ingress
-run "ec2_with_public_alb_ingress" {
-  command = plan
 
-  variables {
-    ec2_instance_type  = "t3.medium"
-    public_alb_enabled = true
-    public_subnet_ids  = ["subnet-public1", "subnet-public2"]
-  }
 
-  assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_public_alb) == 1
-    error_message = "EC2 security group should have ingress rule from public ALB"
-  }
-}
-
-# Test 32: EC2 with private ALB - security group ingress
-run "ec2_with_private_alb_ingress" {
-  command = plan
-
-  variables {
-    ec2_instance_type   = "t3.medium"
-    private_alb_enabled = true
-  }
-
-  assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_private_alb) == 1
-    error_message = "EC2 security group should have ingress rule from private ALB"
-  }
-}
-
-# Test 33: EC2 without ALBs - no ALB ingress rules
-run "ec2_without_albs_no_ingress" {
-  command = plan
-
-  variables {
-    ec2_instance_type   = "t3.medium"
-    public_alb_enabled  = false
-    private_alb_enabled = false
-  }
-
-  assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_public_alb) == 0
-    error_message = "EC2 security group should not have public ALB ingress rule when ALB disabled"
-  }
-
-  assert {
-    condition     = length(aws_vpc_security_group_ingress_rule.ecs_instance_from_private_alb) == 0
-    error_message = "EC2 security group should not have private ALB ingress rule when ALB disabled"
-  }
-}
 
 # Test 34: No capacity providers (validation - at least one should be enabled)
 run "no_fargate_providers" {

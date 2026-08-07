@@ -66,3 +66,21 @@ locals {
     var.ec2_spot_instance_types
   ) : []
 }
+
+################################################################################
+# Load Balancer Names
+################################################################################
+
+locals {
+  public_alb_names  = [for idx, lb in var.public_albs : coalesce(lb.name, idx == 0 ? "${var.name}-pub" : "${var.name}-pub-${idx + 1}")]
+  private_alb_names = [for idx, lb in var.private_albs : coalesce(lb.name, idx == 0 ? "${var.name}-priv" : "${var.name}-priv-${idx + 1}")]
+  public_nlb_names  = [for idx, lb in var.public_nlbs : coalesce(lb.name, idx == 0 ? "${var.name}-pub-nlb" : "${var.name}-pub-nlb-${idx + 1}")]
+  private_nlb_names = [for idx, lb in var.private_nlbs : coalesce(lb.name, idx == 0 ? "${var.name}-priv-nlb" : "${var.name}-priv-nlb-${idx + 1}")]
+
+  # Load balancer configs keyed by resolved name so Terraform addresses stay
+  # stable when entries are inserted, removed, or reordered.
+  public_albs_by_name  = { for idx, lb in var.public_albs : local.public_alb_names[idx] => lb }
+  private_albs_by_name = { for idx, lb in var.private_albs : local.private_alb_names[idx] => lb }
+  public_nlbs_by_name  = { for idx, lb in var.public_nlbs : local.public_nlb_names[idx] => lb }
+  private_nlbs_by_name = { for idx, lb in var.private_nlbs : local.private_nlb_names[idx] => lb }
+}

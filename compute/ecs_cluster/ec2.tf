@@ -66,26 +66,22 @@ module "ecs_instance_security_group" {
   # For ip_protocol="-1" (all protocols), AWS requires from_port/to_port to
   # be -1; setting them to 0 causes update failures.
   ingress_rules = concat(
-    # Allow inbound from public ALB if enabled
-    var.public_alb_enabled ? [
-      {
-        description                  = "Allow inbound from public ALB"
-        from_port                    = -1
-        to_port                      = -1
-        ip_protocol                  = "-1"
-        referenced_security_group_id = module.public_alb[0].security_group_id
-      }
-    ] : [],
-    # Allow inbound from private ALB if enabled
-    var.private_alb_enabled ? [
-      {
-        description                  = "Allow inbound from private ALB"
-        from_port                    = -1
-        to_port                      = -1
-        ip_protocol                  = "-1"
-        referenced_security_group_id = module.private_alb[0].security_group_id
-      }
-    ] : []
+    # Allow inbound from each public ALB
+    [for name, lb in module.public_alb : {
+      description                  = "Allow inbound from public ALB ${name}"
+      from_port                    = -1
+      to_port                      = -1
+      ip_protocol                  = "-1"
+      referenced_security_group_id = lb.security_group_id
+    }],
+    # Allow inbound from each private ALB
+    [for name, lb in module.private_alb : {
+      description                  = "Allow inbound from private ALB ${name}"
+      from_port                    = -1
+      to_port                      = -1
+      ip_protocol                  = "-1"
+      referenced_security_group_id = lb.security_group_id
+    }]
   )
 }
 
