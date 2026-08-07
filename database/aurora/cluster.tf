@@ -155,6 +155,16 @@ resource "aws_rds_cluster" "this" {
       condition     = !var.activity_stream_enabled || var.activity_stream_kms_key_id != null
       error_message = "activity_stream_kms_key_id is required when activity_stream_enabled is true."
     }
+
+    precondition {
+      condition     = !var.proxy_creation_enabled || var.master_user_password_management_enabled || length(var.proxy_auth_secret_arns) > 0
+      error_message = "proxy_auth_secret_arns is required when proxy_creation_enabled is true and master_user_password_management_enabled is false."
+    }
+
+    precondition {
+      condition     = !var.proxy_creation_enabled || length(var.subnet_ids) >= 2
+      error_message = "At least 2 subnet_ids are required when proxy_creation_enabled is true."
+    }
   }
 
   depends_on = [

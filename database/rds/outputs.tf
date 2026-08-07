@@ -195,3 +195,22 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+################################################################################
+# RDS Proxy Outputs
+################################################################################
+
+output "proxy_endpoint" {
+  description = "The endpoint of the RDS Proxy. Null when no proxy is created."
+  value       = local.create_proxy ? module.proxy[0].endpoint : null
+}
+
+output "proxy_arn" {
+  description = "The ARN of the RDS Proxy. Null when no proxy is created."
+  value       = local.create_proxy ? module.proxy[0].proxy_arn : null
+}
+
+output "proxy_security_group_id" {
+  description = "The ID of the RDS Proxy security group. Null when no proxy is created."
+  value       = local.create_proxy ? module.proxy[0].security_group_id : null
+}

@@ -5,7 +5,7 @@ definition:
 
 release:
   version: 1.1.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  description: Add optional RDS Proxy connection pooling and update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
 module:
   inputs:
     - id: network
@@ -322,6 +322,115 @@ module:
       show_when:
         security_group_creation_enabled: true
       type: string_array
+    - id: section_proxy
+      label: Connection pooling
+      type: section
+    - default: false
+      description: Create an RDS Proxy in front of the cluster for connection pooling and improved failover handling.
+      id: proxy_creation_enabled
+      label: RDS Proxy
+      type: boolean
+    - add_button_label: Add secret ARN
+      collapsible: true
+      description: Secrets Manager secrets containing database credentials for the proxy. Leave blank to use the managed master user secret.
+      id: proxy_auth_secret_arns
+      label: Auth secret ARNs
+      placeholder: arn:aws:secretsmanager:...
+      required: false
+      show_when:
+        proxy_creation_enabled: true
+      type: string_array
+    - add_button_label: Add KMS key ARN
+      collapsible: true
+      description: KMS keys used to encrypt the auth secrets when using customer-managed keys. The master user secret KMS key is included automatically.
+      id: proxy_secret_kms_key_arns
+      label: Auth secret KMS key ARNs
+      placeholder: arn:aws:kms:...
+      required: false
+      show_when:
+        proxy_creation_enabled: true
+      type: string_array
+    - collapsible: true
+      default: false
+      description: Require IAM authentication for client connections to the proxy.
+      id: proxy_iam_auth_enabled
+      label: IAM authentication
+      show_when:
+        proxy_creation_enabled: true
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Require TLS for client connections to the proxy.
+      id: proxy_tls_requirement_enabled
+      label: Require TLS
+      show_when:
+        proxy_creation_enabled: true
+      type: boolean
+    - collapsible: true
+      default: false
+      description: Log detailed connection information, including SQL statements, to CloudWatch Logs.
+      id: proxy_debug_logging_enabled
+      label: Debug logging
+      show_when:
+        proxy_creation_enabled: true
+      type: boolean
+    - collapsible: true
+      default: 1800
+      id: proxy_idle_client_timeout
+      label: Idle client timeout (seconds)
+      max: 28800
+      min: 1
+      show_when:
+        proxy_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 120
+      id: proxy_connection_borrow_timeout
+      label: Connection borrow timeout (seconds)
+      min: 0
+      show_when:
+        proxy_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 100
+      description: Maximum size of the connection pool as a percentage of the database max_connections setting.
+      id: proxy_max_connections_percent
+      label: Max connections (%)
+      max: 100
+      min: 1
+      show_when:
+        proxy_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 50
+      description: Maximum idle connections kept open, as a percentage of the database max_connections setting.
+      id: proxy_max_idle_connections_percent
+      label: Max idle connections (%)
+      max: 100
+      min: 0
+      show_when:
+        proxy_creation_enabled: true
+      type: number
+    - add_button_label: Add filter
+      collapsible: true
+      id: proxy_session_pinning_filters
+      label: Session pinning filters
+      required: false
+      show_when:
+        proxy_creation_enabled: true
+      type: string_array
+      values:
+        - label: EXCLUDE_VARIABLE_SETS
+          value: EXCLUDE_VARIABLE_SETS
+    - collapsible: true
+      description: SQL statements the proxy runs when opening each new database connection.
+      id: proxy_init_query
+      label: Initialization query
+      placeholder: SET time_zone = 'UTC'
+      required: false
+      show_when:
+        proxy_creation_enabled: true
+      type: string
     - id: section_readers
       label: Readers
       type: section
@@ -1018,6 +1127,18 @@ module:
         preferred_backup_window: << module.input.preferred_backup_window >>
         preferred_maintenance_window: << module.input.preferred_maintenance_window >>
         promotion_tier: << module.input.promotion_tier >>
+        proxy_auth_secret_arns: << module.input.proxy_auth_secret_arns >>
+        proxy_connection_borrow_timeout: << module.input.proxy_connection_borrow_timeout >>
+        proxy_creation_enabled: << module.input.proxy_creation_enabled >>
+        proxy_debug_logging_enabled: << module.input.proxy_debug_logging_enabled >>
+        proxy_iam_auth_enabled: << module.input.proxy_iam_auth_enabled >>
+        proxy_idle_client_timeout: << module.input.proxy_idle_client_timeout >>
+        proxy_init_query: << module.input.proxy_init_query >>
+        proxy_max_connections_percent: << module.input.proxy_max_connections_percent >>
+        proxy_max_idle_connections_percent: << module.input.proxy_max_idle_connections_percent >>
+        proxy_secret_kms_key_arns: << module.input.proxy_secret_kms_key_arns >>
+        proxy_session_pinning_filters: << module.input.proxy_session_pinning_filters >>
+        proxy_tls_requirement_enabled: << module.input.proxy_tls_requirement_enabled >>
         public_access_enabled: << module.input.public_access_enabled >>
         reader_count: << module.input.reader_count >>
         reader_instance_class: << module.input.reader_instance_class >>
@@ -1290,6 +1411,10 @@ module:
 
     The Ravion UI charts Aurora CloudWatch metrics for CPU utilization, freeable memory, database connections, serverless capacity and ACU utilization, storage used, read and write latency, replica lag, buffer cache hit ratio, commit latency, deadlocks, network throughput, and volume IOPS.
 
+    ## Connection pooling
+
+    Enable RDS Proxy to place a managed connection pool in front of the cluster. The proxy authenticates with the Secrets Manager master user secret by default, requires TLS, and allows the same security group and CIDR sources configured for the cluster. Pool sizing, idle timeouts, session pinning, IAM authentication, and custom auth secrets are configurable in the Connection pooling section.
+
     ## Configuration
 
     | Field | Required | Default | Notes |
@@ -1313,6 +1438,7 @@ module:
     | Deletion protection | No | true | Helps prevent accidental deletion. |
     | Performance insights | No | true | Enables AWS Performance Insights. |
     | CloudWatch alarms | No | true | Adds CPU, memory, and connection alarms. |
+    | RDS Proxy | No | false | Creates an RDS Proxy connection pool in front of the cluster. |
     | Global database | No | false | Create or join an Aurora global database. |
     | Activity stream | No | false | Enables Database Activity Streams with a required KMS key. |
     | Tags | No | Blank | Merged with Ravion standard tags. |

@@ -423,6 +423,18 @@ module "aurora" {
 | activity_stream_mode | Activity stream mode: sync or async. | `string` | `"async"` | no |
 | activity_stream_kms_key_id | KMS key ARN for activity stream (required when enabled). | `string` | `null` | no |
 | iam_role_associations | Map of IAM role associations (S3_IMPORT, S3_EXPORT, LAMBDA_INVOKE, etc.). | `map(object)` | `{}` | no |
+| proxy_creation_enabled | Whether to create an RDS Proxy in front of the cluster. | `bool` | `false` | no |
+| proxy_auth_secret_arns | Secrets Manager secret ARNs for proxy auth (defaults to the managed master user secret). | `list(string)` | `[]` | no |
+| proxy_secret_kms_key_arns | KMS key ARNs used to encrypt the proxy auth secrets (customer-managed keys). | `list(string)` | `[]` | no |
+| proxy_iam_auth_enabled | Require IAM authentication for proxy connections. | `bool` | `false` | no |
+| proxy_tls_requirement_enabled | Require TLS for proxy connections. | `bool` | `true` | no |
+| proxy_debug_logging_enabled | Log detailed proxy connection information to CloudWatch Logs. | `bool` | `false` | no |
+| proxy_idle_client_timeout | Seconds a client connection can be idle before the proxy disconnects it. | `number` | `1800` | no |
+| proxy_connection_borrow_timeout | Seconds the proxy waits for an available connection in the pool. | `number` | `120` | no |
+| proxy_init_query | SQL statements the proxy runs when opening each new database connection. | `string` | `null` | no |
+| proxy_max_connections_percent | Max proxy connection pool size (% of database max_connections). | `number` | `100` | no |
+| proxy_max_idle_connections_percent | Max idle proxy connections (% of database max_connections). | `number` | `50` | no |
+| proxy_session_pinning_filters | Session pinning filters (EXCLUDE_VARIABLE_SETS). | `list(string)` | `[]` | no |
 
 ## Outputs
 
@@ -459,6 +471,9 @@ module "aurora" {
 | activity_stream_kinesis_stream_name | The Kinesis data stream name for activity stream. |
 | activity_stream_kms_key_id | The KMS key ID for activity stream. |
 | autoscaling_target_arn | The Application Auto Scaling target ARN. |
+| proxy_endpoint | The RDS Proxy endpoint (null when no proxy is created). |
+| proxy_arn | The RDS Proxy ARN (null when no proxy is created). |
+| proxy_security_group_id | The RDS Proxy security group ID (null when no proxy is created). |
 
 ## Security Considerations
 

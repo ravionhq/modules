@@ -101,4 +101,16 @@ locals {
   )
 
   instances = length(var.instances) > 0 ? var.instances : local.generated_instances
+
+  # RDS Proxy
+  create_proxy        = var.proxy_creation_enabled
+  proxy_engine_family = local.is_mysql ? "MYSQL" : "POSTGRESQL"
+  proxy_auth_secret_arns = (
+    length(var.proxy_auth_secret_arns) > 0 ? var.proxy_auth_secret_arns :
+    var.master_user_password_management_enabled ? [for s in aws_rds_cluster.this.master_user_secret : s.secret_arn] : []
+  )
+  proxy_secret_kms_key_arns = distinct(concat(
+    var.proxy_secret_kms_key_arns,
+    try(startswith(var.master_user_secret_kms_key_id, "arn:"), false) ? [var.master_user_secret_kms_key_id] : []
+  ))
 }

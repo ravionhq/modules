@@ -8,8 +8,8 @@ module "security_group" {
   source = "../../networking/security-groups"
 
   name        = var.name
-  name_suffix = "aurora"
-  description = "Security group for ${var.name} Aurora cluster"
+  name_suffix = "rds-proxy"
+  description = "Security group for ${var.name} RDS Proxy"
   vpc_id      = var.vpc_id
   tags        = var.tags
 
@@ -17,7 +17,7 @@ module "security_group" {
     # Security group sources
     [
       for sg_id in var.allowed_security_group_ids : {
-        description                  = "Allow ${var.engine} traffic from ${sg_id}"
+        description                  = "Allow database traffic from ${sg_id}"
         from_port                    = local.port
         to_port                      = local.port
         ip_protocol                  = "tcp"
@@ -27,23 +27,13 @@ module "security_group" {
     # IPv4 CIDR sources
     [
       for cidr in var.allowed_cidr_blocks : {
-        description = "Allow ${var.engine} traffic from ${cidr}"
+        description = "Allow database traffic from ${cidr}"
         from_port   = local.port
         to_port     = local.port
         ip_protocol = "tcp"
         cidr_ipv4   = cidr
       }
-    ],
-    # RDS Proxy source
-    local.create_proxy ? [
-      {
-        description                  = "Allow ${var.engine} traffic from the RDS Proxy"
-        from_port                    = local.port
-        to_port                      = local.port
-        ip_protocol                  = "tcp"
-        referenced_security_group_id = module.proxy[0].security_group_id
-      }
-    ] : []
+    ]
   )
 
   # Egress to VPC only. For ip_protocol="-1" (all protocols), AWS requires

@@ -139,4 +139,20 @@ locals {
 
   # DB name handling - SQL Server doesn't support db_name at creation time
   db_name = local.is_sqlserver ? null : var.db_name
+
+  # RDS Proxy
+  create_proxy = var.proxy_creation_enabled
+  proxy_engine_family = (
+    local.is_postgres ? "POSTGRESQL" :
+    local.is_sqlserver ? "SQLSERVER" :
+    "MYSQL"
+  )
+  proxy_auth_secret_arns = (
+    length(var.proxy_auth_secret_arns) > 0 ? var.proxy_auth_secret_arns :
+    var.master_user_password_management_enabled ? [for s in aws_db_instance.this.master_user_secret : s.secret_arn] : []
+  )
+  proxy_secret_kms_key_arns = distinct(concat(
+    var.proxy_secret_kms_key_arns,
+    try(startswith(var.master_user_secret_kms_key_id, "arn:"), false) ? [var.master_user_secret_kms_key_id] : []
+  ))
 }

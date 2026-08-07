@@ -124,6 +124,16 @@ resource "aws_db_instance" "this" {
       condition     = alltrue([for log in var.enabled_cloudwatch_logs_exports : contains(local.valid_log_exports[local.engine_log_type], log)])
       error_message = "Invalid CloudWatch log export type for ${var.engine}. Valid types: ${join(", ", local.valid_log_exports[local.engine_log_type])}"
     }
+
+    precondition {
+      condition     = !var.proxy_creation_enabled || !local.is_oracle
+      error_message = "RDS Proxy is not supported for Oracle engines."
+    }
+
+    precondition {
+      condition     = !var.proxy_creation_enabled || var.master_user_password_management_enabled || length(var.proxy_auth_secret_arns) > 0
+      error_message = "proxy_auth_secret_arns is required when proxy_creation_enabled is true and master_user_password_management_enabled is false."
+    }
   }
 
   depends_on = [

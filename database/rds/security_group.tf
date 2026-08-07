@@ -33,7 +33,17 @@ module "security_group" {
         ip_protocol = "tcp"
         cidr_ipv4   = cidr
       }
-    ]
+    ],
+    # RDS Proxy source
+    local.create_proxy ? [
+      {
+        description                  = "Allow ${var.engine} traffic from the RDS Proxy"
+        from_port                    = local.port
+        to_port                      = local.port
+        ip_protocol                  = "tcp"
+        referenced_security_group_id = module.proxy[0].security_group_id
+      }
+    ] : []
   )
 
   # Egress to VPC only. For ip_protocol="-1" (all protocols), AWS requires

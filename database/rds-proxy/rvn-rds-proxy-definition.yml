@@ -1,0 +1,385 @@
+definition:
+  type: rvn-rds-proxy
+  name: RDS Proxy
+  description: Creates and manages an Amazon RDS Proxy that provides connection pooling in front of an RDS instance or Aurora cluster.
+
+release:
+  version: 0.1.0
+  description: Initial release of the RDS Proxy module definition.
+module:
+  inputs:
+    - id: network
+      immutable: true
+      label: VPC network
+      mapped_inputs:
+        - id: section_aws
+          label: AWS account & region
+          type: section
+        - default: << ref.input.aws_account_id >>
+          id: aws_account_id
+          immutable: true
+          label: AWS account
+          type: string
+          values: $values:ravion/aws_accounts
+        - default: << ref.input.aws_region >>
+          id: aws_region
+          immutable: true
+          label: Region
+          type: string
+          values: $values:aws/regions
+        - collapsible: true
+          default: << ref.input.execution_environment_id >>
+          description: Override the VPC, subnet, and security group for Pipeline Terraform runners. Must use the same AWS account as selected above.
+          id: execution_environment_id
+          label: Terraform execution environment
+          type: string
+          values: $values:ravion/execution_environments
+        - id: section_vpc
+          label: VPC
+          type: section
+        - default: <<ref.stack.output.vpc_id>>
+          id: vpc_id
+          immutable: true
+          label: VPC ID
+          required: true
+          type: string
+        - add_button_label: Add private subnet ID
+          default: <<ref.stack.output.private_subnet_ids>>
+          description: Subnets for the RDS Proxy. Use private subnets for normal deployments.
+          id: subnet_ids
+          immutable: true
+          label: Private subnet IDs
+          required: true
+          type: string_array
+      required: true
+      type: $ref:rvn-aws-network
+    - id: section_proxy
+      label: Proxy
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-proxy
+      description: Name prefix for all proxy resources.
+      id: name
+      immutable: true
+      label: Name slug
+      patterns:
+        - message: 1-40 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$
+      required: true
+      type: string
+    - default: POSTGRESQL
+      id: engine_family
+      immutable: true
+      label: Engine family
+      required: true
+      type: string
+      values:
+        - label: PostgreSQL
+          value: POSTGRESQL
+        - label: MySQL / MariaDB
+          value: MYSQL
+        - label: SQL Server
+          value: SQLSERVER
+    - id: section_target
+      label: Target database
+      type: section
+    - default: db_instance
+      id: target_type
+      label: Target type
+      required: true
+      type: string
+      values:
+        - label: RDS instance
+          value: db_instance
+        - label: Aurora cluster
+          value: db_cluster
+    - description: Identifier of the RDS instance to register as the proxy target.
+      id: db_instance_identifier
+      label: DB instance identifier
+      placeholder: my-db
+      required: true
+      show_when:
+        target_type: db_instance
+      type: string
+    - description: Identifier of the Aurora cluster to register as the proxy target.
+      id: db_cluster_identifier
+      label: DB cluster identifier
+      placeholder: my-aurora
+      required: true
+      show_when:
+        target_type: db_cluster
+      type: string
+    - id: section_auth
+      label: Authentication
+      type: section
+    - add_button_label: Add secret ARN
+      description: Secrets Manager secrets containing database credentials the proxy uses to connect to the target database.
+      id: auth_secret_arns
+      label: Auth secret ARNs
+      placeholder: arn:aws:secretsmanager:...
+      required: true
+      type: string_array
+    - add_button_label: Add KMS key ARN
+      collapsible: true
+      description: KMS keys used to encrypt the auth secrets when using customer-managed keys.
+      id: secret_kms_key_arns
+      label: Auth secret KMS key ARNs
+      placeholder: arn:aws:kms:...
+      required: false
+      type: string_array
+    - collapsible: true
+      default: false
+      description: Require IAM authentication for client connections to the proxy.
+      id: iam_auth_enabled
+      label: IAM authentication
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Require TLS for client connections to the proxy.
+      id: tls_requirement_enabled
+      label: Require TLS
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Create the IAM role the proxy uses to read credentials from Secrets Manager. Disable this only when you want to provide an existing role.
+      id: iam_role_creation_enabled
+      immutable: true
+      label: IAM role creation
+      type: boolean
+    - collapsible: true
+      id: iam_role_arn
+      label: Existing IAM role ARN
+      placeholder: arn:aws:iam::...
+      required: false
+      show_when:
+        iam_role_creation_enabled: false
+      type: string
+    - id: section_access
+      label: Network access
+      type: section
+    - collapsible: true
+      description: "Leave blank to use the engine family default port: 5432 for PostgreSQL, 3306 for MySQL, or 1433 for SQL Server."
+      id: port
+      label: Port
+      max: 65535
+      min: 1
+      required: false
+      type: number
+    - collapsible: true
+      default: true
+      id: security_group_creation_enabled
+      immutable: true
+      label: Security group creation
+      type: boolean
+    - collapsible: true
+      id: security_group_id
+      label: Existing security group ID
+      placeholder: sg-...
+      required: false
+      show_when:
+        security_group_creation_enabled: false
+      type: string
+    - add_button_label: Add security group ID
+      collapsible: true
+      id: allowed_security_group_ids
+      label: Allowed security groups
+      placeholder: sg-...
+      required: false
+      show_when:
+        security_group_creation_enabled: true
+      type: string_array
+    - add_button_label: Add CIDR block
+      collapsible: true
+      id: allowed_cidr_blocks
+      label: Allowed CIDR blocks
+      placeholder: 10.0.0.0/16
+      required: false
+      show_when:
+        security_group_creation_enabled: true
+      type: string_array
+    - id: section_pool
+      label: Connection pool
+      type: section
+    - collapsible: true
+      default: 1800
+      id: idle_client_timeout
+      label: Idle client timeout (seconds)
+      max: 28800
+      min: 1
+      type: number
+    - collapsible: true
+      default: 120
+      id: connection_borrow_timeout
+      label: Connection borrow timeout (seconds)
+      min: 0
+      type: number
+    - collapsible: true
+      default: 100
+      description: Maximum size of the connection pool as a percentage of the database max_connections setting.
+      id: max_connections_percent
+      label: Max connections (%)
+      max: 100
+      min: 1
+      type: number
+    - collapsible: true
+      default: 50
+      description: Maximum idle connections kept open, as a percentage of the database max_connections setting.
+      id: max_idle_connections_percent
+      label: Max idle connections (%)
+      max: 100
+      min: 0
+      type: number
+    - add_button_label: Add filter
+      collapsible: true
+      id: session_pinning_filters
+      label: Session pinning filters
+      required: false
+      type: string_array
+      values:
+        - label: EXCLUDE_VARIABLE_SETS
+          value: EXCLUDE_VARIABLE_SETS
+    - collapsible: true
+      description: SQL statements the proxy runs when opening each new database connection.
+      id: init_query
+      label: Initialization query
+      placeholder: SET time_zone = 'UTC'
+      required: false
+      type: string
+    - collapsible: true
+      default: false
+      description: Log detailed connection information, including SQL statements, to CloudWatch Logs.
+      id: debug_logging_enabled
+      label: Debug logging
+      type: boolean
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: database/rds-proxy
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        allowed_cidr_blocks: << module.input.allowed_cidr_blocks >>
+        allowed_security_group_ids: << module.input.allowed_security_group_ids >>
+        auth: '<< map(module.input.auth_secret_arns, {"secret_arn": #, "iam_auth": module.input.iam_auth_enabled ? "REQUIRED" : "DISABLED"}) >>'
+        connection_borrow_timeout: << module.input.connection_borrow_timeout >>
+        db_cluster_identifier: << module.input.db_cluster_identifier >>
+        db_instance_identifier: << module.input.db_instance_identifier >>
+        debug_logging_enabled: << module.input.debug_logging_enabled >>
+        engine_family: << module.input.engine_family >>
+        iam_role_arn: << module.input.iam_role_arn >>
+        iam_role_creation_enabled: << module.input.iam_role_creation_enabled >>
+        idle_client_timeout: << module.input.idle_client_timeout >>
+        init_query: << module.input.init_query >>
+        max_connections_percent: << module.input.max_connections_percent >>
+        max_idle_connections_percent: << module.input.max_idle_connections_percent >>
+        name: << module.input.name >>
+        port: << module.input.port >>
+        region: << module.input.aws_region >>
+        secret_kms_key_arns: << module.input.secret_kms_key_arns >>
+        security_group_creation_enabled: << module.input.security_group_creation_enabled >>
+        security_group_id: << module.input.security_group_id >>
+        session_pinning_filters: << module.input.session_pinning_filters >>
+        subnet_ids: << module.input.subnet_ids >>
+        tags:
+          $include: ../stack/ravion-tags.yml
+        tls_requirement_enabled: << module.input.tls_requirement_enabled >>
+        vpc_id: << module.input.vpc_id >>
+  ui:
+    metrics:
+      - id: client_connections
+        name: Client connections
+        source:
+          aws_account_id: << module.input.aws_account_id >>
+          dimensions:
+            ProxyName: << stack.output.proxy_name >>
+          name: ClientConnections
+          namespace: AWS/RDS
+          region: << stack.output.region >>
+          statistic: Average
+          type: cloudwatch
+        type: line
+      - id: database_connections
+        name: Database connections
+        source:
+          aws_account_id: << module.input.aws_account_id >>
+          dimensions:
+            ProxyName: << stack.output.proxy_name >>
+          name: DatabaseConnections
+          namespace: AWS/RDS
+          region: << stack.output.region >>
+          statistic: Average
+          type: cloudwatch
+        type: line
+      - id: query_requests
+        name: Query requests
+        source:
+          aws_account_id: << module.input.aws_account_id >>
+          dimensions:
+            ProxyName: << stack.output.proxy_name >>
+          name: QueryRequests
+          namespace: AWS/RDS
+          region: << stack.output.region >>
+          statistic: Sum
+          type: cloudwatch
+        type: line
+  readme: |-
+    Creates and manages an Amazon RDS Proxy that provides connection pooling in front of an RDS instance or Aurora cluster.
+
+    ## Overview
+
+    Use this module to place a managed connection pool in front of an existing database. The proxy holds a pool of database connections open and multiplexes application connections onto them, which protects the database from connection storms and makes failovers faster for clients.
+
+    The RDS and Aurora modules can create a proxy directly with their RDS Proxy toggle. Use this standalone module when the target database is not managed by Ravion, or when you want to manage the proxy lifecycle separately from the database.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Serverless or many-worker applications | Reuse pooled connections instead of opening one per worker. |
+    | Existing database | Add pooling in front of a database created outside Ravion. |
+    | Faster failover | Clients stay connected to the proxy while the database fails over. |
+    | IAM authentication | Require IAM auth for clients without changing database credentials. |
+
+    ## Networking
+
+    Select a VPC network first. Ravion maps the network's AWS account, region, VPC ID, and private subnet IDs into this module. The proxy must be in the same VPC as the target database, and the database's security group must allow ingress from the proxy security group.
+
+    Allowed security groups and CIDR blocks control which sources can connect to the proxy.
+
+    ## Authentication
+
+    The proxy reads database credentials from the Secrets Manager secrets listed in auth secret ARNs. For an RDS or Aurora database with managed master passwords, use the master user secret ARN. The module creates an IAM role that can read only those secrets; provide KMS key ARNs when the secrets use customer-managed keys. TLS is required by default, and IAM authentication for clients is optional.
+
+    ## Configuration
+
+    | Field | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | VPC network | Yes | None | Supplies AWS account, region, VPC ID, and private subnet IDs. |
+    | Name slug | Yes | Project and environment given IDs + proxy | Proxy name and prefix for related resources. |
+    | Engine family | Yes | PostgreSQL | PostgreSQL, MySQL / MariaDB, or SQL Server. Must match the target database engine. |
+    | Target type | Yes | RDS instance | Register an RDS instance or an Aurora cluster as the proxy target. |
+    | DB instance / cluster identifier | Yes | None | Identifier of the target database. |
+    | Auth secret ARNs | Yes | None | Secrets Manager secrets with database credentials. |
+    | Require TLS | No | true | Requires TLS for client connections. |
+    | IAM authentication | No | false | Requires IAM auth for client connections. |
+    | Security group creation | No | true | Creates ingress rules from allowed security groups and CIDRs. |
+    | Max connections (%) | No | 100 | Pool size as a percentage of the database max_connections. |
+    | Idle client timeout | No | 1800 | Seconds before idle client connections are closed. |
+    | Tags | No | Blank | Merged with Ravion standard tags. |
+
+    ## Advanced configuration
+
+    Connection pool settings control borrow timeouts, idle connection limits, session pinning filters, and an initialization query. Debug logging sends detailed connection information to CloudWatch Logs. Use advanced Terraform variables for one-off overrides not represented directly in the UI.
+
+    Terraform settings let you override the OpenTofu version, Terraform execution environment inherited from the VPC network, and Ravion state backend workspace name.
+
+    ## Design decisions
+
+    The proxy is placed in private subnets by default through the VPC network reference. TLS enforcement and Secrets Manager based authentication default on. The created IAM role follows least privilege and can read only the listed auth secrets.
+
+    ## Learn more
+
+    - [Amazon RDS Proxy documentation](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html)
+    - [RDS Proxy managing connections](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy-managing.html)
+    - [Terraform source](https://github.com/flightcontrolhq/modules/tree/$local.module_tag/database/rds-proxy)
