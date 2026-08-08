@@ -71,7 +71,7 @@ resource "aws_cloudfront_distribution" "this" {
     allowed_methods            = var.default_cache_behavior.allowed_methods
     cached_methods             = var.default_cache_behavior.cached_methods
     compress                   = var.default_cache_behavior.compression_enabled
-    cache_policy_id            = var.default_cache_behavior.cache_policy_id
+    cache_policy_id            = local.effective_default_cache_policy_id
     origin_request_policy_id   = var.default_cache_behavior.origin_request_policy_id
     response_headers_policy_id = var.default_cache_behavior.response_headers_policy_id
     trusted_key_groups         = var.default_cache_behavior.trusted_key_groups

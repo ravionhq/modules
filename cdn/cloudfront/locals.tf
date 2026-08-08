@@ -1,6 +1,8 @@
 locals {
   region = coalesce(var.region, data.aws_region.current.region)
 
+  effective_default_cache_policy_id = var.accept_header_cache_policy_creation_enabled ? aws_cloudfront_cache_policy.accept_header[0].id : var.default_cache_behavior.cache_policy_id
+
   redirects_enabled = length(var.redirect_rules) > 0
   redirect_function_name = format(
     "%s-%s",

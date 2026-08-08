@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, load balancers, S3 origins, and other custom origins.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.1.0
+  description: Add an optional module-managed cache policy that includes the Accept header in the cache key.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -337,6 +337,9 @@ module:
         - label: UseOriginCacheControlHeaders-QueryStrings (recommended)
           description: Caches only responses with Cache-Control headers from your app. Query strings are part of the cache key.
           value: 4cc15a8a-d715-48a4-82b8-cc0b614638fe
+        - label: UseOriginCacheControlHeaders-QueryStrings with Accept
+          description: Caches only responses with Cache-Control headers from your app. Query strings and the Accept header are part of the cache key.
+          value: managed_accept
         - label: UseOriginCacheControlHeaders
           description: Caches only responses with Cache-Control headers from your app. Query strings are not part of the cache key.
           value: 83da9c7e-98b4-4e11-a168-04f0df8e2c65
@@ -668,14 +671,15 @@ module:
       base_path: cdn/cloudfront
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        accept_header_cache_policy_creation_enabled: << module.input.cache_policy == "managed_accept" >>
         default_cache_behavior:
           allowed_methods: >-
             << module.input.allowed_methods == "all" ? ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH",
             "POST", "PUT"] : module.input.allowed_methods == "read_options" ? ["GET", "HEAD", "OPTIONS"] :
             ["GET", "HEAD"] >>
           cache_policy_id: >-
-            << module.input.cache_policy == "custom" ? module.input.cache_policy_custom_id :
-            module.input.cache_policy >>
+            << module.input.cache_policy == "managed_accept" ? nil : module.input.cache_policy == "custom" ?
+            module.input.cache_policy_custom_id : module.input.cache_policy >>
           origin_request_policy_id: >-
             << module.input.origin_request_policy == "custom" ?
             module.input.origin_request_policy_custom_id : module.input.origin_request_policy == "none" ? nil :
@@ -876,7 +880,7 @@ module:
     | Allowed methods | Read only | Only GET and HEAD reach the origin; choose Read and OPTIONS or All methods to accept form posts and API writes |
     | Viewer protocol policy | Redirect to HTTPS | Viewers are upgraded to HTTPS automatically |
 
-    With the default cache policy, nothing is cached until the app opts in by returning Cache-Control headers such as public, max-age=300. Responses without caching headers always go to the origin. Choose CachingDisabled to turn off edge caching entirely, or CachingOptimized to cache aggressively regardless of origin headers. Pick Custom policy ID to use a cache or origin request policy you created in your own account.
+    With the default cache policy, nothing is cached until the app opts in by returning Cache-Control headers such as public, max-age=300. Responses without caching headers always go to the origin. Choose UseOriginCacheControlHeaders-QueryStrings with Accept when the origin negotiates representations using the Accept header; it creates a module-managed policy that keeps those variants in separate cache entries. Choose CachingDisabled to turn off edge caching entirely, or CachingOptimized to cache aggressively regardless of origin headers. Pick Custom policy ID to use a cache or origin request policy you created in your own account.
 
     Response headers policy is optional and adds headers such as the SecurityHeadersPolicy set or CORS headers to every response.
 
@@ -937,7 +941,7 @@ module:
     | Redirect rules | No | [] | Ordered URL-pattern redirects returned before contacting an origin |
     | Viewer protocol policy | Yes | Redirect to HTTPS | How viewers connect to CloudFront |
     | Allowed methods | Yes | Read only | GET and HEAD only; switch to Read and OPTIONS or All methods for apps that write |
-    | Cache policy | Yes | UseOriginCacheControlHeaders-QueryStrings | AWS managed policies by name, or a custom policy ID |
+    | Cache policy | Yes | UseOriginCacheControlHeaders-QueryStrings | AWS managed policies by name, a module-managed Accept-aware policy, or a custom policy ID |
     | Origin request policy | Yes | AllViewer | AWS managed policies by name, or a custom policy ID |
     | Require signed URLs | No | false | Requires signed URLs or signed cookies on the default behavior |
     | Trusted key group IDs | When signed URLs are enabled | [] | Existing CloudFront key groups trusted for signatures |

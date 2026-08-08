@@ -7,6 +7,11 @@ output "distribution_ids" {
   value       = { for k, v in aws_cloudfront_distribution.this : k => v.id }
 }
 
+output "cache_policy_id" {
+  description = "The ID of the cache policy attached to the default behavior, including the module-managed Accept-aware policy when enabled."
+  value       = local.effective_default_cache_policy_id
+}
+
 output "distribution_arns" {
   description = "A map of distribution key to CloudFront distribution ARN."
   value       = { for k, v in aws_cloudfront_distribution.this : k => v.arn }

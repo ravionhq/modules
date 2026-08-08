@@ -511,6 +511,7 @@ The same-host example redirects `/old/guide` to `/docs/guide`. To redirect only 
 | default_cache_behavior.function_associations | CloudFront Function associations. | `list(object({event_type, function_arn}))` | `[]` | no |
 | default_cache_behavior.lambda_function_associations | Lambda@Edge associations. | `list(object({event_type, lambda_arn, body_inclusion_enabled}))` | `[]` | no |
 | default_cache_behavior.realtime_log_config_arn | Real-time log configuration ARN. | `string` | `null` | no |
+| accept_header_cache_policy_creation_enabled | Whether to create and use a module-managed default cache policy that includes the `Accept` header in the cache key. Cannot be combined with `default_cache_behavior.cache_policy_id`. | `bool` | `false` | no |
 
 ### Ordered Cache Behaviors
 
@@ -598,6 +599,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 
 | Name | Description |
 |------|-------------|
+| cache_policy_id | The ID of the cache policy attached to the default behavior, including the module-managed Accept-aware policy when enabled. |
 | distribution_ids | A map of distribution key to CloudFront distribution ID. |
 | distribution_arns | A map of distribution key to CloudFront distribution ARN. |
 | distribution_domain_names | A map of distribution key to CloudFront distribution domain name. |
