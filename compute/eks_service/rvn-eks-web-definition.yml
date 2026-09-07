@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.0.0
-  description: Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, clarify target group and ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  version: 1.0.1
+  description: Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, clarify target group and ECR settings, keep default build policies in advanced settings, let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - id: section_cluster

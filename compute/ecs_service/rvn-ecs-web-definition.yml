@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.1.1
-  description: Clarify ECS cluster labels, use consistent routing, health check, and builder field names, add configurable target group deregistration delay, keep default build policies in advanced builder settings, and remove contradictory listener-rule guidance.
+  version: 1.1.2
+  description: Clarify ECS cluster labels, use consistent routing, health check, and builder field names, add configurable target group deregistration delay, keep default build policies in advanced builder settings, remove contradictory listener-rule guidance, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - id: section_cluster

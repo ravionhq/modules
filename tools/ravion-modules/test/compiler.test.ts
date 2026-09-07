@@ -868,7 +868,7 @@ describe("compiler", () => {
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
         builderType.description,
-        "Use on-demand EC2 for predictable availability or EC2 Spot for lower cost with possible capacity delays or interruption.",
+        "Use on-demand EC2 for predictable availability, EC2 Spot for lower cost with possible capacity delays or interruption, or a Ravion sandbox for a fast-starting microVM.",
         `${definition.type} should include shared builder guidance`,
       );
       const builderOptions = builderType.values;
@@ -881,8 +881,56 @@ describe("compiler", () => {
         [
           ["ec2", "Use on-demand capacity for predictable availability without Spot interruption."],
           ["ec2-spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
+          [
+            "sandbox",
+            "Run the build as a Firecracker microVM on the chosen execution environment's sandbox pool, started from a warm disk.",
+          ],
         ],
       );
+
+      const builderShowWhen = assertRecord(builderType.show_when, `${definition.type} build_capacity_type.show_when`);
+      for (const [inputId, capacityTypes] of [
+        ["build_instance_type", ["ec2", "ec2-spot"]],
+        ["build_ami_id", ["ec2", "ec2-spot"]],
+        ["build_sandbox_cpu", ["sandbox"]],
+        ["build_sandbox_memory_gib", ["sandbox"]],
+      ] as const) {
+        assert.deepEqual(
+          findInput(inputs, inputId).show_when,
+          { ...builderShowWhen, build_capacity_type: [...capacityTypes] },
+          `${definition.type} ${inputId} should follow the builder capacity type`,
+        );
+      }
+
+      const sandboxCpu = findInput(inputs, "build_sandbox_cpu");
+      assert.equal(sandboxCpu.type, "number");
+      assert.equal(sandboxCpu.default, 4);
+      assert.equal(sandboxCpu.min, 1);
+
+      const sandboxMemory = findInput(inputs, "build_sandbox_memory_gib");
+      assert.equal(sandboxMemory.type, "number");
+      assert.equal(sandboxMemory.default, 8);
+      assert.equal(sandboxMemory.min, 1);
+
+      const buildInfrastructure = assertString(getModuleBuild(definition.module).infrastructure);
+      assert.match(buildInfrastructure, /module\.input\.build_capacity_type == "sandbox"/);
+      assert.match(
+        buildInfrastructure,
+        /"cpu": module\.input\.build_sandbox_cpu, "memory": module\.input\.build_sandbox_memory_gib/,
+      );
+      const [sandboxBranch, ec2Branch] = splitInfrastructureBranches(buildInfrastructure);
+      for (const ec2OnlyField of ['"instance_size"', '"ami"', '"aws_account_id"', '"region"']) {
+        assert.equal(
+          sandboxBranch.includes(ec2OnlyField),
+          false,
+          `${definition.type} sandbox builds should not carry ${ec2OnlyField}`,
+        );
+        assert.ok(ec2Branch.includes(ec2OnlyField), `${definition.type} EC2 builds should keep ${ec2OnlyField}`);
+      }
+      for (const sharedField of ['"type"', '"execution_environment_id"', '"permissions"']) {
+        assert.ok(sandboxBranch.includes(sharedField), `${definition.type} sandbox builds should carry ${sharedField}`);
+        assert.ok(ec2Branch.includes(sharedField), `${definition.type} EC2 builds should carry ${sharedField}`);
+      }
       for (const removedInputId of [
         "build_infrastructure_type",
         "build_instance_size",
@@ -980,6 +1028,24 @@ function getValueOptions(input: Record<string, unknown>): unknown[] {
     assert.ok(isRecord(value), "value option should be an object");
     return value.value;
   });
+}
+
+function splitInfrastructureBranches(expression: string): [string, string] {
+  const start = expression.indexOf("? {");
+  assert.ok(start >= 0, "build.infrastructure should branch on the builder capacity type");
+  let depth = 0;
+  for (let index = start + 2; index < expression.length; index += 1) {
+    if (expression[index] === "{") {
+      depth += 1;
+    }
+    if (expression[index] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return [expression.slice(start + 2, index + 1), expression.slice(index + 1)];
+      }
+    }
+  }
+  return assert.fail("build.infrastructure sandbox branch is unbalanced");
 }
 
 function getBuildSourceShowWhen(input: Record<string, unknown>): unknown {

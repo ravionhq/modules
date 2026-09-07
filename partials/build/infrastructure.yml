@@ -1,7 +1,24 @@
-ami: << module.input.build_ami_id || nil >>
-aws_account_id: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.aws_account_id >>"
-execution_environment_id: << module.input.build_execution_environment_id || module.input.execution_environment_id >>
-instance_size: << module.input.build_instance_type >>
-permissions: '<< module.input.build_iam_policy_arns ? (module.input.build_default_policies_enabled ? {"attach": module.input.build_iam_policy_arns} : {"replace": module.input.build_iam_policy_arns}) : nil >>'
-region: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.aws_region >>"
-type: << module.input.build_capacity_type >>
+# Builder infrastructure for module image builds.
+#
+# The whole block is one expression because a sandbox build and an EC2 build do
+# not carry the same fields: a sandbox is sized with cpu and memory and pins its
+# execution environment, and the pipeline schema rejects instance_size, ami and
+# the account/region target mode on it. Emitting those keys as empty values
+# would still count as carrying them, so each capacity type builds its own
+# object instead.
+>-
+  << module.input.build_capacity_type == "sandbox" ? {"type": module.input.build_capacity_type,
+  "execution_environment_id": module.input.build_execution_environment_id ||
+  module.input.execution_environment_id, "cpu": module.input.build_sandbox_cpu,
+  "memory": module.input.build_sandbox_memory_gib, "permissions":
+  (module.input.build_iam_policy_arns ? (module.input.build_default_policies_enabled ?
+  {"attach": module.input.build_iam_policy_arns} : {"replace": module.input.build_iam_policy_arns})
+  : nil)} : {"type": module.input.build_capacity_type, "execution_environment_id":
+  module.input.build_execution_environment_id || module.input.execution_environment_id,
+  "aws_account_id": (module.input.build_execution_environment_id ||
+  module.input.execution_environment_id ? nil : module.input.aws_account_id), "region":
+  (module.input.build_execution_environment_id || module.input.execution_environment_id ? nil :
+  module.input.aws_region), "instance_size": module.input.build_instance_type, "ami":
+  (module.input.build_ami_id || nil), "permissions": (module.input.build_iam_policy_arns ?
+  (module.input.build_default_policies_enabled ? {"attach": module.input.build_iam_policy_arns} :
+  {"replace": module.input.build_iam_policy_arns}) : nil)} >>

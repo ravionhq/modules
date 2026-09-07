@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.0
-  description: Follow the selected observability providers, group add-ons with cluster selection, use positive scheduling and consistent release and builder field names, clarify ECR settings, keep run outcome charts on Prometheus, and let jobs target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  version: 0.4.1
+  description: Follow the selected observability providers, group add-ons with cluster selection, use positive scheduling and consistent release and builder field names, clarify ECR settings, keep run outcome charts on Prometheus, let jobs target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - id: section_cluster

@@ -3,7 +3,7 @@
   show_when: $with.show_when
   type: section
 - default: ec2
-  description: Use on-demand EC2 for predictable availability or EC2 Spot for lower cost with possible capacity delays or interruption.
+  description: Use on-demand EC2 for predictable availability, EC2 Spot for lower cost with possible capacity delays or interruption, or a Ravion sandbox for a fast-starting microVM.
   id: build_capacity_type
   label: Builder capacity type
   required: true
@@ -16,15 +16,47 @@
     - label: EC2 spot
       description: Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS.
       value: ec2-spot
+    - label: Ravion sandbox
+      description: Run the build as a Firecracker microVM on the chosen execution environment's sandbox pool, started from a warm disk.
+      value: sandbox
 - default: c7a.4xlarge
   description: EC2 instance type for builds. Start with the default value, then increase or decrease it based on the resource usage report at the end of builds.
   id: build_instance_type
   label: Builder instance type
   no_options_message: $with.no_options_message
   required: true
-  show_when: $with.show_when
+  show_when:
+    $merge:
+      - $with.show_when
+    build_capacity_type:
+      - ec2
+      - ec2-spot
   type: string
   values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&costUnit=minute
+- default: 4
+  description: vCPUs given to the sandbox microVM that runs the build. Start with the default value, then increase or decrease it based on the resource usage report at the end of builds.
+  id: build_sandbox_cpu
+  label: Builder sandbox vCPUs
+  min: 1
+  required: true
+  show_when:
+    $merge:
+      - $with.show_when
+    build_capacity_type:
+      - sandbox
+  type: number
+- default: 8
+  description: Memory in GiB given to the sandbox microVM that runs the build. Start with the default value, then increase or decrease it based on the resource usage report at the end of builds.
+  id: build_sandbox_memory_gib
+  label: Builder sandbox memory (GiB)
+  min: 1
+  required: true
+  show_when:
+    $merge:
+      - $with.show_when
+    build_capacity_type:
+      - sandbox
+  type: number
 - collapsible: true
   description: Optional execution environment ID or given ID for builds. Defaults to the module Terraform execution environment.
   id: build_execution_environment_id
@@ -38,7 +70,12 @@
   id: build_ami_id
   label: Builder AMI
   required: false
-  show_when: $with.show_when
+  show_when:
+    $merge:
+      - $with.show_when
+    build_capacity_type:
+      - ec2
+      - ec2-spot
   type: string
 - default: true
   collapsible: true
@@ -50,7 +87,7 @@
 - add_button_label: Add policy ARN
   collapsible: true
   default: []
-  description: IAM managed policy ARNs for the EC2 build runner role, applied for the duration of each build.
+  description: IAM managed policy ARNs for the build runner role, applied for the duration of each build.
   id: build_iam_policy_arns
   label: Builder IAM policies
   required: false

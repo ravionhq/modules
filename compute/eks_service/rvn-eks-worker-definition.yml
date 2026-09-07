@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.0
-  description: Follow the selected observability providers, group add-ons with cluster selection, use consistent scaling, release, and builder field names, clarify ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  version: 0.4.1
+  description: Follow the selected observability providers, group add-ons with cluster selection, use consistent scaling, release, and builder field names, clarify ECR settings, keep default build policies in advanced settings, let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - id: section_cluster

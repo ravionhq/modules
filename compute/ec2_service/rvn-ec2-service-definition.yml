@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.4.2
-  description: Use consistent health check and builder field names, keep default build policies in advanced builder settings, and remove contradictory listener-rule guidance.
+  version: 1.4.3
+  description: Use consistent health check and builder field names, keep default build policies in advanced builder settings, remove contradictory listener-rule guidance, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - id: network

@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.1.1
-  description: Clarify ECS cluster labels, use consistent builder field names, and keep default build policies in advanced builder settings.
+  version: 1.1.2
+  description: Clarify ECS cluster labels, use consistent builder field names, keep default build policies in advanced builder settings, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - id: section_cluster

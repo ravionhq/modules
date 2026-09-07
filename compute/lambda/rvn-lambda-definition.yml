@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.1.1
-  description: Use consistent Dockerfile and builder field names and keep default build policies in advanced builder settings so routine build forms stay focused.
+  version: 1.1.2
+  description: Use consistent Dockerfile and builder field names, keep default build policies in advanced builder settings so routine build forms stay focused, and let builds run on a Ravion sandbox microVM instead of an EC2 builder.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
