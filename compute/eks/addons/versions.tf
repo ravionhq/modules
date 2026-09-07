@@ -16,9 +16,13 @@ terraform {
       source  = "hashicorp/helm"
       version = ">= 3.0"
     }
-    # DEMO BRANCH: the ravion provider (beacon credential minting) is stripped —
-    # the dev API this branch deploys against has no beacon endpoints yet, and
-    # the demo runs with beacon disabled. Restore the provider (and beacon.tf's
-    # real resource) when the API side lands.
+    # Ravion's own provider, served from Ravion's provider registry. Used only by
+    # beacon.tf, to mint the Operator agent credential server-side.
+    # TEMP: pointed at the local dev registry tunnel while providers.ravion.com
+    # is not yet live — restore that hostname when the real registry exists.
+    ravion = {
+      source  = "provider-cf.siddharthsuresh.dev/ravion/ravion"
+      version = "~> 1.0"
+    }
   }
 }

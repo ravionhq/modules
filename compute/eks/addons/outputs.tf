@@ -252,20 +252,20 @@ output "beacon_chart_version" {
 }
 
 output "beacon_agent_id" {
-  description = "Ravion Beacon agent record id (bagt_...) for this cluster (null if disabled). Stable across rotations — correlate agent logs by it."
+  description = "Ravion Operator agent record id (opagt_...) for this cluster (null if disabled). Stable across rotations — correlate agent logs by it."
   # A computed attribute of the credential resource, not secret material: the
   # client secret is the only sensitive attribute and is never output.
-  value = var.beacon_enabled ? local.beacon_credential_stub.beacon_agent_id : null
+  value = var.beacon_enabled ? ravion_operator_credential.this[0].operator_agent_id : null
 }
 
 output "beacon_client_id" {
   description = "WorkOS M2M client id the agent authenticates as (null if disabled). Not a secret, and identical for every cluster in the organization — the shared application's client id."
-  value       = var.beacon_enabled ? local.beacon_credential_stub.client_id : null
+  value       = var.beacon_enabled ? ravion_operator_credential.this[0].client_id : null
 }
 
 output "beacon_client_secret_id" {
   description = "WorkOS id of the secret issued to this cluster (null if disabled). Not the secret itself: it identifies which credential a connecting agent is presenting."
-  value       = var.beacon_enabled ? local.beacon_credential_stub.secret_id : null
+  value       = var.beacon_enabled ? ravion_operator_credential.this[0].secret_id : null
 }
 
 output "beacon_credential_secret_arn" {

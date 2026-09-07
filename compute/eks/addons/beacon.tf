@@ -9,7 +9,7 @@
 #
 # Three things about the shape of this file:
 #
-#   1. THE CREDENTIAL IS A TERRAFORM RESOURCE. `ravion_beacon_credential` mints
+#   1. THE CREDENTIAL IS A TERRAFORM RESOURCE. `ravion_operator_credential` mints
 #      the WorkOS M2M client secret server-side and returns it exactly once, into
 #      Terraform state. There is no API token to pass and no curl to run: the
 #      provider authenticates with RAVION_API_KEY / RAVION_BASE_URL, which a
@@ -78,16 +78,29 @@ locals {
 # Neither an API token nor an API URL is a module input any more.
 ################################################################################
 
-# DEMO BRANCH: the ravion_beacon_credential resource is stripped (see
-# versions.tf). The stub below carries the attributes this file and outputs.tf
-# reference, so plan still type-checks; with beacon_enabled=false every
-# consumer sits behind count=0 and the empty strings never materialize.
-locals {
-  beacon_credential_stub = {
-    beacon_agent_id = ""
-    client_id       = ""
-    client_secret   = ""
-    secret_id       = ""
+resource "ravion_operator_credential" "this" {
+  count = var.beacon_enabled ? 1 : 0
+
+  # cluster_name and region are derivable from the ARN, but both are passed
+  # explicitly: this module already resolves them (region may be overridden by
+  # var.region) and a mismatch is better caught here than inferred.
+  cluster_arn  = local.beacon_cluster_arn
+  cluster_name = var.cluster_name
+  region       = local.beacon_region
+
+  # Optional Ravion record ids. The control plane accepts the cluster identity
+  # alone, so a null simply records nothing.
+  project_id     = var.beacon_project_id
+  environment_id = var.beacon_environment_id
+  aws_account_id = var.beacon_aws_account_record_id
+
+  # A nested attribute, not a block — note the `=`. Absent flags mean NOT
+  # granted. These record on the agent what the chart below grants in the
+  # cluster, so the two are driven from the same variables.
+  capabilities = {
+    exec_allowed        = var.beacon_exec_enabled
+    self_update_allowed = var.beacon_self_update_enabled
+    namespace_scope     = local.beacon_capability_namespace_scope
   }
 }
 
@@ -125,8 +138,8 @@ resource "aws_secretsmanager_secret_version" "beacon_credential" {
   # Same two keys the Kubernetes Secret carries, so a value pasted from one is
   # readable in the other without reshaping.
   secret_string = jsonencode({
-    (local.beacon_client_id_key)     = local.beacon_credential_stub.client_id
-    (local.beacon_client_secret_key) = local.beacon_credential_stub.client_secret
+    (local.beacon_client_id_key)     = ravion_operator_credential.this[0].client_id
+    (local.beacon_client_secret_key) = ravion_operator_credential.this[0].client_secret
   })
 }
 
@@ -159,8 +172,8 @@ resource "helm_release" "beacon_credential" {
       secretName      = local.beacon_k8s_secret_name
       clientIdKey     = local.beacon_client_id_key
       clientSecretKey = local.beacon_client_secret_key
-      clientId        = local.beacon_credential_stub.client_id
-      clientSecret    = local.beacon_credential_stub.client_secret
+      clientId        = ravion_operator_credential.this[0].client_id
+      clientSecret    = ravion_operator_credential.this[0].client_secret
     })),
   ]
 }

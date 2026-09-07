@@ -5,6 +5,7 @@ provider "aws" {
 # Nothing to configure: base_url and api_key default to RAVION_BASE_URL and
 # RAVION_API_KEY, which a Ravion pipeline injects for the run. Outside a
 # pipeline, export both before applying.
+provider "ravion" {}
 
 # Authenticates against the existing cluster. Tokens are minted per apply via
 # `aws eks get-token`, so no cluster credentials are stored in state. The

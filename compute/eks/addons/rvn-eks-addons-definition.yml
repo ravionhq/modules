@@ -4,9 +4,12 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster - Karpenter autoscaling, the AWS Load Balancer Controller, the External Secrets Operator, EBS CSI storage, workload logs and metrics shipped to any combination of destinations (an in-cluster log store on S3 and Amazon Managed Prometheus by default; CloudWatch, Grafana Cloud, Datadog, New Relic or a custom OTLP endpoint on request), Ravion EKS Management via the in-cluster Ravion Operator, and shared application/network load balancers, each toggled and configured independently.
 release:
-  version: 0.8.4
+  version: 0.8.5
   description: >-
-    Clarify which settings create managed resources and distinguish AWS account records, bucket names,
+    Ravion EKS Management mints its agent credential through the Ravion provider again, replacing the
+    inert stub a demo build left behind, so a cluster with the toggle on is registered with the control
+    plane and its Ravion Operator credential is issued at apply.
+    Previously (0.8.4): clarify which settings create managed resources and distinguish AWS account records, bucket names,
     excluded namespaces, and enhanced observability. Configure the default Karpenter NodePool's On-demand and Spot capacity, instance categories,
     architectures, CPU limit, and node lifetime directly in the module form. Ravion Operator chart 0.4.1,
     and beacon_image_tag is a plain pin. Every release so far ignored the tag
