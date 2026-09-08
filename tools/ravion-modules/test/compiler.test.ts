@@ -7,6 +7,31 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("compiles dedicated SSM relay controls and independent namespace bootstrap", async () => {
+    const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
+    const inputs = getModuleInputs(cluster.module);
+    assert.equal(findInput(inputs, "ravion_access_relay_instance_type").default, "t4g.micro");
+    assert.deepEqual(findInput(inputs, "ravion_access_read_trusted_principal_arns").default, []);
+    assert.deepEqual(findInput(inputs, "ravion_runner_role_trusted_principal_arns").default, []);
+    assert.equal(getTerraformVariable(cluster.module, "ravion_access_relay_instance_type"), '<< module.input.ravion_access_relay_instance_type || "t4g.micro" >>');
+    assert.equal(getTerraformVariable(cluster.module, "ravion_access_relay_subnet_id"), "<< module.input.ravion_access_relay_subnet_id >>");
+    assert.equal(getTerraformVariable(cluster.module, "ravion_access_read_trusted_principal_arns"), "<< module.input.ravion_access_read_trusted_principal_arns || [] >>");
+    assert.equal(getTerraformVariable(cluster.module, "ravion_runner_role_trusted_principal_arns"), "<< module.input.ravion_runner_role_trusted_principal_arns || [] >>");
+    assert.equal(findInput(inputs, "system_node_min_size").default, 2);
+    assert.equal(findInput(inputs, "system_node_max_size").default, 4);
+
+    const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
+    assert.equal(addons.version, "0.8.4", "the coordinated local prerelease keeps its authored version");
+    assert.equal(getTerraformVariable(addons.module, "workload_namespaces"), "<< module.input.workload_namespaces != nil ? module.input.workload_namespaces : [] >>");
+    assert.equal(getTerraformVariable(addons.module, "observed_namespaces"), "<< module.input.observed_namespaces != nil ? module.input.observed_namespaces : [] >>");
+    const observedNamespaces = findInput(getModuleInputs(addons.module), "observed_namespaces");
+    assert.deepEqual(observedNamespaces.default, []);
+    assert.deepEqual(observedNamespaces.moved_from, ["ravion_operator_namespace_scope", "beacon_namespace_scope"]);
+    assert.match(String(observedNamespaces.description), /all Secrets.*Helm inventory/);
+    assert.equal(getTerraformVariable(addons.module, "ravion_operator_enabled"), undefined);
+    assert.equal(getTerraformVariable(addons.module, "ravion_operator_aws_account_record_id"), undefined);
+  });
+
   it("compiles one definition file to canonical module config", async () => {
     const compiled = await compileDefinitionFile(join(fixturesDir, "modules", "networking", "vpc", "ravion-aws-vpc-definition.yml"));
 
@@ -390,22 +415,12 @@ describe("compiler", () => {
       String(findInput(inputs, "cloudwatch_application_signals_namespaces").description),
       /does not add injection annotations/,
     );
-    const operator = findInput(inputs, "ravion_operator_enabled");
-    const operatorDeploy = findInput(inputs, "ravion_operator_deploy_enabled");
-    const operatorDeployNamespaces = findInput(inputs, "ravion_operator_deploy_namespaces");
-    assert.equal(operator.default, true);
-    assert.deepEqual(operator.moved_from, ["beacon_enabled"]);
-    assert.equal(operatorDeploy.default, true);
-    assert.equal(operatorDeploy.label, "Ravion Operator deployments");
-    assert.deepEqual(operatorDeploy.moved_from, ["beacon_deploy_enabled"]);
-    assert.equal(operatorDeployNamespaces.required, true);
-    assert.notEqual(operatorDeployNamespaces.collapsible, true);
-    const namespaceCreation = findInput(inputs, "ravion_operator_namespaces_creation_enabled");
+    const namespaceCreation = findInput(inputs, "workload_namespaces_creation_enabled");
     assert.equal(namespaceCreation.default, true);
-    assert.deepEqual(namespaceCreation.show_when, { ravion_operator_enabled: true });
+    assert.equal(namespaceCreation.show_when, undefined);
     assert.equal(
-      getTerraformVariable(compiled.module, "ravion_operator_namespaces_creation_enabled"),
-      "<< module.input.ravion_operator_namespaces_creation_enabled != nil ? module.input.ravion_operator_namespaces_creation_enabled : true >>",
+      getTerraformVariable(compiled.module, "workload_namespaces_creation_enabled"),
+      "<< module.input.workload_namespaces_creation_enabled != nil ? module.input.workload_namespaces_creation_enabled : true >>",
     );
     assert.deepEqual(findInput(inputs, "logs_excluded_namespaces").default, [
       "kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon",
@@ -414,7 +429,8 @@ describe("compiler", () => {
       getTerraformVariable(compiled.module, "logs_excluded_namespaces"),
       '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>',
     );
-    assert.deepEqual(operatorDeployNamespaces.moved_from, [
+    assert.deepEqual(findInput(inputs, "workload_namespaces").moved_from, [
+      "ravion_operator_deploy_namespaces",
       "beacon_deploy_namespaces",
     ]);
     assert.equal(findInput(inputs, "public_alb_creation_enabled").default, true);
@@ -424,11 +440,14 @@ describe("compiler", () => {
     assert.equal(inputs.some((input) => input.id === "beacon_enabled"), false);
     assert.equal(inputs.some((input) => input.id === "beacon_deploy_enabled"), false);
     assert.equal(inputs.some((input) => input.id === "beacon_deploy_namespaces"), false);
-    assert.equal(
-      getTerraformVariable(compiled.module, "ravion_operator_deploy_enabled"),
-      "<< module.input.ravion_operator_deploy_enabled >>",
-    );
+    assert.equal(inputs.some((input) => String(input.id).startsWith("ravion_operator_")), false);
     for (const legacyVariable of [
+      "ravion_operator_enabled",
+      "ravion_operator_deploy_enabled",
+      "ravion_operator_deploy_namespaces",
+      "ravion_operator_project_id",
+      "ravion_operator_environment_id",
+      "ravion_operator_aws_account_record_id",
       "beacon_enabled",
       "beacon_deploy_enabled",
       "beacon_deploy_namespaces",
@@ -438,7 +457,7 @@ describe("compiler", () => {
     ]) {
       assert.equal(getTerraformVariable(compiled.module, legacyVariable), undefined);
     }
-    for (const sectionId of ["section_ravion_operator", "section_karpenter", "section_external_secrets"]) {
+    for (const sectionId of ["section_workloads", "section_karpenter", "section_external_secrets"]) {
       assert.doesNotMatch(String(findInput(inputs, sectionId).description), /Terraform runner/);
     }
     assert.doesNotMatch(JSON.stringify(compiled), /\bBeacon\b/);
@@ -457,15 +476,16 @@ describe("compiler", () => {
     }
   });
 
-  it("places EKS add-on load balancers below Ravion EKS Management", async () => {
+  it("places EKS add-on load balancers below independent workload namespaces", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
     );
     const inputs = getModuleInputs(compiled.module);
     const indexOf = (id: string) => inputs.findIndex((input) => input.id === id);
 
-    assert.equal(indexOf("ravion_operator_namespaces_creation_enabled"), indexOf("ravion_operator_deploy_namespaces") + 1);
-    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_namespaces_creation_enabled") + 1);
+    assert.equal(indexOf("observed_namespaces"), indexOf("workload_namespaces") + 1);
+    assert.equal(indexOf("workload_namespaces_creation_enabled"), indexOf("observed_namespaces") + 1);
+    assert.equal(indexOf("section_alb"), indexOf("workload_namespaces_creation_enabled") + 1);
     assert.ok(indexOf("section_alb") < indexOf("section_nlb"));
     assert.ok(indexOf("section_nlb") < indexOf("aws_load_balancer_controller_chart_version"));
     assert.ok(indexOf("aws_load_balancer_controller_chart_version") < indexOf("section_karpenter"));
@@ -480,7 +500,6 @@ describe("compiler", () => {
       {
         path: ["compute", "eks", "addons", "rvn-eks-addons-definition.yml"],
         sectionIds: [
-          "section_ravion_operator",
           "section_alb",
           "section_nlb",
           "section_karpenter",

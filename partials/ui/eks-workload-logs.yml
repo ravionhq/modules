@@ -6,7 +6,7 @@
 # answer right now and moves to the next when it cannot, naming the store it
 # ended up using. Order here is the fallback order the add-ons module
 # publishes - the in-cluster store first, CloudWatch Logs behind it - so an
-# offline Ravion Operator degrades to CloudWatch instead of to an empty tab.
+# unavailable SSM access degrades to CloudWatch instead of to an empty tab.
 #
 # `logs_rendering_providers` is mapped off the add-ons reference, and unset is
 # not the same as empty. Unset means the add-ons module is older than 0.8.0 and
@@ -17,7 +17,7 @@
 #
 # Both Loki fields resolve from the workload's own inputs - the cluster ARN is
 # mapped off the cluster reference and the selector uses the release identity
-# - so the source is declared (and listed as pending until the agent serves
+# - so the source is declared (and listed as pending until cluster access serves
 # it) from the moment the instance exists, with no stack apply involved.
 #
 # `workload` is the collector's hash-stripped controller name, which the

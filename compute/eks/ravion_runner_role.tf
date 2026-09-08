@@ -15,6 +15,24 @@
 
 data "aws_caller_identity" "current" {}
 
+locals {
+  # SourceIdentity survives the broker's OIDC -> EKS role chain. The target
+  # role must permit SetSourceIdentity under the same principal restrictions.
+  ravion_runner_assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [merge({
+      Sid    = "TrustAWSPrincipals"
+      Effect = "Allow"
+      Action = ["sts:AssumeRole", "sts:SetSourceIdentity"]
+      Principal = {
+        AWS = length(var.ravion_runner_role_trusted_principal_arns) > 0 ? distinct([for arn in var.ravion_runner_role_trusted_principal_arns : "arn:${data.aws_partition.current.partition}:iam::${split(":", arn)[4]}:root"]) : ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
+      }
+      }, length(var.ravion_runner_role_trusted_principal_arns) == 0 ? {} : {
+      Condition = { ArnLike = { "aws:PrincipalArn" = var.ravion_runner_role_trusted_principal_arns } }
+    })]
+  })
+}
+
 module "ravion_runner_role" {
   count = var.ravion_runner_role_creation_enabled ? 1 : 0
 
@@ -23,13 +41,8 @@ module "ravion_runner_role" {
   name        = "${var.name}-ravion-runner"
   description = "Assumed by Ravion Runner step executions for Kubernetes API access to the ${var.name} EKS cluster"
 
-  trusted_aws_principals = [data.aws_caller_identity.current.account_id]
-
-  assume_role_conditions = length(var.ravion_runner_role_trusted_principal_arns) == 0 ? [] : [{
-    test     = "ArnLike"
-    variable = "aws:PrincipalArn"
-    values   = var.ravion_runner_role_trusted_principal_arns
-  }]
+  # Keep this EKS-specific; other users of security/iam retain their own trust.
+  custom_assume_role_policy = local.ravion_runner_assume_role_policy
 
   # `aws eks get-token` needs no IAM permissions; DescribeCluster covers
   # tooling that fetches the endpoint and CA under the assumed role.

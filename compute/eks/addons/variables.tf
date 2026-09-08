@@ -673,144 +673,38 @@ variable "karpenter_default_node_pool" {
 }
 
 ################################################################################
-# Ravion Operator
+# Workload namespace bootstrap (independent of cluster access)
 ################################################################################
 
-variable "ravion_operator_enabled" {
+variable "workload_namespaces_creation_enabled" {
   type        = bool
-  description = "Install the Ravion Operator: mint the cluster's WorkOS M2M credential through the Ravion provider, write it into a Kubernetes Secret (and mirror it into AWS Secrets Manager), and install the agent's Helm chart. The provider authenticates with RAVION_BASE_URL/RAVION_API_KEY from the environment, which a Ravion pipeline injects — there is no API token input. Ravion Operator dials Ravion outbound over a single WebSocket and is read-only unless ravion_operator_deploy_enabled, ravion_operator_exec_enabled, or the equivalent chart values are turned on."
-  default     = false
-  nullable    = false
-}
-
-variable "ravion_operator_endpoint" {
-  type        = string
-  description = "WebSocket endpoint the agent dials. Outbound 443 only, and the single destination a customer's egress policy has to allow. A domain of its own on purpose, so that address need not change when Ravion moves agent connections into their own deployment. Override for staging, a self-hosted control plane, or a local gateway over ws://."
-  default     = "wss://websockets.ravion.com/beacon/v1/connect"
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^wss?://", var.ravion_operator_endpoint))
-    error_message = "The ravion_operator_endpoint must be a WebSocket URL starting with 'wss://' (or 'ws://' for local testing)."
-  }
-}
-
-variable "ravion_operator_chart_source" {
-  type        = string
-  description = "Where the agent's Helm chart comes from. An 'oci://' reference is split into repository and chart name; anything else is treated as a filesystem path to a chart directory, which is how the chart is tested before it is published to ECR Public. Must stay publicly pullable: customer clusters cannot pull from Ravion's private ECR."
-  default     = "oci://public.ecr.aws/a8z1i1r2/beacon"
-  nullable    = false
-
-  validation {
-    condition     = length(var.ravion_operator_chart_source) > 0
-    error_message = "The ravion_operator_chart_source must not be empty."
-  }
-}
-
-variable "ravion_operator_chart_version" {
-  type        = string
-  description = "Version of the Ravion Operator Helm CHART to install - the agent's RBAC and wiring - pinned per module release so a chart change arrives as a module upgrade rather than as whatever the registry called latest that day. Set null to let Helm resolve the latest. This is NOT the agent version and never moves it: the control plane rolls the agent image forward per cluster, and the chart re-emits the running image on every upgrade, so an apply of this module - any apply - leaves the agent at whatever version it is running."
-  default     = "0.4.1"
-
-  validation {
-    condition     = var.ravion_operator_chart_version == null || can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.ravion_operator_chart_version))
-    error_message = "The ravion_operator_chart_version must be a semantic version like '0.2.0' (no leading 'v')."
-  }
-}
-
-variable "ravion_operator_namespace" {
-  type        = string
-  description = "Kubernetes namespace the agent and its credential Secret are installed into. Created if it does not exist."
-  default     = "ravion-operator"
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.ravion_operator_namespace))
-    error_message = "The ravion_operator_namespace must be a valid Kubernetes namespace: 1-63 lowercase letters, digits, or hyphens, starting and ending with a letter or digit."
-  }
-}
-
-variable "ravion_operator_namespaces_creation_enabled" {
-  type        = bool
-  description = "Create missing observation and deployment namespaces before installing Ravion Operator RBAC. Existing namespaces are reused without adoption. Created namespaces are retained when removed from the configuration or when the add-ons are destroyed. Disable only when namespaces are provisioned separately."
+  description = "Create missing workload and observed namespaces. Existing namespaces are reused without adoption; created namespaces are retained on removal or uninstall. Disabling creation preserves namespace-scoped Helm inventory Secret read grants."
   default     = true
   nullable    = false
 }
 
-variable "ravion_operator_namespace_scope" {
+variable "workload_namespaces" {
   type        = list(string)
-  description = "Namespaces the agent may observe. Empty (the default) is the whole cluster. Non-empty renders no observation ClusterRole at all — one namespaced Role and RoleBinding per entry instead — so the restriction is enforced by Kubernetes rather than by the agent. A scoped install can read no nodes and no namespaces, so the node count in fleet health is reported as unknown."
+  description = "Deployment/workload namespaces to bootstrap. Unioned with observed_namespaces for namespace-scoped get/list Secrets so readers can inspect Helm inventory and drift. This grants access to every Secret in those namespaces."
   default     = []
   nullable    = false
 
   validation {
-    condition     = alltrue([for namespace in var.ravion_operator_namespace_scope : can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", namespace))])
-    error_message = "Each ravion_operator_namespace_scope entry must be a valid Kubernetes namespace (1-63 lowercase letters, digits, or hyphens, starting and ending with a letter or digit)."
+    condition     = alltrue([for namespace in var.workload_namespaces : can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", namespace))])
+    error_message = "Each workload namespace must be a valid Kubernetes namespace (1-63 lowercase letters, digits, or hyphens)."
   }
 }
 
-variable "ravion_operator_deploy_enabled" {
-  type        = bool
-  description = "Let Ravion Operator perform Ravion's Helm upgrades from inside the cluster instead of Ravion reaching in from outside. The widest grant the chart can create: in the namespaces below, the agent can create, update and delete Deployments, Services, Jobs, Ingresses and Secrets. It can never create RBAC objects, namespaces, or anything cluster-scoped. Declining it leaves a fully working agent and deploys continue to run from outside the cluster."
-  default     = false
-  nullable    = false
-}
-
-variable "ravion_operator_deploy_namespaces" {
+variable "observed_namespaces" {
   type        = list(string)
-  description = "Namespaces Ravion Operator may deploy into. Required when ravion_operator_deploy_enabled is true, falling back to ravion_operator_namespace_scope when empty. If both are empty the install fails rather than granting cluster-wide write: there is no 'deploy everywhere' posture, by design."
+  description = "Additional observation namespaces. Unioned with workload_namespaces for retained namespace bootstrap and Helm inventory get/list Secrets grants to ravion:readers. RBAC cannot restrict Secret listing by Helm labels; readers can read all Secrets in each selected namespace."
   default     = []
   nullable    = false
 
   validation {
-    condition     = alltrue([for namespace in var.ravion_operator_deploy_namespaces : can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", namespace))])
-    error_message = "Each ravion_operator_deploy_namespaces entry must be a valid Kubernetes namespace (1-63 lowercase letters, digits, or hyphens, starting and ending with a letter or digit)."
+    condition     = alltrue([for namespace in var.observed_namespaces : can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", namespace))])
+    error_message = "Each observed namespace must be a valid Kubernetes namespace (1-63 lowercase letters, digits, or hyphens)."
   }
-}
-
-variable "ravion_operator_exec_enabled" {
-  type        = bool
-  description = "Grant a separate ClusterRole allowing 'create' on pods/exec, the only way Ravion Operator can run a command inside a container. Off by default, recorded on the agent's credential as well as granted in the cluster, and scoped with ravion_operator_namespace_scope when that is set."
-  default     = false
-  nullable    = false
-}
-
-variable "ravion_operator_self_update_enabled" {
-  type        = bool
-  description = "Let the control plane roll the agent forward by patching its own Deployment. The only write permission the chart creates by default: a namespaced Role scoped by resourceNames to Ravion Operator's own Deployment. Turning it off pins the agent to whatever this module last applied, and you take on keeping it current — Ravion supports two agent minor versions back."
-  default     = true
-  nullable    = false
-}
-
-variable "ravion_operator_image_tag" {
-  type        = string
-  description = "Agent image tag to PIN. Leave null (the default): a fresh install then starts at the chart's appVersion and every later apply keeps whatever version the release is running, because the control plane owns the agent version and the chart re-emits the running image on upgrade. Set it only to force a specific agent version onto a cluster: while it is set every apply re-asserts it, a control-plane rollout in between included, and removing it hands the version back to the control plane on the next apply. It is a pin, not a one-off - leave it null unless you mean to hold a cluster at a version."
-  default     = null
-}
-
-variable "ravion_operator_helm_values" {
-  type        = list(string)
-  description = "Extra YAML documents merged into the Ravion Operator chart values (later entries win). The route to values this module does not surface directly, e.g. portForward.enabled, helmInventory.enabled, redaction.extraPatterns, image.repository, resources, or tolerations."
-  default     = []
-  nullable    = false
-}
-
-variable "ravion_operator_project_id" {
-  type        = string
-  description = "Ravion project this cluster belongs to, recorded on the agent when its credential is minted. Optional; the cluster identity alone is enough."
-  default     = null
-}
-
-variable "ravion_operator_environment_id" {
-  type        = string
-  description = "Ravion environment this cluster belongs to, recorded on the agent when its credential is minted. Optional."
-  default     = null
-}
-
-variable "ravion_operator_aws_account_record_id" {
-  type        = string
-  description = "Ravion AWS account record the cluster lives in, recorded on the agent when its credential is minted. This is the Ravion record id (awsact_...), not the 12-digit AWS account number. Optional."
-  default     = null
 }
 
 ################################################################################
@@ -847,7 +741,7 @@ variable "amp_alias" {
 
 variable "metrics_namespace" {
   type        = string
-  description = "Kubernetes namespace the metrics components (kube-state-metrics, OpenTelemetry collector) are installed into. When null, Ravion Operator's namespace is used, so Ravion's in-cluster components share one namespace. Created if it does not exist."
+  description = "Kubernetes namespace for metrics components. Null uses observability_namespace (default ravion-operator). Created if missing."
   default     = null
 }
 
@@ -998,7 +892,7 @@ variable "log_retention_days" {
 
 variable "logs_namespace" {
   type        = string
-  description = "Kubernetes namespace Loki and Alloy are installed into. When null, Ravion Operator's namespace is used, so Ravion's in-cluster components share one namespace. Created if it does not exist."
+  description = "Kubernetes namespace for Loki and Alloy. Null uses observability_namespace (default ravion-operator). Created if missing."
   default     = null
 }
 
@@ -1110,7 +1004,7 @@ variable "grafana_chart_version" {
 
 variable "grafana_namespace" {
   type        = string
-  description = "Kubernetes namespace Grafana is installed into. When null, Ravion Operator's namespace is used. Created if it does not exist."
+  description = "Kubernetes namespace for Grafana. Null uses observability_namespace (default ravion-operator). Created if missing."
   default     = null
 }
 
@@ -1159,7 +1053,7 @@ variable "logs_providers" {
 
 variable "metrics_providers" {
   type        = list(string)
-  description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
+  description = "Metric destinations: amp, prometheus (in-cluster, queried through EKS service proxy over SSM), cloudwatch, grafana_cloud, datadog, new_relic, otlp. Empty disables metrics."
   default     = ["amp"]
   nullable    = false
 
@@ -1174,7 +1068,7 @@ variable "metrics_providers" {
 
 variable "observability_namespace" {
   type        = string
-  description = "Kubernetes namespace the collectors, kube-state-metrics, the log store and the materialized vendor credentials are installed into. When null, Ravion Operator's namespace is used, so Ravion's in-cluster components share one namespace — and, importantly, Loki keeps the Service URL the control plane already defaults to. Created if it does not exist."
+  description = "Shared namespace for collectors, stores and vendor credentials. Null defaults to ravion-operator to preserve existing release and storage identity. Created if missing."
   default     = null
 }
 

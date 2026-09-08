@@ -21,17 +21,9 @@ locals {
     }]
   })
 
-  # Ravion's in-cluster components share one namespace by default: Ravion Operator, both
-  # collectors, kube-state-metrics, Loki, Prometheus, the materialized vendor
-  # credentials, and Grafana. Each has its own override so a cluster that wants
-  # them apart can have that, but the default keeps them together — one
-  # namespace to grant Ravion Operator observation on, and one place to look when the
-  # pipeline is the thing that is wrong.
-  #
-  # observability_namespace deliberately defaults to Ravion Operator's namespace rather
-  # than to a namespace of its own: moving Loki would change the Service URL the
-  # control plane defaults to, for no gain.
-  observability_namespace = coalesce(var.observability_namespace, var.ravion_operator_namespace)
+  # Preserve shared release/storage identity independently of retired Operator.
+  # Each component retains a namespace override for existing installations.
+  observability_namespace = coalesce(var.observability_namespace, "ravion-operator")
   metrics_namespace       = coalesce(var.metrics_namespace, local.observability_namespace)
   logs_namespace          = coalesce(var.logs_namespace, local.observability_namespace)
   grafana_namespace       = coalesce(var.grafana_namespace, local.observability_namespace)

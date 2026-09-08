@@ -9,7 +9,7 @@
 #
 #   1. LOKI IS NEVER EXPOSED. No ingress, no load balancer, no gateway — a
 #      ClusterIP Service on 3100 and nothing else. Ravion reads it through the
-#      Ravion Operator's tunnel, which is why the log data never leaves the
+#      EKS service proxy over SSM, which is why the log data never leaves the
 #      customer's account except as the answer to a query they can audit.
 #
 #   2. SINGLE-BINARY MODE. Every Loki target in one StatefulSet replica, with
@@ -202,14 +202,14 @@ resource "helm_release" "loki" {
       yamlencode({
         deploymentMode = "SingleBinary"
 
-        # Pins the Service name the collector and Ravion Operator are pointed at, so it
+        # Pins the Service name the collector and read-only API proxy use, so it
         # is a constant rather than a function of the release name.
         fullnameOverride = local.loki_release_name
 
         loki = {
           # One tenant per cluster. Without auth_enabled every request is
           # attributed to the "fake" tenant and no X-Scope-OrgID header is
-          # needed anywhere — including in Ravion Operator's proxied queries.
+          # needed anywhere — including in read-only service proxy queries.
           auth_enabled = false
 
           commonConfig = {

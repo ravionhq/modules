@@ -4,7 +4,7 @@
 # `prometheus` in metrics_providers installs Prometheus in the cluster with its
 # remote-write receiver on, and the metrics collector writes to it exactly the
 # way it writes to AMP. It is a rendering provider: Ravion queries it through
-# Ravion Operator, the same route the in-cluster Loki is read by, so it has no ingress
+# the EKS service proxy over SSM, like in-cluster Loki, so it has no ingress
 # and no route out of the cluster.
 #
 # Three things about the shape of this file:
@@ -47,7 +47,7 @@ resource "helm_release" "prometheus" {
   values = concat(
     [
       yamlencode({
-        # Pins the Service name the collector and Ravion Operator are pointed at.
+        # Pins the Service name the collector and read-only API proxy use.
         fullnameOverride = local.prometheus_release_name
 
         server = {
@@ -69,7 +69,7 @@ resource "helm_release" "prometheus" {
             servicePort = 9090
           }
 
-          # No ingress, ever: the only route in is Ravion Operator's proxy.
+          # No ingress: external reads use the EKS service proxy over SSM.
           ingress = {
             enabled = false
           }

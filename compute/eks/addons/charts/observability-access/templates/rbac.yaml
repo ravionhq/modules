@@ -1,0 +1,34 @@
+{{- range $namespace := .Values.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ravion-observability-read
+  namespace: {{ $namespace | quote }}
+rules:
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    verbs: ["get"]
+    resourceNames:
+      {{- range $.Values.services }}
+      {{- if eq .namespace $namespace }}
+      - {{ .name | quote }}
+      - {{ printf "%s:%s" .name .port | quote }}
+      - {{ printf "http:%s:%s" .name .port | quote }}
+      {{- end }}
+      {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ravion-observability-read
+  namespace: {{ $namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ravion-observability-read
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: ravion:readers
+{{- end }}

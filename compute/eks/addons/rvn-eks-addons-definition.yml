@@ -2,16 +2,14 @@ global: false
 definition:
   type: rvn-eks-addons
   name: EKS Add-ons
-  description: Selectable add-ons for an existing EKS cluster - Karpenter autoscaling, the AWS Load Balancer Controller, the External Secrets Operator, EBS CSI storage, workload logs and metrics shipped to any combination of destinations (an in-cluster log store on S3 and Amazon Managed Prometheus by default; CloudWatch, Grafana Cloud, Datadog, New Relic or a custom OTLP endpoint on request), Ravion EKS Management via the in-cluster Ravion Operator, and shared application/network load balancers, each toggled and configured independently.
+  description: Selectable EKS add-ons for autoscaling, load balancing, external secrets, storage, workload namespace bootstrap, logs, and metrics. Cluster access uses the EKS Cluster module's dedicated SSM relay.
 release:
   version: 0.8.4
   description: >-
-    Rename the Terraform-facing Ravion Operator variables and outputs from beacon_* to ravion_operator_*.
-    Automatically attach the cluster's Ravion Runner security group to add-on runs, render metrics from
-    Amazon Managed Prometheus, provision new installations with supported Ravion Operator credentials,
-    prevent first-time Karpenter installation failures when AWS Load Balancer Controller is enabled,
-    create missing Operator workload namespaces safely, and move the default Operator and observability
-    namespace to ravion-operator (existing Helm releases are replaced).
+    Replace Ravion Operator installation with cluster-owned SSM access, retain shared observability
+    storage and release names, and bootstrap workload/observed namespaces with scoped Helm inventory
+    Secret reads. Existing Operator
+    installations require the documented staged cutover; upgrades do not automatically delete them.
 module:
   inputs:
     - id: cluster
@@ -90,44 +88,34 @@ module:
           type: string_array
       required: true
       type: $ref:rvn-eks-cluster
-    - description: Ravion Operator connects outbound to Ravion for workload, rollout, and node visibility.
-      id: section_ravion_operator
-      label: Ravion EKS Management
+    - id: section_workloads
+      label: Workload namespaces
       type: section
-    - default: true
-      description: Register the cluster with Ravion and install Ravion Operator for cluster visibility and in-cluster deployments.
-      id: ravion_operator_enabled
-      label: Ravion EKS Management
-      moved_from:
-        - beacon_enabled
-      type: boolean
-    - default: true
-      description: Run Ravion deployments through Ravion Operator inside the cluster. Ravion Operator may create, update, and delete workload resources only in the selected namespaces; it cannot modify RBAC, namespaces, or cluster-scoped resources.
-      id: ravion_operator_deploy_enabled
-      label: Ravion Operator deployments
-      moved_from:
-        - beacon_deploy_enabled
-      show_when:
-        ravion_operator_enabled: true
-      type: boolean
     - add_button_label: Add namespace
-      description: Namespaces Ravion Operator may deploy into. Missing namespaces are created during apply by default and retained on removal. If empty, the advanced operator observation scope is used. Installation fails if neither list contains a namespace.
-      id: ravion_operator_deploy_namespaces
-      label: Deployment namespaces
+      description: Deployment namespaces to create and retain. Readers receive get/list access to every Secret in these and the observed namespaces for Helm inventory and drift; RBAC cannot restrict listing to Helm labels.
+      id: workload_namespaces
+      label: Workload namespaces
       moved_from:
+        - ravion_operator_deploy_namespaces
         - beacon_deploy_namespaces
       placeholder: default
-      required: true
-      show_when:
-        ravion_operator_deploy_enabled: true
+      type: string_array
+    - add_button_label: Add namespace
+      default: []
+      description: Additional namespaces to observe. Combined with workload namespaces for retained bootstrap and get/list access to all Secrets for Helm inventory and drift. Empty adds no extra namespaces.
+      id: observed_namespaces
+      label: Observed namespaces
+      moved_from:
+        - ravion_operator_namespace_scope
+        - beacon_namespace_scope
       type: string_array
     - default: true
-      description: Create missing observation and deployment namespaces before installing Operator permissions. Existing namespaces are reused without adoption; created namespaces are retained on removal or uninstall. Disable only when namespaces are provisioned separately.
-      id: ravion_operator_namespaces_creation_enabled
+      description: Create missing workload and observed namespaces, reusing existing ones without adoption and retaining created ones on removal. Disable for externally provisioned namespaces; Helm inventory Secret read permissions are still installed.
+      id: workload_namespaces_creation_enabled
       label: Create workload namespaces
       collapsible: true
-      show_when:
-        ravion_operator_enabled: true
+      moved_from:
+        - ravion_operator_namespaces_creation_enabled
       type: boolean
     - description: Shared Application Load Balancers for HTTP and HTTPS workloads. EKS Web services attach through TargetGroupBinding.
       id: section_alb
@@ -1130,13 +1118,9 @@ module:
         eso_chart_version: << module.input.eso_chart_version || "2.8.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
-        ravion_operator_enabled: << module.input.ravion_operator_enabled >>
-        ravion_operator_deploy_enabled: << module.input.ravion_operator_deploy_enabled >>
-        ravion_operator_deploy_namespaces: '<< module.input.ravion_operator_deploy_namespaces != nil ? module.input.ravion_operator_deploy_namespaces : [] >>'
-        ravion_operator_namespaces_creation_enabled: '<< module.input.ravion_operator_namespaces_creation_enabled != nil ? module.input.ravion_operator_namespaces_creation_enabled : true >>'
-        ravion_operator_project_id: << project.id >>
-        ravion_operator_environment_id: << environment.id >>
-        ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
+        workload_namespaces: '<< module.input.workload_namespaces != nil ? module.input.workload_namespaces : [] >>'
+        observed_namespaces: '<< module.input.observed_namespaces != nil ? module.input.observed_namespaces : [] >>'
+        workload_namespaces_creation_enabled: '<< module.input.workload_namespaces_creation_enabled != nil ? module.input.workload_namespaces_creation_enabled : true >>'
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
         public_alb_creation_enabled: << module.input.public_alb_creation_enabled >>
@@ -1262,10 +1246,10 @@ module:
     | **EBS CSI driver** | Off | EBS-backed persistent volumes via the aws-ebs-csi-driver EKS add-on and its Pod Identity role |
     | **Logs** | On (in-cluster store) | Container output collected on every node and delivered to the destinations you choose - an in-cluster store on S3 by default, plus CloudWatch Logs or a vendor on request |
     | **Metrics** | On (Amazon Managed Prometheus) | Per-container CPU, memory, network, restart and scaling metrics, delivered to the destinations you choose - Amazon Managed Prometheus by default, plus CloudWatch Container Insights or a vendor on request |
-    | **Ravion EKS Management** | On | Registers the cluster with the Ravion control plane and installs Ravion Operator, which reports workload and node state outbound over a single WebSocket and can run Ravion's deploys from inside the cluster |
+    | **Workload namespaces** | Empty list | Independently creates missing workload namespaces and retains them on removal; cluster access comes from the EKS Cluster SSM relay |
     | **Shared load balancers** | Public ALB on | Terraform-managed public/private ALBs and NLBs that web workloads attach to via the load balancer controller's TargetGroupBinding — the same shared-LB pattern the ECS Cluster module uses |
 
-    EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, and both observability pipelines additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
+    EBS CSI and CloudWatch Observability are native EKS add-ons installed through the AWS API. Karpenter, the load balancer controller, external secrets, namespace bootstrap, and observability charts additionally need Kubernetes API connectivity.
 
     ## Logs and metrics destinations
 
@@ -1274,7 +1258,7 @@ module:
     | Logs destination | What runs | In Ravion |
     | ---------------- | --------- | --------- |
     | **In-cluster log store (Loki)** - default | Alloy on every node, Loki in the cluster, chunks in an S3 bucket in your account | Renders in the Logs tab |
-    | **Amazon CloudWatch Logs** | An OpenTelemetry collector on every node, writing to `/ravion/eks/<cluster>` | Renders, and is read when the in-cluster agent is offline |
+    | **Amazon CloudWatch Logs** | An OpenTelemetry collector on every node, writing to `/ravion/eks/<cluster>` | Renders, and is read when the in-cluster store or SSM access is unavailable |
     | **Grafana Cloud Logs** | The same Alloy agent, writing to your Grafana Cloud endpoint as well | Ships, plus an "Open in Grafana Cloud" link |
     | **Datadog / New Relic / custom OTLP** | The OpenTelemetry collector, one exporter each | Ships, plus an "Open in ..." link |
 
@@ -1294,32 +1278,15 @@ module:
 
     **Upgrading from 0.7.x** changes nothing you did not ask for: a cluster with Logs on keeps the in-cluster store, a cluster with Logs off stays off, and a cluster that had Container Insights on keeps it as the fallback behind Amazon Managed Prometheus. The one behavioural change is that the CloudWatch add-on is re-applied with Auto-Monitor off, so agents it had injected leave workloads on their next rollout.
 
-    ## Ravion EKS Management
+    ## Cluster access and workload namespaces
 
-    Ravion Operator is Ravion's in-cluster agent. It dials the control plane outbound over a single WebSocket and reports workload, rollout, and node state back — the control plane can never dial in, which is what makes a cluster with a private API endpoint observable from Ravion at all. Outbound 443 to the agent endpoint is the only egress a cluster has to allow.
+    The EKS Cluster module provisions a dedicated private SSM relay and separate read-only and deploy/admin roles. New add-ons installations create no Ravion Operator or Operator credentials. Workload namespaces are bootstrapped independently and retained on removal.
 
-    Enabling the toggle does three things in one deployment: Ravion issues the agent's credential — server-side, authorized by the pipeline's own credentials, so there is no API key to paste — writes it into the agent's Kubernetes secret and mirrors it into a Secrets Manager secret **in your own AWS account**, and installs the agent's Helm chart. The plaintext is issued exactly once; rotating or revoking it is a redeploy, not an API call.
+    Add-ons always installs read-only node/metrics inventory RBAC for the read role, supplementing AWS View, plus GET service-proxy permissions for selected managed Loki/Prometheus services. This bootstrap requires Kubernetes API connectivity even when all optional add-ons are off. Observers cannot exec or pod-forward. For Helm inventory and drift, each namespace in the union of workload and observed namespaces receives a Role granting get/list of all Secrets, including non-Helm Secrets; Kubernetes RBAC cannot restrict Secret listing by labels. No global Secret grant is created.
 
-    Ravion Operator deployments are enabled by default. This widens the otherwise read-only agent with one bounded grant:
+    Shared observability remains in `ravion-operator` with stable Helm release names and S3/AMP resources. If an existing installation uses another namespace, explicitly preserve it through `observability_namespace` and any per-component overrides before upgrading; changing a namespace does not migrate PVCs.
 
-    - **Ravion Operator deployments** — lets Ravion's Helm upgrades run from inside the cluster instead of reaching in from outside. Within the required **deployment namespaces** the agent can create, update, and delete workload objects; it can never create RBAC objects, namespaces, or anything cluster-scoped. There is no cluster-wide deploy posture. Disabling this still leaves a fully working agent; deploys continue to run from outside the cluster.
-
-    The project, environment, and AWS account this module belongs to are recorded on the agent automatically when its credential is issued; there is nothing to fill in.
-
-    Everything else about the install is tuning, so it is not on the form. Set these through **Advanced Terraform variables** when a cluster needs them:
-
-    | Terraform variable | Default | What it changes |
-    | ------------------ | ------- | --------------- |
-    | `ravion_operator_endpoint` | `wss://websockets.ravion.com/beacon/v1/connect` | WebSocket endpoint the agent dials — the single destination an egress policy must allow. Override only for a staging or self-hosted control plane |
-    | `ravion_operator_chart_version` | `0.4.1` | Ravion Operator **chart** version, pinned per module release; never the agent version — the chart keeps whatever the release is running and Ravion rolls it forward. Set to `null` to track the registry's latest |
-    | `ravion_operator_namespace` | `ravion-operator` | Namespace the agent and its credential secret are installed into, created if missing; also the default for shared observability components |
-    | `ravion_operator_namespace_scope` | `[]` (cluster-wide read) | Namespaces the agent may observe. Naming namespaces renders no cluster-scoped read role at all, only one namespaced role per entry, so the restriction is enforced by Kubernetes rather than by the agent. A scoped agent cannot read nodes, so cluster node counts show as unknown |
-
-    **Deployment namespaces** falls back to `ravion_operator_namespace_scope` when left empty, so a cluster scoped through the advanced variable also bounds Ravion Operator's deploys by default.
-
-    **Create workload namespaces** is enabled by default. Apply creates missing deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Namespaces created here are retained when removed from the list or when add-ons are uninstalled, so removing Operator does not delete application workloads. The Operator itself still cannot create namespaces.
-
-    **Namespace migration:** the default shared namespace is now `ravion-operator`. Existing Operator and observability Helm releases in `ravion-beacon` are replaced, interrupting logs and metrics while they restart. Review persistent volumes and back up any local-only data first; namespace changes do not migrate PVCs or their contents. The AWS credential and S3/AMP resources are unchanged. An explicit namespace override continues to take precedence. Chart names, Helm release names, credential Secret names, and connection paths are unchanged.
+    Existing installations must follow [the staged SSM upgrade guide](https://github.com/ravionhq/modules/blob/$local.module_tag/compute/eks/addons/UPGRADE-SSM.md). Verify SSM access, revoke the old WorkOS credential, uninstall Operator and delete its credential copies before detaching custom-provider state. Non-destructive removed blocks are only an accidental-destruction guard. Legacy state requires the original Ravion provider until its credential entry is destroyed or detached.
 
     ## External secrets
 
@@ -1350,7 +1317,7 @@ module:
     ## Prerequisites
 
     - An **EKS Cluster** module.
-    - When a Helm-installed add-on runs (**Karpenter**, the **External Secrets Operator**, **Ravion EKS Management**, or any **shared load balancer** - which installs the **load balancer controller**): a **Terraform execution environment** in the cluster VPC for private endpoints. The add-ons pipeline automatically attaches the cluster's **Ravion Runner security group** for each run. The other add-ons need no cluster connectivity.
+    - Helm-installed add-ons, observability, and namespace bootstrap require a **Terraform execution environment** with Kubernetes API connectivity. For private endpoints use the cluster VPC; the pipeline attaches the cluster's **Ravion Runner security group** automatically.
 
     The Helm installs authenticate by assuming the cluster's **Ravion Runner role** (inherited automatically from the cluster reference) — a stable IAM role the EKS Cluster module registers as an access entry with cluster-admin. Per-run pipeline roles never appear in the cluster's access configuration.
 
@@ -1383,9 +1350,9 @@ module:
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to both metrics and logs |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
-    | Ravion EKS Management  | No       | `true`               | Registers the cluster and installs Ravion Operator     |
-    | Ravion Operator deployments | No  | `true`               | Lets Ravion Operator run Ravion's deploys from inside the cluster, scoped to named namespaces |
-    | Deployment namespaces  | Yes*     | -                    | Namespaces where Ravion Operator may manage workloads  |
+    | Workload namespaces    | No       | `[]`                 | Deployment namespaces to retain and grant Helm Secret reads |
+    | Observed namespaces    | No       | `[]`                 | Additional namespaces with get/list all Secrets for Helm inventory |
+    | Create workload namespaces | No   | `true`               | Reuse existing namespaces without adoption; disabling creation retains read RBAC |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |
     | Private ALB            | No       | `false`              | Shared internal ALB                                    |
     | Public / private NLB   | No       | `false`              | Shared Network Load Balancers for TCP/UDP workloads    |

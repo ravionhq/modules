@@ -13,10 +13,9 @@
 #   1. COLLECTOR CREDENTIALS, in the observability namespace: the API key or
 #      token each collector presents to the vendor when it ships.
 #
-#   2. PROXY CREDENTIALS, in Ravion Operator's namespace: the basic-auth pair the agent
-#      presents when the dashboard queries an external store through it
-#      (observability_ravion_operator.tf). Same ARN, different namespace and shape,
-#      because a Secret cannot be mounted across namespaces.
+#   2. QUERY CREDENTIALS, in the observability namespace: preserved basic-auth
+#      pairs for compatible external query backends (observability_access.tf).
+#      References only; vendor destinations currently render external links.
 #
 # Delivered as a local chart because the Helm provider is this stack's only
 # Kubernetes access, and because ExternalSecret is a CRD kind that cannot be
@@ -40,7 +39,7 @@ locals {
 
   observability_external_secrets = concat(
     local.observability_collector_secrets,
-    local.ravion_operator_proxy_credential_secrets,
+    local.observability_proxy_credential_secrets,
   )
 
   observability_secrets_enabled = length(local.observability_external_secrets) > 0

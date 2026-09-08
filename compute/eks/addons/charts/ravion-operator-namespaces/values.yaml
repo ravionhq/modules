@@ -1,2 +1,5 @@
 # Existing namespaces owned outside this release are reused without adoption.
 namespaces: []
+# Read all Secrets in these namespaces for Helm storage inventory and drift.
+# Kept separate from creation so externally provisioned namespaces also work.
+helmInventoryNamespaces: []

@@ -118,3 +118,22 @@ output "fargate_profile_names" {
   description = "Map of Fargate profile key -> profile name."
   value       = { for k, m in module.fargate_profiles : k => m.fargate_profile_name }
 }
+output "ravion_access_relay_instance_id" {
+  description = "Dedicated private EC2 target for EKS-only SSM port sessions."
+  value       = aws_instance.ravion_access_relay.id
+}
+
+output "ravion_access_session_document_name" {
+  description = "SSM Port document pinned to this EKS API host and port 443. Only localPortNumber is configurable."
+  value       = aws_ssm_document.ravion_access.name
+}
+
+output "ravion_access_role_arn" {
+  description = "Deploy/admin EKS and SSM access role, alias of ravion_runner_role_arn; null when runner role creation is disabled."
+  value       = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : null
+}
+
+output "ravion_access_read_role_arn" {
+  description = "Read-only EKS access role with scoped SSM transport permissions."
+  value       = aws_iam_role.ravion_access_read.arn
+}

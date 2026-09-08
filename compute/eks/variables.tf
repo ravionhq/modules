@@ -162,8 +162,8 @@ variable "ravion_runner_role_trusted_principal_arns" {
   default     = []
 
   validation {
-    condition     = alltrue([for a in var.ravion_runner_role_trusted_principal_arns : can(regex("^arn:aws", a))])
-    error_message = "All ravion_runner_role_trusted_principal_arns must be IAM ARN patterns starting with 'arn:aws'."
+    condition     = alltrue([for a in var.ravion_runner_role_trusted_principal_arns : can(regex("^arn:[^:]+:iam::[0-9]{12}:(role/.+|user/.+|root)$", a))])
+    error_message = "Use IAM role/user ARN patterns or account root ARNs with an explicit 12-digit account ID."
   }
 }
 
@@ -313,7 +313,7 @@ variable "system_node_group" {
     ami_type                     = optional(string, "AL2023_x86_64_STANDARD")
     kubernetes_version           = optional(string)
     min_size                     = optional(number, 2)
-    max_size                     = optional(number, 10)
+    max_size                     = optional(number, 4)
     max_unavailable              = optional(number)
     max_unavailable_percentage   = optional(number, 33)
     version_force_update_enabled = optional(bool, false)
@@ -434,5 +434,40 @@ variable "fargate_profiles" {
       for p in values(var.fargate_profiles) : length(p.selectors) >= 1
     ])
     error_message = "Each fargate_profiles entry must include at least one selector."
+  }
+}
+variable "ravion_access_relay_instance_type" {
+  type        = string
+  description = "Dedicated ARM connection relay size. t4g.micro provides practical memory headroom for SSM; t4g.nano minimizes cost."
+  default     = "t4g.micro"
+  validation {
+    condition     = contains(["t4g.nano", "t4g.micro"], var.ravion_access_relay_instance_type)
+    error_message = "Use t4g.nano or t4g.micro (ARM64)."
+  }
+}
+
+variable "ravion_access_relay_subnet_id" {
+  type        = string
+  description = "Private subnet for the dedicated relay; defaults to the first cluster subnet. Requires NAT or SSM interface endpoints."
+  default     = null
+}
+
+variable "ravion_access_ssm_egress_cidrs" {
+  type        = list(string)
+  description = "IPv4 HTTPS destinations for SSM. Restrict to interface endpoint CIDRs when available; default supports NAT."
+  default     = ["0.0.0.0/0"]
+  validation {
+    condition     = length(var.ravion_access_ssm_egress_cidrs) > 0 && alltrue([for cidr in var.ravion_access_ssm_egress_cidrs : can(cidrnetmask(cidr))])
+    error_message = "Supply at least one valid IPv4 CIDR."
+  }
+}
+
+variable "ravion_access_read_trusted_principal_arns" {
+  type        = list(string)
+  description = "IAM principals trusted to assume the read-only EKS/SSM role, including cross-account tower roles. Empty trusts this account (caller still needs sts:AssumeRole)."
+  default     = []
+  validation {
+    condition     = alltrue([for arn in var.ravion_access_read_trusted_principal_arns : can(regex("^arn:[^:]+:iam::[0-9]{12}:(role/.+|root)$", arn))])
+    error_message = "Use IAM role or account root ARNs."
   }
 }

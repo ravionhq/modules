@@ -74,7 +74,6 @@ mock_provider "helm" {}
 
 # Ravion Operator's credential is minted by Ravion's own provider, which refuses to
 # configure without a runner JWT.
-mock_provider "ravion" {}
 
 # Both signals start empty so every run opts into exactly the providers it is
 # about. The defaults ([loki] and [amp]) have their own coverage in

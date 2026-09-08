@@ -11,7 +11,9 @@ into a single hosting unit with enforced provisioning order:
 3. **Post-compute add-ons** (`modules/eks_addons`) — CoreDNS
    (deadlock without step 2)
 4. **Optional Fargate** (`modules/eks_fargate_profile`) — after add-ons are
-   healthy
+    healthy
+5. **Dedicated access relay** — private ARM AL2023 EC2, EKS-only SSM Port
+   document, read-only access role and deploy/admin Runner access
 
 This stack talks only to the AWS API, so it provisions in a single apply with
 no connectivity to the cluster's Kubernetes endpoint. Optional extensions —
@@ -49,6 +51,75 @@ module "eks" {
 > `?ref=rvn-eks-cluster@<x.y.z>`; until then use `?ref=main` or a commit SHA.
 
 ## Requirements
+
+The connection relay requires private EKS endpoint access and a private subnet
+with NAT or existing SSM interface endpoints (`ssm`, `ssmmessages`, and where
+needed `ec2messages`) and private DNS. Endpoint security groups must allow relay
+HTTPS. No NAT or endpoint resources are created here. The subnet check rejects
+public-IP subnets and declared public subnet IDs; callers must also verify route
+tables. The VPC's DNS support/resolver must be enabled.
+
+## SSM access contract
+
+Every cluster receives a dedicated `t4g.micro` (optionally `t4g.nano`) relay,
+separate from Kubernetes nodes. It has an ARM64 AL2023 AMI, encrypted 8 GiB gp3
+root disk, IMDSv2 with hop limit 1, no public IP/key pair/inbound rules, and SSH
+disabled. Its instance role grants **only AmazonSSMManagedInstanceCore**.
+HTTPS egress reaches EKS and SSM; `ravion_access_ssm_egress_cidrs` can restrict SSM
+destinations to private endpoint CIDRs. VPC DNS traffic uses the AWS resolver.
+
+`ravion_access_session_document_name` is a per-cluster Session document with
+`sessionType=Port`. It pins the remote host to this cluster's EKS hostname and
+the remote port to 443. The only caller parameter is `localPortNumber`, default
+`0` (plugin-selected). Do not send `host` or `portNumber` parameters. TLS clients
+must use the original EKS hostname for SNI/verification and the cluster CA while
+connecting through the localhost tunnel; never disable certificate validation.
+
+Discover exactly one running EC2 instance by both:
+
+- `RavionPurpose=eks-access-relay`
+- `RavionClusterArn=<full EKS cluster ARN>`
+
+The EC2 instance also carries `RavionSessionDocument`, `RavionAccessRoleArn`, and
+`RavionReadRoleArn`. Module contract tags take precedence over user tags.
+`RavionAccessRoleArn` is empty if admin role creation is disabled; consumers must
+reject admin operations rather than falling back to another identity.
+
+The read role has AmazonEKSViewPolicy and group `ravion:readers`. Add-ons grants
+that group narrowly scoped GET service proxy access to managed Loki/Prometheus.
+Add-ons also bootstraps read-only node, live-metrics, storage and Karpenter
+inventory access omitted by AWS View. Full node inventory requires that bootstrap.
+Observers receive namespace-scoped get/list Secrets through the add-ons bootstrap
+for Helm inventory/drift, in the union of configured workload and observed
+namespaces. This permits reading **all Secret contents** in those namespaces;
+Kubernetes RBAC cannot limit list permission by Helm labels. No ClusterRole grants
+Secrets access, and observers cannot exec or pod-forward. The deploy/admin role is the
+existing Runner role with AmazonEKSClusterAdminPolicy and scoped SSM access;
+authorized interactive operations use this role. The control plane must authorize
+the user before selecting it. Configure trusted principals separately for reads
+and deployments; empty lists trust this account and still require caller-side
+`sts:AssumeRole`. Cross-account role ARNs are supported. Runner trust preserves
+role-path ARN patterns with an explicit account ID.
+
+Both EKS access-role trust policies permit `sts:AssumeRole` and
+`sts:SetSourceIdentity` for the same trusted principals. This preserves the
+broker's OIDC source identity during role chaining; callers must have the matching
+permissions. The EC2 relay's service trust remains independent.
+
+Both roles can start sessions only on this relay with the dedicated document.
+Opening the data channel is permitted for session ARNs in this account/region
+and requires the bearer token returned by the scoped StartSession/ResumeSession.
+Resume/terminate use SSM system tags to require the caller's `aws:userid` and
+this relay target (assumed-role session ARNs do not contain the full userid).
+Use unique assumed-role session names for distinct ownership. Additional IAM
+policies are additive: do not attach broad session permissions to these roles.
+
+A single relay is not highly available. AMI updates/replacement interrupt active
+connections; runtime consumers should rediscover and reconnect. Mocked tests do
+not prove live SSM registration, effective IAM or network connectivity. Follow
+the [staged Operator migration guide](addons/UPGRADE-SSM.md) for existing clusters.
+
+## Provider requirements
 
 | Name               | Version   |
 | ------------------ | --------- |
@@ -91,10 +162,14 @@ module "eks" {
 | ravion_runner_role_trusted_principal_arns | ArnLike patterns restricting who can assume the Ravion Runner role (empty = same-account principals with sts:AssumeRole). | `list(string)` | `[]` | no |
 | pod_identity_associations | Extra Pod Identity associations. | `map(object)` | `{}` | no |
 | deletion_protection_enabled | Protect the cluster from API deletion. | `bool` | `true` | no |
-| system_node_group | Default managed node group config. The minimum size is also its initial size. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
+| system_node_group | Default managed node group config. The minimum size is also its initial size; group disk settings remain independent of the relay. | `object` | `{}` (defaults: name=`system`, 2-4 ON_DEMAND t3.medium) | no |
 | node_groups | Extra node groups keyed by name. Each group's minimum size is also its initial size. | `map(object)` | `{}` | no |
 | coredns_addon_version / coredns_addon_configuration_values | CoreDNS pin / JSON overrides. | `string` | `null` | no |
 | fargate_profiles | Fargate profiles keyed by name (`selectors` required). | `map(object)` | `{}` | no |
+| ravion_access_relay_instance_type | Dedicated ARM relay size (`t4g.micro` or `t4g.nano`). | `string` | `"t4g.micro"` | no |
+| ravion_access_relay_subnet_id | Private subnet; falls back to the first cluster subnet. | `string` | `null` | no |
+| ravion_access_ssm_egress_cidrs | IPv4 HTTPS egress destinations for SSM. | `list(string)` | `["0.0.0.0/0"]` | no |
+| ravion_access_read_trusted_principal_arns | Trusted IAM read principals, including cross-account roles. | `list(string)` | `[]` | no |
 
 ## Outputs
 
@@ -110,6 +185,10 @@ module "eks" {
 | node_subnet_ids | Subnets used for node placement (consumed by `addons`). |
 | ravion_runner_security_group_id | Ravion Runner SG allowed to reach the API endpoint (null if disabled). |
 | ravion_runner_role_arn | IAM role runners assume for Kubernetes API access (null if disabled). |
+| ravion_access_relay_instance_id | Dedicated EC2 SSM target, never a Kubernetes node. |
+| ravion_access_session_document_name | Per-cluster EKS-only SSM Port document. |
+| ravion_access_role_arn | Deploy/admin role alias of `ravion_runner_role_arn` (null if disabled). |
+| ravion_access_read_role_arn | Separate read-only EKS and scoped SSM role. |
 | secrets_kms_key_arn | Secrets KMS key (null if disabled). |
 | lb_controller_role_arn | LB Controller Pod Identity role. |
 | system_node_group_name / system_node_group_arn | System node group identifiers. |

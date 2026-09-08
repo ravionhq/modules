@@ -72,7 +72,6 @@ mock_provider "helm" {}
 
 # Ravion Operator's credential resource is minted by Ravion's own provider, which refuses
 # to configure without a runner JWT. Nothing here exercises it.
-mock_provider "ravion" {}
 
 # Both signals start empty so every run opts into exactly the providers it is
 # about. The defaults ([loki] and [amp]) have their own coverage in
@@ -362,13 +361,12 @@ run "datadog_ships_both_signals_from_one_credential" {
   }
 }
 
-run "grafana_cloud_is_a_second_loki_write_and_a_ravion_operator_destination" {
+run "grafana_cloud_preserves_writes_and_query_credentials" {
   command = plan
 
   variables {
-    logs_providers          = ["loki", "grafana_cloud"]
-    metrics_providers       = ["grafana_cloud"]
-    ravion_operator_enabled = true
+    logs_providers    = ["loki", "grafana_cloud"]
+    metrics_providers = ["grafana_cloud"]
     logs_grafana_cloud = {
       url              = "https://logs-prod-006.grafana.net/loki/api/v1/push"
       user             = "111111"
@@ -407,19 +405,18 @@ run "grafana_cloud_is_a_second_loki_write_and_a_ravion_operator_destination" {
     error_message = "The metrics query URL is the remote-write URL with the push path removed"
   }
 
-  # Ravion Operator is the only route from Ravion to any of these.
   assert {
-    condition     = contains(yamldecode(local.ravion_operator_observability_proxy_values[0]).httpProxy.allowedEndpoints, "https://logs-prod-006.grafana.net/loki")
-    error_message = "Grafana Cloud's query endpoint must be on Ravion Operator's proxy allowlist"
+    condition     = output.observability_proxy_credentials[0].endpointPrefix == "https://logs-prod-006.grafana.net/loki"
+    error_message = "Grafana Cloud's query credential mapping must preserve its endpoint."
   }
 
   assert {
-    condition     = yamldecode(local.ravion_operator_observability_proxy_values[0]).httpProxy.credentials[0].secretName == "ravion-observability-grafana-cloud-logs"
-    error_message = "Ravion Operator must be given the Secret to authenticate a proxied Grafana Cloud query with"
+    condition     = output.observability_proxy_credentials[0].secretName == "ravion-observability-grafana-cloud-logs"
+    error_message = "The vendor query Secret name must remain stable."
   }
 
   assert {
-    condition     = yamldecode(local.ravion_operator_observability_proxy_values[0]).httpProxy.credentials[0].kind == "basic"
+    condition     = output.observability_proxy_credentials[0].kind == "basic"
     error_message = "Grafana Cloud authenticates with basic auth"
   }
 
@@ -604,9 +601,8 @@ run "in_cluster_prometheus_is_a_rendering_provider" {
   command = plan
 
   variables {
-    logs_providers          = []
-    metrics_providers       = ["amp", "prometheus"]
-    ravion_operator_enabled = true
+    logs_providers    = []
+    metrics_providers = ["amp", "prometheus"]
     metrics_prometheus = {
       retention_days = 30
       storage_size   = "100Gi"
@@ -644,10 +640,9 @@ run "in_cluster_prometheus_is_a_rendering_provider" {
     error_message = "The collector must remote-write the same series into the in-cluster store"
   }
 
-  # It has no route out of the cluster, so Ravion Operator is the only way to read it.
   assert {
-    condition     = contains(yamldecode(local.ravion_operator_observability_proxy_values[0]).httpProxy.allowedEndpoints, "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090")
-    error_message = "The in-cluster Prometheus must be on Ravion Operator's proxy allowlist"
+    condition     = yamldecode(helm_release.observability_access[0].values[0]).services == [{ namespace = "ravion-operator", name = "ravion-prometheus-server", port = "9090" }]
+    error_message = "Managed Prometheus must receive a service-specific read proxy grant."
   }
 }
 

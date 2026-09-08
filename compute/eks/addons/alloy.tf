@@ -47,7 +47,7 @@ locals {
   alloy_destinations = concat(
     local.loki_enabled ? [{
       name         = "ravion"
-      comment      = "The in-cluster store (loki.tf). Ravion's Logs tab reads this one through Ravion Operator."
+      comment      = "The in-cluster store (loki.tf), queried through the EKS service proxy over SSM."
       url          = local.loki_push_url
       username     = null
       password_env = null

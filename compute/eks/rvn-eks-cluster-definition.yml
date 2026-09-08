@@ -5,7 +5,7 @@ definition:
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
   version: 0.2.0
-  description: Configure collapsible default capacity with a four-node scaling ceiling alongside additional capacity, manage API endpoint and IAM access together, define Fargate profiles and cluster access entries with guided forms instead of raw JSON, use consistent endpoint and control-plane logging field names, clarify node group and controller settings, keep the Ravion Runner role in advanced settings, manage the Ravion Runner security group automatically, prevent Kubernetes version downgrades, and remove empty Container Insights charts from the cluster Metrics tab.
+  description: Provide dedicated private ARM SSM access to the EKS API with separate read-only and deploy roles, while preserving the 2-4 node default capacity, guided compute and access configuration, automatic Runner security group, and Kubernetes version safeguards.
 module:
   inputs:
     - id: network
@@ -426,6 +426,34 @@ module:
       label: Access entries
       required: false
       type: object_map
+    - collapsible: true
+      default: t4g.micro
+      description: Dedicated private ARM instance used exclusively for SSM connections to the EKS API. Requires private endpoint access and NAT or SSM interface endpoints.
+      id: ravion_access_relay_instance_type
+      label: Connection relay size
+      type: string
+      values:
+        - label: t4g.micro (recommended)
+          value: t4g.micro
+        - label: t4g.nano
+          value: t4g.nano
+    - collapsible: true
+      description: Private relay subnet. Leave blank to use the first cluster subnet.
+      id: ravion_access_relay_subnet_id
+      label: Connection relay subnet
+      type: string
+    - collapsible: true
+      default: []
+      description: IAM role ARNs trusted to assume the read-only EKS and SSM role, including cross-account tower roles. Empty trusts this AWS account; callers still need AssumeRole permission.
+      id: ravion_access_read_trusted_principal_arns
+      label: Read access trusted principals
+      type: string_array
+    - collapsible: true
+      default: []
+      description: IAM role ARNs trusted to assume the deploy/admin Runner role, including cross-account tower roles. Empty trusts this AWS account; callers still need AssumeRole permission.
+      id: ravion_runner_role_trusted_principal_arns
+      label: Deploy access trusted principals
+      type: string_array
     - id: section_observability
       label: Observability
       type: section
@@ -478,6 +506,10 @@ module:
         endpoint_public_access_enabled: << module.input.endpoint_public_access_enabled >>
         public_access_cidrs: << module.input.endpoint_public_access_cidrs || ["0.0.0.0/0"] >>
         ravion_runner_role_creation_enabled: << module.input.ravion_runner_role_creation_enabled >>
+        ravion_access_relay_instance_type: << module.input.ravion_access_relay_instance_type || "t4g.micro" >>
+        ravion_access_relay_subnet_id: << module.input.ravion_access_relay_subnet_id >>
+        ravion_access_read_trusted_principal_arns: << module.input.ravion_access_read_trusted_principal_arns || [] >>
+        ravion_runner_role_trusted_principal_arns: << module.input.ravion_runner_role_trusted_principal_arns || [] >>
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>
           capacity_type: << module.input.system_node_capacity_type >>
@@ -628,6 +660,10 @@ module:
     Fargate profiles run pods from selected namespaces on serverless compute instead of EC2 nodes. Each profile matches one or more namespace selectors, optionally narrowed by pod labels. Profiles use the cluster's private subnets and a generated pod execution role unless you override them.
 
     ## Cluster access
+
+    Each cluster has a dedicated private `t4g.micro` ARM AL2023 connection relay, separate from Kubernetes capacity. It accepts no inbound connections, has no public IP or SSH access, and uses an encrypted 8 GiB gp3 disk and IMDSv2. Provide NAT or SSM interface endpoints in its subnet. The instance role grants only SSM core permissions; Kubernetes requests authenticate with a caller's assumed role.
+
+    `ravion_access_relay_instance_id` and `ravion_access_session_document_name` identify the EKS-only SSM port-forward target. The session document pins this cluster's endpoint and port 443; only `localPortNumber` is configurable. Discover the relay using both `RavionPurpose=eks-access-relay` and `RavionClusterArn=<cluster ARN>` tags. `ravion_access_read_role_arn` is read-only; `ravion_access_role_arn` aliases the deploy/admin Runner role. Configure trusted IAM principals separately for reads and deployments. TLS clients must verify the original EKS hostname and cluster CA over the localhost tunnel.
 
     By default the Kubernetes API server is reachable only from inside the VPC. Enable **Public endpoint access** to reach it from the internet, and restrict the allowed source ranges with **Public access CIDRs**.
 
