@@ -126,7 +126,7 @@
   type: number
   description: Minimum percentage of desired tasks that must stay healthy during rolling deployments. Keep 100 for zero-downtime deploys. Lower it only when the cluster does not have enough spare capacity to start replacement tasks first, since lowering it can reduce availability during deploys.
   collapsible: true
-  max: 200
+  max: 100
   min: 0
   default: 100
 - id: deployment_maximum_percent
