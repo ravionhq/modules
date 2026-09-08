@@ -179,6 +179,36 @@ resource "helm_release" "beacon_credential" {
 }
 
 ################################################################################
+# Deploy namespaces
+#
+# The deploy grant is one namespaced Role per entry, and a Role cannot live in a
+# namespace that does not exist. On a cluster built from scratch the workloads
+# that would create these namespaces cannot arrive before the grant that lets
+# Beacon deploy them, so the namespaces are created here first. They are kept on
+# uninstall — what runs inside is not this stack's to remove — and a namespace
+# that already exists is taken over rather than refused, for the cluster where
+# the workloads came first.
+################################################################################
+
+resource "helm_release" "beacon_deploy_namespaces" {
+  count = var.beacon_enabled && var.beacon_deploy_enabled && length(local.beacon_deploy_namespaces_effective) > 0 ? 1 : 0
+
+  name      = "ravion-beacon-deploy-namespaces"
+  namespace = var.beacon_namespace
+  chart     = "${path.module}/charts/beacon-deploy-namespaces"
+
+  create_namespace = true
+  upgrade_install  = true
+  take_ownership   = true
+
+  values = [
+    yamlencode({
+      namespaces = local.beacon_deploy_namespaces_effective
+    }),
+  ]
+}
+
+################################################################################
 # Beacon agent
 ################################################################################
 
@@ -266,7 +296,7 @@ resource "helm_release" "beacon" {
 
   # The Secret must exist before the pod starts; it is mounted, not read
   # through the API, so a missing one is a container that never runs.
-  depends_on = [helm_release.beacon_credential]
+  depends_on = [helm_release.beacon_credential, helm_release.beacon_deploy_namespaces]
 
   lifecycle {
     precondition {

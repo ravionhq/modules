@@ -1,0 +1,5 @@
+apiVersion: v2
+name: beacon-deploy-namespaces
+description: The namespaces Ravion Beacon is granted to deploy into, created ahead of the grant so a fresh cluster can carry it. Kept on uninstall; the workloads inside are not this chart's to remove.
+type: application
+version: 0.1.0

@@ -1,0 +1,3 @@
+# Namespaces to create. Rendered one Namespace object each, annotated to be kept
+# when the release is uninstalled.
+namespaces: []
