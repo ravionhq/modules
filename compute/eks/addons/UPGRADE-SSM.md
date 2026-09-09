@@ -37,14 +37,27 @@ operations for the cluster owner; none are performed by module publishing.
    `ec2messages`. Endpoint security groups must admit relay HTTPS. The module
    does not create NAT or VPC endpoints. Its subnet check rejects public-IP
    subnets and supplied public subnet IDs but cannot prove route-table privacy.
-5. Configure read and deploy trusted principal ARNs. Both access-role trusts
-   include `sts:SetSourceIdentity` alongside `sts:AssumeRole` so broker OIDC source
-   identity survives role chaining; caller policies must allow both. Verify the runtime discovers
+5. Deploy platform `aws.account.integration_role_arn` context support before using
+   the new cluster definition. It supplies the required `ravion_integration_role_arn`
+   automatically; direct Terraform callers must supply the exact integration role
+   in the cluster's AWS account and partition. Remove the former read/Runner
+   trusted-principal list inputs and advanced overrides. Both role trusts allow
+   only that integration ARN, with `sts:SetSourceIdentity` alongside `sts:AssumeRole`,
+   from the six approved public source /32s documented in the cluster README.
+   Caller policies must allow both actions. Source identity survives role chaining.
+   Ephemeral pipeline roles no longer qualify: add-ons `aws eks get-token --role-arn`
+   and workload destroy-time Helm cleanup must use the integration credential path
+   and approved STS egress before this trust change is applied. The existing Runner
+   security-group mapping still provides private API networking; it does not grant
+   IAM trust. Verify the runtime discovers
    exactly one running relay from the cluster ARN/purpose tags, opens the pinned
    SSM session, and validates the EKS hostname/CA. Test both role assumptions,
    read-only inventory/logs and a controlled deployment. The read role cannot
    exec or port-forward. Authorized interactive operations use the admin role;
    the control plane must enforce user authorization before selecting it.
+   Discovery/session transport uses customer integration-role credentials and its
+   platform-managed IAM policy. EKS read/admin roles only grant DescribeCluster
+   on the exact cluster in AWS IAM; the redundant admin SSM policy is removed.
 
 The add-ons read proxy Role/RoleBinding and inventory ClusterRole/Binding are new.
 AWS View omits nodes/live metrics. If you need them before retiring
@@ -136,8 +149,9 @@ endpoints require explicitly provisioned read proxy RBAC in their namespace.
 - `t4g.micro` provides practical SSM memory headroom. `t4g.nano` is available but
   has less headroom for concurrent sessions. Both are ARM64 AL2023, 8 GiB encrypted
   gp3, no public IP/key pair/inbound rules, IMDSv2, and SSM core instance IAM only.
-- IAM is additive. Do not attach extra broad SSM policies to the access roles;
-  the supplied policy allows StartSession only with the pinned EKS document.
+- The platform-managed customer integration-role policy owns SSM transport and
+  must enforce the pinned document, relay target and session ownership. The EKS
+  access roles grant no SSM permissions. IAM is additive.
 - IAM/SSM session teardown and actual AWS/network behavior require live cutover
   verification. Mocked plan and chart tests do not establish live connectivity.
 - Vendor ingestion/ESO credentials are preserved. Vendor query credentials are

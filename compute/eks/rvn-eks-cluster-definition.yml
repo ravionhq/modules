@@ -5,7 +5,7 @@ definition:
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
   version: 0.2.0
-  description: Provide dedicated private ARM SSM access to the EKS API with separate read-only and deploy roles, while preserving the 2-4 node default capacity, guided compute and access configuration, automatic Runner security group, and Kubernetes version safeguards.
+  description: Provide dedicated private ARM SSM access to the EKS API with separate read and deploy roles restricted to the account integration role and approved Ravion egress, while preserving default node capacity and automatic Runner security group networking.
 module:
   inputs:
     - id: network
@@ -442,18 +442,6 @@ module:
       id: ravion_access_relay_subnet_id
       label: Connection relay subnet
       type: string
-    - collapsible: true
-      default: []
-      description: IAM role ARNs trusted to assume the read-only EKS and SSM role, including cross-account tower roles. Empty trusts this AWS account; callers still need AssumeRole permission.
-      id: ravion_access_read_trusted_principal_arns
-      label: Read access trusted principals
-      type: string_array
-    - collapsible: true
-      default: []
-      description: IAM role ARNs trusted to assume the deploy/admin Runner role, including cross-account tower roles. Empty trusts this AWS account; callers still need AssumeRole permission.
-      id: ravion_runner_role_trusted_principal_arns
-      label: Deploy access trusted principals
-      type: string_array
     - id: section_observability
       label: Observability
       type: section
@@ -508,8 +496,7 @@ module:
         ravion_runner_role_creation_enabled: << module.input.ravion_runner_role_creation_enabled >>
         ravion_access_relay_instance_type: << module.input.ravion_access_relay_instance_type || "t4g.micro" >>
         ravion_access_relay_subnet_id: << module.input.ravion_access_relay_subnet_id >>
-        ravion_access_read_trusted_principal_arns: << module.input.ravion_access_read_trusted_principal_arns || [] >>
-        ravion_runner_role_trusted_principal_arns: << module.input.ravion_runner_role_trusted_principal_arns || [] >>
+        ravion_integration_role_arn: << aws.account.integration_role_arn >>
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>
           capacity_type: << module.input.system_node_capacity_type >>
@@ -663,15 +650,15 @@ module:
 
     Each cluster has a dedicated private `t4g.micro` ARM AL2023 connection relay, separate from Kubernetes capacity. It accepts no inbound connections, has no public IP or SSH access, and uses an encrypted 8 GiB gp3 disk and IMDSv2. Provide NAT or SSM interface endpoints in its subnet. The instance role grants only SSM core permissions; Kubernetes requests authenticate with a caller's assumed role.
 
-    `ravion_access_relay_instance_id` and `ravion_access_session_document_name` identify the EKS-only SSM port-forward target. The session document pins this cluster's endpoint and port 443; only `localPortNumber` is configurable. Discover the relay using both `RavionPurpose=eks-access-relay` and `RavionClusterArn=<cluster ARN>` tags. `ravion_access_read_role_arn` is read-only; `ravion_access_role_arn` aliases the deploy/admin Runner role. Configure trusted IAM principals separately for reads and deployments. TLS clients must verify the original EKS hostname and cluster CA over the localhost tunnel.
+    `ravion_access_relay_instance_id` and `ravion_access_session_document_name` identify the EKS-only SSM port-forward target. The session document pins this cluster's endpoint and port 443; only `localPortNumber` is configurable. Discover the relay using both `RavionPurpose=eks-access-relay` and `RavionClusterArn=<cluster ARN>` tags. `ravion_access_read_role_arn` is read-only; `ravion_access_role_arn` aliases the deploy/admin Runner role. Both trust only the account integration role supplied by the platform, from approved Ravion egress. TLS clients must verify the original EKS hostname and cluster CA over the localhost tunnel. Discovery and SSM transport use integration-role credentials; each EKS access role grants only `eks:DescribeCluster` on this cluster in AWS IAM.
 
     By default the Kubernetes API server is reachable only from inside the VPC. Enable **Public endpoint access** to reach it from the internet, and restrict the allowed source ranges with **Public access CIDRs**.
 
     A **Ravion Runner security group** is created automatically and allowed to reach the API endpoint on port 443. Modules that talk to the Kubernetes API (such as **EKS Add-ons** with Karpenter enabled) pick it up from this cluster so their pipeline runs can reach a private endpoint, so there is nothing to configure. Its ID is available as the `ravion_runner_security_group_id` stack output.
 
-    A **Ravion Runner role** is also created by default: a stable IAM role registered as an EKS access entry with cluster-admin, which Ravion Runner step executions assume when they need the Kubernetes API. This keeps per-run pipeline roles out of the cluster's access configuration — the EKS Add-ons module assumes it automatically via `aws eks get-token`. Its ARN is available as the `ravion_runner_role_arn` stack output. The trust policy admits only this AWS account; tighten it further with the `ravion_runner_role_trusted_principal_arns` Terraform variable.
+    A **Ravion Runner role** is also created by default: a stable IAM role registered as an EKS access entry with cluster-admin. Its ARN remains available as `ravion_runner_role_arn`. Both read and admin roles require the exact `ravion_integration_role_arn` supplied directly from the platform's `aws.account.integration_role_arn` context, validated against the cluster's account and partition. Both `sts:AssumeRole` and `sts:SetSourceIdentity` require one of these source CIDRs: `35.165.172.23/32`, `52.38.126.172/32`, `54.200.59.143/32`, `54.214.167.211/32`, `50.112.69.57/32`, `184.33.144.157/32`. There are no editable principal lists or account-root fallback. Source-IP conditions restrict STS assumption, not subsequent credential use. Legacy add-ons and workload teardown still invoke `aws eks get-token` through Runner role authentication; coordinate their integration-role credentials and approved STS egress before upgrading. The Runner security group provides network reachability but does not satisfy IAM trust.
 
-    EKS access entries control which IAM principals can access the cluster. The IAM principal that creates the cluster is granted admin access automatically. Grant additional principals access through the **Access entries** form: give each entry an IAM principal ARN, then attach EKS access policies scoped to the whole cluster or to selected namespaces, and optionally map the principal to Kubernetes RBAC groups. Automatic access for Ravion deploys will be wired here in a future release.
+    EKS access entries control which IAM principals can access the cluster. The IAM principal that creates the cluster is granted admin access automatically. Grant additional principals access through the **Access entries** form: give each entry an IAM principal ARN, then attach EKS access policies scoped to the whole cluster or to selected namespaces, and optionally map the principal to Kubernetes RBAC groups.
 
     ## Observability
 

@@ -11,12 +11,14 @@ describe("compiler", () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const inputs = getModuleInputs(cluster.module);
     assert.equal(findInput(inputs, "ravion_access_relay_instance_type").default, "t4g.micro");
-    assert.deepEqual(findInput(inputs, "ravion_access_read_trusted_principal_arns").default, []);
-    assert.deepEqual(findInput(inputs, "ravion_runner_role_trusted_principal_arns").default, []);
+    for (const id of ["ravion_access_read_trusted_principal_arns", "ravion_runner_role_trusted_principal_arns", "ravion_integration_role_arn"]) {
+      assert.equal(inputs.some((input) => input.id === id), false, `${id} must not be a user-editable principal input`);
+    }
     assert.equal(getTerraformVariable(cluster.module, "ravion_access_relay_instance_type"), '<< module.input.ravion_access_relay_instance_type || "t4g.micro" >>');
     assert.equal(getTerraformVariable(cluster.module, "ravion_access_relay_subnet_id"), "<< module.input.ravion_access_relay_subnet_id >>");
-    assert.equal(getTerraformVariable(cluster.module, "ravion_access_read_trusted_principal_arns"), "<< module.input.ravion_access_read_trusted_principal_arns || [] >>");
-    assert.equal(getTerraformVariable(cluster.module, "ravion_runner_role_trusted_principal_arns"), "<< module.input.ravion_runner_role_trusted_principal_arns || [] >>");
+    assert.equal(getTerraformVariable(cluster.module, "ravion_access_read_trusted_principal_arns"), undefined);
+    assert.equal(getTerraformVariable(cluster.module, "ravion_runner_role_trusted_principal_arns"), undefined);
+    assert.equal(getTerraformVariable(cluster.module, "ravion_integration_role_arn"), "<< aws.account.integration_role_arn >>");
     assert.equal(findInput(inputs, "system_node_min_size").default, 2);
     assert.equal(findInput(inputs, "system_node_max_size").default, 4);
 

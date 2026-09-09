@@ -72,7 +72,7 @@ output "public_subnet_ids" {
 }
 
 output "ravion_runner_role_arn" {
-  description = "ARN of the IAM role Ravion Runner step executions assume for Kubernetes API access (null when disabled)."
+  description = "ARN of the stable Runner/admin EKS role, assumable only by the integration role from approved egress (null when disabled)."
   value       = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : null
 }
 
@@ -129,11 +129,11 @@ output "ravion_access_session_document_name" {
 }
 
 output "ravion_access_role_arn" {
-  description = "Deploy/admin EKS and SSM access role, alias of ravion_runner_role_arn; null when runner role creation is disabled."
+  description = "Deploy/admin EKS access role, alias of ravion_runner_role_arn; null when runner role creation is disabled. SSM transport uses integration-role credentials."
   value       = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : null
 }
 
 output "ravion_access_read_role_arn" {
-  description = "Read-only EKS access role with scoped SSM transport permissions."
+  description = "Read-only EKS access role with DescribeCluster permission on this cluster only. SSM transport uses integration-role credentials."
   value       = aws_iam_role.ravion_access_read.arn
 }

@@ -1,37 +1,13 @@
 ################################################################################
 # Ravion Runner Role
 #
-# Stable IAM role that Ravion Runner step executions assume to authenticate
-# against this cluster's Kubernetes API (e.g. the Helm steps of the
-# compute/eks/addons stack). The role holds a permanent EKS access entry with
-# cluster-admin, so ephemeral per-run runner roles never need their own access
-# entries — they assume this role for `aws eks get-token` and nothing else.
-#
-# Trust defaults to the cluster's own AWS account, which still requires the
-# caller to hold sts:AssumeRole on this role's ARN — Ravion grants that to
-# step executions configured to assume it. Tighten the trust further with
-# ravion_runner_role_trusted_principal_arns.
+# Stable cluster-admin identity, retaining the existing Runner role and EKS
+# access-entry addresses. Only the account integration role may assume it,
+# from approved control-plane egress, including when propagating SourceIdentity.
+# Legacy ephemeral runner credentials cannot assume this role directly.
 ################################################################################
 
 data "aws_caller_identity" "current" {}
-
-locals {
-  # SourceIdentity survives the broker's OIDC -> EKS role chain. The target
-  # role must permit SetSourceIdentity under the same principal restrictions.
-  ravion_runner_assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [merge({
-      Sid    = "TrustAWSPrincipals"
-      Effect = "Allow"
-      Action = ["sts:AssumeRole", "sts:SetSourceIdentity"]
-      Principal = {
-        AWS = length(var.ravion_runner_role_trusted_principal_arns) > 0 ? distinct([for arn in var.ravion_runner_role_trusted_principal_arns : "arn:${data.aws_partition.current.partition}:iam::${split(":", arn)[4]}:root"]) : ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
-      }
-      }, length(var.ravion_runner_role_trusted_principal_arns) == 0 ? {} : {
-      Condition = { ArnLike = { "aws:PrincipalArn" = var.ravion_runner_role_trusted_principal_arns } }
-    })]
-  })
-}
 
 module "ravion_runner_role" {
   count = var.ravion_runner_role_creation_enabled ? 1 : 0
@@ -39,10 +15,10 @@ module "ravion_runner_role" {
   source = "../../security/iam"
 
   name        = "${var.name}-ravion-runner"
-  description = "Assumed by Ravion Runner step executions for Kubernetes API access to the ${var.name} EKS cluster"
+  description = "Assumed by the Ravion integration role for admin Kubernetes API access to the ${var.name} EKS cluster"
 
   # Keep this EKS-specific; other users of security/iam retain their own trust.
-  custom_assume_role_policy = local.ravion_runner_assume_role_policy
+  custom_assume_role_policy = local.ravion_access_assume_role_policy
 
   # `aws eks get-token` needs no IAM permissions; DescribeCluster covers
   # tooling that fetches the endpoint and CA under the assumed role.

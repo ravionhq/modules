@@ -152,18 +152,23 @@ variable "cluster_security_group_additional_cidr_ingress_rules" {
 
 variable "ravion_runner_role_creation_enabled" {
   type        = bool
-  description = "Create an IAM role that Ravion Runner step executions can assume for Kubernetes API access, registered as an EKS access entry with cluster-admin."
+  description = "Create the stable Runner/admin IAM role, assumable only by the Ravion integration role from approved egress, registered as an EKS access entry with cluster-admin."
   default     = true
 }
 
-variable "ravion_runner_role_trusted_principal_arns" {
-  type        = list(string)
-  description = "IAM principal ARN patterns allowed to assume the Ravion Runner role (aws:PrincipalArn ArnLike condition). Empty means any principal in this account that holds sts:AssumeRole on the role's ARN."
-  default     = []
+variable "ravion_integration_role_arn" {
+  type        = string
+  description = "Exact Ravion integration IAM role ARN in the cluster's AWS account and partition. Supplied by the platform aws.account.integration_role_arn context; required for read and deploy role trust."
+  nullable    = false
 
   validation {
-    condition     = alltrue([for a in var.ravion_runner_role_trusted_principal_arns : can(regex("^arn:[^:]+:iam::[0-9]{12}:(role/.+|user/.+|root)$", a))])
-    error_message = "Use IAM role/user ARN patterns or account root ARNs with an explicit 12-digit account ID."
+    condition     = can(regex("^arn:[a-z0-9-]+:iam::[0-9]{12}:role/([A-Za-z0-9+=,.@_-]+/)*[A-Za-z0-9+=,.@_-]{1,64}$", var.ravion_integration_role_arn))
+    error_message = "Supply an exact IAM role ARN, optionally with a role path; root, users, sessions, wildcards, and empty values are not allowed."
+  }
+
+  validation {
+    condition     = can(regex("^arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/", var.ravion_integration_role_arn))
+    error_message = "The Ravion integration role must belong to the cluster provider's AWS account and partition."
   }
 }
 
@@ -459,15 +464,5 @@ variable "ravion_access_ssm_egress_cidrs" {
   validation {
     condition     = length(var.ravion_access_ssm_egress_cidrs) > 0 && alltrue([for cidr in var.ravion_access_ssm_egress_cidrs : can(cidrnetmask(cidr))])
     error_message = "Supply at least one valid IPv4 CIDR."
-  }
-}
-
-variable "ravion_access_read_trusted_principal_arns" {
-  type        = list(string)
-  description = "IAM principals trusted to assume the read-only EKS/SSM role, including cross-account tower roles. Empty trusts this account (caller still needs sts:AssumeRole)."
-  default     = []
-  validation {
-    condition     = alltrue([for arn in var.ravion_access_read_trusted_principal_arns : can(regex("^arn:[^:]+:iam::[0-9]{12}:(role/.+|root)$", arn))])
-    error_message = "Use IAM role or account root ARNs."
   }
 }

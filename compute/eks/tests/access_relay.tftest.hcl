@@ -52,10 +52,11 @@ mock_provider "tls" {
 }
 
 variables {
-  name       = "relay-test"
-  region     = "us-east-2"
-  vpc_id     = "vpc-12345678"
-  subnet_ids = ["subnet-12345678", "subnet-23456789"]
+  name                        = "relay-test"
+  region                      = "us-east-2"
+  vpc_id                      = "vpc-12345678"
+  subnet_ids                  = ["subnet-12345678", "subnet-23456789"]
+  ravion_integration_role_arn = "arn:aws:iam::123456789012:role/ravion/integration"
   tags = {
     RavionPurpose         = "wrong"
     RavionClusterArn      = "wrong"
@@ -107,40 +108,43 @@ run "document_pins_remote_destination" {
     condition     = aws_eks_access_policy_association.ravion_access_read.policy_arn == "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy" && join(",", aws_eks_access_entry.ravion_access_read.kubernetes_groups) == "ravion:readers"
     error_message = "Observers must receive read access, never admin/exec."
   }
+}
+
+run "exact_integration_trust_and_approved_egress" {
+  command = plan
   assert {
-    condition     = one([for statement in data.aws_iam_policy_document.ravion_access.statement : statement if statement.sid == "StartRelaySession"]).condition == toset([{ test = "Bool", variable = "ssm:SessionDocumentAccessCheck", values = tolist(["true"]) }])
-    error_message = "StartSession must enforce the dedicated document permission check."
+    condition = jsondecode(aws_iam_role.ravion_access_read.assume_role_policy) == jsondecode(jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Sid       = "TrustRavionIntegrationRole"
+        Effect    = "Allow"
+        Action    = ["sts:AssumeRole", "sts:SetSourceIdentity"]
+        Principal = { AWS = "arn:aws:iam::123456789012:role/ravion/integration" }
+        Condition = {
+          IpAddress = { "aws:SourceIp" = [
+            "35.165.172.23/32", "52.38.126.172/32", "54.200.59.143/32",
+            "54.214.167.211/32", "50.112.69.57/32", "184.33.144.157/32",
+          ] }
+        }
+      }]
+    }))
+    error_message = "Trust must require exactly the integration role AND the six approved /32s for both STS actions; no root, wildcard, extra statement, or IfExists bypass."
+  }
+  assert {
+    condition     = aws_iam_role.ravion_access_read.assume_role_policy == local.ravion_access_assume_role_policy
+    error_message = "Read trust must match the shared policy passed to the existing Runner/admin role."
   }
 }
 
-run "cross_account_read_trust" {
+run "read_policy_has_no_transport_or_broad_aws_permissions" {
   command = plan
-  variables {
-    ravion_access_read_trusted_principal_arns = ["arn:aws:iam::999999999999:role/tower-read"]
+  assert {
+    condition     = length(data.aws_iam_policy_document.ravion_access.statement) == 1 && one(data.aws_iam_policy_document.ravion_access.statement).actions == toset(["eks:DescribeCluster"]) && one(data.aws_iam_policy_document.ravion_access.statement).resources == toset(["arn:aws:eks:us-east-2:123456789012:cluster/relay-test"])
+    error_message = "Read-role AWS permissions must be only DescribeCluster on the exact cluster, without SSM, discovery, wildcard resources or extra statements."
   }
   assert {
-    condition     = jsondecode(aws_iam_role.ravion_access_read.assume_role_policy).Statement[0].Principal.AWS == ["arn:aws:iam::999999999999:role/tower-read"]
-    error_message = "Explicit cross-account trust must not also trust the whole cluster account."
-  }
-}
-
-run "source_identity_survives_role_chaining" {
-  command = plan
-  variables {
-    ravion_access_read_trusted_principal_arns = ["arn:aws:iam::999999999999:role/tower-read"]
-    ravion_runner_role_trusted_principal_arns = ["arn:aws:iam::999999999999:role/tower-deploy-*"]
-  }
-  assert {
-    condition     = toset(jsondecode(aws_iam_role.ravion_access_read.assume_role_policy).Statement[0].Action) == toset(["sts:AssumeRole", "sts:SetSourceIdentity"])
-    error_message = "The read role must accept the source identity carried by broker OIDC credentials."
-  }
-  assert {
-    condition     = toset(jsondecode(local.ravion_runner_assume_role_policy).Statement[0].Action) == toset(["sts:AssumeRole", "sts:SetSourceIdentity"])
-    error_message = "The deploy role must accept the source identity carried by broker OIDC credentials."
-  }
-  assert {
-    condition     = jsondecode(local.ravion_runner_assume_role_policy).Statement[0].Principal.AWS == ["arn:aws:iam::999999999999:root"] && jsondecode(local.ravion_runner_assume_role_policy).Statement[0].Condition.ArnLike["aws:PrincipalArn"] == ["arn:aws:iam::999999999999:role/tower-deploy-*"]
-    error_message = "SetSourceIdentity must be protected by the same cross-account principal restriction as AssumeRole."
+    condition     = output.ravion_access_role_arn == output.ravion_runner_role_arn && aws_eks_access_policy_association.ravion_runner_admin[0].policy_arn == "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+    error_message = "Deploy access must retain the existing Runner role and cluster-admin association."
   }
 }
 
@@ -150,28 +154,12 @@ run "admin_role_can_be_disabled_without_observer_escalation" {
     ravion_runner_role_creation_enabled = false
   }
   assert {
-    condition     = output.ravion_access_role_arn == null && aws_instance.ravion_access_relay.tags.RavionAccessRoleArn == "" && length(aws_iam_role_policy.ravion_access_admin) == 0
+    condition     = output.ravion_access_role_arn == null && aws_instance.ravion_access_relay.tags.RavionAccessRoleArn == "" && length(module.ravion_runner_role) == 0
     error_message = "Disabled admin access must be explicitly absent, never replaced with read or instance-role credentials."
   }
   assert {
     condition     = output.ravion_access_read_role_arn != null
     error_message = "Read access must remain independent of admin role creation."
-  }
-}
-
-run "session_teardown_requires_owner_and_target" {
-  command = plan
-  assert {
-    condition     = one([for statement in data.aws_iam_policy_document.ravion_access.statement : statement if statement.sid == "OpenSessionDataChannel"]).resources == toset(["arn:aws:ssm:us-east-2:123456789012:session/*"])
-    error_message = "Data-channel permissions must stay in the cluster's AWS account and region."
-  }
-  assert {
-    condition     = length([for condition in one([for statement in data.aws_iam_policy_document.ravion_access.statement : statement if statement.sid == "OwnSessions"]).condition : condition if condition.variable == "ssm:resourceTag/aws:ssmmessages:session-id" && condition.test == "StringEquals" && join(",", condition.values) == "$${aws:userid}"]) == 1
-    error_message = "Assumed-role cleanup must use SSM's ownership system tag, not an invalid userid ARN prefix."
-  }
-  assert {
-    condition     = length([for condition in one([for statement in data.aws_iam_policy_document.ravion_access.statement : statement if statement.sid == "OwnSessions"]).condition : condition if condition.variable == "ssm:resourceTag/aws:ssmmessages:target-id" && join(",", condition.values) == aws_instance.ravion_access_relay.id]) == 1
-    error_message = "Session cleanup must also be scoped to this cluster's relay."
   }
 }
 
@@ -202,4 +190,70 @@ run "reject_public_subnet" {
   command = plan
   variables { public_subnet_ids = ["subnet-12345678"] }
   expect_failures = [aws_instance.ravion_access_relay]
+}
+
+run "reject_auto_public_ip_subnet" {
+  command = plan
+  override_data {
+    target = data.aws_subnet.ravion_access
+    values = { vpc_id = "vpc-12345678", map_public_ip_on_launch = true }
+  }
+  expect_failures = [aws_instance.ravion_access_relay]
+}
+
+run "reject_wrong_vpc_subnet" {
+  command = plan
+  override_data {
+    target = data.aws_subnet.ravion_access
+    values = { vpc_id = "vpc-87654321", map_public_ip_on_launch = false }
+  }
+  expect_failures = [aws_instance.ravion_access_relay]
+}
+
+run "reject_cross_account_integration_role" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws:iam::999999999999:role/ravion/integration" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_wrong_partition_integration_role" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws-us-gov:iam::123456789012:role/ravion/integration" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_account_root" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws:iam::123456789012:root" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_iam_user" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws:iam::123456789012:user/ravion" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_role_session" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws:sts::123456789012:assumed-role/integration/session" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_wildcard_role" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws:iam::123456789012:role/ravion/*" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_single_character_wildcard_role" {
+  command = plan
+  variables { ravion_integration_role_arn = "arn:aws:iam::123456789012:role/integration?" }
+  expect_failures = [var.ravion_integration_role_arn]
+}
+
+run "reject_empty_integration_role" {
+  command = plan
+  variables { ravion_integration_role_arn = "" }
+  expect_failures = [var.ravion_integration_role_arn]
 }
