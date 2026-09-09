@@ -105,7 +105,7 @@ resource "aws_instance" "ravion_access_relay" {
   tags = merge(local.ravion_access_tags, {
     Name                  = "${var.name}-eks-access-relay"
     RavionSessionDocument = aws_ssm_document.ravion_access.name
-    RavionAccessRoleArn   = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : ""
+    RavionAccessRoleArn   = aws_iam_role.ravion_access_admin.arn
     RavionReadRoleArn     = aws_iam_role.ravion_access_read.arn
   })
 

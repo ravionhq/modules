@@ -40,16 +40,22 @@ operations for the cluster owner; none are performed by module publishing.
 5. Deploy platform `aws.account.integration_role_arn` context support before using
    the new cluster definition. It supplies the required `ravion_integration_role_arn`
    automatically; direct Terraform callers must supply the exact integration role
-   in the cluster's AWS account and partition. Remove the former read/Runner
-   trusted-principal list inputs and advanced overrides. Both role trusts allow
+   in the cluster's AWS account and partition. Remove the former read
+   trusted-principal list input and advanced overrides. Both runtime role trusts allow
    only that integration ARN, with `sts:SetSourceIdentity` alongside `sts:AssumeRole`,
    from the six approved public source /32s documented in the cluster README.
    Caller policies must allow both actions. Source identity survives role chaining.
-   Ephemeral pipeline roles no longer qualify: add-ons `aws eks get-token --role-arn`
-   and workload destroy-time Helm cleanup must use the integration credential path
-   and approved STS egress before this trust change is applied. The existing Runner
-   security-group mapping still provides private API networking; it does not grant
-   IAM trust. Verify the runtime discovers
+   Runtime administration now has a separate `*-access-admin` role, EKS access
+   entry, cluster-admin association and DescribeCluster policy (four new resources).
+   Customer integration IAM and the runtime broker must allow that new ARN.
+   `ravion_access_role_arn` and the relay's `RavionAccessRoleArn` tag select it;
+   they no longer alias the provisioning Runner role. Add-ons
+   `aws eks get-token --role-arn` and workload destroy-time Helm cleanup retain
+   the existing Runner role, same-account trust, and customer-side STS egress.
+   Optional standalone Runner trust restrictions remain available. Its creation
+   toggle now controls only provisioning; runtime admin/read roles are independent.
+   The existing Runner security-group mapping still provides private API networking.
+   Verify the runtime discovers
    exactly one running relay from the cluster ARN/purpose tags, opens the pinned
    SSM session, and validates the EKS hostname/CA. Test both role assumptions,
    read-only inventory/logs and a controlled deployment. The read role cannot

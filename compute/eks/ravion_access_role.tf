@@ -34,3 +34,33 @@ resource "aws_iam_role_policy" "ravion_access_read" {
   role   = aws_iam_role.ravion_access_read.id
   policy = data.aws_iam_policy_document.ravion_access.json
 }
+
+# Runtime administration has a separate identity from customer-side Terraform
+# runners: those run under ephemeral credentials and customer NAT egress.
+resource "aws_iam_role" "ravion_access_admin" {
+  name               = "${local.ravion_access_name}-admin"
+  assume_role_policy = local.ravion_access_assume_role_policy
+  tags               = local.ravion_access_tags
+}
+
+resource "aws_eks_access_entry" "ravion_access_admin" {
+  cluster_name  = module.cluster.cluster_name
+  principal_arn = aws_iam_role.ravion_access_admin.arn
+  type          = "STANDARD"
+  tags          = local.ravion_access_tags
+}
+
+resource "aws_eks_access_policy_association" "ravion_access_admin" {
+  cluster_name  = module.cluster.cluster_name
+  principal_arn = aws_eks_access_entry.ravion_access_admin.principal_arn
+  policy_arn    = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope {
+    type = "cluster"
+  }
+}
+
+resource "aws_iam_role_policy" "ravion_access_admin_describe" {
+  name   = "describe-cluster"
+  role   = aws_iam_role.ravion_access_admin.id
+  policy = data.aws_iam_policy_document.ravion_access.json
+}

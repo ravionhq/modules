@@ -13,7 +13,7 @@ into a single hosting unit with enforced provisioning order:
 4. **Optional Fargate** (`modules/eks_fargate_profile`) — after add-ons are
     healthy
 5. **Dedicated access relay** — private ARM AL2023 EC2, EKS-only SSM Port
-   document, read-only access role and deploy/admin Runner access
+   document, runtime read/admin roles, and a separate provisioning Runner role
 
 This stack talks only to the AWS API, so it provisions in a single apply with
 no connectivity to the cluster's Kubernetes endpoint. Optional extensions —
@@ -84,8 +84,9 @@ Discover exactly one running EC2 instance by both:
 
 The EC2 instance also carries `RavionSessionDocument`, `RavionAccessRoleArn`, and
 `RavionReadRoleArn`. Module contract tags take precedence over user tags.
-`RavionAccessRoleArn` is empty if admin role creation is disabled; consumers must
-reject admin operations rather than falling back to another identity.
+`RavionAccessRoleArn` selects the dedicated `*-access-admin` runtime role, never
+the customer-side provisioning Runner role. Runtime admin/read roles are always
+created, independently of `ravion_runner_role_creation_enabled`.
 
 The read role has AmazonEKSViewPolicy and group `ravion:readers`. Add-ons grants
 that group narrowly scoped GET service proxy access to managed Loki/Prometheus.
@@ -95,11 +96,11 @@ Observers receive namespace-scoped get/list Secrets through the add-ons bootstra
 for Helm inventory/drift, in the union of configured workload and observed
 namespaces. This permits reading **all Secret contents** in those namespaces;
 Kubernetes RBAC cannot limit list permission by Helm labels. No ClusterRole grants
-Secrets access, and observers cannot exec or pod-forward. The deploy/admin role is the
-existing Runner role with AmazonEKSClusterAdminPolicy; authorized interactive
-operations use this role. The control plane must authorize the user before selecting it.
+Secrets access, and observers cannot exec or pod-forward. The runtime admin role
+has AmazonEKSClusterAdminPolicy; authorized interactive operations use this role.
+The control plane must authorize the user before selecting it.
 
-Both EKS access-role trust policies permit `sts:AssumeRole` and
+Both runtime EKS access-role trust policies permit `sts:AssumeRole` and
 `sts:SetSourceIdentity` only for the exact required `ravion_integration_role_arn`,
 which must be an IAM role in the cluster provider's AWS account and partition.
 Ravion supplies it directly from `<< aws.account.integration_role_arn >>`; there
@@ -115,26 +116,40 @@ control-plane egress addresses: `35.165.172.23/32`, `52.38.126.172/32`,
 These conditions restrict role assumption, not subsequent use of the issued
 credentials, and are separate from relay egress and EKS endpoint CIDRs.
 
-Each access role's AWS policy grants only `eks:DescribeCluster` on this cluster's
+Each runtime access role's AWS policy grants only `eks:DescribeCluster` on this cluster's
 exact ARN. Relay discovery and SSM session transport use customer integration-role
 credentials and the platform-managed customer IAM policy, not the EKS access
 roles. That policy must enforce the pinned document, target and session ownership.
 
 ### Upgrade and legacy Runner compatibility
 
-Replace the removed `ravion_access_read_trusted_principal_arns` and
-`ravion_runner_role_trusted_principal_arns` Terraform inputs with the required
-integration ARN. The platform account context must be deployed before using the
-new definition. The existing Runner role, access entry, output and security-group
-mapping are retained, but its trust is intentionally stricter.
+Replace the removed `ravion_access_read_trusted_principal_arns` Terraform input
+with the required integration ARN. The platform account context must be deployed
+before using the new definition. Runtime admin access adds four resources: a new
+IAM role, DescribeCluster inline policy, EKS access entry and cluster-admin policy
+association. `ravion_access_role_arn` and the relay tag now select that new identity.
+The former redundant SSM inline policy on the Runner role is removed.
+
+| Identity | Trust | Kubernetes access | Purpose |
+|----------|-------|-------------------|---------|
+| `*-access-read` | Exact integration ARN + approved Ravion egress | View + scoped readers RBAC | Runtime observation |
+| `*-access-admin` | Exact integration ARN + approved Ravion egress | Cluster admin | Authorized runtime deployment/interactive operations |
+| `<cluster>-ravion-runner` | Existing same-account delegation; caller needs AssumeRole | Cluster admin | Customer-side Terraform provisioning and legacy Helm runners |
 
 `addons/provider.tf` still invokes `aws eks get-token --role-arn` from its runner,
 and `../eks_service/workload_release.tf` uses `aws eks update-kubeconfig --role-arn`
 for destroy-time Helm cleanup. Workload deploy definitions also pass the Runner
-role ARN. Ephemeral runner credentials can no longer assume it directly; even
-integration-role credentials require approved public STS egress. Coordinate those
-credential paths with the control-plane cutover before upgrading existing clusters.
-Attaching the preserved Runner security group provides network reachability only.
+role ARN. These paths retain the existing Runner role name, EKS access entry,
+output and trust, with no Ravion egress restriction: ephemeral credentials on
+customer NAT continue to work. The provisioning role grants only DescribeCluster
+in AWS IAM and no relay SSM access. Its optional standalone Terraform
+`ravion_runner_role_trusted_principal_arns` restriction remains available and never
+changes runtime trust; the standard module does not expose or populate that input.
+The Runner security-group mapping continues to provide private API reachability.
+
+Customer integration IAM and the runtime broker must allow the new
+`*-access-admin` ARN before runtime cutover. Runtime discovery consumers must use
+the output/tag instead of assuming it aliases `ravion_runner_role_arn`.
 
 A single relay is not highly available. AMI updates/replacement interrupt active
 connections; runtime consumers should rediscover and reconnect. Mocked tests do
@@ -180,7 +195,8 @@ the [staged Operator migration guide](addons/UPGRADE-SSM.md) for existing cluste
 | aws_load_balancer_controller_pod_identity_creation_enabled | Create the AWS Load Balancer Controller Pod Identity role and association. | `bool` | `true` | no |
 | aws_load_balancer_controller_namespace / aws_load_balancer_controller_service_account | AWS Load Balancer Controller service account location. | `string` | `"kube-system"` / `"aws-load-balancer-controller"` | no |
 | ravion_runner_security_group_creation_enabled | Create a Ravion Runner SG allowed to reach the API endpoint (443). | `bool` | `true` | no |
-| ravion_runner_role_creation_enabled | Create the stable Runner/admin EKS role, trusted only by the integration role from approved egress. | `bool` | `true` | no |
+| ravion_runner_role_creation_enabled | Create the customer-side provisioning Runner EKS role, independent of runtime roles. | `bool` | `true` | no |
+| ravion_runner_role_trusted_principal_arns | Optional standalone Terraform principal patterns restricting provisioning trust; empty retains same-account delegation. Does not affect runtime roles. | `list(string)` | `[]` | no |
 | ravion_integration_role_arn | Exact platform integration IAM role ARN in the cluster account and partition; sole principal for read/admin trust. | `string` | n/a | yes |
 | pod_identity_associations | Extra Pod Identity associations. | `map(object)` | `{}` | no |
 | deletion_protection_enabled | Protect the cluster from API deletion. | `bool` | `true` | no |
@@ -205,10 +221,10 @@ the [staged Operator migration guide](addons/UPGRADE-SSM.md) for existing cluste
 | cluster_security_group_id | EKS-managed cluster security group. |
 | node_subnet_ids | Subnets used for node placement (consumed by `addons`). |
 | ravion_runner_security_group_id | Ravion Runner SG allowed to reach the API endpoint (null if disabled). |
-| ravion_runner_role_arn | Stable Runner/admin EKS role, trusted only by the integration role from approved egress (null if disabled). |
+| ravion_runner_role_arn | Existing customer-side provisioning Runner role (null if disabled). |
 | ravion_access_relay_instance_id | Dedicated EC2 SSM target, never a Kubernetes node. |
 | ravion_access_session_document_name | Per-cluster EKS-only SSM Port document. |
-| ravion_access_role_arn | Deploy/admin role alias of `ravion_runner_role_arn` (null if disabled). |
+| ravion_access_role_arn | Dedicated runtime `*-access-admin` role, separate from provisioning. |
 | ravion_access_read_role_arn | Separate read-only EKS role; AWS permissions only describe this cluster. |
 | secrets_kms_key_arn | Secrets KMS key (null if disabled). |
 | lb_controller_role_arn | LB Controller Pod Identity role. |

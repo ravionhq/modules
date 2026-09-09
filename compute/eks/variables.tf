@@ -152,8 +152,19 @@ variable "cluster_security_group_additional_cidr_ingress_rules" {
 
 variable "ravion_runner_role_creation_enabled" {
   type        = bool
-  description = "Create the stable Runner/admin IAM role, assumable only by the Ravion integration role from approved egress, registered as an EKS access entry with cluster-admin."
+  description = "Create the stable provisioning Runner IAM role with an EKS cluster-admin access entry. Independent of runtime read/admin access roles."
   default     = true
+}
+
+variable "ravion_runner_role_trusted_principal_arns" {
+  type        = list(string)
+  description = "IAM principal ARN patterns allowed to assume the provisioning Runner role (aws:PrincipalArn ArnLike condition). Empty means any principal in this account that holds sts:AssumeRole on the role's ARN. Does not affect runtime read/admin trust."
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.ravion_runner_role_trusted_principal_arns : can(regex("^arn:[^:]+:iam::[0-9]{12}:(role/.+|user/.+|root)$", arn))])
+    error_message = "Use IAM role/user ARN patterns or account root ARNs with an explicit 12-digit account ID."
+  }
 }
 
 variable "ravion_integration_role_arn" {

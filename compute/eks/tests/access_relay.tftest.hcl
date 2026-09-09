@@ -33,12 +33,23 @@ mock_provider "aws" {
     defaults = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
   }
   mock_resource "aws_iam_role" {
-    defaults = { arn = "arn:aws:iam::123456789012:role/test-read" }
+    defaults = { arn = "arn:aws:iam::123456789012:role/relay-test-ravion-runner" }
   }
   mock_resource "aws_launch_template" {
     defaults = { id = "lt-0123456789abcdef0" }
   }
 }
+
+override_resource {
+  target = aws_iam_role.ravion_access_read
+  values = { arn = "arn:aws:iam::123456789012:role/relay-test-access-read" }
+}
+
+override_resource {
+  target = aws_iam_role.ravion_access_admin
+  values = { arn = "arn:aws:iam::123456789012:role/relay-test-access-admin" }
+}
+
 mock_provider "tls" {
   mock_data "tls_certificate" {
     defaults = { certificates = [{
@@ -131,8 +142,8 @@ run "exact_integration_trust_and_approved_egress" {
     error_message = "Trust must require exactly the integration role AND the six approved /32s for both STS actions; no root, wildcard, extra statement, or IfExists bypass."
   }
   assert {
-    condition     = aws_iam_role.ravion_access_read.assume_role_policy == local.ravion_access_assume_role_policy
-    error_message = "Read trust must match the shared policy passed to the existing Runner/admin role."
+    condition     = aws_iam_role.ravion_access_read.assume_role_policy == aws_iam_role.ravion_access_admin.assume_role_policy
+    error_message = "Runtime read and admin roles must have identical exact integration-role and SourceIp trust."
   }
 }
 
@@ -143,23 +154,58 @@ run "read_policy_has_no_transport_or_broad_aws_permissions" {
     error_message = "Read-role AWS permissions must be only DescribeCluster on the exact cluster, without SSM, discovery, wildcard resources or extra statements."
   }
   assert {
-    condition     = output.ravion_access_role_arn == output.ravion_runner_role_arn && aws_eks_access_policy_association.ravion_runner_admin[0].policy_arn == "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-    error_message = "Deploy access must retain the existing Runner role and cluster-admin association."
+    condition     = aws_iam_role_policy.ravion_access_admin_describe.policy == aws_iam_role_policy.ravion_access_read.policy && aws_iam_role_policy.ravion_access_admin_describe.role == aws_iam_role.ravion_access_admin.id && module.ravion_runner_role[0].inline_policy_names == tolist(["inline-statements"])
+    error_message = "Runtime admin must receive the same DescribeCluster-only policy; provisioning must retain only its existing inline policy."
   }
 }
 
-run "admin_role_can_be_disabled_without_observer_escalation" {
+run "runtime_and_provisioning_identities_are_separate" {
+  command = plan
+  assert {
+    condition     = output.ravion_access_role_arn == aws_iam_role.ravion_access_admin.arn && output.ravion_access_role_arn != output.ravion_runner_role_arn && output.ravion_access_role_arn != output.ravion_access_read_role_arn && aws_instance.ravion_access_relay.tags.RavionAccessRoleArn == output.ravion_access_role_arn && endswith(aws_iam_role.ravion_access_admin.name, "-access-admin")
+    error_message = "Runtime output and relay discovery must select the new access-admin role, never provisioning or observer credentials."
+  }
+  assert {
+    condition     = aws_eks_access_entry.ravion_access_admin.principal_arn == output.ravion_access_role_arn && aws_eks_access_entry.ravion_runner[0].principal_arn == output.ravion_runner_role_arn && aws_eks_access_policy_association.ravion_access_admin.policy_arn == "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" && aws_eks_access_policy_association.ravion_runner_admin[0].policy_arn == "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+    error_message = "Runtime admin and provisioning require separate EKS access entries and admin associations."
+  }
+  assert {
+    condition = jsondecode(local.ravion_runner_assume_role_policy) == jsondecode(jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Sid       = "TrustAWSPrincipals"
+        Effect    = "Allow"
+        Action    = ["sts:AssumeRole", "sts:SetSourceIdentity"]
+        Principal = { AWS = ["arn:aws:iam::123456789012:root"] }
+      }]
+    }))
+    error_message = "Provisioning trust must retain same-account delegation without runtime SourceIp restrictions so ephemeral customer-side runners keep working."
+  }
+}
+
+run "provisioning_trust_customization_cannot_change_runtime_trust" {
+  command = plan
+  variables {
+    ravion_runner_role_trusted_principal_arns = ["arn:aws:iam::123456789012:role/rvn-ci/rvn-ci-*"]
+  }
+  assert {
+    condition     = jsondecode(local.ravion_runner_assume_role_policy).Statement[0].Condition.ArnLike["aws:PrincipalArn"] == ["arn:aws:iam::123456789012:role/rvn-ci/rvn-ci-*"] && aws_iam_role.ravion_access_admin.assume_role_policy != local.ravion_runner_assume_role_policy && jsondecode(aws_iam_role.ravion_access_admin.assume_role_policy).Statement[0].Principal.AWS == var.ravion_integration_role_arn && aws_iam_role.ravion_access_read.assume_role_policy == aws_iam_role.ravion_access_admin.assume_role_policy
+    error_message = "Optional standalone provisioning trust restrictions must not admit runner principals into runtime roles."
+  }
+}
+
+run "runtime_access_is_independent_of_provisioning_role_creation" {
   command = plan
   variables {
     ravion_runner_role_creation_enabled = false
   }
   assert {
-    condition     = output.ravion_access_role_arn == null && aws_instance.ravion_access_relay.tags.RavionAccessRoleArn == "" && length(module.ravion_runner_role) == 0
-    error_message = "Disabled admin access must be explicitly absent, never replaced with read or instance-role credentials."
+    condition     = output.ravion_runner_role_arn == null && length(module.ravion_runner_role) == 0 && output.ravion_access_role_arn == aws_iam_role.ravion_access_admin.arn && aws_instance.ravion_access_relay.tags.RavionAccessRoleArn == output.ravion_access_role_arn
+    error_message = "Disabling customer-side provisioning must not remove or repoint runtime admin access."
   }
   assert {
     condition     = output.ravion_access_read_role_arn != null
-    error_message = "Read access must remain independent of admin role creation."
+    error_message = "Read access must remain independent of provisioning role creation."
   }
 }
 

@@ -72,7 +72,7 @@ output "public_subnet_ids" {
 }
 
 output "ravion_runner_role_arn" {
-  description = "ARN of the stable Runner/admin EKS role, assumable only by the integration role from approved egress (null when disabled)."
+  description = "ARN of the stable provisioning Runner EKS role, assumed by customer-side Terraform and legacy Helm runners (null when disabled)."
   value       = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : null
 }
 
@@ -129,8 +129,8 @@ output "ravion_access_session_document_name" {
 }
 
 output "ravion_access_role_arn" {
-  description = "Deploy/admin EKS access role, alias of ravion_runner_role_arn; null when runner role creation is disabled. SSM transport uses integration-role credentials."
-  value       = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : null
+  description = "Runtime admin EKS role, trusted only by the integration role from approved egress; separate from the provisioning Runner role. SSM transport uses integration-role credentials."
+  value       = aws_iam_role.ravion_access_admin.arn
 }
 
 output "ravion_access_read_role_arn" {

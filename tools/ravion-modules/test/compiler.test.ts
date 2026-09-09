@@ -340,6 +340,8 @@ describe("compiler", () => {
     const runnerSecurityGroup = findInput(addonsClusterMappedInputs, "ravion_runner_security_group_id");
     assert.equal(runnerSecurityGroup.default, "<<ref.stack.output.ravion_runner_security_group_id>>");
     assert.equal(runnerSecurityGroup.immutable, true);
+    assert.equal(findInput(addonsClusterMappedInputs, "ravion_runner_role_arn").default, "<<ref.stack.output.ravion_runner_role_arn>>");
+    assert.equal(getTerraformVariable(addons.module, "ravion_runner_role_arn"), "<< module.input.ravion_runner_role_arn >>");
 
     const addonsStack = assertRecord(addons.module.stack, "addons.module.stack");
     const addonsPipelines = assertRecord(addonsStack.pipelines, "addons.module.stack.pipelines");
