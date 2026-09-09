@@ -20,8 +20,7 @@ describe("ECS early success module definitions", () => {
       const floor = fields.find(field => field.id === "deployment_minimum_healthy_percent");
       assert.ok(healthy && cleanup && floor);
       assert.equal(healthy.default, 100);
-      assert.equal(healthy.min, 0);
-      assert.equal(healthy.min_input, "deployment_minimum_healthy_percent");
+      assert.equal(healthy.min, "<< module.input.deployment_minimum_healthy_percent >>");
       assert.equal(healthy.max, 100);
       assert.equal(cleanup.type, "boolean");
       assert.equal(cleanup.default, false);
