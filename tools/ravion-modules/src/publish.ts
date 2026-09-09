@@ -127,6 +127,7 @@ export interface PublishOptions {
   localDev?: boolean;
   localDevForce?: boolean;
   localDevSourceRef?: string;
+  localDevSourceBranch?: string;
   logger?: (message: string) => void;
 }
 
@@ -134,6 +135,7 @@ export interface ModuleVersionDryRunOptions {
   localDev?: boolean;
   localDevForce?: boolean;
   localDevSourceRef?: string;
+  localDevSourceBranch?: string;
   logger?: (message: string) => void;
 }
 
@@ -183,6 +185,7 @@ export async function publishDefinitions(
   const definitionsToPublish = options.localDev
     ? applyLocalDevVersions(publishedDefinitions, inventory, options.localDevSourceRef ?? "main", {
         force: options.localDevForce,
+        sourceBranch: options.localDevSourceBranch,
       })
     : publishedDefinitions;
   const statuses = getReleaseStatuses(definitionsToPublish, { inventory });
@@ -532,6 +535,7 @@ export async function dryRunModuleVersions(
   const definitionsToValidate = options.localDev
     ? applyLocalDevVersions(publishedDefinitions, inventory, options.localDevSourceRef ?? "main", {
         force: options.localDevForce,
+        sourceBranch: options.localDevSourceBranch,
       })
     : publishedDefinitions;
   const statuses = getReleaseStatuses(definitionsToValidate, { inventory });
@@ -605,7 +609,7 @@ export function applyLocalDevVersions(
   compiledDefinitions: CompiledDefinition[],
   inventory: RemoteModuleInventory,
   sourceRef = "main",
-  options: { force?: boolean } = {},
+  options: { force?: boolean; sourceBranch?: string } = {},
 ): CompiledDefinition[] {
   const definitionsByType = new Map(
     inventory.definitions.map((definition) => [definition.type, definition]),
@@ -617,7 +621,7 @@ export function applyLocalDevVersions(
       : [];
     const originalTag = `${definition.type}@${definition.version}`;
     const selectedVersion = selectLocalDevVersion(definition, remoteVersions, sourceRef, options);
-    const module = replaceLocalDevSourceRefs(definition.module, originalTag, sourceRef) as Record<
+    const module = replaceLocalDevSourceRefs(definition.module, originalTag, sourceRef, options.sourceBranch) as Record<
       string,
       unknown
     >;
@@ -851,7 +855,7 @@ function selectLocalDevVersion(
   definition: CompiledDefinition,
   remoteVersions: RemoteModuleVersion[],
   sourceRef: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; sourceBranch?: string } = {},
 ): string {
   for (let suffix = 1; ; suffix += 1) {
     const candidate = `${definition.version}-${suffix}`;
@@ -860,6 +864,7 @@ function selectLocalDevVersion(
       definition.module,
       `${definition.type}@${definition.version}`,
       sourceRef,
+      options.sourceBranch,
     );
     if (!remoteVersion || (!options.force && stableStringify(remoteVersion.config) === stableStringify(candidateModule))) {
       return candidate;
@@ -871,9 +876,10 @@ function replaceLocalDevSourceRefs(
   value: unknown,
   originalTag: string,
   replacementTag: string,
+  sourceBranch = replacementTag,
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => replaceLocalDevSourceRefs(item, originalTag, replacementTag));
+    return value.map((item) => replaceLocalDevSourceRefs(item, originalTag, replacementTag, sourceBranch));
   }
   if (typeof value === "string") {
     return value.replaceAll(originalTag, replacementTag);
@@ -884,7 +890,7 @@ function replaceLocalDevSourceRefs(
   const output = Object.fromEntries(
     Object.entries(value).map(([key, child]) => [
       key,
-      replaceLocalDevSourceRefs(child, originalTag, replacementTag),
+      replaceLocalDevSourceRefs(child, originalTag, replacementTag, sourceBranch),
     ]),
   );
   if (
@@ -892,7 +898,10 @@ function replaceLocalDevSourceRefs(
     value.ref.includes(originalTag) &&
     typeof value.branch === "string"
   ) {
-    output.branch = replacementTag;
+    if (/^[0-9a-f]{40}$/i.test(sourceBranch)) {
+      throw new PublishError("A commit-pinned source requires a named checkout branch, not a commit SHA.");
+    }
+    output.branch = sourceBranch;
   }
   return output;
 }

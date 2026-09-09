@@ -88,11 +88,12 @@ if (command === "validate") {
   const localDev = args.includes("--local-dev");
   const client = await createDefaultRavionApiClient({ baseUrl: localDev ? (process.env.RAVION_API_URL ?? "http://localhost:8080") : undefined, requireToken: !localDev });
   const localDevSourceRef = localDev ? await resolveLocalDevSourceRef() : undefined;
+  const localDevSourceBranch = await resolveLocalDevSourceBranch(localDevSourceRef);
   const format = getArgValue(args, "--format") ?? "json";
   const outputPath = getArgValue(args, "--output");
   let result;
   try {
-    result = await publishDefinitions(compiled, client, { dryRun: localDev ? args.includes("--dry-run") : !args.includes("--apply"), localDev, localDevForce: args.includes("--force"), localDevSourceRef, logger: (message) => console.error(`[publish] ${message}`) });
+    result = await publishDefinitions(compiled, client, { dryRun: localDev ? args.includes("--dry-run") : !args.includes("--apply"), localDev, localDevForce: args.includes("--force"), localDevSourceRef, localDevSourceBranch, logger: (message) => console.error(`[publish] ${message}`) });
   } catch (error) {
     if (isPublishPlanError(error)) {
       const output = format === "markdown" ? formatPublishPlanMarkdown(error.result) : JSON.stringify(error.result, null, 2);
@@ -117,10 +118,12 @@ if (command === "validate") {
   const localDev = args.includes("--local-dev");
   const client = await createDefaultRavionApiClient({ baseUrl: localDev ? (process.env.RAVION_API_URL ?? "http://localhost:8080") : undefined, requireToken: !localDev });
   const localDevSourceRef = localDev ? await resolveLocalDevSourceRef() : undefined;
+  const localDevSourceBranch = await resolveLocalDevSourceBranch(localDevSourceRef);
   const results = await dryRunModuleVersions(compiled, client, {
     localDev,
     localDevForce: args.includes("--force"),
     localDevSourceRef,
+    localDevSourceBranch,
     logger: (message) => console.error(`[version-dry-run] ${message}`),
   });
   console.log(JSON.stringify(results, null, 2));
@@ -288,6 +291,18 @@ async function getCurrentBranch(): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+async function resolveLocalDevSourceBranch(sourceRef: string | undefined): Promise<string | undefined> {
+  if (!sourceRef || !/^[0-9a-f]{40}$/i.test(sourceRef)) {
+    return undefined;
+  }
+  const branch = await getCurrentBranch();
+  if (!branch) {
+    throw new Error("Commit-pinned local publication requires a checked-out branch.");
+  }
+  await execFileAsync("git", ["merge-base", "--is-ancestor", sourceRef, branch]);
+  return branch;
 }
 
 function formatError(error: unknown): string {

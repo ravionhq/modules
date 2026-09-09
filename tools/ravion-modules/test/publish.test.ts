@@ -614,6 +614,31 @@ describe("publish", () => {
     assert.equal(client.createdVersions.length, 0);
   });
 
+  it("keeps a commit pin separate from the checkout branch and reuses the corrected version", async () => {
+    const pin = "467fe70de9232395aaaac2619c034d78a72e888f";
+    const branch = "mabadir/eks-ssm-control-plane";
+    const compiled = createCompiledDefinition({ module: { stack: { source: { branch: "main", ref: "ravion-aws-vpc@1.2.3" } } } });
+    const client = new MockRavionClient({
+      definitions: [{ id: "vpc", type: "ravion-aws-vpc", name: "AWS VPC", description: "AWS VPC and subnets." }],
+      versionsByDefinitionId: { vpc: [createRemoteVersion({ version: "1.2.3-1", config: { stack: { source: { branch: pin, ref: pin } } } })] },
+    });
+    const options = { dryRun: false, localDev: true, localDevSourceRef: pin, localDevSourceBranch: branch };
+    await publishDefinitions([compiled], client, options);
+    assert.equal(client.createdVersions[0].version, "1.2.3-2");
+    assert.deepEqual(client.createdVersions[0].config, { stack: { source: { branch, ref: pin } } });
+    const repeated = await publishDefinitions([compiled], client, options);
+    assert.equal(repeated.items[0].action, "skip-version");
+    assert.equal(client.createdVersions.length, 1);
+  });
+
+  it("rejects commit-pinned local sources without a named checkout branch", async () => {
+    const compiled = createCompiledDefinition({ module: { stack: { source: { branch: "main", ref: "ravion-aws-vpc@1.2.3" } } } });
+    await assert.rejects(
+      publishDefinitions([compiled], new MockRavionClient(), { localDev: true, localDevSourceRef: "467fe70de9232395aaaac2619c034d78a72e888f" }),
+      /named checkout branch/,
+    );
+  });
+
   it("local-dev force publishing chooses the next suffix when an identical suffixed version exists", async () => {
     const compiled = createCompiledDefinition({ module: { stack: { source: { ref: "ravion-aws-vpc@1.2.3" } } } });
     const suffixedConfig = { stack: { source: { ref: "main" } } };

@@ -333,9 +333,12 @@ eval (make env-local-fish)
 
 `--local-dev` defaults to `http://localhost:8080`, or `RAVION_API_URL` when set. It always publishes
 a numeric prerelease suffix from the authored `release.version`, for example `0.1.0-1`, `0.1.0-2`,
-and so on. The module's GitHub source ref uses the current branch when that branch exists on
-`origin`; otherwise it uses `main`. Set `SOURCE_REF` or `RAVION_LOCAL_DEV_SOURCE_REF` to override
-that source ref. Use `--dry-run` with `--local-dev` to dry-run without API mutations.
+and so on. The module's GitHub source ref uses the current branch, falling back to `main` when
+no branch is checked out. Set `SOURCE_REF` or `RAVION_LOCAL_DEV_SOURCE_REF` to override that ref.
+For a full commit SHA, the publisher keeps the current branch as the checkout `branch` and puts
+the SHA in `ref`; the runner clones the named branch and then checks out the pinned commit.
+The commit must belong to the current branch. Push that branch before running the published module.
+Use `--dry-run` with `--local-dev` to dry-run without API mutations.
 
 ### Module Release Tags
 
