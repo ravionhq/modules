@@ -21,6 +21,7 @@ describe("ECS early success module definitions", () => {
       assert.ok(healthy && cleanup && floor);
       assert.equal(healthy.default, 100);
       assert.equal(healthy.min, 0);
+      assert.equal(healthy.min_input, "deployment_minimum_healthy_percent");
       assert.equal(healthy.max, 100);
       assert.equal(cleanup.type, "boolean");
       assert.equal(cleanup.default, false);

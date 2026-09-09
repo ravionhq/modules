@@ -4,6 +4,7 @@
       type: number
       description: Percentage of desired tasks that must be running and healthy on the new revision. Must be at least Minimum healthy percent. ECS still requires one healthy task on nonzero services at 0%. Deployment rollback monitoring ends at success; remaining tasks scale in the background.
       min: 0
+      min_input: deployment_minimum_healthy_percent
       max: 100
       default: 100
     - $with.field_overrides
