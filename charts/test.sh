@@ -203,6 +203,27 @@ test_rvn_eks_web() {
   assert_eq "web: Deployment omits replicas when the HPA owns scale" \
     "" "$(q "${full}" "${dep} | .spec.replicas")"
 
+  # --- zone-local routing (on by default) -----------------------------------
+  local svc='.[] | select(.kind == "Service")'
+  local tsc="${dep} | .spec.template.spec.topologySpreadConstraints"
+  assert_eq "web: Service prefers same-zone endpoints by default" \
+    "PreferClose" "$(q "${default}" "${svc} | .spec.trafficDistribution")"
+  assert_eq "web: default zone spread constraint is rendered" \
+    "1 topology.kubernetes.io/zone ScheduleAnyway" \
+    "$(q "${default}" "${tsc}[0] | [.maxSkew, .topologyKey, .whenUnsatisfiable] | join(\" \")")"
+  assert_eq "web: default zone spread selects this chart's pods" \
+    "rvn-eks-web test-release" \
+    "$(q "${default}" "${tsc}[0].labelSelector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  assert_eq "web: explicit topologySpreadConstraints replace the default" \
+    "1 kubernetes.io/hostname" \
+    "$(q "${full}" "${tsc} | [length, .[0].topologyKey] | join(\" \")")"
+  local zone_off
+  zone_off="$(render "${chart}" zone-off --values "${CHARTS_DIR}/${chart}/ci/zone-routing-off-values.yaml")"
+  assert_eq "web: trafficDistribution is omitted when set to empty" \
+    "" "$(q "${zone_off}" "${svc} | .spec.trafficDistribution")"
+  assert_eq "web: no spread constraint when topologySpread is disabled" \
+    "" "$(q "${zone_off}" "${tsc}")"
+
   test_secrets_contract "${chart}" "${full}" "${default}" Deployment
 
   # --- single-provider secrets: no reference to the unused store ------------
@@ -266,6 +287,22 @@ test_rvn_eks_worker() {
     "1" "$(count "${full}" HorizontalPodAutoscaler)"
   assert_eq "worker: Deployment omits replicas when the HPA owns scale" \
     "" "$(q "${full}" "${dep} | .spec.replicas")"
+
+  # --- zone spread (on by default) ------------------------------------------
+  local tsc="${dep} | .spec.template.spec.topologySpreadConstraints"
+  assert_eq "worker: default zone spread constraint is rendered" \
+    "1 topology.kubernetes.io/zone ScheduleAnyway" \
+    "$(q "${default}" "${tsc}[0] | [.maxSkew, .topologyKey, .whenUnsatisfiable] | join(\" \")")"
+  assert_eq "worker: default zone spread selects this chart's pods" \
+    "rvn-eks-worker test-release" \
+    "$(q "${default}" "${tsc}[0].labelSelector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  assert_eq "worker: explicit topologySpreadConstraints replace the default" \
+    "1 kubernetes.io/hostname" \
+    "$(q "${full}" "${tsc} | [length, .[0].topologyKey] | join(\" \")")"
+  local zone_off
+  zone_off="$(render "${chart}" zone-off --values "${CHARTS_DIR}/${chart}/ci/zone-routing-off-values.yaml")"
+  assert_eq "worker: no spread constraint when topologySpread is disabled" \
+    "" "$(q "${zone_off}" "${tsc}")"
 
   test_secrets_contract "${chart}" "${full}" "${default}" Deployment
 }

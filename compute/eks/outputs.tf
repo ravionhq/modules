@@ -91,6 +91,11 @@ output "lb_controller_role_arn" {
   value       = module.cluster.lb_controller_role_arn
 }
 
+output "topology_aware_routing_enabled" {
+  description = "Whether this cluster keeps Service traffic zone-local by default. Consumed by compute/eks/addons as the default for patching the kube-dns Service with trafficDistribution: PreferClose."
+  value       = var.topology_aware_routing_enabled
+}
+
 ################################################################################
 # Node Groups
 ################################################################################

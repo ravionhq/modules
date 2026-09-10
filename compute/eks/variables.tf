@@ -409,8 +409,19 @@ variable "coredns_addon_version" {
 
 variable "coredns_addon_configuration_values" {
   type        = string
-  description = "JSON string of add-on configuration overrides for coredns."
+  description = "JSON string of add-on configuration overrides for coredns. When set, it replaces the zone spread that topology_aware_routing_enabled would otherwise apply."
   default     = null
+}
+
+################################################################################
+# Zone-local routing
+################################################################################
+
+variable "topology_aware_routing_enabled" {
+  type        = bool
+  description = "Spread CoreDNS pods across availability zones (a topology.kubernetes.io/zone topologySpreadConstraint on the coredns add-on) and publish the cluster-wide default that compute/eks/addons reads to keep kube-dns traffic zone-local. Workload charts route inside their zone by default independently of this flag. Needs Kubernetes 1.31+ for the Service-side field."
+  default     = true
+  nullable    = false
 }
 
 ################################################################################

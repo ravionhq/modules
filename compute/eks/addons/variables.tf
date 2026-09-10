@@ -25,6 +25,29 @@ variable "tags" {
 }
 
 ################################################################################
+# Zone-local routing
+################################################################################
+
+variable "topology_aware_routing_enabled" {
+  type        = bool
+  description = "Patch the kube-dns Service with trafficDistribution: PreferClose so DNS lookups stay in the caller's availability zone; the compute/eks composite spreads the CoreDNS pods to match. Disabling destroys the patch release, whose pre-delete hook clears the field again. Needs Kubernetes 1.31+; older API servers ignore the field."
+  default     = true
+  nullable    = false
+}
+
+variable "kubectl_image" {
+  type        = string
+  description = "kubectl image (repository:tag) the kube-dns patch Jobs run. Pinned; override for clusters that must pull from a private mirror."
+  default     = "registry.k8s.io/kubectl:v1.33.12"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^(.*):([^:/]+)$", var.kubectl_image))
+    error_message = "kubectl_image must be a repository:tag reference."
+  }
+}
+
+################################################################################
 # AWS Load Balancer Controller
 ################################################################################
 

@@ -81,7 +81,10 @@ env:
 | `nodeSelector` | map | `{}` | |
 | `tolerations` | list | `[]` | |
 | `affinity` | map | `{}` | |
-| `topologySpreadConstraints` | list | `[]` | |
+| `topologySpread.enabled` | bool | `true` | Render one zone spread constraint on this chart's pods so workers run in every zone. |
+| `topologySpread.maxSkew` | int | `1` | |
+| `topologySpread.whenUnsatisfiable` | string | `ScheduleAnyway` | Or `DoNotSchedule` for a hard requirement. |
+| `topologySpreadConstraints` | list | `[]` | Explicit constraints. When non-empty, replaces the default zone spread. |
 
 ### Identity, metadata, storage
 

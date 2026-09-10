@@ -75,6 +75,17 @@ securityContext: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# -- Default zone spread. Renders one topologySpreadConstraint on
+# topology.kubernetes.io/zone selecting this chart's pods, so workers sit in
+# every zone and their calls to zone-local Services stay in-zone. Ignored when
+# topologySpreadConstraints below is non-empty.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  # -- ScheduleAnyway keeps pods schedulable on a small or uneven cluster;
+  # DoNotSchedule makes the spread a hard requirement.
+  whenUnsatisfiable: ScheduleAnyway
+# -- Explicit constraints. When set, replaces the default zone spread entirely.
 topologySpreadConstraints: []
 volumes: []
 volumeMounts: []

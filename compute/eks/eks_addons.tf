@@ -14,7 +14,7 @@ module "addons" {
   cluster_name = module.cluster.cluster_name
 
   coredns_addon_version              = var.coredns_addon_version
-  coredns_addon_configuration_values = var.coredns_addon_configuration_values
+  coredns_addon_configuration_values = local.coredns_addon_configuration_values
 
   tags = local.tags
 }

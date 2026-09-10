@@ -465,6 +465,8 @@ Unlike the previous curl-based enrollment, turning the flag off **does** revoke 
 | cluster_name | Name of the existing EKS cluster. | `string` | n/a | yes |
 | region | AWS region. When null, the provider's configured region is used. | `string` | `null` | no |
 | tags | Tags applied to created resources and Karpenter-launched instances. | `map(string)` | `{}` | no |
+| topology_aware_routing_enabled | Patch `kube-dns` with `trafficDistribution: PreferClose` so DNS stays zone-local (CoreDNS pods are spread by `compute/eks`). | `bool` | `true` | no |
+| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs. | `string` | `registry.k8s.io/kubectl:v1.33.12` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
 | aws_load_balancer_controller_enabled | Install the AWS Load Balancer Controller without any shared load balancer (it installs automatically with one). | `bool` | `false` | no |
@@ -634,6 +636,7 @@ All outputs are null when the corresponding add-on is disabled.
 
 ## Notes
 
+- `kube-dns` zone-local routing is a local chart (`charts/coredns-traffic-distribution`) whose Helm hook Jobs run `kubectl patch` against the Service, for the same reason as the other local charts: the Helm provider is the only Kubernetes access this stack has, and Helm cannot adopt a Service the coredns add-on owns. The `post-install`/`post-upgrade` hook writes `spec.trafficDistribution`, the `pre-delete` hook clears it, so `topology_aware_routing_enabled = false` is a real rollback. The Job's Role can `get` and `patch` exactly one Service.
 - Karpenter CRDs are managed by the dedicated `karpenter-crd` chart because Helm does not upgrade CRDs bundled inside a chart's `crds/` directory. Both charts are pinned to the same version.
 - The default NodePool and EC2NodeClass are delivered as a local chart (`charts/karpenter-resources`) because the Helm provider is the only Kubernetes access this stack has.
 - On destroy, the Helm releases are removed before the AWS-side resources, so Karpenter drains and terminates the nodes it launched while its IAM roles and queue still exist.

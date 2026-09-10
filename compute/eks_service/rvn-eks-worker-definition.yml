@@ -5,7 +5,7 @@ definition:
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
   version: 0.4.0
-  description: Follow the selected observability providers, group add-ons with cluster selection, use consistent scaling, release, and builder field names, use Ravion Operator terminology, clarify ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  description: Spread worker pods across availability zones by default so their calls to zone-local services stay in-zone, cutting cross-AZ data transfer charges. Follow the selected observability providers, group add-ons with cluster selection, use consistent scaling, release, and builder field names, use Ravion Operator terminology, clarify ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
 module:
   inputs:
     - id: section_cluster
@@ -274,6 +274,10 @@ module:
     Autoscaling is **off** by default, unlike the web module. CPU utilization is a poor proxy for worker demand: a worker blocked on a queue poll uses almost no CPU no matter how deep the backlog. Enable it when the work is genuinely CPU-bound, and prefer a fixed pod count otherwise.
 
     **Shutdown grace period (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
+
+    ### Zone placement
+
+    Worker pods are spread across the cluster's availability zones with a soft `topology.kubernetes.io/zone` spread constraint, so a small cluster never leaves pods pending. Combined with the zone-local routing the EKS Web Service and EKS Cluster modules apply, a worker's calls to other services and to DNS stay inside its own zone whenever a destination pod exists there, which keeps AWS cross-AZ data transfer charges off that traffic.
 
     ## Application configuration
 

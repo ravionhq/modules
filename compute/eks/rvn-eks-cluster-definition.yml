@@ -5,7 +5,7 @@ definition:
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
   version: 0.2.0
-  description: Configure collapsible default capacity with a four-node scaling ceiling alongside additional capacity, manage API endpoint and IAM access together, define Fargate profiles and cluster access entries with guided forms instead of raw JSON, use consistent endpoint and control-plane logging field names, clarify node group and controller settings, keep the Ravion Runner role in advanced settings, manage the Ravion Runner security group automatically, prevent Kubernetes version downgrades, and remove empty Container Insights charts from the cluster Metrics tab.
+  description: Keep Service traffic inside its availability zone by default. CoreDNS is spread across zones, the EKS Add-ons module patches the kube-dns Service to prefer same-zone endpoints, and the EKS Web Service and Worker charts route and spread the same way, cutting cross-AZ data transfer charges. Switch off with the topology_aware_routing_enabled advanced Terraform variable.
 module:
   inputs:
     - id: network
@@ -637,6 +637,20 @@ module:
 
     EKS access entries control which IAM principals can access the cluster. The IAM principal that creates the cluster is granted admin access automatically. Grant additional principals access through the **Access entries** form: give each entry an IAM principal ARN, then attach EKS access policies scoped to the whole cluster or to selected namespaces, and optionally map the principal to Kubernetes RBAC groups. Automatic access for Ravion deploys will be wired here in a future release.
 
+    ## Networking
+
+    ### Zone-local routing
+
+    A multi-AZ cluster spreads pods across availability zones for resilience, but by default Kubernetes also spreads every in-cluster request across those zones, and AWS bills cross-AZ data transfer in both directions. This module keeps that traffic local by default:
+
+    - **CoreDNS** is spread across zones with a `topology.kubernetes.io/zone` topology spread constraint, so every zone has a resolver.
+    - The **EKS Add-ons** module patches the `kube-dns` Service with `trafficDistribution: PreferClose`, so DNS lookups go to the resolver in the caller's zone.
+    - The **EKS Web Service** chart sets the same `trafficDistribution` on each workload Service, and both the Web Service and Worker charts spread their pods across zones, so service-to-service calls stay in-zone whenever the destination has a pod there.
+
+    When a zone has no pod for the destination, traffic falls back to every zone; nothing is ever dropped. The spread is a soft preference (`ScheduleAnyway`), so a two-node cluster or a Spot interruption never leaves pods pending. Zone-local routing needs Kubernetes 1.31 or later; on older versions the Service field is ignored and routing behaves as before.
+
+    Turn it off for the cluster by setting `topology_aware_routing_enabled: false` under **Advanced Terraform variables**; the EKS Add-ons module reads the same flag from this cluster's outputs. Individual workloads keep the chart defaults regardless of the cluster flag.
+
     ## Observability
 
     Control plane logs (API server, audit, and authenticator by default) are shipped to CloudWatch Logs and shown on the module's Logs tab. Adjust the log types and retention in the Observability section.
@@ -660,6 +674,7 @@ module:
     | Fargate profiles       | No       | -                    | Serverless compute for selected namespaces             |
     | Access entries         | No       | -                    | Extra IAM principals with cluster access and policies  |
     | Control plane logs     | No       | api, audit, authenticator | Log types shipped to CloudWatch                   |
+    | Zone-local routing     | No       | `true`               | Spread CoreDNS across zones; advanced Terraform variable `topology_aware_routing_enabled` |
     | Tags                   | No       | Ravion defaults      | Custom tags applied to all resources                   |
 
     ## Design decisions
@@ -672,6 +687,7 @@ module:
     - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, preventing accidental destroys
     - **Autoscaler-friendly sizing:** Terraform sets the initial node count but never fights an autoscaler over the running count
     - **Pod Identity over IRSA:** add-on IAM roles use EKS Pod Identity associations; the OIDC provider is still created for workloads that need IRSA
+    - **Zone-local by default:** CoreDNS is spread across availability zones and, together with the EKS Add-ons and workload modules, Service traffic prefers same-zone endpoints, so multi-AZ resilience does not come with cross-AZ data transfer charges on every request
 
     ## Learn more
 

@@ -5,7 +5,7 @@ definition:
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 1.0.0
-  description: Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, use Ravion Operator terminology, clarify target group and ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  description: Route in-cluster traffic to this service's same-zone pods by default and spread its pods across availability zones, cutting cross-AZ data transfer charges. Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, use Ravion Operator terminology, clarify target group and ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
 module:
   inputs:
     - id: section_cluster
@@ -657,6 +657,10 @@ module:
     Set the memory request close to steady-state usage and the limit above the worst legitimate spike. Because the CPU target is a percentage of the CPU request, a request set far above real usage keeps the autoscaler from ever scaling out.
 
     Autoscaling is on by default with 1 minimum and 3 maximum pods, tracking 70% CPU. Add a **Memory target (%)** to scale on memory as well; the autoscaler then takes whichever metric asks for more pods. When autoscaling is off, **Pods** sets a fixed pod count.
+
+    ### Zone-local routing
+
+    Pods are spread across the cluster's availability zones (a soft `topology.kubernetes.io/zone` spread constraint, so a small cluster never leaves pods pending), and the service's Kubernetes Service is created with `trafficDistribution: PreferClose`. Other workloads in the cluster that call this service by its Service name reach a pod in their own zone whenever one exists, and fall back to every zone otherwise, which keeps AWS cross-AZ data transfer charges off service-to-service traffic. Load balancer traffic is unaffected: the ALB registers pod IPs directly. To fully benefit, run at least as many pods as the cluster has zones. Needs Kubernetes 1.31 or later; older API servers ignore the field.
 
     ## Application configuration
 

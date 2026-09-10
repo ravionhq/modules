@@ -210,6 +210,15 @@
         },
         "appProtocol": {
           "type": "string"
+        },
+        "trafficDistribution": {
+          "type": "string",
+          "enum": [
+            "",
+            "PreferClose",
+            "PreferSameZone",
+            "PreferSameNode"
+          ]
         }
       }
     },
@@ -320,6 +329,26 @@
     },
     "affinity": {
       "type": "object"
+    },
+    "topologySpread": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxSkew": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "whenUnsatisfiable": {
+          "type": "string",
+          "enum": [
+            "ScheduleAnyway",
+            "DoNotSchedule"
+          ]
+        }
+      }
     },
     "topologySpreadConstraints": {
       "type": "array",

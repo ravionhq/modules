@@ -97,8 +97,8 @@ version independently under `rvn-eks@<version>` tags.
 
 | Chart | Workload shape | Status |
 | ----- | -------------- | ------ |
-| [`charts/rvn-eks-web`](charts/rvn-eks-web) | Long-running HTTP service; Deployment + Service + TargetGroupBinding against a Terraform-owned target group | v0.1.0 |
-| [`charts/rvn-eks-worker`](charts/rvn-eks-worker) | Long-running background process; Deployment with no network surface | v0.1.0 |
+| [`charts/rvn-eks-web`](charts/rvn-eks-web) | Long-running HTTP service; Deployment + Service + TargetGroupBinding against a Terraform-owned target group | v0.2.0 |
+| [`charts/rvn-eks-worker`](charts/rvn-eks-worker) | Long-running background process; Deployment with no network surface | v0.2.0 |
 | [`charts/rvn-eks-cron`](charts/rvn-eks-cron) | Scheduled job; CronJob | v0.1.0 |
 
 Each chart's values schema is a public, compatibly-evolving API enforced by a

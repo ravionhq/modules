@@ -82,6 +82,7 @@ helm template my-app charts/rvn-eks-web --values charts/rvn-eks-web/ci/full-valu
 | `service.type` | string | `ClusterIP` | |
 | `service.annotations` | map | `{}` | |
 | `service.appProtocol` | string | `""` | e.g. `http`, `grpc`. |
+| `service.trafficDistribution` | string | `PreferClose` | Route in-cluster callers to same-zone pods when any exist, else any zone. Needs Kubernetes 1.31+. Set `""` to spread evenly across zones. |
 | `targetGroupArns` | list(string) | `[]` | Terraform-owned target group ARNs. One TargetGroupBinding per entry; none render when empty. |
 | `targetGroupBinding.targetType` | string | `ip` | Must match the target group's `target_type`. |
 | `targetGroupBinding.vpcId` | string | `""` | Only needed for a cross-VPC target group. |
@@ -122,7 +123,10 @@ shape. Liveness and readiness are on by default; startup is off.
 | `nodeSelector` | map | `{}` | |
 | `tolerations` | list | `[]` | |
 | `affinity` | map | `{}` | |
-| `topologySpreadConstraints` | list | `[]` | |
+| `topologySpread.enabled` | bool | `true` | Render one zone spread constraint on this chart's pods so each zone has a local endpoint. |
+| `topologySpread.maxSkew` | int | `1` | |
+| `topologySpread.whenUnsatisfiable` | string | `ScheduleAnyway` | Or `DoNotSchedule` for a hard requirement. |
+| `topologySpreadConstraints` | list | `[]` | Explicit constraints. When non-empty, replaces the default zone spread. |
 
 ### Identity, metadata, storage
 

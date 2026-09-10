@@ -1,0 +1,23 @@
+# The EKS coredns add-on owns the kube-dns Service and its configuration
+# schema has no Service-level keys, so the field is applied with a kubectl
+# patch from a Helm hook Job. Helm cannot adopt a Service it did not create.
+
+# -- Value written to spec.trafficDistribution. PreferClose (alias PreferSameZone
+# from Kubernetes 1.35) routes to same-zone endpoints when any exist and falls
+# back to every zone otherwise. Needs Kubernetes 1.31+; older API servers drop
+# the field silently.
+trafficDistribution: PreferClose
+
+service:
+  name: kube-dns
+  namespace: kube-system
+
+# -- kubectl image the hook Jobs run. Pinned; override for clusters that must
+# pull from a private mirror.
+image:
+  repository: registry.k8s.io/kubectl
+  tag: v1.33.12
+  pullPolicy: IfNotPresent
+
+# -- Give up after this many failed attempts and fail the release.
+backoffLimit: 3

@@ -94,6 +94,7 @@ module "eks" {
 | system_node_group | Default managed node group config. The minimum size is also its initial size. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
 | node_groups | Extra node groups keyed by name. Each group's minimum size is also its initial size. | `map(object)` | `{}` | no |
 | coredns_addon_version / coredns_addon_configuration_values | CoreDNS pin / JSON overrides. | `string` | `null` | no |
+| topology_aware_routing_enabled | Spread CoreDNS across zones and publish the zone-local routing default for `addons`. | `bool` | `true` | no |
 | fargate_profiles | Fargate profiles keyed by name (`selectors` required). | `map(object)` | `{}` | no |
 
 ## Outputs
@@ -112,12 +113,19 @@ module "eks" {
 | ravion_runner_role_arn | IAM role runners assume for Kubernetes API access (null if disabled). |
 | secrets_kms_key_arn | Secrets KMS key (null if disabled). |
 | lb_controller_role_arn | LB Controller Pod Identity role. |
+| topology_aware_routing_enabled | Zone-local routing default (consumed by `addons`). |
 | system_node_group_name / system_node_group_arn | System node group identifiers. |
 | additional_node_group_names | Map of additional node group key -> name. |
 | fargate_profile_names | Map of Fargate profile key -> name. |
 
 ## Notes
 
+- Zone-local routing: with `topology_aware_routing_enabled` (default on) the
+  CoreDNS add-on gets a `topology.kubernetes.io/zone` spread constraint so a
+  replica lands in each zone. The matching Service-side change (`kube-dns`
+  `trafficDistribution: PreferClose`) needs Kubernetes API access and lives in
+  `addons`. An explicit `coredns_addon_configuration_values` replaces the
+  spread document rather than merging with it.
 - Ordering is intentional: CoreDNS is a Deployment and hangs `DEGRADED` for
   ~20 minutes when no compute exists. The composite `depends_on` chain
   prevents that deadlock.

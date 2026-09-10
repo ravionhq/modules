@@ -90,6 +90,11 @@ service:
   type: ClusterIP
   annotations: {}
   appProtocol: ""
+  # -- Keep in-cluster traffic to this Service inside the caller's availability
+  # zone when a pod is running there, falling back to every zone otherwise.
+  # Cuts cross-AZ data transfer for service-to-service calls. Needs Kubernetes
+  # 1.31+; older API servers ignore the field. Set "" to spread across zones.
+  trafficDistribution: PreferClose
 
 # -- ARNs of Terraform-owned target groups to register this Service's pods into.
 # One TargetGroupBinding is rendered per ARN; nothing renders when empty.
@@ -125,6 +130,17 @@ securityContext: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# -- Default zone spread. Renders one topologySpreadConstraint on
+# topology.kubernetes.io/zone selecting this chart's pods, so every zone has a
+# local endpoint for service.trafficDistribution to route to. Ignored when
+# topologySpreadConstraints below is non-empty.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  # -- ScheduleAnyway keeps pods schedulable on a small or uneven cluster;
+  # DoNotSchedule makes the spread a hard requirement.
+  whenUnsatisfiable: ScheduleAnyway
+# -- Explicit constraints. When set, replaces the default zone spread entirely.
 topologySpreadConstraints: []
 volumes: []
 volumeMounts: []

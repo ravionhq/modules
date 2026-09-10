@@ -26,6 +26,14 @@ autoscaling:
   maxReplicas: 20
   targetCPUUtilizationPercentage: 60
   targetMemoryUtilizationPercentage: 80
+# Explicit constraints replace the chart's default zone spread.
+topologySpreadConstraints:
+  - maxSkew: 2
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: rvn-eks-web
 serviceAccount:
   name: demo-web
 ravion:

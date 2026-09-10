@@ -6,6 +6,10 @@ definition:
 release:
   version: 0.8.4
   description: >-
+    Keep DNS lookups inside the caller's availability zone by default: the kube-dns Service is
+    patched to prefer same-zone CoreDNS pods, matching the zone spread the EKS Cluster module
+    applies, which cuts cross-AZ data transfer charges. Switch off with the
+    topology_aware_routing_enabled advanced Terraform variable.
     Rename the Terraform-facing Ravion Operator variables and outputs from beacon_* to ravion_operator_*.
     Automatically attach the cluster's Ravion Runner security group to add-on runs, render metrics from
     Amazon Managed Prometheus, provision new installations with supported Ravion Operator credentials,
@@ -1264,6 +1268,8 @@ module:
     | **Metrics** | On (Amazon Managed Prometheus) | Per-container CPU, memory, network, restart and scaling metrics, delivered to the destinations you choose - Amazon Managed Prometheus by default, plus CloudWatch Container Insights or a vendor on request |
     | **Ravion EKS Management** | On | Registers the cluster with the Ravion control plane and installs Ravion Operator, which reports workload and node state outbound over a single WebSocket and can run Ravion's deploys from inside the cluster |
     | **Shared load balancers** | Public ALB on | Terraform-managed public/private ALBs and NLBs that web workloads attach to via the load balancer controller's TargetGroupBinding — the same shared-LB pattern the ECS Cluster module uses |
+
+    **Zone-local DNS** is on by default and has no form field: the `kube-dns` Service is patched with `trafficDistribution: PreferClose`, so every DNS lookup goes to the CoreDNS pod in the caller's availability zone (the EKS Cluster module spreads those pods across zones). This removes cross-AZ data transfer charges from DNS, the one call every pod makes. It needs Kubernetes 1.31 or later and is switched off with `topology_aware_routing_enabled: false` under **Advanced Terraform variables**, which also clears the field again.
 
     EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, and both observability pipelines additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
 

@@ -2,7 +2,7 @@ apiVersion: v2
 name: rvn-eks-worker
 description: Ravion application chart for a long-running background worker on EKS — Deployment, Pod Identity service account, and optional HPA, with no Service or load-balancer surface.
 type: application
-version: 0.1.0
+version: 0.2.0
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ravion

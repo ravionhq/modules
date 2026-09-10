@@ -2,7 +2,7 @@ apiVersion: v2
 name: rvn-eks-web
 description: Ravion application chart for a long-running HTTP workload on EKS — Deployment, Service, Pod Identity service account, optional HPA, and a TargetGroupBinding attaching the Service to a Terraform-owned target group.
 type: application
-version: 0.1.0
+version: 0.2.0
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ravion

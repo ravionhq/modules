@@ -1,0 +1,5 @@
+apiVersion: v2
+name: coredns-traffic-distribution
+description: Patch the kube-dns Service's trafficDistribution so DNS lookups stay in the caller's availability zone, and clear it on uninstall.
+type: application
+version: 0.1.0

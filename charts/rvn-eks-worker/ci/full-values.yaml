@@ -12,6 +12,14 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 20
   targetCPUUtilizationPercentage: 60
+# Explicit constraints replace the chart's default zone spread.
+topologySpreadConstraints:
+  - maxSkew: 2
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: rvn-eks-worker
 serviceAccount:
   name: demo-worker
 ravion:
