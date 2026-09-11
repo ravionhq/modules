@@ -849,21 +849,28 @@ variable "ravion_operator_coordinator_enabled" {
   nullable    = false
 }
 
+variable "ravion_operator_coordinator_adaptive_enabled" {
+  type        = bool
+  description = "Automatically run one coordinator per eligible node, up to ravion_operator_coordinator_replicas. Requires a matching adaptive-capable Operator image/chart, cluster-wide observation and distinct nodes."
+  default     = true
+  nullable    = false
+}
+
 variable "ravion_operator_coordinator_replicas" {
   type        = number
-  description = "HA coordinator replica count (2-9). Each coordinator requests 500m CPU and 1Gi memory by default."
+  description = "Maximum coordinator replicas in adaptive mode, or fixed replica count otherwise (1-9). Defaults to a cap of three. Each coordinator requests 500m CPU and 1Gi memory by default."
   default     = 3
   nullable    = false
 
   validation {
-    condition     = var.ravion_operator_coordinator_replicas >= 2 && var.ravion_operator_coordinator_replicas <= 9 && floor(var.ravion_operator_coordinator_replicas) == var.ravion_operator_coordinator_replicas
-    error_message = "The ravion_operator_coordinator_replicas must be an integer from 2 to 9."
+    condition     = var.ravion_operator_coordinator_replicas >= 1 && var.ravion_operator_coordinator_replicas <= 9 && floor(var.ravion_operator_coordinator_replicas) == var.ravion_operator_coordinator_replicas
+    error_message = "The ravion_operator_coordinator_replicas must be an integer from 1 to 9."
   }
 }
 
 variable "ravion_operator_coordinator_distinct_nodes_enabled" {
   type        = bool
-  description = "Require a distinct node per HA coordinator. Disable only for small test clusters or when supplying custom affinity through Helm values."
+  description = "Require a distinct node per HA coordinator. Required in adaptive mode; disable adaptive mode before supplying custom affinity through Helm values."
   default     = true
   nullable    = false
 }

@@ -173,10 +173,40 @@ run "operator_ha_full_management" {
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.fullManagement &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 1 &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 3 &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.adaptive &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
       length(helm_release.ravion_operator_namespaces) == 0
     )
-    error_message = "Full management must wire one retained lane, three coordinators and the pinned image with self-update disabled in both enrollment and Helm."
+    error_message = "Full management must wire one retained lane, adaptive coordinators capped at three, and the pinned image with self-update disabled in both enrollment and Helm."
+  }
+}
+
+run "adaptive_requires_node_observation" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled = true
+    ravion_operator_execution_image        = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_chart_version          = "0.4.1-ci.test"
+    ravion_operator_coordinator_enabled    = true
+    ravion_operator_namespace_scope        = ["rvn-app"]
+  }
+  expect_failures = [helm_release.ravion_operator]
+}
+
+run "fixed_single_replica_with_scoped_observation" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled       = true
+    ravion_operator_execution_image              = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_chart_version                = "0.4.1-ci.test"
+    ravion_operator_coordinator_enabled          = true
+    ravion_operator_coordinator_adaptive_enabled = false
+    ravion_operator_coordinator_replicas         = 1
+    ravion_operator_namespace_scope              = ["rvn-app"]
+  }
+  assert {
+    condition     = !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.adaptive && yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 1
+    error_message = "Fixed mode must support a single replica without needing cluster-wide node observation."
   }
 }
 

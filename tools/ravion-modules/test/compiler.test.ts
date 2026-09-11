@@ -416,6 +416,7 @@ describe("compiler", () => {
       ravion_operator_full_management_enabled: "false",
       ravion_operator_execution_max_concurrent: "1",
       ravion_operator_coordinator_enabled: "false",
+      ravion_operator_coordinator_adaptive_enabled: "true",
       ravion_operator_coordinator_replicas: "3",
       ravion_operator_coordinator_distinct_nodes_enabled: "true",
       ravion_operator_self_update_enabled: "true",

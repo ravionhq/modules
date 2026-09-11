@@ -238,6 +238,7 @@ resource "helm_release" "ravion_operator" {
         }
         coordinator = {
           enabled              = var.ravion_operator_coordinator_enabled
+          adaptive             = var.ravion_operator_coordinator_adaptive_enabled
           replicas             = var.ravion_operator_coordinator_replicas
           requireDistinctNodes = var.ravion_operator_coordinator_distinct_nodes_enabled
         }
@@ -292,6 +293,10 @@ resource "helm_release" "ravion_operator" {
     precondition {
       condition     = !var.ravion_operator_coordinator_enabled || var.ravion_operator_execution_jobs_enabled
       error_message = "HA coordinators require ravion_operator_execution_jobs_enabled."
+    }
+    precondition {
+      condition     = !var.ravion_operator_coordinator_enabled || !var.ravion_operator_coordinator_adaptive_enabled || (var.ravion_operator_coordinator_distinct_nodes_enabled && length(var.ravion_operator_namespace_scope) == 0)
+      error_message = "Adaptive coordinators require distinct nodes and cluster-wide observation. Disable adaptive mode for namespace-scoped observation or custom affinity."
     }
     precondition {
       condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && var.ravion_operator_execution_max_concurrent == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)

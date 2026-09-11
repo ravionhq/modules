@@ -456,7 +456,9 @@ ravion_operator_coordinator_enabled    = true
 
 Job mode disables self-update in both the enrolled capability and the Helm values. The chart uses the execution image for **both coordinators and executors**, overriding live-image preservation; an inline image-tag pin is rejected. The stable enrollment ID is passed as `cluster.installationId` and exposed as `ravion_operator_installation_id`.
 
-HA defaults to three coordinators on distinct nodes and requires a replica-aware gateway. Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each executor requests 1 CPU/2Gi memory/1Gi ephemeral storage and limits at 4 CPU/8Gi/20Gi. Size cluster capacity accordingly; resource overrides use `coordinator.resources` and `executionJobs.resources` in `ravion_operator_helm_values`.
+HA defaults to adaptive sizing and requires a replica-aware gateway and a matching adaptive-capable Operator image/chart. One eligible node runs one coordinator, two run two, and three or more run three with the default cap. The elected coordinator checks Ready, uncordoned nodes and placement constraints every 30 seconds; decreases require two minutes of a stable target. Helm leaves the runtime replica count to Operator. Single-node clusters work without node-level redundancy. Set `ravion_operator_coordinator_adaptive_enabled=false` for fixed sizing, namespace-scoped observation, or custom affinity; `ravion_operator_coordinator_replicas` is a maximum in adaptive mode and a fixed count otherwise.
+
+Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each executor requests 1 CPU/2Gi memory/1Gi ephemeral storage and limits at 4 CPU/8Gi/20Gi. Nodes still need enough free resources to schedule the pods; resource overrides use `coordinator.resources` and `executionJobs.resources` in `ravion_operator_helm_values`.
 
 Drain inline deployments and remediation before enabling Jobs. Drain durable executions before changing execution mode, management scope or retained capacity. Preserve the Operator namespace, `rvn-installation` identity, execution records and ownership/capacity Leases during migration. Missing workers or an uncertain mutation are not permission to delete ownership and launch a competing writer.
 
@@ -594,7 +596,8 @@ Unlike the previous curl-based enrollment, turning the flag off **does** revoke 
 | ravion_operator_execution_image | Digest-pinned coordinator/executor image; required in Job mode. | `string` | `""` | no |
 | ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; full management requires 1. | `number` | `1` | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
-| ravion_operator_coordinator_replicas | HA replicas, 2-9. | `number` | `3` | no |
+| ravion_operator_coordinator_adaptive_enabled | Adapt coordinator count to eligible nodes, up to the replica limit. | `bool` | `true` | no |
+| ravion_operator_coordinator_replicas | Maximum adaptive replicas or fixed count, 1-9. | `number` | `3` | no |
 | ravion_operator_coordinator_distinct_nodes_enabled | Require a distinct node per coordinator. | `bool` | `true` | no |
 | ravion_operator_full_management_enabled | Explicit wildcard Kubernetes RBAC and a single retained mutation lane. | `bool` | `false` | no |
 | ravion_operator_exec_enabled | Grant `create` on `pods/exec` — the only way Ravion Operator can run a command inside a container. | `bool` | `false` | no |

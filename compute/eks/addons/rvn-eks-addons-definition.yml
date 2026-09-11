@@ -2,7 +2,7 @@ global: false
 definition:
   type: rvn-eks-addons
   name: EKS Add-ons
-  description: Selectable add-ons for an existing EKS cluster - Karpenter autoscaling, the AWS Load Balancer Controller, the External Secrets Operator, EBS CSI storage, workload logs and metrics shipped to any combination of destinations (an in-cluster log store on S3 and Amazon Managed Prometheus by default; CloudWatch, Grafana Cloud, Datadog, New Relic or a custom OTLP endpoint on request), Ravion EKS Management via the in-cluster Ravion Operator, and shared application/network load balancers, each toggled and configured independently.
+  description: Selectable add-ons for an existing EKS cluster.
 release:
   version: 0.8.4
   description: >-
@@ -16,7 +16,7 @@ release:
     prevent first-time Karpenter installation failures when AWS Load Balancer Controller is enabled,
     create missing Operator workload namespaces safely, and move the default Operator and observability
     namespace to ravion-operator (existing Helm releases are replaced).
-    Support the Operator public chart, digest-pinned executor Jobs, HA coordinators, and explicit full-cluster management.
+    Support the Operator public chart, digest-pinned executor Jobs, adaptive HA coordinators sized to available nodes, and explicit full-cluster management.
 module:
   inputs:
     - id: cluster
@@ -163,23 +163,33 @@ module:
       show_when:
         ravion_operator_enabled: true
         ravion_operator_execution_jobs_enabled: true
+    - id: ravion_operator_coordinator_adaptive_enabled
+      label: Adaptive coordinator sizing
+      description: Run one coordinator per eligible node up to the replica limit, adjusting as nodes join or leave. Requires a matching adaptive-capable image and chart, and cluster-wide observation.
+      type: boolean
+      default: true
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_coordinator_enabled: true
     - id: ravion_operator_coordinator_replicas
       label: Coordinator replicas
+      description: Maximum in adaptive mode; fixed count otherwise. One eligible node runs one coordinator, two run two, and three or more run three with the default limit.
       type: number
       default: 3
-      min: 2
+      min: 1
       max: 9
       show_when:
         ravion_operator_enabled: true
         ravion_operator_coordinator_enabled: true
     - id: ravion_operator_coordinator_distinct_nodes_enabled
       label: Separate coordinator nodes
-      description: Require one node per coordinator. Disable only for small test clusters or custom affinity.
+      description: Require one node per coordinator. Adaptive mode always uses distinct nodes; fixed mode can disable this for custom affinity.
       type: boolean
       default: true
       show_when:
         ravion_operator_enabled: true
         ravion_operator_coordinator_enabled: true
+        ravion_operator_coordinator_adaptive_enabled: false
     - add_button_label: Add namespace
       description: Namespaces Ravion Operator may deploy into. Missing namespaces are created during apply by default and retained on removal. If empty, the advanced operator observation scope is used. Installation fails if neither list contains a namespace.
       id: ravion_operator_deploy_namespaces
@@ -1230,6 +1240,7 @@ module:
         ravion_operator_execution_max_concurrent: '<< module.input.ravion_operator_execution_max_concurrent != nil ? module.input.ravion_operator_execution_max_concurrent : 1 >>'
         ravion_operator_full_management_enabled: '<< module.input.ravion_operator_full_management_enabled != nil ? module.input.ravion_operator_full_management_enabled : false >>'
         ravion_operator_coordinator_enabled: '<< module.input.ravion_operator_coordinator_enabled != nil ? module.input.ravion_operator_coordinator_enabled : false >>'
+        ravion_operator_coordinator_adaptive_enabled: '<< module.input.ravion_operator_coordinator_adaptive_enabled != nil ? module.input.ravion_operator_coordinator_adaptive_enabled : true >>'
         ravion_operator_coordinator_replicas: '<< module.input.ravion_operator_coordinator_replicas != nil ? module.input.ravion_operator_coordinator_replicas : 3 >>'
         ravion_operator_coordinator_distinct_nodes_enabled: '<< module.input.ravion_operator_coordinator_distinct_nodes_enabled != nil ? module.input.ravion_operator_coordinator_distinct_nodes_enabled : true >>'
         ravion_operator_self_update_enabled: '<< module.input.ravion_operator_self_update_enabled != nil ? module.input.ravion_operator_self_update_enabled : true >>'
@@ -1408,7 +1419,9 @@ module:
 
     **Durable executor Jobs** isolates deployments in Jobs and disables self-update. Set **Operator execution image** to the digest-qualified `image_ref` and **Operator chart version** to `chart_version` from the same successful Operator publishing run. The chart installs from `public.ecr.aws/a8z1i1r2/operator`. Drain inline deployments and remediation before changing modes.
 
-    **HA coordinators** defaults to three replicas on separate nodes and requires a replica-aware gateway. Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. **Separate coordinator nodes** can be disabled for small test clusters. **Concurrent executor Jobs** is installation-wide capacity, not a per-replica limit; drain executions and migrate the retained capacity Lease before changing it.
+    **HA coordinators** requires a replica-aware gateway. **Adaptive coordinator sizing** is on by default: one eligible node runs one coordinator, two run two, and three or more run three with the default **Coordinator replicas** limit. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy. Use a matching adaptive-capable image and chart from the Operator publishing pipeline.
+
+    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Nodes must be Ready, schedulable, match placement settings and have room for the pods. Disable adaptive sizing for a fixed replica count, namespace-scoped observation, or custom affinity. **Separate coordinator nodes** can be disabled only in fixed mode. **Concurrent executor Jobs** is installation-wide capacity, not a per-replica limit; drain executions and migrate the retained capacity Lease before changing it.
 
     **Full-cluster management** explicitly grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It requires Jobs, empty observation/deployment namespace lists and a single retained mutation lane. Drain existing ownership before changing scope. The form hides namespace and concurrency controls in this mode and uses concurrency 1.
 
