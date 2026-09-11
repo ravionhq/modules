@@ -18,11 +18,10 @@ terraform {
     }
     # Ravion's own provider, served from Ravion's provider registry. Used only by
     # ravion_operator.tf, to mint the Ravion Operator credential server-side.
-    # TEMP: pointed at the local dev registry tunnel while providers.ravion.com
-    # is not yet live — restore that hostname when the real registry exists.
+    # Pin prereleases explicitly; published packages are immutable.
     ravion = {
-      source  = "ravion-providers.ngrok.app/ravion/ravion"
-      version = "~> 1.0"
+      source  = "providers.ravion.com/ravion/ravion"
+      version = "= 0.0.3-rc.1"
     }
   }
 }

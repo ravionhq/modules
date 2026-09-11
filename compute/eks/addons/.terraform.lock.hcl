@@ -1,26 +1,17 @@
 # This file is maintained automatically by "tofu init".
 # Manual edits may be lost in future updates.
 
-provider "ravion-providers.ngrok.app/ravion/ravion" {
-  version     = "1.0.0"
-  constraints = "~> 1.0"
+provider "providers.ravion.com/ravion/ravion" {
+  version     = "0.0.3-rc.1"
+  constraints = "0.0.3-rc.1"
   hashes = [
-    "h1:3209Vnn6UG0EjDKuPmyZYW0DF7lGIFU2O708QYRw/K4=",
-    "h1:4ISacjdXm9kSLFGS9Ydi2rOM+fX3+Ja4zop141Ig408=",
-    "h1:7p+Jq6uGrXSJKYpbYC/8oEgUHYTgcnLUk6KBdNKqgds=",
-    "h1:PqPL0HZmQN/clKzDhaDu8uXStqDdT1sRMt57VFPO+nc=",
-    "h1:ngHaezJHXuhKh6jal/P7tldabJg7kqSDubruAlT1SN8=",
-    "h1:q4H/VBDLvUDmhmD9CmhwXQvmJ9IlDZ7I68M34dw/5W0=",
-    "zh:1c724fc93d65b344a8c124a9db93f722cac52aaa4f31f143a99f3c1ee1136af3",
-    "zh:6d12f4f162edb9021a641768674401cb6ebf690ef0ef613cfd916fc13efb859f",
-    "zh:73529ced68ab3c913c5aad26abeef7013acbef3ac22c7bfb3745662f05071637",
-    "zh:b64f00054b384ca9e1b6af223adb4d3a7e2025bca0ba2f823f9ff70fbba4b65e",
-    "zh:d692c14e9fdc5b3ca0e30c925b63eca11e74cbdb061337cd86323f90e41ffd3d",
-    "zh:d94669bc97e4fbc696a0e004ae02af8491b688eda78704bd37e61760479d704c",
-    "zh:e5e1ef7ade2ab977aad63b8eb87267cdc32f353b0620742d8fef9ec4101fda08",
-    "zh:ec523668fe769ab687c680cf90680de24e815a7bfa67fa0eb4c7212eb72e81bb",
-    "zh:ed99baf4471fe2b71f147f4aa67754f34f604634835e1abb4d9e2d8ed4944589",
-    "zh:fb7b482f6cb5a2f20853cca038d8a2249bd98e39017e92388ab8f30dbb6df023",
+    "h1:4+1CkdonevNan0g1iwBfwsLHQziGleNFlASZgKUkbdM=",
+    "h1:h3+F3rNnBsoNRy5fZYXYD52WLnn64nmYwlUNTI6EDAM=",
+    "zh:50c9a567cef2ec688656d5b6373928a61b965927a1a1c976bf736f347e6eb7ef",
+    "zh:57ac2e09ce9a437a12157f169c0cdf17f257d1cfd27a384b8bc1485162e1f9d7",
+    "zh:71ad084326bf178015e37356d8599b21b654e32d7cec7a89e7f332735ea33412",
+    "zh:caf7c893a3c1689cff855cc4b6838f3332579af54a1e4b5a1b4720a900b879d0",
+    "zh:f3a1b47e501c3745323bcd4d3bbe3167fa1c786ab91d87e887745158864d6074",
   ]
 }
 

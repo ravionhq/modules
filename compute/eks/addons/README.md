@@ -519,7 +519,24 @@ Unlike the previous curl-based enrollment, turning the flag off **does** revoke 
 | opentofu/terraform | >= 1.10.0 |
 | aws                | >= 6.0    |
 | helm               | >= 3.0    |
-| ravion (`providers.ravion.com/ravion/ravion`) | ~> 1.0 — used only by `ravion_operator_enabled`; configured entirely from `RAVION_BASE_URL` / `RAVION_API_KEY` |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1 — used only by `ravion_operator_enabled`; configured entirely from `RAVION_BASE_URL` / `RAVION_API_KEY` |
+
+The Ravion provider is downloaded from the production registry, including when
+`RAVION_BASE_URL` points to a development API. No local provider registry is needed.
+The committed lock file verifies the immutable release packages.
+
+For an existing workspace whose state references the former development provider
+address, migrate that address before applying this module version:
+
+```sh
+tofu state replace-provider \
+  'ravion-providers.ngrok.app/ravion/ravion' \
+  'providers.ravion.com/ravion/ravion'
+```
+
+Run this against the existing configured remote workspace. It changes the provider
+address in state without recreating infrastructure. New workspaces and runs that
+failed during initialization have no provider resources to migrate.
 
 ## Inputs
 
