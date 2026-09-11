@@ -159,8 +159,7 @@ run "operator_ha_full_management" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled  = true
-    ravion_operator_execution_image         = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ravion_operator_chart_version           = "0.4.1-ci.test"
+    ravion_operator_chart_version           = "0.4.1-ci.cd73ca0f0647"
     ravion_operator_coordinator_enabled     = true
     ravion_operator_full_management_enabled = true
     ravion_operator_deploy_namespaces       = []
@@ -177,7 +176,7 @@ run "operator_ha_full_management" {
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
       length(helm_release.ravion_operator_namespaces) == 0
     )
-    error_message = "Full management must wire one retained lane, adaptive coordinators capped at three, and the pinned image with self-update disabled in both enrollment and Helm."
+    error_message = "Full management must wire one retained lane, adaptive coordinators capped at three, and the bundled image with self-update disabled in both enrollment and Helm."
   }
 }
 
@@ -210,10 +209,23 @@ run "fixed_single_replica_with_scoped_observation" {
   }
 }
 
-run "jobs_require_pinned_image" {
+run "jobs_use_bundled_image_and_scoped_capacity_default" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled = true
+    ravion_operator_chart_version          = "0.4.1-ci.cd73ca0f0647"
+  }
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == "" && yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 4
+    error_message = "Published charts supply the image digest and scoped execution defaults to four retained slots."
+  }
+}
+
+run "jobs_require_explicit_chart_version" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled = true
+    ravion_operator_chart_version          = null
   }
   expect_failures = [helm_release.ravion_operator]
 }

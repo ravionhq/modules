@@ -264,7 +264,7 @@ output "ravion_operator_installation_id" {
 }
 
 output "ravion_operator_execution_image" {
-  description = "Digest-pinned image configured for coordinators and executor Jobs, or null in inline mode."
+  description = "Configured coordinator/executor image override: empty when the chart supplies its bundled digest, or null when Operator or Job mode is disabled."
   value       = var.ravion_operator_enabled && var.ravion_operator_execution_jobs_enabled ? var.ravion_operator_execution_image : null
 }
 

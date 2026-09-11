@@ -38,6 +38,9 @@ locals {
   ravion_operator_cluster_arn           = data.aws_eks_cluster.this.arn
   ravion_operator_region                = coalesce(var.region, data.aws_region.current.region)
   ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled && !var.ravion_operator_execution_jobs_enabled
+  # Full management shares one mutation lane; scoped execution can use four
+  # independent namespace lanes. This bounds admission, not provisioned nodes.
+  ravion_operator_execution_max_concurrent_effective = var.ravion_operator_execution_max_concurrent != null ? var.ravion_operator_execution_max_concurrent : (var.ravion_operator_full_management_enabled ? 1 : 4)
 
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
@@ -233,7 +236,7 @@ resource "helm_release" "ravion_operator" {
         executionJobs = {
           enabled        = var.ravion_operator_execution_jobs_enabled
           image          = var.ravion_operator_execution_image
-          maxConcurrent  = var.ravion_operator_execution_max_concurrent
+          maxConcurrent  = local.ravion_operator_execution_max_concurrent_effective
           fullManagement = var.ravion_operator_full_management_enabled
         }
         coordinator = {
@@ -287,8 +290,8 @@ resource "helm_release" "ravion_operator" {
       error_message = "Namespace-scoped deployments require ravion_operator_deploy_namespaces or ravion_operator_namespace_scope. Cluster-wide writes require explicit full management."
     }
     precondition {
-      condition     = !var.ravion_operator_execution_jobs_enabled || (var.ravion_operator_deploy_enabled && var.ravion_operator_execution_image != "" && var.ravion_operator_chart_version != null && var.ravion_operator_image_tag == null)
-      error_message = "Executor Jobs require deployments enabled, a digest-pinned execution image, an explicit matching chart version, and no inline image tag pin."
+      condition     = !var.ravion_operator_execution_jobs_enabled || (var.ravion_operator_deploy_enabled && var.ravion_operator_chart_version != null && var.ravion_operator_image_tag == null)
+      error_message = "Executor Jobs require deployments enabled, an explicit chart version with a bundled or overridden digest-pinned image, and no inline image tag pin."
     }
     precondition {
       condition     = !var.ravion_operator_coordinator_enabled || var.ravion_operator_execution_jobs_enabled
@@ -299,7 +302,7 @@ resource "helm_release" "ravion_operator" {
       error_message = "Adaptive coordinators require distinct nodes and cluster-wide observation. Disable adaptive mode for namespace-scoped observation or custom affinity."
     }
     precondition {
-      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && var.ravion_operator_execution_max_concurrent == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
+      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && local.ravion_operator_execution_max_concurrent_effective == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
       error_message = "Full management requires executor Jobs, max concurrency 1, and empty observation/deployment namespace lists."
     }
   }

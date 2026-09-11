@@ -813,14 +813,14 @@ variable "ravion_operator_image_tag" {
 
 variable "ravion_operator_execution_jobs_enabled" {
   type        = bool
-  description = "Run deployments in durable isolated executor Jobs. Requires deployments enabled and a digest-pinned execution image; automatically disables self-update in both enrollment and Helm. Drain inline deployments and remediation before switching modes."
+  description = "Run deployments in durable isolated executor Jobs. Requires deployments enabled and a chart with a bundled or overridden digest-pinned image; automatically disables self-update in both enrollment and Helm. Drain inline deployments and remediation before switching modes."
   default     = false
   nullable    = false
 }
 
 variable "ravion_operator_execution_image" {
   type        = string
-  description = "Full Operator image reference pinned by sha256 digest (image_ref from the publishing pipeline). Used by both coordinators and executor Jobs."
+  description = "Optional Operator image override pinned by sha256 digest. Empty uses the verified image bundled in the selected published chart. Used by both coordinators and executor Jobs."
   default     = ""
   nullable    = false
 
@@ -832,12 +832,11 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "Installation-wide retained executor capacity (1-64), not per coordinator. Changing established capacity requires draining executions and migrating the retained capacity Lease. Full management requires 1."
-  default     = 1
-  nullable    = false
+  description = "Installation-wide retained executor capacity (1-64), not per coordinator. Null selects 1 for full management's shared mutation lane or 4 for independent namespace lanes. Changing established capacity requires draining executions and migrating the retained capacity Lease. Full management requires 1."
+  default     = null
 
   validation {
-    condition     = var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent
+    condition     = var.ravion_operator_execution_max_concurrent == null ? true : (var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent)
     error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
   }
 }

@@ -397,28 +397,37 @@ describe("compiler", () => {
     assert.deepEqual(operator.moved_from, ["beacon_enabled"]);
     assert.deepEqual(operatorDeployNamespaces.show_when, {
       ravion_operator_enabled: true,
-      ravion_operator_full_management_enabled: { not: true },
+      ravion_operator_execution_jobs_enabled: false,
     });
     assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").default, true);
     assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").collapsible, true);
     assert.deepEqual(findInput(inputs, "ravion_operator_execution_jobs_enabled").show_when, {
       ravion_operator_enabled: true,
     });
-    assert.equal(findInput(inputs, "ravion_operator_full_management_enabled").default, false);
-    assert.equal(findInput(inputs, "ravion_operator_execution_image").required, true);
-    assert.deepEqual(findInput(inputs, "ravion_operator_execution_max_concurrent").show_when, {
-      ravion_operator_enabled: true,
-      ravion_operator_execution_jobs_enabled: true,
-      ravion_operator_full_management_enabled: { not: true },
-    });
+    for (const id of [
+      "ravion_operator_full_management_enabled",
+      "ravion_operator_execution_image",
+      "ravion_operator_chart_version",
+      "ravion_operator_execution_max_concurrent",
+      "ravion_operator_coordinator_enabled",
+      "ravion_operator_coordinator_adaptive_enabled",
+      "ravion_operator_coordinator_replicas",
+      "ravion_operator_coordinator_distinct_nodes_enabled",
+    ]) {
+      assert.equal(inputs.some((input) => input.id === id), false, `${id} is managed automatically`);
+    }
+    assert.equal(
+      getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
+      "0.4.1-ci.cd73ca0f0647",
+    );
+    for (const id of ["ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
+      assert.equal(
+        getTerraformVariable(compiled.module, id),
+        "<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>",
+      );
+    }
     for (const [id, fallback] of Object.entries({
       ravion_operator_execution_jobs_enabled: "true",
-      ravion_operator_full_management_enabled: "false",
-      ravion_operator_execution_max_concurrent: "1",
-      ravion_operator_coordinator_enabled: "false",
-      ravion_operator_coordinator_adaptive_enabled: "true",
-      ravion_operator_coordinator_replicas: "3",
-      ravion_operator_coordinator_distinct_nodes_enabled: "true",
       ravion_operator_self_update_enabled: "true",
     })) {
       assert.equal(

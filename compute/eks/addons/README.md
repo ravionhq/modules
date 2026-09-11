@@ -444,20 +444,20 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 
 The Ravion form defaults **Durable executor Jobs** to enabled. The mode switch is
 a collapsed advanced setting; disable it for legacy inline execution. Existing
-saved mode choices are preserved on upgrade. Job mode requires the execution
-image and chart version from the same successful Operator publishing run and
+saved mode choices are preserved on upgrade. The form automatically pins chart
+`0.4.1-ci.cd73ca0f0647`, whose package bundles the matching verified multiarch image
+digest, and enables adaptive HA and full-cluster management with Jobs. Job mode
 disables self-update. Direct Terraform callers opt in with
 `ravion_operator_execution_jobs_enabled = true`.
 
-Use the `chart_version` and digest-qualified `image_ref` outputs from the **same successful Operator publishing run**. Publication must finish before applying addons; the base chart version is not proof that an image supports Jobs.
+Direct Terraform callers select a chart from a successful Operator publishing run. Leave the execution image empty to use its bundled digest, or override it with a matching digest-qualified `image_ref`. Publication must finish before applying addons; an unpublished source chart requires an explicit digest.
 
 ```hcl
 ravion_operator_enabled                = true
 ravion_operator_deploy_enabled         = true
 ravion_operator_deploy_namespaces      = ["app-prod"]
 ravion_operator_execution_jobs_enabled = true
-ravion_operator_chart_version          = "<chart_version output>"
-ravion_operator_execution_image        = "<image_ref output>"
+ravion_operator_chart_version          = "0.4.1-ci.cd73ca0f0647"
 ravion_operator_coordinator_enabled    = true
 ```
 
@@ -469,13 +469,22 @@ Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each exec
 
 Drain inline deployments and remediation before enabling Jobs. Drain durable executions before changing execution mode, management scope or retained capacity. Preserve the Operator namespace, `rvn-installation` identity, execution records and ownership/capacity Leases during migration. Missing workers or an uncertain mutation are not permission to delete ownership and launch a competing writer.
 
-For **full-cluster management**, enable `ravion_operator_full_management_enabled`, leave both observation and deployment namespace lists empty, and keep `ravion_operator_execution_max_concurrent = 1`. This explicitly grants wildcard Kubernetes RBAC for CRDs, RBAC, namespaces, custom resources and workloads, using one installation-wide mutation lane. Namespace-scoped Job mode can use up to 64 retained slots.
+The Ravion form enables **full-cluster management** by default with Jobs. Direct Terraform callers enable `ravion_operator_full_management_enabled` and leave both observation and deployment namespace lists empty. This grants wildcard Kubernetes RBAC for CRDs, RBAC, namespaces, custom resources and workloads, using one installation-wide mutation lane. Null executor capacity automatically selects 1 for full management or 4 for namespace-scoped Jobs (up to 64 with an override). Capacity limits admission; it does not provision nodes or ensure pods can be scheduled.
+
+To restrict a Ravion installation, use **Advanced Terraform variables**:
+
+```hcl
+ravion_operator_full_management_enabled = false
+ravion_operator_deploy_namespaces       = ["app-prod"]
+```
+
+Namespace-scoped observation additionally requires `ravion_operator_coordinator_adaptive_enabled = false`. Existing form-level image, chart, scope and HA choices are replaced by managed defaults; preserve custom settings through advanced overrides before upgrading. Existing retained capacity must be preserved explicitly or migrated after draining executions.
 
 The web, worker and cron modules continue to submit their existing Git-sourced Helm definitions through `aws:eks`. The control plane selects the eligible Operator enrolled for the cluster ARN and packages the chart for it. No new deployment discriminator or installation-ID field is supported in that module deploy schema. Provider-neutral prepared deployments are a separate API path, not yet a general-purpose module deployment type.
 
 Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities.
 
-The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. It also exposes namespaces, chart version, executor image/capacity, HA, full management and inline self-update. Endpoint, installation namespace, observation scope and extra Helm values remain available through **Advanced Terraform variables**.
+The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, adaptive HA and full management are automatic. The collapsed Jobs toggle supports legacy inline mode, which exposes deployment namespaces and self-update. Image/chart, scope, HA, capacity and Helm customization remain available through **Advanced Terraform variables**.
 
 #### Rotating and revoking
 
@@ -600,8 +609,8 @@ Unlike the previous curl-based enrollment, turning the flag off **does** revoke 
 | ravion_operator_deploy_enabled | Enable in-cluster deployments. | `bool` | `false` | no |
 | ravion_operator_deploy_namespaces | Allowed namespaces; falls back to observation scope. Both lists must be empty for full management. | `list(string)` | `[]` | no |
 | ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs; disables self-update. | `bool` | `false` | no |
-| ravion_operator_execution_image | Digest-pinned coordinator/executor image; required in Job mode. | `string` | `""` | no |
-| ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; full management requires 1. | `number` | `1` | no |
+| ravion_operator_execution_image | Optional digest-pinned coordinator/executor image override; empty uses the published chart's bundled digest. | `string` | `""` | no |
+| ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; null selects 1 for full management or 4 for scoped Jobs. | `number` | `null` | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
 | ravion_operator_coordinator_adaptive_enabled | Adapt coordinator count to eligible nodes, up to the replica limit. | `bool` | `true` | no |
 | ravion_operator_coordinator_replicas | Maximum adaptive replicas or fixed count, 1-9. | `number` | `3` | no |
@@ -676,7 +685,7 @@ All outputs are null when the corresponding add-on is disabled.
 | ravion_operator_namespace / ravion_operator_chart_version | Ravion Operator install location and **chart** version (not the running agent version — the control plane owns that). |
 | ravion_operator_agent_id | Ravion Operator record id (`opagt_…`). Stable across rotations — correlate agent logs by it. |
 | ravion_operator_installation_id | Stable provider-neutral installation ID; same value as ravion_operator_agent_id. |
-| ravion_operator_execution_image | Configured digest-pinned coordinator/executor image, or null in inline mode. |
+| ravion_operator_execution_image | Configured image override; empty when using the chart's bundled digest, or null when Operator or Job mode is disabled. |
 | ravion_operator_client_id | WorkOS M2M client id the agent authenticates as. Not a secret, and shared by every cluster in the organization. |
 | ravion_operator_client_secret_id | WorkOS id of the secret issued to this cluster (not the secret). Identifies which credential a connecting agent presents. |
 | ravion_operator_credential_secret_arn | Secrets Manager secret mirroring the credential — an operator recovery copy of what Terraform state holds. |

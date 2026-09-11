@@ -19,6 +19,7 @@ release:
     Support the Operator public chart, digest-pinned executor Jobs, adaptive HA coordinators sized to available nodes, and explicit full-cluster management.
     Control Operator installation and in-cluster deployments together with the Ravion EKS Management toggle.
     Use durable executor Jobs by default, with inline execution available as an advanced override.
+    Automatically select a matching published Operator image and chart, enable adaptive HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
 module:
   inputs:
     - id: cluster
@@ -110,81 +111,14 @@ module:
       type: boolean
     - id: ravion_operator_execution_jobs_enabled
       label: Durable executor Jobs
-      description: Isolate deployments in durable Jobs by default. Disable for legacy inline execution. Drain deployments and remediation before switching modes. Job mode disables self-update and requires a matching published chart and digest-pinned image.
+      description: Isolate deployments in durable Jobs with adaptive HA and full-cluster management. The matching chart and image are selected automatically. Disable for legacy inline execution. Drain deployments and remediation before switching modes.
       type: boolean
       default: true
       collapsible: true
       show_when:
         ravion_operator_enabled: true
-    - id: ravion_operator_execution_image
-      label: Operator execution image
-      description: The image_ref output from the Operator publishing pipeline, used by coordinators and executor Jobs.
-      type: string
-      required: true
-      placeholder: public.ecr.aws/a8z1i1r2/operator@sha256:<64-hex-digest>
-      patterns:
-        - pattern: '^[^@\s]+@sha256:[a-f0-9]{64}$'
-          message: Full image reference pinned by sha256 digest required.
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_execution_jobs_enabled: true
-    - id: ravion_operator_full_management_enabled
-      label: Full-cluster management
-      description: Grant wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Uses one retained installation-wide mutation lane. Drain existing ownership before changing scope.
-      type: boolean
-      default: false
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_execution_jobs_enabled: true
-    - id: ravion_operator_execution_max_concurrent
-      label: Concurrent executor Jobs
-      description: Installation-wide retained capacity. Changing established capacity requires draining executions and migrating the retained capacity Lease.
-      type: number
-      default: 1
-      min: 1
-      max: 64
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_execution_jobs_enabled: true
-        ravion_operator_full_management_enabled:
-          not: true
-    - id: ravion_operator_coordinator_enabled
-      label: HA coordinators
-      description: Elect a coordinator from multiple replicas. Requires a replica-aware Ravion gateway.
-      type: boolean
-      default: false
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_execution_jobs_enabled: true
-    - id: ravion_operator_coordinator_adaptive_enabled
-      label: Adaptive coordinator sizing
-      description: Run one coordinator per eligible node up to the replica limit, adjusting as nodes join or leave. Requires a matching adaptive-capable image and chart, and cluster-wide observation.
-      type: boolean
-      default: true
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_coordinator_enabled: true
-    - id: ravion_operator_coordinator_replicas
-      label: Coordinator replicas
-      description: Maximum in adaptive mode; fixed count otherwise. One eligible node runs one coordinator, two run two, and three or more run three with the default limit.
-      type: number
-      default: 3
-      min: 1
-      max: 9
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_coordinator_enabled: true
-    - id: ravion_operator_coordinator_distinct_nodes_enabled
-      label: Separate coordinator nodes
-      description: Require one node per coordinator. Adaptive mode always uses distinct nodes; fixed mode can disable this for custom affinity.
-      type: boolean
-      default: true
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_coordinator_enabled: true
-        ravion_operator_coordinator_adaptive_enabled: false
     - add_button_label: Add namespace
-      description: Namespaces Ravion Operator may deploy into. Missing namespaces are created during apply by default and retained on removal. If empty, the advanced operator observation scope is used. Installation fails if neither list contains a namespace.
+      description: Namespaces Operator may deploy into in legacy inline mode. Missing namespaces are created during apply by default and retained on removal.
       id: ravion_operator_deploy_namespaces
       label: Deployment namespaces
       moved_from:
@@ -193,8 +127,7 @@ module:
       required: true
       show_when:
         ravion_operator_enabled: true
-        ravion_operator_full_management_enabled:
-          not: true
+        ravion_operator_execution_jobs_enabled: false
       type: string_array
     - default: true
       description: Create missing observation and deployment namespaces before installing Operator permissions. Existing namespaces are reused without adoption; created namespaces are retained on removal or uninstall. Disable only when namespaces are provisioned separately.
@@ -204,15 +137,6 @@ module:
       show_when:
         ravion_operator_enabled: true
       type: boolean
-    - id: ravion_operator_chart_version
-      label: Operator chart version
-      description: For executor Jobs, use chart_version from the same Operator publishing run as the execution image. The chart must support executor Jobs and HA.
-      type: string
-      default: 0.4.1
-      required: true
-      placeholder: 0.4.1-ci.<12-character-commit>
-      show_when:
-        ravion_operator_enabled: true
     - id: ravion_operator_self_update_enabled
       label: Operator self-update
       description: Allow control-plane image updates in inline mode. Executor Job mode always disables this capability.
@@ -1226,15 +1150,11 @@ module:
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_namespaces: '<< module.input.ravion_operator_deploy_namespaces != nil ? module.input.ravion_operator_deploy_namespaces : [] >>'
-        ravion_operator_chart_version: << module.input.ravion_operator_chart_version || "0.4.1" >>
+        # The selected chart bundles the matching verified multiarch image digest.
+        ravion_operator_chart_version: 0.4.1-ci.cd73ca0f0647
         ravion_operator_execution_jobs_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
-        ravion_operator_execution_image: << module.input.ravion_operator_execution_image || "" >>
-        ravion_operator_execution_max_concurrent: '<< module.input.ravion_operator_execution_max_concurrent != nil ? module.input.ravion_operator_execution_max_concurrent : 1 >>'
-        ravion_operator_full_management_enabled: '<< module.input.ravion_operator_full_management_enabled != nil ? module.input.ravion_operator_full_management_enabled : false >>'
-        ravion_operator_coordinator_enabled: '<< module.input.ravion_operator_coordinator_enabled != nil ? module.input.ravion_operator_coordinator_enabled : false >>'
-        ravion_operator_coordinator_adaptive_enabled: '<< module.input.ravion_operator_coordinator_adaptive_enabled != nil ? module.input.ravion_operator_coordinator_adaptive_enabled : true >>'
-        ravion_operator_coordinator_replicas: '<< module.input.ravion_operator_coordinator_replicas != nil ? module.input.ravion_operator_coordinator_replicas : 3 >>'
-        ravion_operator_coordinator_distinct_nodes_enabled: '<< module.input.ravion_operator_coordinator_distinct_nodes_enabled != nil ? module.input.ravion_operator_coordinator_distinct_nodes_enabled : true >>'
+        ravion_operator_full_management_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
+        ravion_operator_coordinator_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
         ravion_operator_self_update_enabled: '<< module.input.ravion_operator_self_update_enabled != nil ? module.input.ravion_operator_self_update_enabled : true >>'
         ravion_operator_namespaces_creation_enabled: '<< module.input.ravion_operator_namespaces_creation_enabled != nil ? module.input.ravion_operator_namespaces_creation_enabled : true >>'
         ravion_operator_project_id: << project.id >>
@@ -1405,15 +1325,15 @@ module:
 
     Enabling the toggle does three things in one deployment: Ravion issues the agent's credential — server-side, authorized by the pipeline's own credentials, so there is no API key to paste — writes it into the agent's Kubernetes secret and mirrors it into a Secrets Manager secret **in your own AWS account**, and installs the agent's Helm chart. The plaintext is issued exactly once; rotating or revoking it is a redeploy, not an API call.
 
-    **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. The default grant permits workload writes only in **Deployment namespaces**, excluding RBAC, namespaces and cluster-scoped resources.
+    **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, adaptive HA Operator and full-cluster management.
 
-    **Durable executor Jobs** is enabled by default and available as a collapsed advanced setting. It isolates deployments in Jobs and disables self-update. Set **Operator execution image** to the digest-qualified `image_ref` and **Operator chart version** to `chart_version` from the same successful Operator publishing run. The chart installs from `public.ecr.aws/a8z1i1r2/operator`. Disable the advanced setting for legacy inline execution. Existing saved choices are preserved on upgrade; drain deployments and remediation before changing modes.
+    **Durable executor Jobs** is enabled by default and available as a collapsed advanced setting. It isolates deployments in Jobs and disables self-update. The module pins chart `0.4.1-ci.cd73ca0f0647` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest. No image digest or chart version needs to be entered. Disable the advanced setting for legacy inline execution and supply **Deployment namespaces**. Existing saved execution-mode choices are preserved on upgrade; drain deployments and remediation before changing modes.
 
-    **HA coordinators** requires a replica-aware gateway. **Adaptive coordinator sizing** is on by default: one eligible node runs one coordinator, two run two, and three or more run three with the default **Coordinator replicas** limit. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy. Use a matching adaptive-capable image and chart from the Operator publishing pipeline.
+    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. One eligible node runs one coordinator, two run two, and three or more run three. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy.
 
-    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Nodes must be Ready, schedulable, match placement settings and have room for the pods. Disable adaptive sizing for a fixed replica count, namespace-scoped observation, or custom affinity. **Separate coordinator nodes** can be disabled only in fixed mode. **Concurrent executor Jobs** is installation-wide capacity, not a per-replica limit; drain executions and migrate the retained capacity Lease before changing it.
+    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Eligibility checks readiness and placement constraints; nodes still need free resources to schedule the pods. Adaptive sizing does not provision nodes. Fixed sizing, placement and executor capacity can be overridden through **Advanced Terraform variables**.
 
-    **Full-cluster management** explicitly grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It requires Jobs, empty observation/deployment namespace lists and a single retained mutation lane. Drain existing ownership before changing scope. The form hides namespace and concurrency controls in this mode and uses concurrency 1.
+    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It uses a single retained mutation lane, so only one cluster mutation runs at a time. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` through **Advanced Terraform variables**. Scoped Jobs default to four installation-wide slots for independent namespaces; Kubernetes schedules them against available resources. Drain existing ownership before changing scope or retained capacity. Existing form-level scope, image and HA choices are replaced by these managed defaults; preserve custom settings through advanced overrides before upgrading.
 
     Web, worker and cron modules keep their existing Helm deployment definitions. Ravion selects Operator by the cluster ARN; the addons module passes its stable enrollment ID to the chart as the installation identity.
 
@@ -1427,7 +1347,7 @@ module:
     | `ravion_operator_namespace` | `ravion-operator` | Namespace the agent and its credential secret are installed into, created if missing; also the default for shared observability components |
     | `ravion_operator_namespace_scope` | `[]` (cluster-wide read) | Namespaces the agent may observe. Naming namespaces renders no cluster-scoped read role at all, only one namespaced role per entry, so the restriction is enforced by Kubernetes rather than by the agent. A scoped agent cannot read nodes, so cluster node counts show as unknown |
 
-    **Deployment namespaces** falls back to `ravion_operator_namespace_scope` when left empty, so a cluster scoped through the advanced variable also bounds Ravion Operator's deploys by default.
+    In restricted mode, deployment namespaces fall back to `ravion_operator_namespace_scope` when empty. Namespace-scoped observation also requires disabling adaptive sizing through the advanced override, since it cannot observe cluster nodes.
 
     **Create workload namespaces** is enabled by default. Apply creates missing deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Created namespaces are retained on removal or uninstall. Operator itself can create namespaces only with full management enabled.
 
@@ -1496,7 +1416,8 @@ module:
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to both metrics and logs |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
-    | Deployment namespaces  | Yes*     | -                    | Namespaces where Ravion Operator may manage workloads  |
+    | Durable executor Jobs  | No       | `true`               | Advanced mode override; includes adaptive HA and full management by default |
+    | Deployment namespaces  | Inline only | -                 | Required workload scope for legacy inline execution |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |
     | Private ALB            | No       | `false`              | Shared internal ALB                                    |
     | Public / private NLB   | No       | `false`              | Shared Network Load Balancers for TCP/UDP workloads    |
