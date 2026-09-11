@@ -1101,26 +1101,7 @@ Uses the ECS deployment controller for zero-downtime rolling updates:
 - Built-in circuit breaker with optional rollback
 - Simple and fully managed by ECS
 
-### Native Traffic-Shift Strategies (blue_green / linear / canary)
-
-The infrastructure for the ECS deployment controller's built-in traffic shifting is provisioned for **every** load-balanced service — not just those created with a native `deployment_type` — so the strategy can change between deployments without Terraform changes:
-- Two target groups (tg-1 = production, tg-2 = alternate); rolling deployments only ever use tg-1
-- An ECS infrastructure IAM role (AmazonECSInfrastructureRolePolicyForLoadBalancers) that ECS assumes to rewrite listener rules and (de)register targets during the shift
-- The service's `load_balancer.advanced_configuration` (alternate target group, production listener rule, optional test listener rule, infrastructure role)
-- `deployment_configuration` is seeded from `deployment_type` / `deployment_strategy_config` at create time only; the Flightcontrol deploy manager passes the authoritative configuration — including pause lifecycle hooks — on every UpdateService call, so the block is in `ignore_changes`
-
-## Notes
-
-- The module creates a security group that allows inbound traffic from the VPC CIDR on the container port
-- For Fargate tasks in public subnets without NAT, set `public_ip_assignment_enabled = true`
-- The placeholder container uses hello-world from public ECR - no special permissions needed
-- For blue_green/linear/canary deployments, ECS itself executes the traffic shift; the Flightcontrol deploy manager drives it via UpdateService and pause lifecycle hooks
-- The task definition has `lifecycle { ignore_changes = all }` since the external deployment controller manages updates
-- Listener rules have `lifecycle { ignore_changes = [action] }` — the ECS deployment controller rewrites the forward action (weighted target groups) during native traffic shifts
-- When using `ALBRequestCountPerTarget` metric for auto scaling, a load balancer must be configured
-- The `desired_count` defaults to 0 for infrastructure-first provisioning; the external controller will manage the actual count
-- Target group names are truncated to meet AWS naming requirements (max 32 characters)
-# Rolling deployment success
+### Rolling Deployment Success
 
 Ravion always enables ECS early success for rolling application deployments. By default,
 the deployment succeeds when 100% of the desired new tasks are running and healthy,
@@ -1142,3 +1123,23 @@ Tower applies these settings through `UpdateService`; Terraform ignores changes 
 fields, so initial Terraform service creation uses its normal completion behavior;
 the first Ravion application deployment applies the selected policy. Existing module
 instances without overrides use 100% / DEFERRED with the updated Tower workflow.
+
+### Native Traffic-Shift Strategies (blue_green / linear / canary)
+
+The infrastructure for the ECS deployment controller's built-in traffic shifting is provisioned for **every** load-balanced service — not just those created with a native `deployment_type` — so the strategy can change between deployments without Terraform changes:
+- Two target groups (tg-1 = production, tg-2 = alternate); rolling deployments only ever use tg-1
+- An ECS infrastructure IAM role (AmazonECSInfrastructureRolePolicyForLoadBalancers) that ECS assumes to rewrite listener rules and (de)register targets during the shift
+- The service's `load_balancer.advanced_configuration` (alternate target group, production listener rule, optional test listener rule, infrastructure role)
+- `deployment_configuration` is seeded from `deployment_type` / `deployment_strategy_config` at create time only; the Flightcontrol deploy manager passes the authoritative configuration — including pause lifecycle hooks — on every UpdateService call, so the block is in `ignore_changes`
+
+## Notes
+
+- The module creates a security group that allows inbound traffic from the VPC CIDR on the container port
+- For Fargate tasks in public subnets without NAT, set `public_ip_assignment_enabled = true`
+- The placeholder container uses hello-world from public ECR - no special permissions needed
+- For blue_green/linear/canary deployments, ECS itself executes the traffic shift; the Flightcontrol deploy manager drives it via UpdateService and pause lifecycle hooks
+- The task definition has `lifecycle { ignore_changes = all }` since the external deployment controller manages updates
+- Listener rules have `lifecycle { ignore_changes = [action] }` — the ECS deployment controller rewrites the forward action (weighted target groups) during native traffic shifts
+- When using `ALBRequestCountPerTarget` metric for auto scaling, a load balancer must be configured
+- The `desired_count` defaults to 0 for infrastructure-first provisioning; the external controller will manage the actual count
+- Target group names are truncated to meet AWS naming requirements (max 32 characters)

@@ -22,8 +22,10 @@ describe("ECS early success module definitions", () => {
       assert.equal(healthy.default, 100);
       assert.equal(healthy.min, "<< module.input.deployment_minimum_healthy_percent >>");
       assert.equal(healthy.max, 100);
+      assert.equal(healthy.collapsible, true);
       assert.equal(cleanup.type, "boolean");
       assert.equal(cleanup.default, false);
+      assert.equal(cleanup.collapsible, true);
       assert.equal(floor.default, 100);
       assert.deepEqual(healthy.show_when, type === "web" ? { deployment_strategy: "rolling" } : undefined);
       assert.deepEqual(cleanup.show_when, healthy.show_when);

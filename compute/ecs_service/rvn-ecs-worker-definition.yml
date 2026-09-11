@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.0.0
-  description: Rolling deployments now succeed at 100% healthy tasks while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
+  version: 1.3.0
+  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
 module:
   inputs:
     - id: section_cluster

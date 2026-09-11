@@ -162,14 +162,14 @@ resource "aws_ecs_service" "this" {
   ]
 
   # Lifecycle: desired_count is managed by autoscaling, task_definition /
-  # Rolling early-success criteria are also owned by the deploy manager:
-  # it always sends enabled, defaulting to 100% healthy / DEFERRED cleanup.
-  # The provider does not yet expose those fields for create-time configuration.
   # load_balancer / deployment_configuration by the Flightcontrol deploy
   # manager (UpdateService passes the authoritative strategy + pause
   # lifecycle hooks on every deploy, and native traffic-shift deploys
   # alternate the service between the production and alternate target
   # groups), so Terraform must not fight them on subsequent applies.
+  # Rolling early-success criteria are owned by the deploy manager too: it
+  # always sends them, defaulting to 100% healthy / DEFERRED cleanup. The
+  # provider does not yet expose those fields for create-time configuration.
   lifecycle {
     ignore_changes = [
       desired_count,
