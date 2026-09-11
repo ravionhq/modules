@@ -22,7 +22,7 @@ release:
     Automatically select a matching published Operator image and chart, enable adaptive HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
     Keep the Operator form to one management switch; execution mode and namespace bootstrap customization use Advanced Terraform variables.
     Rename the Operator Helm releases, credential Secret, and Secrets Manager mirror from beacon to operator names (existing releases are replaced and the retained execution CRD is adopted).
-    Pin Operator chart 0.4.1-ci.c111d232df7b, whose agent reports the full-management deploy scope so in-cluster deployments reach every namespace instead of only the Operator's own.
+    Pin Operator chart 0.4.1-ci.752b693c22a6, whose agent reports the full-management deploy scope so in-cluster deployments reach every namespace instead of only the Operator's own, and no longer restarts its watches every thirty seconds.
 module:
   inputs:
     - id: cluster
@@ -1116,7 +1116,7 @@ module:
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
         # The selected chart bundles the matching verified multiarch image digest.
-        ravion_operator_chart_version: 0.4.1-ci.c111d232df7b
+        ravion_operator_chart_version: 0.4.1-ci.752b693c22a6
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
@@ -1290,7 +1290,7 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, adaptive HA Operator and full-cluster management.
 
-    Durable executor Jobs are enabled automatically, isolating deployments in Jobs and disabling self-update. The module pins chart `0.4.1-ci.c111d232df7b` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
+    Durable executor Jobs are enabled automatically, isolating deployments in Jobs and disabling self-update. The module pins chart `0.4.1-ci.752b693c22a6` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
 
     **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. One eligible node runs one coordinator, two run two, and three or more run three. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy.
 

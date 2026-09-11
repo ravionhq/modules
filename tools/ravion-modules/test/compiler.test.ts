@@ -412,7 +412,7 @@ describe("compiler", () => {
     }
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
-      "0.4.1-ci.c111d232df7b",
+      "0.4.1-ci.752b693c22a6",
     );
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);
