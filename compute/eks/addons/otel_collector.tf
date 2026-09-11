@@ -194,6 +194,8 @@ resource "helm_release" "otel_collector" {
   values = concat([local.otel_collector_values], var.otel_collector_helm_values)
 
   depends_on = [
+    # Service creation must wait for the load balancer admission webhook.
+    helm_release.lb_controller,
     # The collector reads AWS credentials on startup through the Pod Identity
     # Agent; without the association it falls back to the node role and every
     # remote write fails with AccessDenied.

@@ -172,6 +172,7 @@ resource "helm_release" "grafana" {
   )
 
   depends_on = [
+    helm_release.lb_controller,
     aws_eks_pod_identity_association.grafana,
     helm_release.loki,
   ]

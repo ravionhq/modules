@@ -303,6 +303,7 @@ resource "helm_release" "otel_logs_collector" {
   values = concat([local.otel_logs_values], var.otel_logs_collector_helm_values)
 
   depends_on = [
+    helm_release.lb_controller,
     aws_eks_pod_identity_association.otel_logs_collector,
     helm_release.observability_secrets,
   ]

@@ -93,4 +93,7 @@ resource "helm_release" "prometheus" {
     ],
     var.prometheus_helm_values,
   )
+
+  # Service creation must wait for the load balancer admission webhook.
+  depends_on = [helm_release.lb_controller]
 }

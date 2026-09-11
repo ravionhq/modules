@@ -45,8 +45,12 @@ resource "helm_release" "external_secrets" {
   )
 
   # The controller reads AWS credentials on startup through the Pod Identity
-  # Agent, so the association must exist first.
-  depends_on = [aws_eks_pod_identity_association.external_secrets]
+  # Agent, so the association must exist first. Its Service also needs the
+  # load balancer controller's admission webhook to be serving.
+  depends_on = [
+    aws_eks_pod_identity_association.external_secrets,
+    helm_release.lb_controller,
+  ]
 }
 
 ################################################################################

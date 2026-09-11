@@ -60,4 +60,7 @@ resource "helm_release" "kube_state_metrics" {
     ],
     var.kube_state_metrics_helm_values,
   )
+
+  # Service creation must wait for the load balancer admission webhook.
+  depends_on = [helm_release.lb_controller]
 }

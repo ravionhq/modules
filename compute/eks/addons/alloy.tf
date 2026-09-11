@@ -164,6 +164,7 @@ resource "helm_release" "alloy" {
   # errors in the first minutes of a cluster's life; a missing credential Secret
   # is a pod that never starts.
   depends_on = [
+    helm_release.lb_controller,
     helm_release.loki,
     helm_release.observability_secrets,
   ]

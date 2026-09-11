@@ -28,6 +28,10 @@ detaches the previously default `AmazonSSMManagedInstanceCore` policy without
 replacing nodes, unless explicitly included in
 `karpenter_node_role_additional_managed_policy_arns`.
 
+When installed together, Helm releases that create Services wait for the AWS
+Load Balancer Controller to become ready. This prevents its admission webhook
+from rejecting add-on installation while its pods are still starting.
+
 ## Usage
 
 ```hcl

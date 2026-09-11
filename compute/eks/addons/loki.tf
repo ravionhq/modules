@@ -348,6 +348,7 @@ resource "helm_release" "loki" {
   # Loki reads AWS credentials on startup through the Pod Identity Agent, and
   # writes to a bucket that must already exist.
   depends_on = [
+    helm_release.lb_controller,
     aws_eks_pod_identity_association.loki,
     module.loki_bucket,
   ]
