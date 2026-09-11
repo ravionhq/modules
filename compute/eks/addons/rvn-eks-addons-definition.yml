@@ -21,7 +21,7 @@ release:
     Use durable executor Jobs by default, with inline execution available as an advanced override.
     Automatically select a matching published Operator image and chart, enable adaptive HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
     Keep the Operator form to one management switch; execution mode and namespace bootstrap customization use Advanced Terraform variables.
-    Rename the Operator Helm releases, credential Secret, and Secrets Manager mirror from beacon to operator names (existing releases are replaced).
+    Rename the Operator Helm releases, credential Secret, and Secrets Manager mirror from beacon to operator names (existing releases are replaced and the retained execution CRD is adopted).
 module:
   inputs:
     - id: cluster

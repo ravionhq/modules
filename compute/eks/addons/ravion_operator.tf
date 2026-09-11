@@ -200,6 +200,13 @@ resource "helm_release" "ravion_operator" {
 
   upgrade_install = true
 
+  # The execution CRD carries `helm.sh/resource-policy: keep`, so uninstalling
+  # the legacy `ravion-beacon` release leaves it behind still annotated with
+  # that release name, and a plain install of this release refuses to adopt it
+  # ("invalid ownership metadata"). Taking ownership re-annotates such kept
+  # cluster-scoped objects instead of failing; on a fresh cluster it is a no-op.
+  take_ownership = true
+
   values = concat(
     [
       yamlencode({

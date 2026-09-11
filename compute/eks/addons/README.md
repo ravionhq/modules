@@ -88,7 +88,9 @@ not recreate them. The Helm releases are now `ravion-operator` and
 and the Secrets Manager mirror is `ravion/operator/<cluster>/credential`. Upgrading a
 cluster installed under the legacy `ravion-beacon` names replaces both Helm releases
 and the mirror secret, so expect a short Operator interruption on that apply; the API
-credential itself is not reissued. The chart comes from
+credential itself is not reissued. The execution CRD is retained on uninstall and
+keeps the old release's Helm ownership annotations, so the Operator release installs
+with `take_ownership` to adopt it rather than fail on ownership metadata. The chart comes from
 `oci://public.ecr.aws/a8z1i1r2/operator`, and the default connection path is
 `/operator/v1/connect`.
 

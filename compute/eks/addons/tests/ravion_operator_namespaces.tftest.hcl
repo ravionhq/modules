@@ -138,11 +138,12 @@ run "operator_inline_upgrade_identity" {
       helm_release.ravion_operator[0].repository == "oci://public.ecr.aws/a8z1i1r2" &&
       helm_release.ravion_operator[0].chart == "operator" &&
       helm_release.ravion_operator[0].name == "ravion-operator" &&
+      helm_release.ravion_operator[0].take_ownership == true &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0])), "nameOverride") &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0])), "fullnameOverride") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).cluster.installationId == "opagt_test"
     )
-    error_message = "The Operator chart must receive installation identity under the ravion-operator release name with no legacy name overrides."
+    error_message = "The Operator chart must receive installation identity under the ravion-operator release name with no legacy name overrides, taking ownership of retained cluster-scoped objects."
   }
   assert {
     condition = (
