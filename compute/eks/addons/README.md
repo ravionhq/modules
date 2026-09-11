@@ -442,9 +442,9 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 
 #### Durable executor Jobs and HA
 
-The Ravion form defaults **Durable executor Jobs** to enabled. The mode switch is
-a collapsed advanced setting; disable it for legacy inline execution. Existing
-saved mode choices are preserved on upgrade. The form automatically pins chart
+The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
+executor Jobs and workload namespace bootstrap are enabled automatically;
+customization uses **Advanced Terraform variables**. The module automatically pins chart
 `0.4.1-ci.cd73ca0f0647`, whose package bundles the matching verified multiarch image
 digest, and enables adaptive HA and full-cluster management with Jobs. Job mode
 disables self-update. Direct Terraform callers opt in with
@@ -478,13 +478,26 @@ ravion_operator_full_management_enabled = false
 ravion_operator_deploy_namespaces       = ["app-prod"]
 ```
 
-Namespace-scoped observation additionally requires `ravion_operator_coordinator_adaptive_enabled = false`. Existing form-level image, chart, scope and HA choices are replaced by managed defaults; preserve custom settings through advanced overrides before upgrading. Existing retained capacity must be preserved explicitly or migrated after draining executions.
+Namespace-scoped observation additionally requires `ravion_operator_coordinator_adaptive_enabled = false`. Existing form-level execution mode, namespace bootstrap, image, chart, scope and HA choices are replaced by managed defaults; preserve custom settings through advanced overrides before upgrading. Existing retained capacity must be preserved explicitly or migrated after draining executions.
+
+To use legacy inline execution, set these advanced overrides together:
+
+```hcl
+ravion_operator_execution_jobs_enabled  = false
+ravion_operator_full_management_enabled = false
+ravion_operator_coordinator_enabled     = false
+ravion_operator_deploy_namespaces       = ["app-prod"]
+```
+
+Set `ravion_operator_namespaces_creation_enabled = false` to disable Terraform
+workload namespace bootstrap. Inline self-update can be disabled with
+`ravion_operator_self_update_enabled = false`.
 
 The web, worker and cron modules continue to submit their existing Git-sourced Helm definitions through `aws:eks`. The control plane selects the eligible Operator enrolled for the cluster ARN and packages the chart for it. No new deployment discriminator or installation-ID field is supported in that module deploy schema. Provider-neutral prepared deployments are a separate API path, not yet a general-purpose module deployment type.
 
 Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities.
 
-The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, adaptive HA and full management are automatic. The collapsed Jobs toggle supports legacy inline mode, which exposes deployment namespaces and self-update. Image/chart, scope, HA, capacity and Helm customization remain available through **Advanced Terraform variables**.
+The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, executor Jobs, namespace bootstrap, adaptive HA and full management are automatic. Execution mode, namespace bootstrap, inline self-update, image/chart, scope, HA, capacity and Helm customization are available through **Advanced Terraform variables**.
 
 #### Rotating and revoking
 

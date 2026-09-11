@@ -392,19 +392,13 @@ describe("compiler", () => {
     );
     const operator = findInput(inputs, "ravion_operator_enabled");
     assert.equal(inputs.some((input) => input.id === "ravion_operator_deploy_enabled"), false);
-    const operatorDeployNamespaces = findInput(inputs, "ravion_operator_deploy_namespaces");
     assert.equal(operator.default, true);
     assert.deepEqual(operator.moved_from, ["beacon_enabled"]);
-    assert.deepEqual(operatorDeployNamespaces.show_when, {
-      ravion_operator_enabled: true,
-      ravion_operator_execution_jobs_enabled: false,
-    });
-    assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").default, true);
-    assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").collapsible, true);
-    assert.deepEqual(findInput(inputs, "ravion_operator_execution_jobs_enabled").show_when, {
-      ravion_operator_enabled: true,
-    });
     for (const id of [
+      "ravion_operator_execution_jobs_enabled",
+      "ravion_operator_namespaces_creation_enabled",
+      "ravion_operator_deploy_namespaces",
+      "ravion_operator_self_update_enabled",
       "ravion_operator_full_management_enabled",
       "ravion_operator_execution_image",
       "ravion_operator_chart_version",
@@ -420,31 +414,12 @@ describe("compiler", () => {
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
       "0.4.1-ci.cd73ca0f0647",
     );
-    for (const id of ["ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
-      assert.equal(
-        getTerraformVariable(compiled.module, id),
-        "<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>",
-      );
+    for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
+      assert.equal(getTerraformVariable(compiled.module, id), true);
     }
-    for (const [id, fallback] of Object.entries({
-      ravion_operator_execution_jobs_enabled: "true",
-      ravion_operator_self_update_enabled: "true",
-    })) {
-      assert.equal(
-        getTerraformVariable(compiled.module, id),
-        `<< module.input.${id} != nil ? module.input.${id} : ${fallback} >>`,
-        `${id} must have a typed fallback when hidden`,
-      );
+    for (const id of ["ravion_operator_namespaces_creation_enabled", "ravion_operator_self_update_enabled", "ravion_operator_deploy_namespaces"]) {
+      assert.equal(getTerraformVariable(compiled.module, id), undefined, `${id} uses its Terraform default`);
     }
-    assert.equal(operatorDeployNamespaces.required, true);
-    assert.notEqual(operatorDeployNamespaces.collapsible, true);
-    const namespaceCreation = findInput(inputs, "ravion_operator_namespaces_creation_enabled");
-    assert.equal(namespaceCreation.default, true);
-    assert.deepEqual(namespaceCreation.show_when, { ravion_operator_enabled: true });
-    assert.equal(
-      getTerraformVariable(compiled.module, "ravion_operator_namespaces_creation_enabled"),
-      "<< module.input.ravion_operator_namespaces_creation_enabled != nil ? module.input.ravion_operator_namespaces_creation_enabled : true >>",
-    );
     assert.deepEqual(findInput(inputs, "logs_excluded_namespaces").default, [
       "kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon",
     ]);
@@ -452,9 +427,6 @@ describe("compiler", () => {
       getTerraformVariable(compiled.module, "logs_excluded_namespaces"),
       '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>',
     );
-    assert.deepEqual(operatorDeployNamespaces.moved_from, [
-      "beacon_deploy_namespaces",
-    ]);
     assert.equal(findInput(inputs, "public_alb_creation_enabled").default, true);
     assert.equal(inputs.some((input) => input.id === "public_nlb_security_group_ids"), false);
     assert.equal(inputs.some((input) => input.id === "private_nlb_security_group_ids"), false);
@@ -502,8 +474,7 @@ describe("compiler", () => {
     const inputs = getModuleInputs(compiled.module);
     const indexOf = (id: string) => inputs.findIndex((input) => input.id === id);
 
-    assert.equal(indexOf("ravion_operator_namespaces_creation_enabled"), indexOf("ravion_operator_deploy_namespaces") + 1);
-    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_self_update_enabled") + 1);
+    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_enabled") + 1);
     assert.ok(indexOf("section_alb") < indexOf("section_nlb"));
     assert.ok(indexOf("section_nlb") < indexOf("aws_load_balancer_controller_chart_version"));
     assert.ok(indexOf("aws_load_balancer_controller_chart_version") < indexOf("section_karpenter"));

@@ -20,6 +20,7 @@ release:
     Control Operator installation and in-cluster deployments together with the Ravion EKS Management toggle.
     Use durable executor Jobs by default, with inline execution available as an advanced override.
     Automatically select a matching published Operator image and chart, enable adaptive HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
+    Keep the Operator form to one management switch; execution mode and namespace bootstrap customization use Advanced Terraform variables.
 module:
   inputs:
     - id: cluster
@@ -109,43 +110,6 @@ module:
       moved_from:
         - beacon_enabled
       type: boolean
-    - id: ravion_operator_execution_jobs_enabled
-      label: Durable executor Jobs
-      description: Isolate deployments in durable Jobs with adaptive HA and full-cluster management. The matching chart and image are selected automatically. Disable for legacy inline execution. Drain deployments and remediation before switching modes.
-      type: boolean
-      default: true
-      collapsible: true
-      show_when:
-        ravion_operator_enabled: true
-    - add_button_label: Add namespace
-      description: Namespaces Operator may deploy into in legacy inline mode. Missing namespaces are created during apply by default and retained on removal.
-      id: ravion_operator_deploy_namespaces
-      label: Deployment namespaces
-      moved_from:
-        - beacon_deploy_namespaces
-      placeholder: default
-      required: true
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_execution_jobs_enabled: false
-      type: string_array
-    - default: true
-      description: Create missing observation and deployment namespaces before installing Operator permissions. Existing namespaces are reused without adoption; created namespaces are retained on removal or uninstall. Disable only when namespaces are provisioned separately.
-      id: ravion_operator_namespaces_creation_enabled
-      label: Create workload namespaces
-      collapsible: true
-      show_when:
-        ravion_operator_enabled: true
-      type: boolean
-    - id: ravion_operator_self_update_enabled
-      label: Operator self-update
-      description: Allow control-plane image updates in inline mode. Executor Job mode always disables this capability.
-      type: boolean
-      default: true
-      show_when:
-        ravion_operator_enabled: true
-        ravion_operator_execution_jobs_enabled:
-          not: true
     - description: Shared Application Load Balancers for HTTP and HTTPS workloads. EKS Web services attach through TargetGroupBinding.
       id: section_alb
       label: Application load balancers
@@ -1149,14 +1113,11 @@ module:
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
-        ravion_operator_deploy_namespaces: '<< module.input.ravion_operator_deploy_namespaces != nil ? module.input.ravion_operator_deploy_namespaces : [] >>'
         # The selected chart bundles the matching verified multiarch image digest.
         ravion_operator_chart_version: 0.4.1-ci.cd73ca0f0647
-        ravion_operator_execution_jobs_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
-        ravion_operator_full_management_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
-        ravion_operator_coordinator_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
-        ravion_operator_self_update_enabled: '<< module.input.ravion_operator_self_update_enabled != nil ? module.input.ravion_operator_self_update_enabled : true >>'
-        ravion_operator_namespaces_creation_enabled: '<< module.input.ravion_operator_namespaces_creation_enabled != nil ? module.input.ravion_operator_namespaces_creation_enabled : true >>'
+        ravion_operator_execution_jobs_enabled: true
+        ravion_operator_full_management_enabled: true
+        ravion_operator_coordinator_enabled: true
         ravion_operator_project_id: << project.id >>
         ravion_operator_environment_id: << environment.id >>
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
@@ -1327,7 +1288,7 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, adaptive HA Operator and full-cluster management.
 
-    **Durable executor Jobs** is enabled by default and available as a collapsed advanced setting. It isolates deployments in Jobs and disables self-update. The module pins chart `0.4.1-ci.cd73ca0f0647` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest. No image digest or chart version needs to be entered. Disable the advanced setting for legacy inline execution and supply **Deployment namespaces**. Existing saved execution-mode choices are preserved on upgrade; drain deployments and remediation before changing modes.
+    Durable executor Jobs are enabled automatically, isolating deployments in Jobs and disabling self-update. The module pins chart `0.4.1-ci.cd73ca0f0647` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
 
     **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. One eligible node runs one coordinator, two run two, and three or more run three. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy.
 
@@ -1339,7 +1300,7 @@ module:
 
     The project, environment, and AWS account this module belongs to are recorded on the agent automatically when its credential is issued; there is nothing to fill in.
 
-    **Operator self-update** controls image updates in inline mode. Job mode always disables it and uses the pinned execution image for both coordinators and executors. Preserve the installation namespace, identity and retained execution Leases across upgrades. Other installation tuning is available through **Advanced Terraform variables**:
+    Job mode disables self-update and uses the pinned execution image for both coordinators and executors. Inline self-update and deployment namespace settings are available through **Advanced Terraform variables**. Preserve the installation namespace, identity and retained execution Leases across upgrades. Other installation tuning is available through the same overrides:
 
     | Terraform variable | Default | What it changes |
     | ------------------ | ------- | --------------- |
@@ -1349,7 +1310,7 @@ module:
 
     In restricted mode, deployment namespaces fall back to `ravion_operator_namespace_scope` when empty. Namespace-scoped observation also requires disabling adaptive sizing through the advanced override, since it cannot observe cluster nodes.
 
-    **Create workload namespaces** is enabled by default. Apply creates missing deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Created namespaces are retained on removal or uninstall. Operator itself can create namespaces only with full management enabled.
+    Workload namespace creation is enabled by default. Apply creates missing configured deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Created namespaces are retained on removal or uninstall. Disable bootstrap with `ravion_operator_namespaces_creation_enabled=false` through **Advanced Terraform variables**. Operator itself can create namespaces only with full management enabled.
 
     **Namespace migration:** the default shared namespace is `ravion-operator`. Moving existing releases replaces them and does not migrate PVCs or retained execution state. Keep an explicit existing namespace override when upgrading a running installation. Helm release names, resource selectors and credential Secret names retain their compatibility identities; the chart source and default connection path use Operator.
 
@@ -1416,8 +1377,6 @@ module:
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to both metrics and logs |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
-    | Durable executor Jobs  | No       | `true`               | Advanced mode override; includes adaptive HA and full management by default |
-    | Deployment namespaces  | Inline only | -                 | Required workload scope for legacy inline execution |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |
     | Private ALB            | No       | `false`              | Shared internal ALB                                    |
     | Public / private NLB   | No       | `false`              | Shared Network Load Balancers for TCP/UDP workloads    |
