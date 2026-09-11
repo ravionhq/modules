@@ -7,8 +7,8 @@
 # `node_instance_profile_name` output.
 #
 # AmazonEC2ContainerRegistryPullOnly is the right ECR policy for nodes (matches
-# the upstream Karpenter CFN). AmazonSSMManagedInstanceCore enables Session
-# Manager access without per-instance SSH keys.
+# the upstream Karpenter CFN). Node administration policies must be explicitly
+# supplied through node_role_additional_managed_policy_arns.
 ################################################################################
 
 module "node_role" {
@@ -24,7 +24,6 @@ module "node_role" {
       "arn:${local.partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy",
       "arn:${local.partition}:iam::aws:policy/AmazonEKS_CNI_Policy",
       "arn:${local.partition}:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly",
-      "arn:${local.partition}:iam::aws:policy/AmazonSSMManagedInstanceCore",
     ],
     var.node_role_additional_managed_policy_arns,
   )

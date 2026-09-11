@@ -20,6 +20,12 @@ Operator, the EBS CSI driver, and Container Insights — live in
 the separate [`compute/eks/addons`](addons/) stack as selectable add-ons, so
 clusters only carry what they use.
 
+System and additional managed node groups do not grant Systems Manager access
+by default. EKS and Ravion Operator do not require it. Upgrading removes the
+previously default `AmazonSSMManagedInstanceCore` attachment without replacing
+nodes, unless explicitly supplied in the node group's
+`node_role_additional_managed_policy_arns`.
+
 Child modules live in `compute/eks/modules/` and are **not** independently
 published root stacks — they have no `provider` / `cloud {}` blocks. Callers
 should consume this composite only.

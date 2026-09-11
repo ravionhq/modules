@@ -23,6 +23,11 @@ The [`compute/eks`](..) composite intentionally creates none of these, so cluste
 >
 > **Authentication:** set `ravion_runner_role_arn` to the cluster's Ravion Runner role (`ravion_runner_role_arn` output of `compute/eks`) and `aws eks get-token` assumes it — the cluster module registers that role as an EKS access entry with cluster-admin, so per-run pipeline roles never need their own access entries. When null, the identity running Terraform is used directly and must already have cluster access.
 
+Karpenter node roles do not grant Systems Manager access by default. Upgrading
+detaches the previously default `AmazonSSMManagedInstanceCore` policy without
+replacing nodes, unless explicitly included in
+`karpenter_node_role_additional_managed_policy_arns`.
+
 ## Usage
 
 ```hcl

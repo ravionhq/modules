@@ -16,6 +16,11 @@ Provisions everything Karpenter needs on the AWS side so a consumer can
   rebalance recommendations, instance state changes, capacity reservation
   interruptions, and AWS Health events.
 
+The node role does not grant Systems Manager access by default. Session Manager
+permissions can be supplied through `node_role_additional_managed_policy_arns`.
+Upgrading detaches the previously default `AmazonSSMManagedInstanceCore` policy
+unless explicitly included; it does not replace nodes.
+
 The Helm install of Karpenter itself is done by the parent addons stack —
 its charts consume the outputs from this module:
 
