@@ -155,9 +155,14 @@ module:
     # A cron job has no load balancer, so listener_arn is null and
     # compute/eks_service creates only its optional ECR repository and Fargate
     # profile. This is the same load-balancer gating shape rvn-ecs-worker uses.
-    $template: ../../partials/templates/opentofu-stack.yml
+    $template: ../../partials/templates/opentofu-stack-with-runner-security-group.yml
     with:
       base_path: compute/eks_service
+      # The destroy-time Helm uninstall in workload_release.tf runs from the
+      # Terraform runner, which has to reach the Kubernetes API the same way the
+      # deploy runner does: through the cluster's Ravion Runner security group,
+      # the only group a private endpoint admits.
+      runner_security_group_id: << module.input.ravion_runner_security_group_id >>
       terraform_variables:
         $merge:
           - ../../partials/stack/eks-workload-common-terraform-variables.yml
