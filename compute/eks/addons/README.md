@@ -442,6 +442,13 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 
 #### Durable executor Jobs and HA
 
+The Ravion form defaults **Durable executor Jobs** to enabled. The mode switch is
+a collapsed advanced setting; disable it for legacy inline execution. Existing
+saved mode choices are preserved on upgrade. Job mode requires the execution
+image and chart version from the same successful Operator publishing run and
+disables self-update. Direct Terraform callers opt in with
+`ravion_operator_execution_jobs_enabled = true`.
+
 Use the `chart_version` and digest-qualified `image_ref` outputs from the **same successful Operator publishing run**. Publication must finish before applying addons; the base chart version is not proof that an image supports Jobs.
 
 ```hcl

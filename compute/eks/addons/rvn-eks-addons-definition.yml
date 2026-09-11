@@ -18,6 +18,7 @@ release:
     namespace to ravion-operator (existing Helm releases are replaced).
     Support the Operator public chart, digest-pinned executor Jobs, adaptive HA coordinators sized to available nodes, and explicit full-cluster management.
     Control Operator installation and in-cluster deployments together with the Ravion EKS Management toggle.
+    Use durable executor Jobs by default, with inline execution available as an advanced override.
 module:
   inputs:
     - id: cluster
@@ -109,9 +110,10 @@ module:
       type: boolean
     - id: ravion_operator_execution_jobs_enabled
       label: Durable executor Jobs
-      description: Isolate deployments in durable Jobs. Drain inline deployments and remediation before switching modes. Disables self-update and requires a matching published chart and digest-pinned image.
+      description: Isolate deployments in durable Jobs by default. Disable for legacy inline execution. Drain deployments and remediation before switching modes. Job mode disables self-update and requires a matching published chart and digest-pinned image.
       type: boolean
-      default: false
+      default: true
+      collapsible: true
       show_when:
         ravion_operator_enabled: true
     - id: ravion_operator_execution_image
@@ -208,7 +210,7 @@ module:
       type: string
       default: 0.4.1
       required: true
-      placeholder: 0.4.1-ci.<run-id>.<commit>
+      placeholder: 0.4.1-ci.<12-character-commit>
       show_when:
         ravion_operator_enabled: true
     - id: ravion_operator_self_update_enabled
@@ -1225,7 +1227,7 @@ module:
         ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_namespaces: '<< module.input.ravion_operator_deploy_namespaces != nil ? module.input.ravion_operator_deploy_namespaces : [] >>'
         ravion_operator_chart_version: << module.input.ravion_operator_chart_version || "0.4.1" >>
-        ravion_operator_execution_jobs_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : false >>'
+        ravion_operator_execution_jobs_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : true >>'
         ravion_operator_execution_image: << module.input.ravion_operator_execution_image || "" >>
         ravion_operator_execution_max_concurrent: '<< module.input.ravion_operator_execution_max_concurrent != nil ? module.input.ravion_operator_execution_max_concurrent : 1 >>'
         ravion_operator_full_management_enabled: '<< module.input.ravion_operator_full_management_enabled != nil ? module.input.ravion_operator_full_management_enabled : false >>'
@@ -1405,7 +1407,7 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. The default grant permits workload writes only in **Deployment namespaces**, excluding RBAC, namespaces and cluster-scoped resources.
 
-    **Durable executor Jobs** isolates deployments in Jobs and disables self-update. Set **Operator execution image** to the digest-qualified `image_ref` and **Operator chart version** to `chart_version` from the same successful Operator publishing run. The chart installs from `public.ecr.aws/a8z1i1r2/operator`. Drain inline deployments and remediation before changing modes.
+    **Durable executor Jobs** is enabled by default and available as a collapsed advanced setting. It isolates deployments in Jobs and disables self-update. Set **Operator execution image** to the digest-qualified `image_ref` and **Operator chart version** to `chart_version` from the same successful Operator publishing run. The chart installs from `public.ecr.aws/a8z1i1r2/operator`. Disable the advanced setting for legacy inline execution. Existing saved choices are preserved on upgrade; drain deployments and remediation before changing modes.
 
     **HA coordinators** requires a replica-aware gateway. **Adaptive coordinator sizing** is on by default: one eligible node runs one coordinator, two run two, and three or more run three with the default **Coordinator replicas** limit. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy. Use a matching adaptive-capable image and chart from the Operator publishing pipeline.
 

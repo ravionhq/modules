@@ -399,7 +399,8 @@ describe("compiler", () => {
       ravion_operator_enabled: true,
       ravion_operator_full_management_enabled: { not: true },
     });
-    assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").default, false);
+    assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").default, true);
+    assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").collapsible, true);
     assert.deepEqual(findInput(inputs, "ravion_operator_execution_jobs_enabled").show_when, {
       ravion_operator_enabled: true,
     });
@@ -411,7 +412,7 @@ describe("compiler", () => {
       ravion_operator_full_management_enabled: { not: true },
     });
     for (const [id, fallback] of Object.entries({
-      ravion_operator_execution_jobs_enabled: "false",
+      ravion_operator_execution_jobs_enabled: "true",
       ravion_operator_full_management_enabled: "false",
       ravion_operator_execution_max_concurrent: "1",
       ravion_operator_coordinator_enabled: "false",
