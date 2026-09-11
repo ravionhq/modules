@@ -8,7 +8,7 @@
 # karpenter-resources.
 
 # Name of the Secret. Must match the Ravion Operator chart's credential.secretName.
-secretName: ravion-beacon-credential
+secretName: ravion-operator-credential
 
 # Key names inside the Secret. Must match the Ravion Operator chart's
 # credential.clientIdKey / credential.clientSecretKey.

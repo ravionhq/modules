@@ -83,11 +83,14 @@ changes.
 
 Terraform resource labels were renamed as well. Included `moved` blocks preserve
 the Secrets Manager and Helm resource addresses; that address rename alone does
-not recreate them. The Helm release remains `ravion-beacon`; explicit chart name
-overrides preserve its resource names and immutable Deployment selectors. The chart
-now comes from `oci://public.ecr.aws/a8z1i1r2/operator`, and the default connection
-path is `/operator/v1/connect`. Credential Secret and Secrets Manager paths retain
-their existing names.
+not recreate them. The Helm releases are now `ravion-operator` and
+`ravion-operator-credential`, the credential `Secret` is `ravion-operator-credential`,
+and the Secrets Manager mirror is `ravion/operator/<cluster>/credential`. Upgrading a
+cluster installed under the legacy `ravion-beacon` names replaces both Helm releases
+and the mirror secret, so expect a short Operator interruption on that apply; the API
+credential itself is not reissued. The chart comes from
+`oci://public.ecr.aws/a8z1i1r2/operator`, and the default connection path is
+`/operator/v1/connect`.
 
 ### Namespace migration
 
@@ -353,7 +356,7 @@ Ravion Operator is Ravion's in-cluster agent. It dials the control plane **outbo
 Off by default. `ravion_operator_enabled = true` does three things in one apply:
 
 1. **Mints** the cluster's credential with the `ravion` provider (`ravion_operator_credential`). Ravion issues a client secret on the organization's shared WorkOS M2M application server-side, records it against this cluster's Ravion Operator row, and returns a `client_id` + `client_secret` pair.
-2. **Stores** that pair — in a Kubernetes `Secret` named `ravion-beacon-credential` in `ravion_operator_namespace` under the keys `clientId` and `clientSecret`, and, as a mirror, in an AWS Secrets Manager secret in *your* account (`ravion/beacon/<cluster>/credential`) carrying the same two keys.
+2. **Stores** that pair — in a Kubernetes `Secret` named `ravion-operator-credential` in `ravion_operator_namespace` under the keys `clientId` and `clientSecret`, and, as a mirror, in an AWS Secrets Manager secret in *your* account (`ravion/operator/<cluster>/credential`) carrying the same two keys.
 3. **Installs** the agent chart, wired to that Secret.
 
 ```hcl
@@ -745,7 +748,7 @@ All outputs are null when the corresponding add-on is disabled.
 - The metrics collector scrapes the kubelet through the **API server proxy**, not each node's port 10250. That is why it needs `nodes/proxy` in its ClusterRole and why it works unchanged on private-endpoint clusters — the only network path it requires is to the Kubernetes API.
 - The AMP workspace uses the AWS provider's per-resource `region` argument rather than a second provider configuration, so `amp_region` moves the workspace without any aliased-provider plumbing in consumers.
 - Loki is reachable only from inside the cluster, and that is load-bearing rather than incidental: it is what removes the need for an ingress, a certificate, an authentication layer in front of it, and any inbound path into the customer's VPC. The one route in is Ravion Operator's proxy, whose allowlist this module writes.
-- Ravion Operator's credential `Secret` is a separate local chart (`charts/beacon-credential`) rather than a `kubernetes_secret` resource, for the same reason as the `ClusterSecretStore`s: the Helm provider is the only Kubernetes access this stack has. The credential reaches it through `values` wrapped in `sensitive()`, not through `set_sensitive` — Helm's `--set` parser splits on `,`, `.` and `=`, which silently truncates a client secret containing any of them.
+- Ravion Operator's credential `Secret` is a separate local chart (`charts/operator-credential`) rather than a `kubernetes_secret` resource, for the same reason as the `ClusterSecretStore`s: the Helm provider is the only Kubernetes access this stack has. The credential reaches it through `values` wrapped in `sensitive()`, not through `set_sensitive` — Helm's `--set` parser splits on `,`, `.` and `=`, which silently truncates a client secret containing any of them.
 - The Ravion Operator chart deliberately creates no credential `Secret` of its own, and grants Ravion Operator **no RBAC on Secrets at all**. The kubelet reads that object and projects it into the container as a read-only volume, which is what keeps the base ClusterRole free of Secret access.
 - The Ravion Operator credential is a Terraform resource (`ravion_operator_credential`), not a provisioner. A `local-exec` curl used to enroll the cluster and treat the Secrets Manager copy as the idempotency anchor, because the plaintext is returned once and a re-run on a fresh runner had to answer "already enrolled?" with no local state. The provider dissolves that problem rather than working around it: create is idempotent-by-replacement — a create for an already-registered cluster ARN mints a new secret and revokes the old one — so **state is the anchor and Secrets Manager is only a mirror**. It also means no `curl` on the runner, no API-token module input, and nothing enrolled during a plan nobody applies.
 - `ravion_operator_enabled = false` now **does** revoke the credential, because the destroy runs through the provider. The agent row is retained, disabled, so the cluster's history is not orphaned.

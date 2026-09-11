@@ -137,12 +137,12 @@ run "operator_inline_upgrade_identity" {
     condition = (
       helm_release.ravion_operator[0].repository == "oci://public.ecr.aws/a8z1i1r2" &&
       helm_release.ravion_operator[0].chart == "operator" &&
-      helm_release.ravion_operator[0].name == "ravion-beacon" &&
-      yamldecode(helm_release.ravion_operator[0].values[0]).nameOverride == "beacon" &&
-      yamldecode(helm_release.ravion_operator[0].values[0]).fullnameOverride == "ravion-beacon" &&
+      helm_release.ravion_operator[0].name == "ravion-operator" &&
+      !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0])), "nameOverride") &&
+      !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0])), "fullnameOverride") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).cluster.installationId == "opagt_test"
     )
-    error_message = "The Operator chart must receive installation identity while retaining the existing Helm release and selectors."
+    error_message = "The Operator chart must receive installation identity under the ravion-operator release name with no legacy name overrides."
   }
   assert {
     condition = (

@@ -14,7 +14,7 @@ refreshInterval: 1h
 # id, say) and may reference the fetched keys as {{ .key }}.
 #
 # - name: ravion-observability-datadog
-#   namespace: ravion-beacon
+#   namespace: ravion-operator
 #   data:
 #     - secretKey: apiKey
 #       remoteRef: arn:aws:secretsmanager:us-east-2:111122223333:secret:datadog-api-key

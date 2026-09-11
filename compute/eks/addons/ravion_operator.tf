@@ -26,7 +26,7 @@
 #      Kubernetes Secret and presents the pair over its existing WebSocket; the
 #      gateway performs the WorkOS exchange server-side. That is what keeps
 #      Ravion Operator's RBAC free of every write verb and its egress down to one
-#      destination. See docs/adr/beacon-workos-m2m-auth.md in the Ravion
+#      destination. See docs/adr/operator-workos-m2m-auth.md in the Ravion
 #      monorepo.
 #
 # All releases set upgrade_install so an apply adopts a same-named release
@@ -44,12 +44,12 @@ locals {
 
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
-  ravion_operator_k8s_secret_name   = "ravion-beacon-credential"
+  ravion_operator_k8s_secret_name   = "ravion-operator-credential"
   ravion_operator_client_id_key     = "clientId"
   ravion_operator_client_secret_key = "clientSecret"
 
   # Deterministic so an operator can find the mirror without consulting state.
-  ravion_operator_credential_secret_name = "ravion/beacon/${var.cluster_name}/credential"
+  ravion_operator_credential_secret_name = "ravion/operator/${var.cluster_name}/credential"
 
   # The provider's namespace_scope is a set, and an absent one means cluster-wide
   # observation. An empty list is therefore sent as null rather than as an empty
@@ -159,9 +159,9 @@ resource "aws_secretsmanager_secret_version" "ravion_operator_credential" {
 resource "helm_release" "ravion_operator_credential" {
   count = var.ravion_operator_enabled ? 1 : 0
 
-  name      = "ravion-beacon-credential"
+  name      = "ravion-operator-credential"
   namespace = var.ravion_operator_namespace
-  chart     = "${path.module}/charts/beacon-credential"
+  chart     = "${path.module}/charts/operator-credential"
 
   create_namespace = true
   upgrade_install  = true
@@ -189,7 +189,10 @@ resource "helm_release" "ravion_operator_credential" {
 resource "helm_release" "ravion_operator" {
   count = var.ravion_operator_enabled ? 1 : 0
 
-  name       = "ravion-beacon"
+  # Renaming a Helm release replaces it: upgrading a cluster installed under
+  # the legacy `ravion-beacon` name uninstalls that release and installs this
+  # one, so expect a short Operator interruption on that apply.
+  name       = "ravion-operator"
   namespace  = var.ravion_operator_namespace
   repository = local.ravion_operator_chart_repository
   chart      = local.ravion_operator_chart_name
@@ -200,10 +203,8 @@ resource "helm_release" "ravion_operator" {
   values = concat(
     [
       yamlencode({
-        # Keep the old chart's resource names and immutable Deployment selectors.
-        # The product/chart is Operator; these names are installation identity.
-        nameOverride     = "beacon"
-        fullnameOverride = "ravion-beacon"
+        # No name overrides: the chart resolves the `ravion-operator` release
+        # name to its fullname, so every resource carries the product name.
         cluster = {
           installationId = ravion_operator_credential.this[0].operator_agent_id
           arn            = local.ravion_operator_cluster_arn

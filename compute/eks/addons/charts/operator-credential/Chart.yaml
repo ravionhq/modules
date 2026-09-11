@@ -1,5 +1,5 @@
 apiVersion: v2
-name: beacon-credential
+name: operator-credential
 description: The Kubernetes Secret holding Ravion Operator's WorkOS Connect M2M credential, installed by the compute/eks/addons stack.
 type: application
 version: 0.1.0
