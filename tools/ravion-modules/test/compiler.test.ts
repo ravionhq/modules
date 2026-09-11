@@ -391,19 +391,18 @@ describe("compiler", () => {
       /does not add injection annotations/,
     );
     const operator = findInput(inputs, "ravion_operator_enabled");
-    const operatorDeploy = findInput(inputs, "ravion_operator_deploy_enabled");
+    assert.equal(inputs.some((input) => input.id === "ravion_operator_deploy_enabled"), false);
     const operatorDeployNamespaces = findInput(inputs, "ravion_operator_deploy_namespaces");
     assert.equal(operator.default, true);
     assert.deepEqual(operator.moved_from, ["beacon_enabled"]);
-    assert.equal(operatorDeploy.default, true);
-    assert.equal(operatorDeploy.label, "Ravion Operator deployments");
-    assert.deepEqual(operatorDeploy.moved_from, ["beacon_deploy_enabled"]);
     assert.deepEqual(operatorDeployNamespaces.show_when, {
       ravion_operator_enabled: true,
-      ravion_operator_deploy_enabled: true,
       ravion_operator_full_management_enabled: { not: true },
     });
     assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").default, false);
+    assert.deepEqual(findInput(inputs, "ravion_operator_execution_jobs_enabled").show_when, {
+      ravion_operator_enabled: true,
+    });
     assert.equal(findInput(inputs, "ravion_operator_full_management_enabled").default, false);
     assert.equal(findInput(inputs, "ravion_operator_execution_image").required, true);
     assert.deepEqual(findInput(inputs, "ravion_operator_execution_max_concurrent").show_when, {
@@ -455,7 +454,7 @@ describe("compiler", () => {
     assert.equal(inputs.some((input) => input.id === "beacon_deploy_namespaces"), false);
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_deploy_enabled"),
-      "<< module.input.ravion_operator_deploy_enabled != nil ? module.input.ravion_operator_deploy_enabled : false >>",
+      getTerraformVariable(compiled.module, "ravion_operator_enabled"),
     );
     for (const legacyVariable of [
       "beacon_enabled",

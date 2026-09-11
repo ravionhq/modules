@@ -468,7 +468,7 @@ The web, worker and cron modules continue to submit their existing Git-sourced H
 
 Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities.
 
-The Ravion form exposes deployments, namespaces, chart version, executor image/capacity, HA, full management and inline self-update. Endpoint, installation namespace, observation scope and extra Helm values remain available through **Advanced Terraform variables**.
+The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. It also exposes namespaces, chart version, executor image/capacity, HA, full management and inline self-update. Endpoint, installation namespace, observation scope and extra Helm values remain available through **Advanced Terraform variables**.
 
 #### Rotating and revoking
 

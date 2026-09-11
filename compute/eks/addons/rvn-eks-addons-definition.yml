@@ -17,6 +17,7 @@ release:
     create missing Operator workload namespaces safely, and move the default Operator and observability
     namespace to ravion-operator (existing Helm releases are replaced).
     Support the Operator public chart, digest-pinned executor Jobs, adaptive HA coordinators sized to available nodes, and explicit full-cluster management.
+    Control Operator installation and in-cluster deployments together with the Ravion EKS Management toggle.
 module:
   inputs:
     - id: cluster
@@ -106,15 +107,6 @@ module:
       moved_from:
         - beacon_enabled
       type: boolean
-    - default: true
-      description: Run deployments through Operator inside the cluster. Writes are scoped to selected namespaces unless full-cluster management is explicitly enabled.
-      id: ravion_operator_deploy_enabled
-      label: Ravion Operator deployments
-      moved_from:
-        - beacon_deploy_enabled
-      show_when:
-        ravion_operator_enabled: true
-      type: boolean
     - id: ravion_operator_execution_jobs_enabled
       label: Durable executor Jobs
       description: Isolate deployments in durable Jobs. Drain inline deployments and remediation before switching modes. Disables self-update and requires a matching published chart and digest-pinned image.
@@ -122,7 +114,6 @@ module:
       default: false
       show_when:
         ravion_operator_enabled: true
-        ravion_operator_deploy_enabled: true
     - id: ravion_operator_execution_image
       label: Operator execution image
       description: The image_ref output from the Operator publishing pipeline, used by coordinators and executor Jobs.
@@ -200,7 +191,6 @@ module:
       required: true
       show_when:
         ravion_operator_enabled: true
-        ravion_operator_deploy_enabled: true
         ravion_operator_full_management_enabled:
           not: true
       type: string_array
@@ -1232,7 +1222,7 @@ module:
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
-        ravion_operator_deploy_enabled: '<< module.input.ravion_operator_deploy_enabled != nil ? module.input.ravion_operator_deploy_enabled : false >>'
+        ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_namespaces: '<< module.input.ravion_operator_deploy_namespaces != nil ? module.input.ravion_operator_deploy_namespaces : [] >>'
         ravion_operator_chart_version: << module.input.ravion_operator_chart_version || "0.4.1" >>
         ravion_operator_execution_jobs_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : false >>'
@@ -1413,9 +1403,7 @@ module:
 
     Enabling the toggle does three things in one deployment: Ravion issues the agent's credential — server-side, authorized by the pipeline's own credentials, so there is no API key to paste — writes it into the agent's Kubernetes secret and mirrors it into a Secrets Manager secret **in your own AWS account**, and installs the agent's Helm chart. The plaintext is issued exactly once; rotating or revoking it is a redeploy, not an API call.
 
-    Ravion Operator deployments are enabled by default. This widens the otherwise read-only agent with one bounded grant:
-
-    - **Ravion Operator deployments** lets Helm upgrades run inside the cluster. The default grant permits workload writes only in **Deployment namespaces**, excluding RBAC, namespaces and cluster-scoped resources.
+    **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. The default grant permits workload writes only in **Deployment namespaces**, excluding RBAC, namespaces and cluster-scoped resources.
 
     **Durable executor Jobs** isolates deployments in Jobs and disables self-update. Set **Operator execution image** to the digest-qualified `image_ref` and **Operator chart version** to `chart_version` from the same successful Operator publishing run. The chart installs from `public.ecr.aws/a8z1i1r2/operator`. Drain inline deployments and remediation before changing modes.
 
@@ -1505,8 +1493,7 @@ module:
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to both metrics and logs |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
-    | Ravion EKS Management  | No       | `true`               | Registers the cluster and installs Ravion Operator     |
-    | Ravion Operator deployments | No  | `true`               | Lets Ravion Operator run Ravion's deploys from inside the cluster, scoped to named namespaces |
+    | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
     | Deployment namespaces  | Yes*     | -                    | Namespaces where Ravion Operator may manage workloads  |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |
     | Private ALB            | No       | `false`              | Shared internal ALB                                    |
