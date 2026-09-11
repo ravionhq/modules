@@ -35,8 +35,9 @@
 ################################################################################
 
 locals {
-  ravion_operator_cluster_arn = data.aws_eks_cluster.this.arn
-  ravion_operator_region      = coalesce(var.region, data.aws_region.current.region)
+  ravion_operator_cluster_arn           = data.aws_eks_cluster.this.arn
+  ravion_operator_region                = coalesce(var.region, data.aws_region.current.region)
+  ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled && !var.ravion_operator_execution_jobs_enabled
 
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
@@ -99,7 +100,7 @@ resource "ravion_operator_credential" "this" {
   # cluster, so the two are driven from the same variables.
   capabilities = {
     exec_allowed        = var.ravion_operator_exec_enabled
-    self_update_allowed = var.ravion_operator_self_update_enabled
+    self_update_allowed = local.ravion_operator_self_update_effective
     namespace_scope     = local.ravion_operator_capability_namespace_scope
   }
 }
@@ -196,11 +197,15 @@ resource "helm_release" "ravion_operator" {
   values = concat(
     [
       yamlencode({
-        # The chart refuses to render without all three.
+        # Keep the old chart's resource names and immutable Deployment selectors.
+        # The product/chart is Operator; these names are installation identity.
+        nameOverride     = "beacon"
+        fullnameOverride = "ravion-beacon"
         cluster = {
-          arn    = local.ravion_operator_cluster_arn
-          name   = var.cluster_name
-          region = local.ravion_operator_region
+          installationId = ravion_operator_credential.this[0].operator_agent_id
+          arn            = local.ravion_operator_cluster_arn
+          name           = var.cluster_name
+          region         = local.ravion_operator_region
         }
         controlPlane = {
           endpoint = var.ravion_operator_endpoint
@@ -218,17 +223,23 @@ resource "helm_release" "ravion_operator" {
           enabled = var.ravion_operator_exec_enabled
         }
         selfUpdate = {
-          enabled = var.ravion_operator_self_update_enabled
+          enabled = local.ravion_operator_self_update_effective
         }
-        # The widest grant this chart can create, and off by default. Bounded by
-        # the namespace list, which Kubernetes enforces; there is deliberately
-        # no cluster-wide posture, so an empty list with deploy on fails the
-        # render rather than granting cluster-wide write. yamlencode produces a
-        # genuine empty list here, avoiding the `--set deploy.namespaces={}`
-        # trap that yields a list containing one empty string.
+        # Namespace writes remain scoped unless full management is explicit.
         deploy = {
           enabled    = var.ravion_operator_deploy_enabled
           namespaces = var.ravion_operator_deploy_namespaces
+        }
+        executionJobs = {
+          enabled        = var.ravion_operator_execution_jobs_enabled
+          image          = var.ravion_operator_execution_image
+          maxConcurrent  = var.ravion_operator_execution_max_concurrent
+          fullManagement = var.ravion_operator_full_management_enabled
+        }
+        coordinator = {
+          enabled              = var.ravion_operator_coordinator_enabled
+          replicas             = var.ravion_operator_coordinator_replicas
+          requireDistinctNodes = var.ravion_operator_coordinator_distinct_nodes_enabled
         }
       }),
     ],
@@ -239,7 +250,7 @@ resource "helm_release" "ravion_operator" {
     var.ravion_operator_helm_values,
   )
 
-  # The agent VERSION is not this module's business. The control plane rolls
+  # In inline mode the control plane rolls
   # the fleet forward by patching Ravion Operator's own Deployment (operator ADR §6), and
   # the chart (>= 0.4.1, image.preserveOnUpgrade) re-emits the running image
   # — registry and tag — on every helm upgrade, so an apply — a values change,
@@ -271,8 +282,20 @@ resource "helm_release" "ravion_operator" {
 
   lifecycle {
     precondition {
-      condition     = !var.ravion_operator_deploy_enabled || length(local.ravion_operator_deploy_namespaces_effective) > 0
-      error_message = "ravion_operator_deploy_enabled is true but neither ravion_operator_deploy_namespaces nor ravion_operator_namespace_scope names a namespace. The chart refuses to render a cluster-wide deploy grant, by design: there is no 'deploy everywhere' posture, because the failure mode is an agent that can delete workloads in namespaces nobody meant to hand it."
+      condition     = !var.ravion_operator_deploy_enabled || var.ravion_operator_full_management_enabled || length(local.ravion_operator_deploy_namespaces_effective) > 0
+      error_message = "Namespace-scoped deployments require ravion_operator_deploy_namespaces or ravion_operator_namespace_scope. Cluster-wide writes require explicit full management."
+    }
+    precondition {
+      condition     = !var.ravion_operator_execution_jobs_enabled || (var.ravion_operator_deploy_enabled && var.ravion_operator_execution_image != "" && var.ravion_operator_chart_version != null && var.ravion_operator_image_tag == null)
+      error_message = "Executor Jobs require deployments enabled, a digest-pinned execution image, an explicit matching chart version, and no inline image tag pin."
+    }
+    precondition {
+      condition     = !var.ravion_operator_coordinator_enabled || var.ravion_operator_execution_jobs_enabled
+      error_message = "HA coordinators require ravion_operator_execution_jobs_enabled."
+    }
+    precondition {
+      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && var.ravion_operator_execution_max_concurrent == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
+      error_message = "Full management requires executor Jobs, max concurrency 1, and empty observation/deployment namespace lists."
     }
   }
 }

@@ -258,6 +258,16 @@ output "ravion_operator_agent_id" {
   value = var.ravion_operator_enabled ? ravion_operator_credential.this[0].operator_agent_id : null
 }
 
+output "ravion_operator_installation_id" {
+  description = "Stable provider-neutral Operator installation ID, also exposed as ravion_operator_agent_id for compatibility."
+  value       = var.ravion_operator_enabled ? ravion_operator_credential.this[0].operator_agent_id : null
+}
+
+output "ravion_operator_execution_image" {
+  description = "Digest-pinned image configured for coordinators and executor Jobs, or null in inline mode."
+  value       = var.ravion_operator_enabled && var.ravion_operator_execution_jobs_enabled ? var.ravion_operator_execution_image : null
+}
+
 output "ravion_operator_client_id" {
   description = "WorkOS M2M client id the agent authenticates as (null if disabled). Not a secret, and identical for every cluster in the organization — the shared application's client id."
   value       = var.ravion_operator_enabled ? ravion_operator_credential.this[0].client_id : null

@@ -14,7 +14,7 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 | **Vendor credentials** | any vendor provider | not selected | One `ExternalSecret` per vendor (local `charts/observability-secrets`), materializing a Secrets Manager secret into a Kubernetes Secret the collectors read as environment variables |
 | **Grafana read role** | `grafana_role_creation_enabled` | `false` | An IAM role trusted by `grafana.amazonaws.com` with query access to the AMP workspace — for Amazon Managed Grafana, which can read metrics but cannot reach in-cluster Loki |
 | **In-cluster Grafana** | `grafana_enabled` | `false` | A Grafana release preprovisioned with both datasources: AMP over SigV4 (with its own Pod Identity role) and the in-cluster Loki |
-| **Ravion Operator** | `ravion_operator_enabled` | `false` | Mints the cluster's WorkOS M2M credential through the `ravion` provider (`ravion_operator_credential`), writes it into a Kubernetes `Secret` (local `charts/beacon-credential`) and mirrors it into an AWS Secrets Manager secret, and installs the `beacon` Helm chart — an in-cluster agent that dials Ravion outbound over a single WebSocket |
+| **Ravion Operator** | `ravion_operator_enabled` | `false` | Enrolls the cluster, stores its credential and installs the public `operator` chart. Supports optional digest-pinned executor Jobs, HA coordinators and explicit full-cluster management. |
 | **Shared load balancers** | `public_alb_creation_enabled`, `private_alb_creation_enabled`, `public_nlb_creation_enabled`, `private_nlb_creation_enabled` | `false` | Terraform-managed ALBs/NLBs (via `networking/alb` and `networking/nlb`) that workloads attach to with the load balancer controller's `TargetGroupBinding` CRD, plus cluster security group ingress rules allowing each load balancer to reach pods |
 
 The [`compute/eks`](..) composite intentionally creates none of these, so clusters only carry what they use. EBS CSI and Container Insights are native EKS add-ons installed purely through the AWS API. Karpenter, the AWS Load Balancer Controller, the External Secrets Operator, Ravion Operator, and the metrics and logs pipelines additionally install Helm charts, which are the only parts that need Kubernetes API connectivity.
@@ -74,8 +74,11 @@ changes.
 
 Terraform resource labels were renamed as well. Included `moved` blocks preserve
 the Secrets Manager and Helm resource addresses; that address rename alone does
-not recreate them. The Helm release remains `ravion-beacon`, the chart is still
-published as `beacon`, and existing endpoint and secret paths remain valid.
+not recreate them. The Helm release remains `ravion-beacon`; explicit chart name
+overrides preserve its resource names and immutable Deployment selectors. The chart
+now comes from `oci://public.ecr.aws/a8z1i1r2/operator`, and the default connection
+path is `/operator/v1/connect`. Credential Secret and Secrets Manager paths retain
+their existing names.
 
 ### Namespace migration
 
@@ -373,11 +376,11 @@ Two overrides, both designed for exactly this:
 ```hcl
 # A chart directory on disk instead of the ECR Public reference. Anything that
 # is not an `oci://` reference is treated as a filesystem path.
-ravion_operator_chart_source = "/path/to/ravion/packages/beacon/chart/beacon"
+ravion_operator_chart_source = "/path/to/ravion/packages/operator/chart/operator"
 
 # A gateway on your own machine instead of the production endpoint. Reachable
 # from inside the cluster, so a tunnel or an in-cluster address, not localhost.
-ravion_operator_endpoint = "ws://host.docker.internal:3001/beacon/v1/connect"
+ravion_operator_endpoint = "ws://host.docker.internal:3001/operator/v1/connect"
 ```
 
 `ravion_operator_chart_version` is ignored for a filesystem chart. Note that `ravion_operator_chart_source` must stay **publicly pullable** in production: customer clusters cannot pull from Ravion's private ECR.
@@ -414,7 +417,7 @@ go build -o terraform-provider-ravion
 
 To exercise the real registry protocol instead of overriding it, that package's `localregistry/` serves a locally built provider as a registry.
 
-#### The image tag is not Terraform's to own
+#### Inline image updates
 
 With `ravion_operator_self_update_enabled` on (the default), the control plane rolls each cluster's agent forward by patching Ravion Operator's own Deployment — a namespaced `Role` scoped by `resourceNames` to that one object, and the only write permission the chart creates by default. An apply that re-asserted the image tag would revert every staged rollout, so this module passes **no tag at all** by default and the chart (0.4.1+, `image.preserveOnUpgrade`) reads the image the release is already running back on every `helm upgrade` and re-emits it — registry and tag — once that release's rollout has settled. A fresh install starts at the chart's `appVersion` (the floor); every later apply leaves the version with whoever set it last. A release whose last rollout wedged is deliberately *not* preserved: the chart falls back to its floor, so a plain re-apply repairs it instead of re-asserting the image that could not start.
 
@@ -430,11 +433,35 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 
 `ravion_operator_namespace_scope` is the one value that turns a cluster-wide component into a bounded one, and it is enforced by Kubernetes rather than by the agent: non-empty renders **no observation ClusterRole at all**, one namespaced `Role`/`RoleBinding` per entry instead. A scoped install can read no `nodes` and no `namespaces`, so the node count in fleet health is reported as unknown; nothing else changes.
 
-`ravion_operator_deploy_enabled` is the widest grant the chart can create and is off by default. In the namespaces it covers, Ravion Operator can create, update and delete Deployments, Services, Jobs, Ingresses and Secrets. It can never create anything in `rbac.authorization.k8s.io`, no `namespaces`, and nothing cluster-scoped — so it cannot widen itself. It is bounded by `ravion_operator_deploy_namespaces`, falling back to `ravion_operator_namespace_scope`; **if both are empty the apply fails**, because there is deliberately no "deploy everywhere" posture. Declining it leaves a fully working agent and Ravion deploys to the cluster from outside as it always has.
+`ravion_operator_deploy_enabled` permits workload writes in `ravion_operator_deploy_namespaces`, falling back to `ravion_operator_namespace_scope`. This default scope excludes RBAC, namespaces and cluster-scoped resources. If both lists are empty, apply fails unless full management is explicitly enabled.
+
+#### Durable executor Jobs and HA
+
+Use the `chart_version` and digest-qualified `image_ref` outputs from the **same successful Operator publishing run**. Publication must finish before applying addons; the base chart version is not proof that an image supports Jobs.
+
+```hcl
+ravion_operator_enabled                = true
+ravion_operator_deploy_enabled         = true
+ravion_operator_deploy_namespaces      = ["app-prod"]
+ravion_operator_execution_jobs_enabled = true
+ravion_operator_chart_version          = "<chart_version output>"
+ravion_operator_execution_image        = "<image_ref output>"
+ravion_operator_coordinator_enabled    = true
+```
+
+Job mode disables self-update in both the enrolled capability and the Helm values. The chart uses the execution image for **both coordinators and executors**, overriding live-image preservation; an inline image-tag pin is rejected. The stable enrollment ID is passed as `cluster.installationId` and exposed as `ravion_operator_installation_id`.
+
+HA defaults to three coordinators on distinct nodes and requires a replica-aware gateway. Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each executor requests 1 CPU/2Gi memory/1Gi ephemeral storage and limits at 4 CPU/8Gi/20Gi. Size cluster capacity accordingly; resource overrides use `coordinator.resources` and `executionJobs.resources` in `ravion_operator_helm_values`.
+
+Drain inline deployments and remediation before enabling Jobs. Drain durable executions before changing execution mode, management scope or retained capacity. Preserve the Operator namespace, `rvn-installation` identity, execution records and ownership/capacity Leases during migration. Missing workers or an uncertain mutation are not permission to delete ownership and launch a competing writer.
+
+For **full-cluster management**, enable `ravion_operator_full_management_enabled`, leave both observation and deployment namespace lists empty, and keep `ravion_operator_execution_max_concurrent = 1`. This explicitly grants wildcard Kubernetes RBAC for CRDs, RBAC, namespaces, custom resources and workloads, using one installation-wide mutation lane. Namespace-scoped Job mode can use up to 64 retained slots.
+
+The web, worker and cron modules continue to submit their existing Git-sourced Helm definitions through `aws:eks`. The control plane selects the eligible Operator enrolled for the cluster ARN and packages the chart for it. No new deployment discriminator or installation-ID field is supported in that module deploy schema. Provider-neutral prepared deployments are a separate API path, not yet a general-purpose module deployment type.
 
 Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities.
 
-> **In the Ravion dashboard**, the `rvn-eks-addons` module definition surfaces `ravion_operator_enabled`, `ravion_operator_deploy_enabled`, `ravion_operator_deploy_namespaces` and `ravion_operator_namespaces_creation_enabled` as form fields. Every other variable in this section — including `ravion_operator_endpoint`, `ravion_operator_chart_version`, `ravion_operator_namespace` and `ravion_operator_namespace_scope` — is tuning rather than a product surface, so it is set through **Advanced Terraform variables** and otherwise falls back to the defaults documented under [Inputs](#inputs). Applying this module directly, every variable below is available as normal.
+The Ravion form exposes deployments, namespaces, chart version, executor image/capacity, HA, full management and inline self-update. Endpoint, installation namespace, observation scope and extra Helm values remain available through **Advanced Terraform variables**.
 
 #### Rotating and revoking
 
@@ -550,14 +577,21 @@ Unlike the previous curl-based enrollment, turning the flag off **does** revoke 
 | grafana_service_account | Grafana's service account; the AMP Pod Identity association binds to this name. | `string` | `"ravion-grafana"` | no |
 | grafana_helm_values | Extra YAML docs merged into the Grafana chart values (ingress, persistence, dashboards). | `list(string)` | `[]` | no |
 | ravion_operator_enabled | Mint the cluster's Ravion Operator credential (via the `ravion` provider) and install the Ravion Operator. | `bool` | `false` | no |
-| ravion_operator_endpoint | WebSocket endpoint the agent dials — the single destination an egress policy must allow. | `string` | `"wss://websockets.ravion.com/beacon/v1/connect"` | no |
-| ravion_operator_chart_source | `oci://` reference, or a filesystem path to a chart directory for local testing. | `string` | `"oci://public.ecr.aws/a8z1i1r2/beacon"` | no |
+| ravion_operator_endpoint | WebSocket endpoint the agent dials. | `string` | `"wss://websockets.ravion.com/operator/v1/connect"` | no |
+| ravion_operator_chart_source | Public OCI reference, or a filesystem chart path for local testing. | `string` | `"oci://public.ecr.aws/a8z1i1r2/operator"` | no |
 | ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.4.1"` | no |
 | ravion_operator_namespace | Namespace for the agent and its credential Secret (created if missing). Shared observability components use it by default. | `string` | `"ravion-operator"` | no |
 | ravion_operator_namespaces_creation_enabled | Create missing observation and deployment namespaces before installing Operator RBAC; reuse existing namespaces and retain created namespaces on removal. | `bool` | `true` | no |
 | ravion_operator_namespace_scope | Namespaces the agent may observe. Empty is cluster-wide; non-empty renders namespaced Roles and no observation ClusterRole at all. | `list(string)` | `[]` | no |
-| ravion_operator_deploy_enabled | Let Ravion Operator perform Ravion's Helm deploys from inside the cluster. The widest grant the chart can create. | `bool` | `false` | no |
-| ravion_operator_deploy_namespaces | Namespaces Ravion Operator may deploy into. Falls back to `ravion_operator_namespace_scope`; both empty with deploy on fails the apply. | `list(string)` | `[]` | no |
+| ravion_operator_deploy_enabled | Enable in-cluster deployments. | `bool` | `false` | no |
+| ravion_operator_deploy_namespaces | Allowed namespaces; falls back to observation scope. Both lists must be empty for full management. | `list(string)` | `[]` | no |
+| ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs; disables self-update. | `bool` | `false` | no |
+| ravion_operator_execution_image | Digest-pinned coordinator/executor image; required in Job mode. | `string` | `""` | no |
+| ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; full management requires 1. | `number` | `1` | no |
+| ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
+| ravion_operator_coordinator_replicas | HA replicas, 2-9. | `number` | `3` | no |
+| ravion_operator_coordinator_distinct_nodes_enabled | Require a distinct node per coordinator. | `bool` | `true` | no |
+| ravion_operator_full_management_enabled | Explicit wildcard Kubernetes RBAC and a single retained mutation lane. | `bool` | `false` | no |
 | ravion_operator_exec_enabled | Grant `create` on `pods/exec` — the only way Ravion Operator can run a command inside a container. | `bool` | `false` | no |
 | ravion_operator_self_update_enabled | Let the control plane roll the agent forward by patching its own Deployment. | `bool` | `true` | no |
 | ravion_operator_image_tag | Agent image tag **pin**: asserted on every apply while set, released back to the control plane when removed (see above). Null: a fresh install starts at the chart's `appVersion` and upgrades keep the running image. | `string` | `null` | no |
@@ -626,6 +660,8 @@ All outputs are null when the corresponding add-on is disabled.
 | grafana_amp_role_arn | In-cluster Grafana's Pod Identity role for querying AMP. Distinct from `grafana_role_arn`, which is for AMG reaching in from outside. |
 | ravion_operator_namespace / ravion_operator_chart_version | Ravion Operator install location and **chart** version (not the running agent version — the control plane owns that). |
 | ravion_operator_agent_id | Ravion Operator record id (`opagt_…`). Stable across rotations — correlate agent logs by it. |
+| ravion_operator_installation_id | Stable provider-neutral installation ID; same value as ravion_operator_agent_id. |
+| ravion_operator_execution_image | Configured digest-pinned coordinator/executor image, or null in inline mode. |
 | ravion_operator_client_id | WorkOS M2M client id the agent authenticates as. Not a secret, and shared by every cluster in the organization. |
 | ravion_operator_client_secret_id | WorkOS id of the secret issued to this cluster (not the secret). Identifies which credential a connecting agent presents. |
 | ravion_operator_credential_secret_arn | Secrets Manager secret mirroring the credential — an operator recovery copy of what Terraform state holds. |

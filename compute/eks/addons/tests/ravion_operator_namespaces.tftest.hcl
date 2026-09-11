@@ -29,6 +29,15 @@ mock_provider "aws" {
 mock_provider "helm" {}
 mock_provider "ravion" {}
 
+override_resource {
+  target = ravion_operator_credential.this
+  values = {
+    operator_agent_id = "opagt_test"
+    client_id         = "client_test"
+    client_secret     = "test-only-credential"
+  }
+}
+
 variables {
   cluster_name                      = "test-cluster"
   region                            = "us-east-2"
@@ -120,4 +129,100 @@ run "invalid_namespace_rejected" {
     ravion_operator_deploy_namespaces = ["Invalid_Namespace"]
   }
   expect_failures = [var.ravion_operator_deploy_namespaces]
+}
+
+run "operator_inline_upgrade_identity" {
+  command = plan
+  assert {
+    condition = (
+      helm_release.ravion_operator[0].repository == "oci://public.ecr.aws/a8z1i1r2" &&
+      helm_release.ravion_operator[0].chart == "operator" &&
+      helm_release.ravion_operator[0].name == "ravion-beacon" &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).nameOverride == "beacon" &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).fullnameOverride == "ravion-beacon" &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).cluster.installationId == "opagt_test"
+    )
+    error_message = "The Operator chart must receive installation identity while retaining the existing Helm release and selectors."
+  }
+  assert {
+    condition = (
+      yamldecode(helm_release.ravion_operator[0].values[0]).controlPlane.endpoint == "wss://websockets.ravion.com/operator/v1/connect" &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
+      !yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.enabled &&
+      !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.enabled
+    )
+    error_message = "Inline mode must keep its update behavior without silently enabling executor Jobs or HA."
+  }
+}
+
+run "operator_ha_full_management" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled  = true
+    ravion_operator_execution_image         = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_chart_version           = "0.4.1-ci.test"
+    ravion_operator_coordinator_enabled     = true
+    ravion_operator_full_management_enabled = true
+    ravion_operator_deploy_namespaces       = []
+  }
+  assert {
+    condition = (
+      !ravion_operator_credential.this[0].capabilities.self_update_allowed &&
+      !yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == var.ravion_operator_execution_image &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.fullManagement &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 1 &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 3 &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
+      length(helm_release.ravion_operator_namespaces) == 0
+    )
+    error_message = "Full management must wire one retained lane, three coordinators and the pinned image with self-update disabled in both enrollment and Helm."
+  }
+}
+
+run "jobs_require_pinned_image" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled = true
+  }
+  expect_failures = [helm_release.ravion_operator]
+}
+
+run "ha_requires_jobs" {
+  command = plan
+  variables {
+    ravion_operator_coordinator_enabled = true
+  }
+  expect_failures = [helm_release.ravion_operator]
+}
+
+run "full_management_requires_jobs" {
+  command = plan
+  variables {
+    ravion_operator_full_management_enabled = true
+    ravion_operator_deploy_namespaces       = []
+  }
+  expect_failures = [helm_release.ravion_operator]
+}
+
+run "full_management_rejects_namespace_scope" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled  = true
+    ravion_operator_execution_image         = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_full_management_enabled = true
+  }
+  expect_failures = [helm_release.ravion_operator]
+}
+
+run "full_management_rejects_parallel_lanes" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled   = true
+    ravion_operator_execution_image          = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_full_management_enabled  = true
+    ravion_operator_deploy_namespaces        = []
+    ravion_operator_execution_max_concurrent = 2
+  }
+  expect_failures = [helm_release.ravion_operator]
 }

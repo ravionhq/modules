@@ -709,7 +709,7 @@ variable "ravion_operator_enabled" {
 variable "ravion_operator_endpoint" {
   type        = string
   description = "WebSocket endpoint the agent dials. Outbound 443 only, and the single destination a customer's egress policy has to allow. A domain of its own on purpose, so that address need not change when Ravion moves agent connections into their own deployment. Override for staging, a self-hosted control plane, or a local gateway over ws://."
-  default     = "wss://websockets.ravion.com/beacon/v1/connect"
+  default     = "wss://websockets.ravion.com/operator/v1/connect"
   nullable    = false
 
   validation {
@@ -721,7 +721,7 @@ variable "ravion_operator_endpoint" {
 variable "ravion_operator_chart_source" {
   type        = string
   description = "Where the agent's Helm chart comes from. An 'oci://' reference is split into repository and chart name; anything else is treated as a filesystem path to a chart directory, which is how the chart is tested before it is published to ECR Public. Must stay publicly pullable: customer clusters cannot pull from Ravion's private ECR."
-  default     = "oci://public.ecr.aws/a8z1i1r2/beacon"
+  default     = "oci://public.ecr.aws/a8z1i1r2/operator"
   nullable    = false
 
   validation {
@@ -732,7 +732,7 @@ variable "ravion_operator_chart_source" {
 
 variable "ravion_operator_chart_version" {
   type        = string
-  description = "Version of the Ravion Operator Helm CHART to install - the agent's RBAC and wiring - pinned per module release so a chart change arrives as a module upgrade rather than as whatever the registry called latest that day. Set null to let Helm resolve the latest. This is NOT the agent version and never moves it: the control plane rolls the agent image forward per cluster, and the chart re-emits the running image on every upgrade, so an apply of this module - any apply - leaves the agent at whatever version it is running."
+  description = "Operator Helm chart version. For executor Jobs, use the chart_version output from the same Operator publishing run as ravion_operator_execution_image. Inline mode preserves the running image unless an image tag is pinned; Job mode pins coordinators and executors to ravion_operator_execution_image. Null tracks latest and is not allowed in Job mode."
   default     = "0.4.1"
 
   validation {
@@ -774,14 +774,14 @@ variable "ravion_operator_namespace_scope" {
 
 variable "ravion_operator_deploy_enabled" {
   type        = bool
-  description = "Let Ravion Operator perform Ravion's Helm upgrades from inside the cluster instead of Ravion reaching in from outside. The widest grant the chart can create: in the namespaces below, the agent can create, update and delete Deployments, Services, Jobs, Ingresses and Secrets. It can never create RBAC objects, namespaces, or anything cluster-scoped. Declining it leaves a fully working agent and deploys continue to run from outside the cluster."
+  description = "Let Operator deploy workloads from inside the cluster. By default writes are limited to named namespaces and exclude RBAC and cluster-scoped objects. Explicit ravion_operator_full_management_enabled grants cluster-wide resource management through executor Jobs."
   default     = false
   nullable    = false
 }
 
 variable "ravion_operator_deploy_namespaces" {
   type        = list(string)
-  description = "Namespaces Ravion Operator may deploy into. Required when ravion_operator_deploy_enabled is true, falling back to ravion_operator_namespace_scope when empty. If both are empty the install fails rather than granting cluster-wide write: there is no 'deploy everywhere' posture, by design."
+  description = "Namespaces Operator may deploy into, falling back to ravion_operator_namespace_scope when empty. Required for namespace-scoped deployment. Full management requires both lists empty and grants cluster-wide writes explicitly."
   default     = []
   nullable    = false
 
@@ -809,6 +809,70 @@ variable "ravion_operator_image_tag" {
   type        = string
   description = "Agent image tag to PIN. Leave null (the default): a fresh install then starts at the chart's appVersion and every later apply keeps whatever version the release is running, because the control plane owns the agent version and the chart re-emits the running image on upgrade. Set it only to force a specific agent version onto a cluster: while it is set every apply re-asserts it, a control-plane rollout in between included, and removing it hands the version back to the control plane on the next apply. It is a pin, not a one-off - leave it null unless you mean to hold a cluster at a version."
   default     = null
+}
+
+variable "ravion_operator_execution_jobs_enabled" {
+  type        = bool
+  description = "Run deployments in durable isolated executor Jobs. Requires deployments enabled and a digest-pinned execution image; automatically disables self-update in both enrollment and Helm. Drain inline deployments and remediation before switching modes."
+  default     = false
+  nullable    = false
+}
+
+variable "ravion_operator_execution_image" {
+  type        = string
+  description = "Full Operator image reference pinned by sha256 digest (image_ref from the publishing pipeline). Used by both coordinators and executor Jobs."
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.ravion_operator_execution_image == "" || can(regex("^[^@\\s]+@sha256:[a-f0-9]{64}$", var.ravion_operator_execution_image))
+    error_message = "The ravion_operator_execution_image must be empty or a full image reference pinned by sha256 digest."
+  }
+}
+
+variable "ravion_operator_execution_max_concurrent" {
+  type        = number
+  description = "Installation-wide retained executor capacity (1-64), not per coordinator. Changing established capacity requires draining executions and migrating the retained capacity Lease. Full management requires 1."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent
+    error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
+  }
+}
+
+variable "ravion_operator_coordinator_enabled" {
+  type        = bool
+  description = "Enable elected HA coordinators. Requires executor Jobs and a replica-aware Ravion gateway."
+  default     = false
+  nullable    = false
+}
+
+variable "ravion_operator_coordinator_replicas" {
+  type        = number
+  description = "HA coordinator replica count (2-9). Each coordinator requests 500m CPU and 1Gi memory by default."
+  default     = 3
+  nullable    = false
+
+  validation {
+    condition     = var.ravion_operator_coordinator_replicas >= 2 && var.ravion_operator_coordinator_replicas <= 9 && floor(var.ravion_operator_coordinator_replicas) == var.ravion_operator_coordinator_replicas
+    error_message = "The ravion_operator_coordinator_replicas must be an integer from 2 to 9."
+  }
+}
+
+variable "ravion_operator_coordinator_distinct_nodes_enabled" {
+  type        = bool
+  description = "Require a distinct node per HA coordinator. Disable only for small test clusters or when supplying custom affinity through Helm values."
+  default     = true
+  nullable    = false
+}
+
+variable "ravion_operator_full_management_enabled" {
+  type        = bool
+  description = "Grant explicit wildcard Kubernetes RBAC for all resources, including CRDs, RBAC, namespaces and custom resources. Requires executor Jobs, empty observation/deployment namespace lists and one retained mutation lane. Drain existing ownership before changing this scope."
+  default     = false
+  nullable    = false
 }
 
 variable "ravion_operator_helm_values" {

@@ -16,6 +16,7 @@ release:
     prevent first-time Karpenter installation failures when AWS Load Balancer Controller is enabled,
     create missing Operator workload namespaces safely, and move the default Operator and observability
     namespace to ravion-operator (existing Helm releases are replaced).
+    Support the Operator public chart, digest-pinned executor Jobs, HA coordinators, and explicit full-cluster management.
 module:
   inputs:
     - id: cluster
@@ -106,7 +107,7 @@ module:
         - beacon_enabled
       type: boolean
     - default: true
-      description: Run Ravion deployments through Ravion Operator inside the cluster. Ravion Operator may create, update, and delete workload resources only in the selected namespaces; it cannot modify RBAC, namespaces, or cluster-scoped resources.
+      description: Run deployments through Operator inside the cluster. Writes are scoped to selected namespaces unless full-cluster management is explicitly enabled.
       id: ravion_operator_deploy_enabled
       label: Ravion Operator deployments
       moved_from:
@@ -114,6 +115,71 @@ module:
       show_when:
         ravion_operator_enabled: true
       type: boolean
+    - id: ravion_operator_execution_jobs_enabled
+      label: Durable executor Jobs
+      description: Isolate deployments in durable Jobs. Drain inline deployments and remediation before switching modes. Disables self-update and requires a matching published chart and digest-pinned image.
+      type: boolean
+      default: false
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_deploy_enabled: true
+    - id: ravion_operator_execution_image
+      label: Operator execution image
+      description: The image_ref output from the Operator publishing pipeline, used by coordinators and executor Jobs.
+      type: string
+      required: true
+      placeholder: public.ecr.aws/a8z1i1r2/operator@sha256:<64-hex-digest>
+      patterns:
+        - pattern: '^[^@\s]+@sha256:[a-f0-9]{64}$'
+          message: Full image reference pinned by sha256 digest required.
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_execution_jobs_enabled: true
+    - id: ravion_operator_full_management_enabled
+      label: Full-cluster management
+      description: Grant wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Uses one retained installation-wide mutation lane. Drain existing ownership before changing scope.
+      type: boolean
+      default: false
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_execution_jobs_enabled: true
+    - id: ravion_operator_execution_max_concurrent
+      label: Concurrent executor Jobs
+      description: Installation-wide retained capacity. Changing established capacity requires draining executions and migrating the retained capacity Lease.
+      type: number
+      default: 1
+      min: 1
+      max: 64
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_execution_jobs_enabled: true
+        ravion_operator_full_management_enabled:
+          not: true
+    - id: ravion_operator_coordinator_enabled
+      label: HA coordinators
+      description: Elect a coordinator from multiple replicas. Requires a replica-aware Ravion gateway.
+      type: boolean
+      default: false
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_execution_jobs_enabled: true
+    - id: ravion_operator_coordinator_replicas
+      label: Coordinator replicas
+      type: number
+      default: 3
+      min: 2
+      max: 9
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_coordinator_enabled: true
+    - id: ravion_operator_coordinator_distinct_nodes_enabled
+      label: Separate coordinator nodes
+      description: Require one node per coordinator. Disable only for small test clusters or custom affinity.
+      type: boolean
+      default: true
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_coordinator_enabled: true
     - add_button_label: Add namespace
       description: Namespaces Ravion Operator may deploy into. Missing namespaces are created during apply by default and retained on removal. If empty, the advanced operator observation scope is used. Installation fails if neither list contains a namespace.
       id: ravion_operator_deploy_namespaces
@@ -123,7 +189,10 @@ module:
       placeholder: default
       required: true
       show_when:
+        ravion_operator_enabled: true
         ravion_operator_deploy_enabled: true
+        ravion_operator_full_management_enabled:
+          not: true
       type: string_array
     - default: true
       description: Create missing observation and deployment namespaces before installing Operator permissions. Existing namespaces are reused without adoption; created namespaces are retained on removal or uninstall. Disable only when namespaces are provisioned separately.
@@ -133,6 +202,24 @@ module:
       show_when:
         ravion_operator_enabled: true
       type: boolean
+    - id: ravion_operator_chart_version
+      label: Operator chart version
+      description: For executor Jobs, use chart_version from the same Operator publishing run as the execution image. The chart must support executor Jobs and HA.
+      type: string
+      default: 0.4.1
+      required: true
+      placeholder: 0.4.1-ci.<run-id>.<commit>
+      show_when:
+        ravion_operator_enabled: true
+    - id: ravion_operator_self_update_enabled
+      label: Operator self-update
+      description: Allow control-plane image updates in inline mode. Executor Job mode always disables this capability.
+      type: boolean
+      default: true
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_execution_jobs_enabled:
+          not: true
     - description: Shared Application Load Balancers for HTTP and HTTPS workloads. EKS Web services attach through TargetGroupBinding.
       id: section_alb
       label: Application load balancers
@@ -1135,8 +1222,17 @@ module:
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
-        ravion_operator_deploy_enabled: << module.input.ravion_operator_deploy_enabled >>
+        ravion_operator_deploy_enabled: '<< module.input.ravion_operator_deploy_enabled != nil ? module.input.ravion_operator_deploy_enabled : false >>'
         ravion_operator_deploy_namespaces: '<< module.input.ravion_operator_deploy_namespaces != nil ? module.input.ravion_operator_deploy_namespaces : [] >>'
+        ravion_operator_chart_version: << module.input.ravion_operator_chart_version || "0.4.1" >>
+        ravion_operator_execution_jobs_enabled: '<< module.input.ravion_operator_execution_jobs_enabled != nil ? module.input.ravion_operator_execution_jobs_enabled : false >>'
+        ravion_operator_execution_image: << module.input.ravion_operator_execution_image || "" >>
+        ravion_operator_execution_max_concurrent: '<< module.input.ravion_operator_execution_max_concurrent != nil ? module.input.ravion_operator_execution_max_concurrent : 1 >>'
+        ravion_operator_full_management_enabled: '<< module.input.ravion_operator_full_management_enabled != nil ? module.input.ravion_operator_full_management_enabled : false >>'
+        ravion_operator_coordinator_enabled: '<< module.input.ravion_operator_coordinator_enabled != nil ? module.input.ravion_operator_coordinator_enabled : false >>'
+        ravion_operator_coordinator_replicas: '<< module.input.ravion_operator_coordinator_replicas != nil ? module.input.ravion_operator_coordinator_replicas : 3 >>'
+        ravion_operator_coordinator_distinct_nodes_enabled: '<< module.input.ravion_operator_coordinator_distinct_nodes_enabled != nil ? module.input.ravion_operator_coordinator_distinct_nodes_enabled : true >>'
+        ravion_operator_self_update_enabled: '<< module.input.ravion_operator_self_update_enabled != nil ? module.input.ravion_operator_self_update_enabled : true >>'
         ravion_operator_namespaces_creation_enabled: '<< module.input.ravion_operator_namespaces_creation_enabled != nil ? module.input.ravion_operator_namespaces_creation_enabled : true >>'
         ravion_operator_project_id: << project.id >>
         ravion_operator_environment_id: << environment.id >>
@@ -1308,24 +1404,31 @@ module:
 
     Ravion Operator deployments are enabled by default. This widens the otherwise read-only agent with one bounded grant:
 
-    - **Ravion Operator deployments** — lets Ravion's Helm upgrades run from inside the cluster instead of reaching in from outside. Within the required **deployment namespaces** the agent can create, update, and delete workload objects; it can never create RBAC objects, namespaces, or anything cluster-scoped. There is no cluster-wide deploy posture. Disabling this still leaves a fully working agent; deploys continue to run from outside the cluster.
+    - **Ravion Operator deployments** lets Helm upgrades run inside the cluster. The default grant permits workload writes only in **Deployment namespaces**, excluding RBAC, namespaces and cluster-scoped resources.
+
+    **Durable executor Jobs** isolates deployments in Jobs and disables self-update. Set **Operator execution image** to the digest-qualified `image_ref` and **Operator chart version** to `chart_version` from the same successful Operator publishing run. The chart installs from `public.ecr.aws/a8z1i1r2/operator`. Drain inline deployments and remediation before changing modes.
+
+    **HA coordinators** defaults to three replicas on separate nodes and requires a replica-aware gateway. Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. **Separate coordinator nodes** can be disabled for small test clusters. **Concurrent executor Jobs** is installation-wide capacity, not a per-replica limit; drain executions and migrate the retained capacity Lease before changing it.
+
+    **Full-cluster management** explicitly grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It requires Jobs, empty observation/deployment namespace lists and a single retained mutation lane. Drain existing ownership before changing scope. The form hides namespace and concurrency controls in this mode and uses concurrency 1.
+
+    Web, worker and cron modules keep their existing Helm deployment definitions. Ravion selects Operator by the cluster ARN; the addons module passes its stable enrollment ID to the chart as the installation identity.
 
     The project, environment, and AWS account this module belongs to are recorded on the agent automatically when its credential is issued; there is nothing to fill in.
 
-    Everything else about the install is tuning, so it is not on the form. Set these through **Advanced Terraform variables** when a cluster needs them:
+    **Operator self-update** controls image updates in inline mode. Job mode always disables it and uses the pinned execution image for both coordinators and executors. Preserve the installation namespace, identity and retained execution Leases across upgrades. Other installation tuning is available through **Advanced Terraform variables**:
 
     | Terraform variable | Default | What it changes |
     | ------------------ | ------- | --------------- |
-    | `ravion_operator_endpoint` | `wss://websockets.ravion.com/beacon/v1/connect` | WebSocket endpoint the agent dials — the single destination an egress policy must allow. Override only for a staging or self-hosted control plane |
-    | `ravion_operator_chart_version` | `0.4.1` | Ravion Operator **chart** version, pinned per module release; never the agent version — the chart keeps whatever the release is running and Ravion rolls it forward. Set to `null` to track the registry's latest |
+    | `ravion_operator_endpoint` | `wss://websockets.ravion.com/operator/v1/connect` | WebSocket endpoint; override for staging or a self-hosted control plane |
     | `ravion_operator_namespace` | `ravion-operator` | Namespace the agent and its credential secret are installed into, created if missing; also the default for shared observability components |
     | `ravion_operator_namespace_scope` | `[]` (cluster-wide read) | Namespaces the agent may observe. Naming namespaces renders no cluster-scoped read role at all, only one namespaced role per entry, so the restriction is enforced by Kubernetes rather than by the agent. A scoped agent cannot read nodes, so cluster node counts show as unknown |
 
     **Deployment namespaces** falls back to `ravion_operator_namespace_scope` when left empty, so a cluster scoped through the advanced variable also bounds Ravion Operator's deploys by default.
 
-    **Create workload namespaces** is enabled by default. Apply creates missing deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Namespaces created here are retained when removed from the list or when add-ons are uninstalled, so removing Operator does not delete application workloads. The Operator itself still cannot create namespaces.
+    **Create workload namespaces** is enabled by default. Apply creates missing deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Created namespaces are retained on removal or uninstall. Operator itself can create namespaces only with full management enabled.
 
-    **Namespace migration:** the default shared namespace is now `ravion-operator`. Existing Operator and observability Helm releases in `ravion-beacon` are replaced, interrupting logs and metrics while they restart. Review persistent volumes and back up any local-only data first; namespace changes do not migrate PVCs or their contents. The AWS credential and S3/AMP resources are unchanged. An explicit namespace override continues to take precedence. Chart names, Helm release names, credential Secret names, and connection paths are unchanged.
+    **Namespace migration:** the default shared namespace is `ravion-operator`. Moving existing releases replaces them and does not migrate PVCs or retained execution state. Keep an explicit existing namespace override when upgrading a running installation. Helm release names, resource selectors and credential Secret names retain their compatibility identities; the chart source and default connection path use Operator.
 
     ## External secrets
 

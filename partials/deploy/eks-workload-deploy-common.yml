@@ -1,4 +1,7 @@
 # Shared `aws:eks` deploy scaffolding.
+# The control plane selects an eligible Operator by cluster ARN and packages the
+# Git-sourced workload chart for in-cluster execution. Runner infrastructure is
+# retained for the fallback path; executor Jobs/HA are configured on EKS Add-ons.
 #
 # `infrastructure` is fed entirely from module inputs mapped off the EKS
 # Cluster reference: the deploy resolver has no `ref` scope, so cross-module

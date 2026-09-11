@@ -398,6 +398,34 @@ describe("compiler", () => {
     assert.equal(operatorDeploy.default, true);
     assert.equal(operatorDeploy.label, "Ravion Operator deployments");
     assert.deepEqual(operatorDeploy.moved_from, ["beacon_deploy_enabled"]);
+    assert.deepEqual(operatorDeployNamespaces.show_when, {
+      ravion_operator_enabled: true,
+      ravion_operator_deploy_enabled: true,
+      ravion_operator_full_management_enabled: { not: true },
+    });
+    assert.equal(findInput(inputs, "ravion_operator_execution_jobs_enabled").default, false);
+    assert.equal(findInput(inputs, "ravion_operator_full_management_enabled").default, false);
+    assert.equal(findInput(inputs, "ravion_operator_execution_image").required, true);
+    assert.deepEqual(findInput(inputs, "ravion_operator_execution_max_concurrent").show_when, {
+      ravion_operator_enabled: true,
+      ravion_operator_execution_jobs_enabled: true,
+      ravion_operator_full_management_enabled: { not: true },
+    });
+    for (const [id, fallback] of Object.entries({
+      ravion_operator_execution_jobs_enabled: "false",
+      ravion_operator_full_management_enabled: "false",
+      ravion_operator_execution_max_concurrent: "1",
+      ravion_operator_coordinator_enabled: "false",
+      ravion_operator_coordinator_replicas: "3",
+      ravion_operator_coordinator_distinct_nodes_enabled: "true",
+      ravion_operator_self_update_enabled: "true",
+    })) {
+      assert.equal(
+        getTerraformVariable(compiled.module, id),
+        `<< module.input.${id} != nil ? module.input.${id} : ${fallback} >>`,
+        `${id} must have a typed fallback when hidden`,
+      );
+    }
     assert.equal(operatorDeployNamespaces.required, true);
     assert.notEqual(operatorDeployNamespaces.collapsible, true);
     const namespaceCreation = findInput(inputs, "ravion_operator_namespaces_creation_enabled");
@@ -426,7 +454,7 @@ describe("compiler", () => {
     assert.equal(inputs.some((input) => input.id === "beacon_deploy_namespaces"), false);
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_deploy_enabled"),
-      "<< module.input.ravion_operator_deploy_enabled >>",
+      "<< module.input.ravion_operator_deploy_enabled != nil ? module.input.ravion_operator_deploy_enabled : false >>",
     );
     for (const legacyVariable of [
       "beacon_enabled",
@@ -465,7 +493,7 @@ describe("compiler", () => {
     const indexOf = (id: string) => inputs.findIndex((input) => input.id === id);
 
     assert.equal(indexOf("ravion_operator_namespaces_creation_enabled"), indexOf("ravion_operator_deploy_namespaces") + 1);
-    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_namespaces_creation_enabled") + 1);
+    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_self_update_enabled") + 1);
     assert.ok(indexOf("section_alb") < indexOf("section_nlb"));
     assert.ok(indexOf("section_nlb") < indexOf("aws_load_balancer_controller_chart_version"));
     assert.ok(indexOf("aws_load_balancer_controller_chart_version") < indexOf("section_karpenter"));
