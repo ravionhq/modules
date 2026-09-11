@@ -133,6 +133,7 @@ Reference: [Customize managed nodes with launch templates — Amazon EC2 user da
 
 ## Notes
 
+- The default node role grants `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, and `AmazonEC2ContainerRegistryPullOnly`. Upgrading replaces the broader ECR `ReadOnly` attachment with `PullOnly` without replacing nodes. Explicit additional policies remain supported.
 - `desired_size` is honored on create and ignored thereafter via `lifecycle.ignore_changes` so an autoscaler can manage capacity without drifting against terraform state. Use `min_size` / `max_size` to constrain it.
 - A launch template is only created when at least one of `disk_size`, `disk_type`, `disk_iops`, `disk_throughput`, `ebs_kms_key_arn`, `user_data`, `security_group_ids`, `detailed_monitoring_enabled`, or non-default IMDS settings is supplied. Otherwise EKS uses its internal default template (which we cannot modify directly).
 - The default node role does not grant Systems Manager access. If Session Manager is required, explicitly include `AmazonSSMManagedInstanceCore` in `node_role_additional_managed_policy_arns`. Upgrading detaches the previously default policy unless it is explicitly included; it does not replace nodes.

@@ -9,10 +9,12 @@ module "cluster_role" {
   description      = "EKS cluster service role for ${var.name}"
   trusted_services = ["eks.amazonaws.com"]
 
-  managed_policy_arns = [
-    "arn:${local.partition}:iam::aws:policy/AmazonEKSClusterPolicy",
-    "arn:${local.partition}:iam::aws:policy/AmazonEKSVPCResourceController",
-  ]
+  managed_policy_arns = concat(
+    ["arn:${local.partition}:iam::aws:policy/AmazonEKSClusterPolicy"],
+    var.vpc_resource_controller_policy_enabled ? [
+      "arn:${local.partition}:iam::aws:policy/AmazonEKSVPCResourceController",
+    ] : [],
+  )
 
   tags = local.tags
 }

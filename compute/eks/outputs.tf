@@ -47,7 +47,7 @@ output "oidc_issuer_url" {
 }
 
 output "oidc_provider_arn" {
-  description = "ARN of the IAM OIDC identity provider for IRSA."
+  description = "ARN of the IAM OIDC identity provider for IRSA (null when creation is disabled)."
   value       = module.cluster.oidc_provider_arn
 }
 

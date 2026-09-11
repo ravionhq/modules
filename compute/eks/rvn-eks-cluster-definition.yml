@@ -5,7 +5,7 @@ definition:
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
   version: 0.2.0
-  description: Keep Service traffic inside its availability zone by default. CoreDNS is spread across zones, the EKS Add-ons module patches the kube-dns Service to prefer same-zone endpoints, and the EKS Web Service and Worker charts route and spread the same way, cutting cross-AZ data transfer charges. Switch off with the topology_aware_routing_enabled advanced Terraform variable.
+  description: Keep Service traffic inside its availability zone by default. CoreDNS is spread across zones, the EKS Add-ons module patches the kube-dns Service to prefer same-zone endpoints, and the EKS Web Service and Worker charts route and spread the same way, cutting cross-AZ data transfer charges. Switch off with the topology_aware_routing_enabled advanced Terraform variable. Make IAM OIDC providers and Windows/pod security-group controller permissions opt-in, and narrow managed-node ECR access to image pulls. Existing IRSA and Windows/pod security-group installations must enable the corresponding compatibility options before upgrading.
 module:
   inputs:
     - id: network
@@ -590,7 +590,7 @@ module:
 
     Amazon EKS (Elastic Kubernetes Service) runs managed Kubernetes control planes on AWS. This module creates an EKS cluster inside your selected VPC and provisions everything a working cluster needs, in the correct order:
 
-    1. **Cluster** - control plane, OIDC provider, secrets encryption, VPC CNI, kube-proxy, Pod Identity Agent, and the AWS Load Balancer Controller IAM role
+    1. **Cluster** - control plane, secrets encryption, VPC CNI, kube-proxy, Pod Identity Agent, and the AWS Load Balancer Controller IAM role; optional OIDC provider for IRSA workloads
     2. **Default capacity** - a managed node group for cluster components, add-ons, and workloads without stricter placement
     3. **CoreDNS** - installed only after compute exists so it starts healthy
     4. **Optional compute** - additional managed node groups and Fargate profiles
@@ -636,6 +636,14 @@ module:
     A **Ravion Runner role** is also created by default: a stable IAM role registered as an EKS access entry with cluster-admin, which Ravion Runner step executions assume when they need the Kubernetes API. This keeps per-run pipeline roles out of the cluster's access configuration — the EKS Add-ons module assumes it automatically via `aws eks get-token`. Its ARN is available as the `ravion_runner_role_arn` stack output. The trust policy admits only this AWS account; tighten it further with the `ravion_runner_role_trusted_principal_arns` Terraform variable.
 
     EKS access entries control which IAM principals can access the cluster. The IAM principal that creates the cluster is granted admin access automatically. Grant additional principals access through the **Access entries** form: give each entry an IAM principal ARN, then attach EKS access policies scoped to the whole cluster or to selected namespaces, and optionally map the principal to Kubernetes RBAC groups. Automatic access for Ravion deploys will be wired here in a future release.
+
+    ### IAM compatibility when upgrading
+
+    Add-ons use EKS Pod Identity, so the IAM OIDC provider and its certificate lookup are now off by default. Existing workloads that use IRSA need `oidc_provider_creation_enabled: true` under **Advanced Terraform variables** before upgrading to retain their provider. The cluster's issuer URL remains available even without an IAM provider.
+
+    The cluster role no longer includes `AmazonEKSVPCResourceController` by default. Existing Windows networking or security groups for pods need `vpc_resource_controller_policy_enabled: true` under **Advanced Terraform variables** to retain it. Ordinary Linux pod networking and multi-AZ placement do not need it.
+
+    Managed node roles replace ECR `ReadOnly` with `PullOnly`, matching Karpenter nodes. This updates IAM attachments without replacing nodes. Worker-node and CNI permissions remain in place.
 
     ## Networking
 
@@ -686,7 +694,7 @@ module:
     - **Encrypted secrets:** Kubernetes secrets are envelope-encrypted with KMS by default
     - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, preventing accidental destroys
     - **Autoscaler-friendly sizing:** Terraform sets the initial node count but never fights an autoscaler over the running count
-    - **Pod Identity over IRSA:** add-on IAM roles use EKS Pod Identity associations; the OIDC provider is still created for workloads that need IRSA
+    - **Pod Identity over IRSA:** add-on IAM roles use EKS Pod Identity associations; creating an IAM OIDC provider for IRSA workloads is opt-in
     - **Zone-local by default:** CoreDNS is spread across availability zones and, together with the EKS Add-ons and workload modules, Service traffic prefers same-zone endpoints, so multi-AZ resilience does not come with cross-AZ data transfer charges on every request
 
     ## Learn more

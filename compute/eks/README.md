@@ -3,7 +3,7 @@
 Root-style stack that nests EKS primitives under `modules/` and composes them
 into a single hosting unit with enforced provisioning order:
 
-1. **Cluster** (`modules/eks_cluster`) — control plane, OIDC, secrets KMS,
+1. **Cluster** (`modules/eks_cluster`) — control plane, optional OIDC, secrets KMS,
    vpc-cni / kube-proxy / Pod Identity Agent, LB Controller role
 2. **Default capacity node group** (`system_node_group`, using
    `modules/eks_node_group`) — required compute for cluster components, add-ons,
@@ -25,6 +25,29 @@ by default. EKS and Ravion Operator do not require it. Upgrading removes the
 previously default `AmazonSSMManagedInstanceCore` attachment without replacing
 nodes, unless explicitly supplied in the node group's
 `node_role_additional_managed_policy_arns`.
+
+### IAM defaults and upgrades
+
+The shipped add-ons use **EKS Pod Identity**, so the IAM OIDC provider and its TLS
+certificate lookup are off by default. EKS still exposes its issuer URL; this
+does not create an IAM provider. The cluster role also omits
+`AmazonEKSVPCResourceController` unless explicitly enabled for Windows networking
+or security groups for pods. Ordinary Linux networking and multi-AZ placement do
+not need that policy.
+
+These defaults change the previous behavior. Before upgrading a cluster that
+uses IRSA, set `oidc_provider_creation_enabled = true` to retain its IAM provider;
+a state move preserves the existing resource address without replacement. Set
+`vpc_resource_controller_policy_enabled = true` if Windows networking or security
+groups for pods depend on that policy. Otherwise an upgrade removes an existing
+provider and detaches the optional policy. In Ravion, these compatibility options
+are available through **Advanced Terraform variables**.
+
+Managed node roles now use `AmazonEC2ContainerRegistryPullOnly` instead of
+`AmazonEC2ContainerRegistryReadOnly`, matching Karpenter nodes. This changes policy
+attachments without replacing nodes. Workloads needing broader ECR permissions
+should use their own IAM identity; explicit additional node policies remain
+supported. Worker-node and CNI permissions remain attached.
 
 Child modules live in `compute/eks/modules/` and are **not** independently
 published root stacks — they have no `provider` / `cloud {}` blocks. Callers
@@ -82,6 +105,8 @@ module "eks" {
 | cluster_security_group_additional_referenced_security_group_ingress_rules | Extra cluster-SG ingress sourced by another security group. | `list(object)` | `[]` | no |
 | bootstrap_cluster_creator_admin_permissions_enabled | Auto-grant cluster-admin to the creating principal during cluster bootstrap. | `bool` | `true` | no |
 | access_entries | EKS access entries. | `map(object)` | `{}` | no |
+| oidc_provider_creation_enabled | Create an IAM OIDC provider for IRSA workloads. | `bool` | `false` | no |
+| vpc_resource_controller_policy_enabled | Attach the cluster policy for Windows networking or security groups for pods. | `bool` | `false` | no |
 | enabled_cluster_log_types | Control plane log types. | `list(string)` | `["api","audit","authenticator"]` | no |
 | cluster_log_retention_in_days | Control plane log retention. | `number` | `30` | no |
 | secrets_encryption_enabled | Envelope-encrypt Kubernetes secrets. | `bool` | `true` | no |
@@ -112,7 +137,7 @@ module "eks" {
 | cluster_certificate_authority_data | Base64 CA cert for kubeconfig. |
 | cluster_version | Kubernetes version. |
 | region / aws_account_id | Deployment location. |
-| oidc_issuer_url / oidc_provider_arn | IRSA wiring. |
+| oidc_issuer_url / oidc_provider_arn | IRSA wiring; provider ARN is null unless creation is enabled. |
 | cluster_security_group_id | EKS-managed cluster security group. |
 | node_subnet_ids | Subnets used for node placement (consumed by `addons`). |
 | ravion_runner_security_group_id | Ravion Runner SG allowed to reach the API endpoint (null if disabled). |

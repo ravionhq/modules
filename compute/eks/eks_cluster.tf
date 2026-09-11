@@ -23,6 +23,9 @@ module "cluster" {
   bootstrap_cluster_creator_admin_permissions_enabled = var.bootstrap_cluster_creator_admin_permissions_enabled
   access_entries                                      = var.access_entries
 
+  oidc_provider_creation_enabled         = var.oidc_provider_creation_enabled
+  vpc_resource_controller_policy_enabled = var.vpc_resource_controller_policy_enabled
+
   enabled_cluster_log_types     = var.enabled_cluster_log_types
   cluster_log_retention_in_days = var.cluster_log_retention_in_days
 

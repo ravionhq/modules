@@ -81,8 +81,8 @@ output "oidc_issuer_host" {
 }
 
 output "oidc_provider_arn" {
-  description = "ARN of the IAM OIDC identity provider for IRSA."
-  value       = aws_iam_openid_connect_provider.this.arn
+  description = "ARN of the IAM OIDC identity provider for IRSA (null when creation is disabled)."
+  value       = one(aws_iam_openid_connect_provider.this[*].arn)
 }
 
 ################################################################################

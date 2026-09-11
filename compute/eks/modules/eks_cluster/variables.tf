@@ -143,6 +143,20 @@ variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   default     = true
 }
 
+variable "oidc_provider_creation_enabled" {
+  type        = bool
+  description = "Create an IAM OIDC provider for workloads using IRSA. EKS Pod Identity does not require it. Set true before upgrading a cluster whose workloads still use IRSA."
+  default     = false
+  nullable    = false
+}
+
+variable "vpc_resource_controller_policy_enabled" {
+  type        = bool
+  description = "Attach AmazonEKSVPCResourceController to the cluster role for Windows networking or security groups for pods. Not required for ordinary Linux pod networking or multi-AZ placement."
+  default     = false
+  nullable    = false
+}
+
 variable "access_entries" {
   type = map(object({
     principal_arn     = string

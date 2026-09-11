@@ -15,5 +15,7 @@ data "aws_subnet" "selected" {
 }
 
 data "tls_certificate" "oidc" {
-  url = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  count = var.oidc_provider_creation_enabled ? 1 : 0
+
+  url = local.oidc_issuer
 }
