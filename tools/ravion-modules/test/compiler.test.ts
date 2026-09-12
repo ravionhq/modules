@@ -649,7 +649,8 @@ describe("compiler", () => {
     assert.match(nlbListeners, /#\.tls_certificate_arn/);
 
     const deploy = assertRecord(compiled.module.deploy, "module.deploy");
-    assert.equal(deploy.strategy, undefined);
+    assert.ok(deploy.strategy && typeof deploy.strategy === "object");
+    assert.equal(Reflect.get(deploy.strategy, "type"), "rolling");
     assert.deepEqual(deploy.infrastructure, {
       ecs_cluster_arn: "<<stack.output.service_cluster>>",
       ecs_service_arn: "<<stack.output.service_arn>>",
