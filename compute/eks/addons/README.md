@@ -456,7 +456,7 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
 executor Jobs and workload namespace bootstrap are enabled automatically;
 customization uses **Advanced Terraform variables**. The module automatically pins chart
-`0.5.0`, whose package bundles the matching verified multiarch image digest as the
+`0.5.1`, whose package bundles the matching verified multiarch image digest as the
 floor a fresh install starts from, and enables adaptive HA and full-cluster
 management with Jobs. Self-update stays on in Job mode: Ravion rolls the agent
 forward and the chart preserves the running image on later applies. Direct
@@ -469,7 +469,7 @@ ravion_operator_enabled                = true
 ravion_operator_deploy_enabled         = true
 ravion_operator_deploy_namespaces      = ["app-prod"]
 ravion_operator_execution_jobs_enabled = true
-ravion_operator_chart_version          = "0.5.0"
+ravion_operator_chart_version          = "0.5.1"
 ravion_operator_coordinator_enabled    = true
 ```
 
