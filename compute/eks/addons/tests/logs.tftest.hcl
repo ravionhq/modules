@@ -329,15 +329,16 @@ run "alloy_attaches_the_agreed_label_set" {
     error_message = "Alloy must attach exactly the namespace/app/workload labels the dashboard selects on"
   }
 
-  # The cardinality rule the whole design rests on.
+  # The cardinality rule the whole design rests on: the pod name is attached
+  # per line as structured metadata, and the stage that does so removes it
+  # from the stream labels, so it never reaches Loki as an indexed label.
   assert {
-    condition     = !strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "target_label  = \"pod\"")
-    error_message = "Pod name must never be a Loki label: one stream per replica per restart is what kills a Loki"
-  }
-
-  assert {
-    condition     = strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "stage.structured_metadata")
-    error_message = "level must be attached as structured metadata, not as a label"
+    condition = alltrue([
+      strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "stage.structured_metadata"),
+      strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "level = \"\","),
+      strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "pod   = \"\","),
+    ])
+    error_message = "level and pod must be attached as structured metadata, not as labels: one stream per replica per restart is what kills a Loki"
   }
 
   # loki.source.file adds a filename label containing the pod UID.
@@ -349,6 +350,32 @@ run "alloy_attaches_the_agreed_label_set" {
   assert {
     condition     = strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "url = \"http://ravion-loki.ravion-operator.svc.cluster.local:3100/loki/api/v1/push\"")
     error_message = "Alloy must push to the in-cluster Loki"
+  }
+}
+
+run "alloy_collects_operator_executor_logs_and_nothing_else_from_its_namespace" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+  }
+
+  # The Operator namespace stays excluded, but the drop is gated on the label
+  # the Operator puts on its executor pods, so a deploy's log is collected
+  # while the agent's own chatter is not.
+  assert {
+    condition = alltrue([
+      strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "__meta_kubernetes_pod_labelpresent_operator_ravion_dev_module_deployment"),
+      strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "regex         = \"(kube-system|kube-node-lease|amazon-cloudwatch|ravion-operator|ravion-beacon);\""),
+    ])
+    error_message = "The namespace exclusion must spare Operator executor pods, identified by their module-deployment label"
+  }
+
+  # One deploy, one selector: the module deployment id becomes a stream label
+  # on executor lines only.
+  assert {
+    condition     = strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "target_label  = \"ravion_module_deployment\"")
+    error_message = "Executor lines must carry the module deployment id as a label so the deploy page can select one deploy's log"
   }
 }
 

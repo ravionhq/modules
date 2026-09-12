@@ -1273,7 +1273,7 @@ variable "observability_namespace" {
 
 variable "logs_excluded_namespaces" {
   type        = list(string)
-  description = "Namespaces no log collector reads from. Applies to every logs provider: Alloy drops them at discovery, the OpenTelemetry collector never opens their files. Ravion's own namespace is excluded by default so the collectors do not tail themselves into a loop."
+  description = "Namespaces no log collector reads from. Applies to every logs provider: Alloy drops them at discovery, the OpenTelemetry collector never opens their files. Ravion's own namespace is excluded by default so the collectors do not tail themselves into a loop; Ravion Operator's executor pods, whose stdout is a deploy's log, are the one exception Alloy keeps."
   default     = ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"]
   nullable    = false
 }

@@ -1,12 +1,15 @@
 // Grafana Alloy configuration, rendered by alloy.tf. Alloy syntax, not YAML.
 //
 // THE LABEL SET BELOW IS A CONTRACT. Ravion's log views build LogQL selectors
-// on `namespace`, `app` and `workload`, and read `level` from structured
+// on `namespace`, `app` and `workload` (and, for Operator executor pods only,
+// `ravion_module_deployment`), and read `level` and `pod` from structured
 // metadata. Adding a label here is cheap to write and expensive to run: every
 // distinct combination is a separate Loki stream, so a pod-name label turns one
 // stream per workload into one per replica per restart. Anything
 // high-cardinality belongs in structured metadata, which is stored but not
-// indexed. Changing these names is a breaking change for the dashboard.
+// indexed: the pod name travels that way, so a view can filter one replica's
+// lines without Loki indexing replicas. Changing these names is a breaking
+// change for the dashboard.
 //
 // ONE PIPELINE, SEVERAL DESTINATIONS. Every loki-family provider the user
 // selected gets its own loki.write below, and the same processed stream is
@@ -31,9 +34,16 @@ discovery.relabel "pod_logs" {
 %{ if namespace_exclude_regex != "" ~}
   // Namespaces the operator asked to keep out of the log store, dropped at
   // discovery so their files are never opened at all.
+  //
+  // One exception: Ravion Operator's executor pods. Each runs a single deploy
+  // and its stdout is that deploy's log, which the Ravion deploy page reads
+  // back from this Loki. They live in the Operator namespace, which is
+  // excluded by default, so the drop is gated on the label the Operator puts
+  // on them — a pod without it is dropped exactly as before.
   rule {
-    source_labels = ["__meta_kubernetes_namespace"]
-    regex         = "${namespace_exclude_regex}"
+    source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_labelpresent_operator_ravion_dev_module_deployment"]
+    separator     = ";"
+    regex         = "(${namespace_exclude_regex});"
     action        = "drop"
   }
 
@@ -77,6 +87,22 @@ discovery.relabel "pod_logs" {
     target_label  = "app"
   }
 
+  // Executor pods: the deploy they ran, so one deploy's log is one selector.
+  // Bounded by the number of deploys, not replicas or restarts.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_operator_ravion_dev_module_deployment"]
+    regex         = "(.+)"
+    target_label  = "ravion_module_deployment"
+  }
+
+  // The pod name rides along as a label only as far as loki.process, which
+  // moves it into structured metadata (see stage.structured_metadata below).
+  // It must never reach Loki as a stream label.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+
   // The kubelet writes every container's stdout under the pod's UID.
   rule {
     source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
@@ -112,9 +138,14 @@ loki.process "pod_logs" {
     expression = "(?i)\\b(?P<level>trace|debug|info|warn|warning|error|fatal|panic)\\b"
   }
 
+  // `level` comes from the extracted map above. `pod` is read from the stream
+  // labels and REMOVED from them by this stage, which is the whole point: the
+  // replica name is filterable per line without Loki indexing one stream per
+  // replica per restart.
   stage.structured_metadata {
     values = {
       level = "",
+      pod   = "",
     }
   }
 
