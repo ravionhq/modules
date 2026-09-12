@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.1.1
-  description: Prevent applies from failing with CloudFront in-use errors when changing a cache policy or disabling a module-managed feature.
+  version: 1.2.0
+  description: Support buckets that accumulate published files across builds, instead of replacing their contents on every deploy.
 module:
   build:
     builder: >-
@@ -17,6 +17,8 @@ module:
       {type: "disabled"} >>
     destinations:
       - bucket: << stack.output.hosting_bucket_id >>
+        delete_existing: << module.input.delete_existing >>
+        directory: << module.input.build_directory >>
         id: hosting-bucket
         region: << stack.output.region >>
         type: s3
@@ -128,6 +130,27 @@ module:
           - railpack
           - nixpacks
       type: string
+    - collapsible: true
+      description: Fixed S3 prefix to upload each build to. Leave empty to give every deploy its own prefix, which is what most sites want. Set a value only for buckets that accumulate published files across builds, and turn off Delete replaced files as well.
+      id: build_directory
+      label: Build directory
+      show_when:
+        build_source:
+          - dockerfile
+          - railpack
+          - nixpacks
+      type: string
+    - collapsible: true
+      default: true
+      description: Remove files under the build directory that are not part of the latest build. Turn this off only together with a fixed Build directory, for buckets that accumulate published files across builds. You will also want to add /* to CloudFront invalidation paths, since the prefix no longer changes between deploys.
+      id: delete_existing
+      label: Delete replaced files
+      show_when:
+        build_source:
+          - dockerfile
+          - railpack
+          - nixpacks
+      type: boolean
     - $template: ../../partials/inputs/dockerfile-build.yml
       with:
         show_when:
@@ -476,6 +499,20 @@ module:
 
     Successful deploys to retain defaults to 20. Older deploy directories are pruned from the hosting bucket based on this setting.
 
+    ## Accumulating buckets
+
+    By default every build uploads to its own S3 prefix and the deploy promotes it, so a site is replaced wholesale and the previous deploy stays intact for rollback. A bucket that instead accumulates published files across builds, such as an artifact or package registry, needs three settings changed together:
+
+    | Setting | Value | Why |
+    | --- | --- | --- |
+    | Build directory | A fixed prefix | Every build uploads to the same place instead of a new one |
+    | Delete replaced files | Off | Files from earlier builds survive the next upload |
+    | CloudFront invalidation paths | /* | The prefix no longer changes, so the edge cache key no longer changes |
+
+    Consider also setting Successful deploys to retain to 0, which keeps every deploy. With a fixed Build directory there is only ever one directory to retain, so pruning has nothing to remove, but 0 states the intent.
+
+    Understand the tradeoffs before turning this on. Uploads write into the prefix CloudFront is already serving, so a failed build is partly visible rather than staged safely out of the way, and two builds running at once write into the same directory. Rollback stops working, because it re-promotes an earlier directory and there is now only one. Turning Delete replaced files off without setting a Build directory leaves every build in an abandoned prefix that is never promoted or pruned.
+
     ## Builder config
 
     Builder config is only used for Railpack and Dockerfile builds.
@@ -503,6 +540,8 @@ module:
     | Build config | Git repository | Required for Railpack and Dockerfile | none | Source repository for builds |
     | Build config | Source base path | No | . | Path from repository root to source code |
     | Build config | Output directory | Required for Railpack and Dockerfile | dist | Directory uploaded to S3 after build |
+    | Build config | Build directory | No | none | Fixed S3 prefix to upload to, instead of one per deploy |
+    | Build config | Delete replaced files | No | true | Remove files under the build directory that the latest build did not produce |
     | Build config | Railpack version | No | Ravion default | Optional version for Railpack builds |
     | CloudFront settings | ACM certificate | Required when using aliases | none | Certificate module must be in us-east-1 |
     | CloudFront settings | Domain aliases | No | [] | Custom CloudFront aliases |
