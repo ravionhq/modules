@@ -22,8 +22,9 @@ release:
     Automatically select a matching published Operator image and chart, enable adaptive HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
     Keep the Operator form to one management switch; execution mode and namespace bootstrap customization use Advanced Terraform variables.
     Rename the Operator Helm releases, credential Secret, and Secrets Manager mirror from beacon to operator names (existing releases are replaced and the retained execution CRD is adopted).
-    Pin Operator chart 0.4.1-ci.312e8f5638dc, whose agent reports the full-management deploy scope so in-cluster deployments reach every namespace instead of only the Operator's own, no longer restarts its watches every thirty seconds, labels its executor pods for log collection, reports each workload's pods with its rollout state, and re-reports every tracked workload the moment Ravion's attribution of a release moves so a deploy that changed nothing still shows its workloads at once.
+    Pin Operator chart 0.5.0, whose agent reports the full-management deploy scope so in-cluster deployments reach every namespace instead of only the Operator's own, no longer restarts its watches every thirty seconds, labels its executor pods for log collection, reports each workload's pods with its rollout state, and re-reports every tracked workload the moment Ravion's attribution of a release moves so a deploy that changed nothing still shows its workloads at once.
     Collect Ravion Operator executor logs into the in-cluster Loki, labelled by module deployment, so the deploy page can show an in-cluster deploy's Helm output; attach the pod name to every log line as structured metadata so the workload log view can show one replica at a time.
+    Pin Operator chart 0.5.0 and keep self-update on with executor Jobs, so Ravion rolls the agent forward per organization, project or cluster without a Terraform apply; the pinned chart is only the floor a fresh install starts from.
 module:
   inputs:
     - id: cluster
@@ -1116,8 +1117,11 @@ module:
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
-        # The selected chart bundles the matching verified multiarch image digest.
-        ravion_operator_chart_version: 0.4.1-ci.312e8f5638dc
+        # The selected chart bundles the matching verified multiarch image digest,
+        # which is only the floor a fresh install starts from: the control plane
+        # rolls the agent forward from there and the chart preserves the running
+        # image on later applies.
+        ravion_operator_chart_version: 0.5.0
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
@@ -1291,7 +1295,7 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, adaptive HA Operator and full-cluster management.
 
-    Durable executor Jobs are enabled automatically, isolating deployments in Jobs and disabling self-update. The module pins chart `0.4.1-ci.312e8f5638dc` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
+    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module pins chart `0.5.0` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest as the floor a fresh install starts from. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
 
     **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. One eligible node runs one coordinator, two run two, and three or more run three. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy.
 
@@ -1303,7 +1307,7 @@ module:
 
     The project, environment, and AWS account this module belongs to are recorded on the agent automatically when its credential is issued; there is nothing to fill in.
 
-    Job mode disables self-update and uses the pinned execution image for both coordinators and executors. Inline self-update and deployment namespace settings are available through **Advanced Terraform variables**. Preserve the installation namespace, identity and retained execution Leases across upgrades. Other installation tuning is available through the same overrides:
+    Job mode keeps self-update on: the elected coordinator updates itself when Ravion assigns a version, and pins its executor Jobs to the image it is running. Self-update and deployment namespace settings are available through **Advanced Terraform variables**. Preserve the installation namespace, identity and retained execution Leases across upgrades. Other installation tuning is available through the same overrides:
 
     | Terraform variable | Default | What it changes |
     | ------------------ | ------- | --------------- |

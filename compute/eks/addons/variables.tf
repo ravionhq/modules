@@ -813,7 +813,7 @@ variable "ravion_operator_image_tag" {
 
 variable "ravion_operator_execution_jobs_enabled" {
   type        = bool
-  description = "Run deployments in durable isolated executor Jobs. Requires deployments enabled and a chart with a bundled or overridden digest-pinned image; automatically disables self-update in both enrollment and Helm. Drain inline deployments and remediation before switching modes."
+  description = "Run deployments in durable isolated executor Jobs. Requires deployments enabled and a chart with a bundled or overridden digest-pinned image. Self-update stays as configured: the elected coordinator updates itself and pins executor Jobs to the image it runs. Drain inline deployments and remediation before switching modes."
   default     = false
   nullable    = false
 }

@@ -456,10 +456,11 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
 executor Jobs and workload namespace bootstrap are enabled automatically;
 customization uses **Advanced Terraform variables**. The module automatically pins chart
-`0.4.1-ci.312e8f5638dc`, whose package bundles the matching verified multiarch image
-digest, and enables adaptive HA and full-cluster management with Jobs. Job mode
-disables self-update. Direct Terraform callers opt in with
-`ravion_operator_execution_jobs_enabled = true`.
+`0.5.0`, whose package bundles the matching verified multiarch image digest as the
+floor a fresh install starts from, and enables adaptive HA and full-cluster
+management with Jobs. Self-update stays on in Job mode: Ravion rolls the agent
+forward and the chart preserves the running image on later applies. Direct
+Terraform callers opt in with `ravion_operator_execution_jobs_enabled = true`.
 
 Direct Terraform callers select a chart from a successful Operator publishing run. Leave the execution image empty to use its bundled digest, or override it with a matching digest-qualified `image_ref`. Publication must finish before applying addons; an unpublished source chart requires an explicit digest.
 
@@ -468,11 +469,11 @@ ravion_operator_enabled                = true
 ravion_operator_deploy_enabled         = true
 ravion_operator_deploy_namespaces      = ["app-prod"]
 ravion_operator_execution_jobs_enabled = true
-ravion_operator_chart_version          = "0.4.1-ci.312e8f5638dc"
+ravion_operator_chart_version          = "0.5.0"
 ravion_operator_coordinator_enabled    = true
 ```
 
-Job mode disables self-update in both the enrolled capability and the Helm values. The chart uses the execution image for **both coordinators and executors**, overriding live-image preservation; an inline image-tag pin is rejected. The stable enrollment ID is passed as `cluster.installationId` and exposed as `ravion_operator_installation_id`.
+Job mode keeps self-update on (chart 0.5.0+). Only the elected coordinator patches the Deployment when Ravion assigns a version, and it pins new executor Jobs to the image digest it is itself running, so coordinators and executors never skew; the chart's bundled execution image is the floor a fresh install starts from and live-image preservation applies on later applies. With `ravion_operator_self_update_enabled = false` the chart instead uses the execution image for **both coordinators and executors**, overriding live-image preservation. The stable enrollment ID is passed as `cluster.installationId` and exposed as `ravion_operator_installation_id`.
 
 HA defaults to adaptive sizing and requires a replica-aware gateway and a matching adaptive-capable Operator image/chart. One eligible node runs one coordinator, two run two, and three or more run three with the default cap. The elected coordinator checks Ready, uncordoned nodes and placement constraints every 30 seconds; decreases require two minutes of a stable target. Helm leaves the runtime replica count to Operator. Single-node clusters work without node-level redundancy. Set `ravion_operator_coordinator_adaptive_enabled=false` for fixed sizing, namespace-scoped observation, or custom affinity; `ravion_operator_coordinator_replicas` is a maximum in adaptive mode and a fixed count otherwise.
 
@@ -501,7 +502,7 @@ ravion_operator_deploy_namespaces       = ["app-prod"]
 ```
 
 Set `ravion_operator_namespaces_creation_enabled = false` to disable Terraform
-workload namespace bootstrap. Inline self-update can be disabled with
+workload namespace bootstrap. Self-update can be disabled with
 `ravion_operator_self_update_enabled = false`.
 
 The web, worker and cron modules continue to submit their existing Git-sourced Helm definitions through `aws:eks`. The control plane selects the eligible Operator enrolled for the cluster ARN and packages the chart for it. No new deployment discriminator or installation-ID field is supported in that module deploy schema. Provider-neutral prepared deployments are a separate API path, not yet a general-purpose module deployment type.
@@ -649,7 +650,7 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_namespace_scope | Namespaces the agent may observe. Empty is cluster-wide; non-empty renders namespaced Roles and no observation ClusterRole at all. | `list(string)` | `[]` | no |
 | ravion_operator_deploy_enabled | Enable in-cluster deployments. | `bool` | `false` | no |
 | ravion_operator_deploy_namespaces | Allowed namespaces; falls back to observation scope. Both lists must be empty for full management. | `list(string)` | `[]` | no |
-| ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs; disables self-update. | `bool` | `false` | no |
+| ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs. | `bool` | `false` | no |
 | ravion_operator_execution_image | Optional digest-pinned coordinator/executor image override; empty uses the published chart's bundled digest. | `string` | `""` | no |
 | ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; null selects 1 for full management or 4 for scoped Jobs. | `number` | `null` | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |

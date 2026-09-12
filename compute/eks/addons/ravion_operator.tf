@@ -35,9 +35,11 @@
 ################################################################################
 
 locals {
-  ravion_operator_cluster_arn           = data.aws_eks_cluster.this.arn
-  ravion_operator_region                = coalesce(var.region, data.aws_region.current.region)
-  ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled && !var.ravion_operator_execution_jobs_enabled
+  ravion_operator_cluster_arn = data.aws_eks_cluster.this.arn
+  ravion_operator_region      = coalesce(var.region, data.aws_region.current.region)
+  # Chart 0.5.0+ allows self-update alongside execution Jobs: the elected
+  # coordinator updates itself and pins its executor Jobs to the image it runs.
+  ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled
   # Full management shares one mutation lane; scoped execution can use four
   # independent namespace lanes. This bounds admission, not provisioned nodes.
   ravion_operator_execution_max_concurrent_effective = var.ravion_operator_execution_max_concurrent != null ? var.ravion_operator_execution_max_concurrent : (var.ravion_operator_full_management_enabled ? 1 : 4)
