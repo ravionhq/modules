@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.2.0
-  description: Automatically enable SOCI lazy loading for Fargate builds to reduce task startup time while keeping it disabled for EC2 capacity.
+  version: 1.3.0
+  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
 module:
   inputs:
     - id: section_cluster
@@ -42,6 +42,9 @@ module:
       with:
         environment_variables_description: Runtime environment variables passed to the worker container.
     - $include: ../../partials/inputs/ecs-service-deploy-command-inputs.yml
+    - $template: ../../partials/templates/ecs-service-early-success-inputs.yml
+      with:
+        field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
     - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
     - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
@@ -80,6 +83,8 @@ module:
   deploy:
     $merge:
       - ../../partials/deploy/ecs-service-deploy-common.yml
+    strategy:
+      $include: ../../partials/deploy/ecs-service-rolling-strategy.yml
     task_definition:
       $merge:
         - ../../partials/deploy/ecs-service-task-definition-common.yml
@@ -148,6 +153,10 @@ module:
     metrics:
       - $include: ../../partials/ui/ecs-service-common-metrics.yml
   readme: |
+    ## Rolling deployment success
+
+    Rolling deploys always use AWS early success: by default, 100% of desired new tasks must be healthy and old tasks drain in the background. **Wait for old tasks to drain** selects blocking cleanup. Alarm bake time still applies. The success percentage must be at least **Minimum healthy percent**; lower the availability floor explicitly before choosing a lower threshold. Remaining tasks scale in the background and deployment rollback monitoring ends at ECS success.
+
     Background worker ECS service for running private container workloads without exposed ports.
 
     ## Overview

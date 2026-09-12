@@ -1,0 +1,5 @@
+type: rolling
+minimum_healthy_percent: '<< module.input.deployment_minimum_healthy_percent != nil ? module.input.deployment_minimum_healthy_percent : 100 >>'
+early_success_criteria:
+  healthy_percent: '<< module.input.deployment_success_healthy_percent != nil ? module.input.deployment_success_healthy_percent : 100 >>'
+  source_service_revision_cleanup: '<< module.input.deployment_wait_for_drain ? "BLOCKING" : "DEFERRED" >>'

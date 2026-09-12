@@ -1101,6 +1101,29 @@ Uses the ECS deployment controller for zero-downtime rolling updates:
 - Built-in circuit breaker with optional rollback
 - Simple and fully managed by ECS
 
+### Rolling Deployment Success
+
+Ravion always enables ECS early success for rolling application deployments. By default,
+the deployment succeeds when 100% of the desired new tasks are running and healthy,
+then old tasks drain in the background (`DEFERRED`). Alarm bake time still applies.
+
+The ECS web, worker, and NLB module definitions expose **Healthy tasks required for
+success (%)** and **Wait for old tasks to drain**. Enable the latter (`BLOCKING`) to wait for source tasks to
+drain. A lower healthy percentage lets remaining target tasks scale after success.
+The success percentage must be at least **Minimum healthy percent**, the availability
+floor across old and new revisions. Lower that floor explicitly before selecting a
+lower success threshold. A 0% threshold still requires at least one healthy new task
+for a nonzero service.
+
+ECS deployment rollback monitoring ends at success. Source tasks may remain protected
+or draining afterward; their presence does not hold up subsequent deployments.
+
+Tower applies these settings through `UpdateService`; Terraform ignores changes to
+`deployment_configuration`. The AWS provider currently does not expose early-success
+fields, so initial Terraform service creation uses its normal completion behavior;
+the first Ravion application deployment applies the selected policy. Existing module
+instances without overrides use 100% / DEFERRED with the updated Tower workflow.
+
 ### Native Traffic-Shift Strategies (blue_green / linear / canary)
 
 The infrastructure for the ECS deployment controller's built-in traffic shifting is provisioned for **every** load-balanced service — not just those created with a native `deployment_type` — so the strategy can change between deployments without Terraform changes:
