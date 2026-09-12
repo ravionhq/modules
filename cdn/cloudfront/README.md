@@ -110,10 +110,12 @@ module "cdn" {
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD"]
     cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
-    trusted_key_groups     = ["K123456789EXAMPLE"]
+    trusted_key_groups     = ["e0d28d26-1487-4059-9792-38defebe52ba"] # key group ID (UUID), not the public key ID
   }
 }
 ```
+
+`trusted_key_groups` takes CloudFront key group IDs, which are UUIDs (CloudFront > Key management > Key groups). Public key IDs such as `K2J0B1MDMN3M4W` are not accepted; put the public key in a key group and reference the key group ID.
 
 For private S3 origins, the bucket policy must allow the CloudFront service principal to read objects, scoped to the distribution ARN. If the bucket is managed by `storage/s3`, use the `cloudfront_oac_read` policy template with `cloudfront_distribution_arns = [module.cdn.distribution_arn]`.
 
