@@ -160,7 +160,7 @@ run "operator_ha_full_management" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled  = true
-    ravion_operator_chart_version           = "0.4.1-ci.752b693c22a6"
+    ravion_operator_chart_version           = "0.4.1-ci.af0cd7bba96d"
     ravion_operator_coordinator_enabled     = true
     ravion_operator_full_management_enabled = true
     ravion_operator_deploy_namespaces       = []
@@ -214,7 +214,7 @@ run "jobs_use_bundled_image_and_scoped_capacity_default" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled = true
-    ravion_operator_chart_version          = "0.4.1-ci.752b693c22a6"
+    ravion_operator_chart_version          = "0.4.1-ci.af0cd7bba96d"
   }
   assert {
     condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == "" && yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 4
