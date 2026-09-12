@@ -1,0 +1,8 @@
+# Minimal container-only worker config.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-worker
+  tag: v1.2.3
+args: ["worker", "--queue=default"]
+env:
+  - name: QUEUE
+    value: default

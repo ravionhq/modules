@@ -1,0 +1,35 @@
+# Terraform variables shared by every EKS workload stack.
+#
+# All three workloads point at the same compute/eks_service root module. Web
+# adds the load balancer variables on top; worker and cron pass
+# listener_arn: null and get only the optional ECR repository and Fargate
+# profile, which is the same load-balancer gating shape compute/ecs_service
+# uses with a nullable load_balancer_attachment.
+#
+# The ECR repository exists only for the Dockerfile and Railpack build sources.
+# On the image_registry path the module deploys an image someone else built and
+# creates no repository of its own.
+...overrides: << module.input.advanced_terraform_variables >>
+name: << module.input.name >>
+region: << module.input.aws_region >>
+vpc_id: << module.input.vpc_id >>
+ecr_repository_creation_enabled: << module.input.build_source == "dockerfile" || module.input.build_source == "railpack" >>
+ecr_repository_name: << module.input.name >>
+ecr_image_scan_on_push_enabled: << module.input.ecr_image_scan_on_push_enabled >>
+ecr_force_delete_enabled: << module.input.ecr_force_delete_enabled >>
+ecr_default_lifecycle_policy_enabled: true
+# Destroying the stack uninstalls the workload's Helm release before the target
+# group, listener rule and repository go. The identity is the same one the
+# deploy block installs under (deploy.definition.release_name / namespace), so
+# the release Terraform removes is the release Ravion installed.
+workload_release_cleanup_enabled: true
+cluster_name: << module.input.cluster_name >>
+ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
+release_name: << module.input.name >>
+release_namespace: << module.input.namespace >>
+fargate_profile: >-
+  << module.input.compute_target == "fargate" ? {"name": module.input.name + "-fargate",
+  "subnet_ids": module.input.cluster_private_subnet_ids, "selectors": [{"namespace": module.input.namespace,
+  "labels": {"app.kubernetes.io/instance": module.input.name}}]} : nil >>
+tags:
+  $include: ./ravion-tags.yml

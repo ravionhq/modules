@@ -13,7 +13,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Web server",
     description: "For websites, HTTP APIs, and services reached through a browser or web client.",
     sortOrder: 10,
-    definitionTypes: ["rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web"],
+    definitionTypes: ["rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-eks-web"],
   },
   {
     givenId: "tcp-udp-server",
@@ -28,7 +28,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Worker",
     description: "For queue consumers, scheduled jobs, and background processes without public endpoints.",
     sortOrder: 30,
-    definitionTypes: ["rvn-ec2-service", "rvn-ecs-worker"],
+    definitionTypes: ["rvn-ec2-service", "rvn-ecs-worker", "rvn-eks-cron", "rvn-eks-worker"],
   },
   {
     givenId: "function",
@@ -70,7 +70,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Cluster",
     description: "For services that share container capacity, load balancers, and placement configuration.",
     sortOrder: 90,
-    definitionTypes: ["rvn-ecs-cluster"],
+    definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons"],
   },
   {
     givenId: "network",

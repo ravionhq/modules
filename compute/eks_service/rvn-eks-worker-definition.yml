@@ -1,0 +1,388 @@
+global: false
+definition:
+  type: rvn-eks-worker
+  name: EKS Worker
+  description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
+release:
+  version: 0.4.0
+  description: Spread worker pods across availability zones by default so their calls to zone-local services stay in-zone, cutting cross-AZ data transfer charges. Follow the selected observability providers, group add-ons with cluster selection, use consistent scaling, release, and builder field names, use Ravion Operator terminology, clarify ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+module:
+  inputs:
+    - id: section_cluster
+      label: EKS cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-eks-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/eks-workload-cluster-mapped-inputs.yml
+      required: true
+    - id: addons
+      label: EKS add-ons
+      type: $ref:rvn-eks-addons
+      description: Select the EKS Add-ons module attached to the cluster above to use its observability providers in the Metrics and Logs tabs.
+      mapped_inputs:
+        - $include: ../../partials/inputs/eks-workload-observability-mapped-inputs.yml
+      required: false
+    - id: section_service
+      label: Worker service
+      type: section
+    - $template: ../../partials/templates/eks-workload-release-inputs.yml
+      with:
+        name_description: Name for the Helm release and the Kubernetes objects it creates.
+    - $include: ../../partials/inputs/eks-workload-build-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-image-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
+    - id: section_scaling
+      label: Scaling
+      type: section
+    - id: autoscaling_enabled
+      label: Autoscaling
+      type: boolean
+      description: Scale pods with a HorizontalPodAutoscaler. Requires the metrics server or an equivalent metrics API in the cluster.
+      default: false
+    - id: autoscaling_min_replicas
+      label: Minimum pods
+      type: number
+      max: 1000
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+      default: 1
+    - id: autoscaling_max_replicas
+      label: Maximum pods
+      type: number
+      max: 1000
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+      default: 3
+    - id: autoscaling_cpu_target
+      label: CPU target (%)
+      type: number
+      description: Average CPU utilization, as a percentage of the CPU request, the autoscaler aims to hold.
+      max: 100
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+      default: 70
+    - id: autoscaling_memory_target
+      label: Memory target (%)
+      type: number
+      description: Optional average memory utilization target, as a percentage of the memory request. Leave blank to scale on CPU alone.
+      required: false
+      collapsible: true
+      max: 100
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+    - id: replica_count
+      label: Pods
+      type: number
+      description: Number of worker pods to run when autoscaling is disabled.
+      max: 1000
+      min: 0
+      show_when:
+        autoscaling_enabled: false
+      default: 1
+    - id: termination_grace_period_seconds
+      label: Shutdown grace period (secs)
+      type: number
+      description: Seconds a pod has to finish in-flight work after SIGTERM before it is killed. Raise this for workers with long-running jobs.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 30
+    - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    # A worker has no load balancer, so listener_arn is null and
+    # compute/eks_service creates only its optional ECR repository and Fargate
+    # profile. This is the same load-balancer gating shape rvn-ecs-worker uses.
+    $template: ../../partials/templates/opentofu-stack-with-runner-security-group.yml
+    with:
+      base_path: compute/eks_service
+      # The destroy-time Helm uninstall in workload_release.tf runs from the
+      # Terraform runner, which has to reach the Kubernetes API the same way the
+      # deploy runner does: through the cluster's Ravion Runner security group,
+      # the only group a private endpoint admits.
+      runner_security_group_id: << module.input.ravion_runner_security_group_id >>
+      terraform_variables:
+        $merge:
+          - ../../partials/stack/eks-workload-common-terraform-variables.yml
+          - listener_arn: null
+  build:
+    $include: ../../partials/build/eks-workload-image-build.yml
+  deploy:
+    $merge:
+      - ../../partials/deploy/eks-workload-deploy-common.yml
+    definition:
+      $merge:
+        - ../../partials/deploy/eks-workload-helm-definition-common.yml
+        - source:
+            type: git
+            repo_url: https://github.com/ravionhq/modules
+            branch: main
+            ref: $local.module_tag
+            base_path: charts/rvn-eks-worker
+          values:
+            $merge:
+              - ../../partials/deploy/eks-workload-helm-values-common.yml
+              - terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                replicaCount: >-
+                  << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
+                  module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
+                  module.input.replica_count : 1) >>
+                autoscaling:
+                  enabled: '<< module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : false >>'
+                  minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 1 >>'
+                  maxReplicas: '<< module.input.autoscaling_max_replicas != nil ? module.input.autoscaling_max_replicas : 3 >>'
+                  targetCPUUtilizationPercentage: '<< module.input.autoscaling_cpu_target != nil ? module.input.autoscaling_cpu_target : 70 >>'
+                  targetMemoryUtilizationPercentage: << module.input.autoscaling_memory_target >>
+  ui:
+    metrics:
+      - $include: ../../partials/ui/eks-workload-pod-metrics.yml
+      # Replica counts, once per metrics rendering provider under a shared
+      # chart id, in the add-ons module's fallback order. See
+      # partials/ui/eks-workload-pod-metrics.yml for how the chain works and
+      # why an unset provider list reads as "AMP".
+      #
+      # Neither chart has a CloudWatch link. Container Insights publishes no
+      # Deployment-level replica metric; its nearest equivalent counts pods per
+      # Kubernetes Service, and a worker renders no Service. With CloudWatch as
+      # the only metrics provider these two charts are empty and the pod charts
+      # still work.
+      - id: replicas_available
+        name: Replicas available
+        type: line
+        enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+        source:
+          type: amp
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.input.amp_workspace_region >>
+          workspace_id: << module.input.amp_workspace_id >>
+          query: 'sum(kube_deployment_status_replicas_available{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+      - id: replicas_available
+        name: Replicas available
+        type: line
+        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << module.input.cluster_arn >>
+          endpoint: << module.input.prometheus_endpoint >>
+          query: 'sum(kube_deployment_status_replicas_available{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+      - id: replicas_desired
+        name: Replicas desired
+        type: line
+        enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+        source:
+          type: amp
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.input.amp_workspace_region >>
+          workspace_id: << module.input.amp_workspace_id >>
+          query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+      - id: replicas_desired
+        name: Replicas desired
+        type: line
+        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << module.input.cluster_arn >>
+          endpoint: << module.input.prometheus_endpoint >>
+          query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+    logs:
+      - $include: ../../partials/ui/eks-workload-logs.yml
+  readme: |
+    Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
+
+    ## Overview
+
+    EKS Worker runs queue consumers, event processors, and other long-lived background processes on an existing Ravion EKS cluster. Point it at a Git repository or an image you already have, set the start command, resources, and pod count in a form, and Ravion builds the image and keeps the process running on your cluster. There are no Kubernetes manifests to write and no Helm charts to maintain.
+
+    Under the hood, each deploy installs a Helm chart that Ravion maintains - a packaged template of the Kubernetes resources a worker needs. The `rvn-eks-worker` chart renders the Deployment that runs your pods, a ServiceAccount, an optional HorizontalPodAutoscaler, and, when the module declares runtime secrets, an `ExternalSecret`. Each release runs `helm upgrade --install --atomic`, so a failed deploy rolls back to the previous revision on its own.
+
+    The chart deliberately includes no Service, no container port, and no probes. A worker is reached by nothing; it reaches out.
+
+    The Terraform stack creates the ECR repository that Dockerfile and Railpack builds push to and, when Fargate is selected, a workload-specific EKS Fargate profile and pod execution role. On the Pull from image registry path with automatic or EC2 compute, the stack creates no AWS resources. Everything else the module needs - cluster endpoint, certificate authority data, private subnet IDs, and the Ravion Runner role - comes from the selected EKS Cluster module.
+
+    Chart source: [ravionhq/modules/charts/rvn-eks-worker](https://github.com/ravionhq/modules/tree/$local.module_tag/charts/rvn-eks-worker)
+
+    Terraform source: [ravionhq/modules/compute/eks_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/eks_service)
+
+    ## Use cases
+
+    | Scenario | EKS Worker helps by... |
+    | -------- | ---------------------- |
+    | Queue consumers | Running scalable workers for SQS, Kafka, Redis, or custom queues |
+    | Background jobs | Processing async work without any HTTP routing |
+    | Event processors | Running long-lived containers that consume streams or events |
+    | Moving a worker from ECS to EKS | Keeping the same image and `{name, value_from}` secret shape |
+
+    ## Prerequisites
+
+    - An **EKS Cluster** module.
+    - The **External Secrets Operator** add-on on that cluster, if the worker uses Runtime secrets.
+
+    ## Build and image options
+
+    | Build source | When to use it |
+    | ------------ | -------------- |
+    | Dockerfile | Build from a Dockerfile in the selected repository |
+    | Railpack | Let Ravion detect the app stack and build an image from source with Railpack |
+    | Pull from image registry | Deploy an existing image from Docker Hub, GHCR, ECR, or another registry |
+
+    For Dockerfile and Railpack builds, provide **Git repository** and optionally **Source base path**. The stack creates an ECR repository named after the worker, Ravion pushes each build to it, and the chart deploys the resulting digest. Nodes pull from same-account ECR with their own credentials, so no pull secret is involved.
+
+    A worker built with **Railpack** often shares a repository with the web service in front of it. Railpack's detected start command is rarely the worker's command, so set the worker's entrypoint below rather than relying on the image default.
+
+    Use **Build environment variables** for values the build itself needs - a private registry token, a `NODE_ENV` that changes what gets compiled. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, turn on **Inject environment variables in Dockerfile** to pass them to the build as Docker build arguments; without it they are visible to the builder but not to `docker build`.
+
+    These are separate from **Runtime environment variables** further down, and deliberately so: a credential needed to install dependencies has no business being in the running pod's environment. Anything both halves need has to be set in both places.
+
+    For **Pull from image registry**, provide the **Image repository** without a tag, and use **Image pull secret names** for a private registry - each entry names a Kubernetes Secret of type `kubernetes.io/dockerconfigjson` that already exists in the release namespace.
+
+    Whichever source you choose, the deploy takes an **Image tag or digest**. A value beginning with `sha256:` is used as a digest and everything else as a tag.
+
+    Workers usually need a command: use **Start command** to override the image entrypoint and **Start command arguments** to override its default arguments. For example, entrypoint `bundle` with arguments `exec sidekiq`.
+
+    ## Builder settings
+
+    Builder settings apply to Dockerfile and Railpack builds only.
+
+    | Field | Default | Description |
+    | ----- | ------- | ----------- |
+    | Builder instance type | ec2 | Use EC2 for predictable availability or EC2 spot for lower cost |
+    | Builder instance size | c7a.4xlarge | EC2 instance size used for builds |
+    | Builder execution environment | Cluster value | Optional override for where image builds run |
+    | Builder AMI | Default image | Optional AMI override for build runners |
+
+    **Scan images on push** asks ECR to run its basic vulnerability scan on every pushed image. **Force delete image repository** lets the repository be destroyed while it still holds images; without it, destroying the module fails until the repository is emptied.
+
+    ## Resources and scaling
+
+    Kubernetes schedules on requests and enforces on limits. CPU is measured in cores or millicores: 1 is one vCPU and 100m is a tenth of one. Memory uses binary units: 256Mi, 1Gi (1024Mi).
+
+    | Field | Default | Description |
+    | ----- | ------- | ----------- |
+    | CPU request | 100m | CPU reserved for the pod; the autoscaler's CPU target is a percentage of this |
+    | Compute target | Automatic | Let Kubernetes choose, require EC2 on-demand or EC2 Spot, or create a dedicated EKS Fargate profile |
+    | CPU limit | - | Optional CPU ceiling. Leaving it blank lets a pod burst into spare node CPU |
+    | Memory request | 256Mi | Memory reserved for the pod |
+    | Memory limit | 512Mi | Memory ceiling; exceeding it terminates the container with OOMKilled |
+
+    **Fargate** creates a dedicated profile matching this worker's namespace and standard app instance label. Fargate pods launch only in the selected cluster's private subnets and use on-demand capacity; EKS Fargate does not offer Spot pricing. Choose EC2 Spot instead when interruption tolerance and lower compute cost matter more than serverless pod placement.
+
+    Autoscaling is **off** by default, unlike the web module. CPU utilization is a poor proxy for worker demand: a worker blocked on a queue poll uses almost no CPU no matter how deep the backlog. Enable it when the work is genuinely CPU-bound, and prefer a fixed pod count otherwise.
+
+    **Shutdown grace period (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
+
+    ### Zone placement
+
+    Worker pods are spread across the cluster's availability zones with a soft `topology.kubernetes.io/zone` spread constraint, so a small cluster never leaves pods pending. Combined with the zone-local routing the EKS Web Service and EKS Cluster modules apply, a worker's calls to other services and to DNS stay inside its own zone whenever a destination pod exists there, which keeps AWS cross-AZ data transfer charges off that traffic.
+
+    ## Application configuration
+
+    Use **Runtime environment variables** for plain values, as an array of `{name, value}` objects.
+
+    Use **Runtime secrets** for sensitive values, as an array of `{name, value_from}` objects - the same shape as ECS. `value_from` must be a full Secrets Manager or SSM Parameter Store ARN, including the JSON-key extraction suffix when you want a single key out of a JSON secret.
+
+    Ravion never reads these values. The ARNs travel to the chart as references, the chart renders an `ExternalSecret`, and the External Secrets Operator materializes the Kubernetes Secret in the cluster. No secret value reaches Ravion, the Helm values document, or the Helm release history.
+
+    ## Deployment
+
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with the chart's RollingUpdate strategy, which surges 25% and keeps zero pods unavailable.
+
+    Deployments collapse: if several are queued, only the newest runs.
+
+    ## Metrics and logs
+
+    The Metrics and Logs tabs follow the providers selected on the EKS add-ons module referenced above. You configure observability once, on that module, and every workload attached to it follows; there is nothing to set here. Without an add-ons reference both tabs stay empty.
+
+    Where several providers can serve the same signal they form a **fallback chain**, not a merge. The tab reads the first store that can answer right now and moves to the next when it cannot, saying which store it ended up using. Reading two stores at once would draw every line twice.
+
+    | Signal | Chain order |
+    | ------ | ----------- |
+    | Logs | In-cluster store (Loki) -> Amazon CloudWatch Logs |
+    | Metrics | Amazon Managed Prometheus -> Prometheus in your cluster -> CloudWatch Container Insights |
+
+    The practical effect is that the in-cluster store's one weakness stops being fatal. Loki is reached through the Ravion Operator, so with the agent offline those logs are unavailable - but if CloudWatch Logs is also selected, the tab shows CloudWatch and says so, then switches back when the agent returns.
+
+    Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out. Two things differ on the CloudWatch link of the chain, and are worth knowing before you read a number off it:
+
+    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the worker's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
+
+    Replicas available and desired have no CloudWatch equivalent. Container Insights' nearest metric counts pods behind a Kubernetes Service, and a worker renders no Service, so with CloudWatch as the only metrics provider those two charts are empty while the pod charts still work.
+
+    A provider that ships to a vendor rather than rendering in Ravion - Datadog, Grafana Cloud, New Relic, OpenSearch, Splunk, or a custom OTLP endpoint - adds an **Open in ...** action to the tab, pointing at this worker rather than at the vendor's front page.
+
+    Turning a signal off on the add-ons module empties the matching tab here.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | ----- | -------- | ------- | ----------- |
+    | Cluster | Yes | - | Existing rvn-eks-cluster module instance |
+    | Service name | Yes | {project}-{env}-{module} | Helm release name and name of the Kubernetes objects |
+    | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
+    | Create namespace | No | true | Create the namespace if it does not exist |
+    | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |
+    | Git repository | Yes* | - | Required for Dockerfile and Railpack builds |
+    | Source base path | No | . | Repository-relative source and build root |
+    | Dockerfile path | No | Dockerfile | Path to the Dockerfile, for Dockerfile builds |
+    | Docker build context path | No | . | Docker build context, for Dockerfile builds |
+    | Build environment variables | No | - | Values available during Dockerfile and Railpack builds |
+    | Inject environment variables in Dockerfile | No | false | Pass build environment variables to `docker build` as build arguments |
+    | Railpack version | No | Ravion default | Optional pin for Railpack builds |
+    | Install command | No | Railpack default | Optional Railpack dependency install command |
+    | Build command | No | Railpack default | Optional Railpack build command |
+    | Start command (Railpack) | No | Railpack default | Optional Railpack start command |
+    | Image repository | Yes* | - | Image repository without a tag; required for Pull from image registry |
+    | Image pull secret names | No | [] | Existing dockerconfigjson Secrets in the namespace, for Pull from image registry |
+    | Start command | No | [] | Overrides the image entrypoint |
+    | Start command arguments | No | [] | Overrides the image default arguments |
+    | CPU request | Yes | 100m | CPU reserved per pod, in cores or millicores |
+    | Compute target | Yes | Automatic | Automatic, EC2 on-demand, EC2 Spot, or on-demand EKS Fargate placement |
+    | CPU limit | No | - | Optional CPU ceiling |
+    | Memory request | Yes | 256Mi | Memory reserved per pod |
+    | Memory limit | Yes | 512Mi | Memory ceiling per pod |
+    | Autoscaling | No | false | Scale pods with a HorizontalPodAutoscaler |
+    | Minimum pods | No | 1 | Lower bound when autoscaling |
+    | Maximum pods | No | 3 | Upper bound when autoscaling |
+    | CPU target (%) | No | 70 | Average CPU utilization target |
+    | Memory target (%) | No | - | Optional average memory utilization target |
+    | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
+    | Shutdown grace period (secs) | No | 30 | Drain window after SIGTERM |
+    | Runtime environment variables | No | - | Array of {name, value} objects |
+    | Runtime secrets | No | - | Array of {name, value_from} ARN references |
+    | Builder instance type | No | ec2 | EC2 or EC2 spot capacity for builds |
+    | Builder instance size | No | c7a.4xlarge | EC2 instance size used for builds |
+    | Builder execution environment | No | Cluster value | Optional override for where builds run |
+    | Builder AMI | No | Default image | Optional AMI override for build runners |
+    | Scan images on push | No | true | ECR basic vulnerability scan on every push |
+    | Force delete image repository | No | false | Allow destroying the repository while it holds images |
+    | Tags | No | Standard Ravion tags | Additional tags applied to the ECR repository |
+    | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
+    | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
+    | Ravion Terraform workspace name | No | {project}-{env}-{module} | Override the state backend workspace name |
+
+    ## Design decisions
+
+    - **Terraform owns AWS-side workload infrastructure.** The worker itself is Helm-owned; the stack creates an ECR repository when Ravion builds the image and a dedicated EKS Fargate profile when Fargate is selected. With a pulled image and automatic or EC2 compute, it creates nothing.
+    - **No Nixpacks.** ECS still carries a Nixpacks build source for services created before Railpack existed. EKS has no such history, so Dockerfile and Railpack are the only builders.
+    - **No Service and no probes.** A worker exposes no port, so there is nothing to route to and no HTTP endpoint to check. Liveness for a worker is better expressed by letting the process exit on a fatal error and letting Kubernetes restart it.
+    - **Autoscaling defaults off.** CPU utilization rarely tracks worker demand. Turning it on by default would produce autoscaling that looks configured but never fires.
+    - **Name and namespace are fixed after creation.** Together they identify the Helm release that rollback and history target.
+    - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation, so an `aws_eks_pod_identity_association` can bind an IAM role to it by namespace and name.
+
+    ## Learn more
+
+    - [AWS Fargate profile](https://docs.aws.amazon.com/eks/latest/userguide/fargate-profile.html)
+    - [Kubernetes Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
+    - [Pod termination and graceful shutdown](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination)
+    - [HorizontalPodAutoscaler](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+    - [External Secrets Operator](https://external-secrets.io/)

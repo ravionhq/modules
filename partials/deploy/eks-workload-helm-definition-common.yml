@@ -1,0 +1,17 @@
+# Helm release identity shared by every EKS workload deploy.
+#
+# `secrets` carries references only - {name, value_from: <full ARN>}, the ECS
+# EcsSecret shape verbatim. Ravion never resolves them: the ARNs travel to the
+# chart under the reserved `ravion.secrets` key, the chart renders an
+# ExternalSecret, and the External Secrets Operator materializes the Kubernetes
+# Secret in-cluster.
+#
+# The reserved `ravion` key may not appear in `values`; the deploy resolver
+# rejects a values document that declares it. That is also why the charts'
+# `ravion.secretStores` names are left at their defaults, which match the EKS
+# Add-ons module's ClusterSecretStore names.
+type: helm
+release_name: << module.input.name >>
+namespace: << module.input.namespace >>
+create_namespace: '<< module.input.namespace_creation_enabled != nil ? module.input.namespace_creation_enabled : true >>'
+secrets: '<< module.input.secrets != nil ? module.input.secrets : [] >>'

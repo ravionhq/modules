@@ -29,6 +29,11 @@ test/
 │   │   ├── basic/
 │   │   ├── with_alb/
 │   │   └── with_autoscaling/
+│   ├── eks_service/       # EKS service module fixtures
+│   │   ├── with_alb/
+│   │   ├── worker/
+│   │   ├── with_alb_and_ecr/
+│   │   └── with_ecr_name_override/
 │   ├── elasticache/       # ElastiCache module fixtures
 │   │   ├── redis/
 │   │   ├── memcached/
@@ -57,6 +62,7 @@ test/
 ├── alb_test.go            # ALB integration tests
 ├── ecs_cluster_test.go    # ECS cluster integration tests
 ├── ecs_service_test.go    # ECS service integration tests
+├── eks_service_test.go    # EKS service integration tests
 ├── elasticache_test.go    # ElastiCache integration tests
 ├── nlb_test.go            # NLB integration tests
 ├── s3_test.go             # S3 integration tests
@@ -274,6 +280,24 @@ AWS SDK helper functions for validating resources:
 - `EcsClusterHasCapacityProvider(t, clusterArn, provider, region) bool`: Check provider
 - `EcsServiceExists(t, clusterArn, serviceName, region) bool`: Check service
 - `GetEcsServiceRunningCount(t, clusterArn, serviceName, region) int32`: Get running tasks
+
+**Target Group / Listener Rule helpers:**
+- `TargetGroupExists(t, tgArn, region) bool`: Check target group by ARN
+- `TargetGroupExistsByName(t, tgName, region) bool`: Check target group by name (asserts absence)
+- `GetTargetGroupName/VpcId/Port/Protocol/TargetType(t, tgArn, region)`: Core attributes
+- `GetTargetGroupHealthCheck*(t, tgArn, region)`: Health check path, port, protocol, matcher, interval, timeout, thresholds
+- `GetTargetGroupAttributes(t, tgArn, region) map[string]string`: Deregistration delay, slow start, stickiness
+- `ListenerRuleExists(t, ruleArn, region) bool`: Check if a listener rule exists
+- `GetListenerRulePriority/TargetGroupArn/PathPatterns(t, ruleArn, region)`: Rule wiring
+- `GetListenerRuleArnsForListener(t, listenerArn, region) []string`: Non-default rules on a listener
+
+**ECR helpers:**
+- `EcrRepositoryExists(t, repoName, region) bool`: Check if repository exists
+- `GetEcrRepositoryArn(t, repoName, region) string`: Get repository ARN
+- `GetEcrRepositoryUri(t, repoName, region) string`: Get repository URI
+- `GetEcrRepositoryImageTagMutability(t, repoName, region) ImageTagMutability`: MUTABLE or IMMUTABLE
+- `GetEcrRepositoryScanOnPushEnabled(t, repoName, region) bool`: Check scan-on-push
+- `EcrRepositoryHasLifecyclePolicy(t, repoName, region) bool`: Check lifecycle policy applied
 
 **ElastiCache helpers:**
 - `ElastiCacheReplicationGroupExists(t, rgId, region) bool`: Check Redis exists
@@ -499,3 +523,59 @@ go test -v -timeout 30m -run "TestS3.*Policy" ./...
 - **Force Destroy**: All S3 fixtures use `force_destroy = true` to ensure cleanup even when buckets contain objects.
 - **Parallel Execution**: S3 tests use unique bucket names to allow parallel execution without conflicts.
 - **Policy Templates**: Tests verify policy statement SIDs to confirm correct policy template application.
+
+## EKS Service Module Tests
+
+The `compute/eks_service` module has two independent halves: the load balancer
+wiring (target group + listener rule), gated on `listener_arn`, and an optional
+ECR repository, gated on `ecr_repository_creation_enabled`. The tests cover
+each half alone and both together.
+
+No EKS cluster is provisioned. The module only creates the AWS-side plumbing
+for a workload; the pods that register into the target group come from the
+`rvn-eks-web` Helm chart, which is covered by `make test-charts`. Each fixture
+therefore stands up only what the module needs: a VPC, and an ALB when a
+listener is required.
+
+### EKS Service Test Fixtures
+
+| Fixture | Description | Key Features Tested |
+|---------|-------------|---------------------|
+| `with_alb/` | Web-shaped: listener set, ECR disabled | Target group, listener rule, health check, stickiness, deregistration delay, slow start, null `ecr_*` outputs |
+| `worker/` | Worker/cron-shaped: no listener, ECR enabled | Null load balancer outputs, no target group in AWS, ECR name/scan-on-push/tag mutability/lifecycle policy |
+| `with_alb_and_ecr/` | Both halves enabled | Target group and listener rule wired together alongside an ECR repository |
+| `with_ecr_name_override/` | `ecr_repository_name` set | Repository takes the override rather than `var.name` |
+
+### EKS Service Test Functions
+
+| Test Function | Fixture | Description |
+|---------------|---------|-------------|
+| `TestEksServiceWithAlb` | `with_alb/` | Load balancer half fully configured, ECR outputs null |
+| `TestEksServiceWorker` | `worker/` | Load balancer outputs null, ECR repository created |
+| `TestEksServiceWithAlbAndEcr` | `with_alb_and_ecr/` | Both halves present and wired |
+| `TestEksServiceEcrRepositoryNameOverride` | `with_ecr_name_override/` | Repository name override wins over `var.name` |
+
+### Running EKS Service Tests
+
+```bash
+# All EKS service tests
+make test FILTER=TestEksService
+
+# A single test
+make test-single TEST=TestEksServiceWorker
+
+# Directly with go test
+cd test && go test -v -timeout 30m -run TestEksService ./...
+```
+
+### EKS Service Test Notes
+
+- **No NAT Gateways**: nothing runs in the private subnets, so all four
+  fixtures set `nat_gateway_enabled = false`, keeping a run to a VPC (and two
+  ALBs) for a few minutes.
+- **Force delete on ECR**: every ECR-enabled fixture sets
+  `ecr_force_delete_enabled = true` so `terraform destroy` succeeds even if
+  an image was pushed during a run.
+- **Null vs empty**: disabled outputs must be `null`, not `""`.
+  `terraform.Output` renders a null as `"<nil>"`, so the tests compare the raw
+  JSON via `terraform.OutputJson` (see `requireOutputNull`).

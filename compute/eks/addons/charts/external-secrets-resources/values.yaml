@@ -1,0 +1,16 @@
+# All values are supplied by the compute/eks/addons Terraform module.
+
+# AWS region the stores read from.
+region: ""
+
+# Cluster-scoped store backed by AWS Secrets Manager. This is the default
+# store Ravion app charts reference.
+secretsManagerStore:
+  name: ravion-aws
+  enabled: true
+
+# Cluster-scoped store backed by AWS SSM Parameter Store. A separate store is
+# required because ESO's AWS provider takes a single `service` per store.
+parameterStore:
+  name: ravion-aws-parameter-store
+  enabled: true

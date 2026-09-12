@@ -2,7 +2,7 @@ type: '<< module.input.build_source == "image_registry" ? "disabled" : "image" >
 builder: >-
   << module.input.build_source == "dockerfile" ? {type: "dockerfile", dockerfile: module.input.dockerfile
   || "Dockerfile", context: module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
-  module.input.dockerfile_inject_env_variables, cache_from: {tag: "dockerfile"}} :
+  module.input.dockerfile_environment_variable_injection_enabled, cache_from: {tag: "dockerfile"}} :
   (module.input.build_source == "railpack" || module.input.build_source == "nixpacks") ? {type: "railpack", railpack_version:
   module.input.railpack_version, install_cmd: module.input.railpack_install_cmd,
   build_cmd: module.input.railpack_build_cmd, start_cmd:

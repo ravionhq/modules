@@ -208,8 +208,8 @@ module "cluster_sg" {
   source = "git::https://github.com/ravionhq/ravion-modules.git//networking/security-groups?ref=v1.0.0"
 
   name        = "my-cluster"
-  name_suffix = "internal_load_balancer_enabled"
-  description = "Security group for cluster internal_load_balancer_enabled communication"
+  name_suffix = "internal"
+  description = "Security group for cluster internal communication"
   vpc_id      = "vpc-12345678"
 
   all_egress_enabled = true
@@ -638,7 +638,7 @@ This allows any instance with this security group to communicate with any other 
 | Approach | Use Case |
 |----------|----------|
 | `all_egress_enabled = true` | General-purpose workloads that need internet access (web servers, app servers) |
-| Explicit `egress_rules` | Locked-down resources (databases, internal_load_balancer_enabled services) that should only reach specific destinations |
+| Explicit `egress_rules` | Locked-down resources (databases, internal services) that should only reach specific destinations |
 
 **Example: Locked-down database:**
 

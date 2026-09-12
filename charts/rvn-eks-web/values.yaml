@@ -1,0 +1,166 @@
+# rvn-eks-web default values.
+#
+# This file is the chart's public API. See values.schema.json for the enforced
+# shape and README.md for the compatibility policy: values are added, never
+# removed or repurposed, within a major version.
+
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+# -- Replace the generated resource name entirely.
+fullnameOverride: ""
+# -- Extra labels applied to every object (not to the immutable selector).
+commonLabels: {}
+# -- Annotations on the Deployment object itself.
+annotations: {}
+
+image:
+  # -- Image repository, e.g. 1234.dkr.ecr.us-east-1.amazonaws.com/my-app. Required.
+  repository: ""
+  # -- Image tag. Required unless digest is set.
+  tag: ""
+  # -- Image digest (sha256:...). Takes precedence over tag when set.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# -- References to Secrets holding registry credentials, e.g. [{name: ecr-creds}].
+imagePullSecrets: []
+
+# -- Container port the application listens on.
+containerPort: 8080
+
+# -- Override the image ENTRYPOINT.
+command: []
+# -- Override the image CMD.
+args: []
+
+# -- Non-secret environment variables: [{name: LOG_LEVEL, value: "info"}].
+env: []
+
+# -- Number of pods when autoscaling is disabled.
+replicaCount: 1
+revisionHistoryLimit: 10
+terminationGracePeriodSeconds: 30
+
+strategy:
+  type: RollingUpdate
+  maxSurge: 25%
+  maxUnavailable: 0
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+probes:
+  liveness:
+    enabled: true
+    path: /
+    # -- Port name or number. Defaults to the container port named "http".
+    port: ""
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    path: /
+    port: ""
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  startup:
+    enabled: false
+    # -- Defaults to the readiness path when empty.
+    path: ""
+    port: ""
+    initialDelaySeconds: 0
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 30
+
+service:
+  # -- Port the Service exposes; the target group's listener registers against it.
+  port: 80
+  # -- Container port name or number. Defaults to the "http" port.
+  targetPort: ""
+  type: ClusterIP
+  annotations: {}
+  appProtocol: ""
+  # -- Keep in-cluster traffic to this Service inside the caller's availability
+  # zone when a pod is running there, falling back to every zone otherwise.
+  # Cuts cross-AZ data transfer for service-to-service calls. Needs Kubernetes
+  # 1.31+; older API servers ignore the field. Set "" to spread across zones.
+  trafficDistribution: PreferClose
+
+# -- ARNs of Terraform-owned target groups to register this Service's pods into.
+# One TargetGroupBinding is rendered per ARN; nothing renders when empty.
+targetGroupArns: []
+
+targetGroupBinding:
+  # -- Must match the aws_lb_target_group's target_type.
+  targetType: ip
+  # -- Only needed when the target group lives in a different VPC than the cluster.
+  vpcId: ""
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  # -- Set to a number to add a memory metric.
+  targetMemoryUtilizationPercentage: null
+
+serviceAccount:
+  create: true
+  # -- Stable name the EKS Pod Identity association targets. Defaults to the
+  # release fullname. No IRSA annotation is emitted; Pod Identity binds by name.
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: true
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+# -- Default zone spread. Renders one topologySpreadConstraint on
+# topology.kubernetes.io/zone selecting this chart's pods, so every zone has a
+# local endpoint for service.trafficDistribution to route to. Ignored when
+# topologySpreadConstraints below is non-empty.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  # -- ScheduleAnyway keeps pods schedulable on a small or uneven cluster;
+  # DoNotSchedule makes the spread a hard requirement.
+  whenUnsatisfiable: ScheduleAnyway
+# -- Explicit constraints. When set, replaces the default zone spread entirely.
+topologySpreadConstraints: []
+volumes: []
+volumeMounts: []
+
+# Reserved namespace. Ravion writes this block; user-authored values may not
+# declare a top-level `ravion` key (the tower-side resolver rejects it).
+ravion:
+  secretStores:
+    # -- ClusterSecretStore (default) or SecretStore.
+    kind: ClusterSecretStore
+    # -- Store for `secretsManager` entries. ESO's AWS provider takes one
+    # service per store, so Secrets Manager and Parameter Store need separate
+    # stores. Both are provisioned by the ESO addon in compute/eks/addons,
+    # which exposes these names as Terraform outputs.
+    secretsManager: ravion-aws
+    # -- Store for `parameterStore` entries.
+    parameterStore: ravion-aws-parameter-store
+  # -- How often ESO re-reads the remote values.
+  secretRefreshInterval: 1h
+  # -- Secret REFERENCES, never values:
+  # [{name: DB_PASSWORD, provider: secretsManager, key: <full ARN>,
+  #   property: password, version: "AWSCURRENT"}]
+  secrets: []

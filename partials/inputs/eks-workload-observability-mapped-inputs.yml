@@ -1,0 +1,121 @@
+# Observability values an EKS workload inherits from its EKS Add-ons reference.
+#
+# The add-ons module lets the user pick any number of logs and metrics
+# providers. Two of those lists decide what this workload's Logs and Metrics
+# tabs render: `logs_rendering_providers` (the selected members of
+# [loki, cloudwatch], in fallback order) and `metrics_rendering_providers`
+# (the selected members of [amp, prometheus, cloudwatch]). Everything else
+# here is an identifier or a base URL one of those providers needs.
+#
+# All of it has to ride through mapped inputs, not `ref` expressions: the `ui`
+# block resolves with no `ref` scope, so a cross-module value reaches a chart
+# or a log source only as a resolved `module.input.*`. That is why the AMP ids
+# are here today and why the provider lists join them.
+#
+# Nothing here is immutable. Changing providers on the add-ons module later
+# must be able to propagate to every workload attached to it.
+#
+# Each default resolves from the add-ons stack's outputs, and an output the
+# add-ons module does not publish yet leaves its input unset rather than
+# failing. An add-ons instance older than 0.8.0 therefore leaves both provider
+# lists unset, which the UI guards read as "the Ravion defaults" - Loki for
+# logs, AMP for metrics - so upgrading a workload ahead of its add-ons module
+# changes nothing.
+#
+# Unset and empty have to stay distinguishable for that to work: an add-ons
+# module that knows about providers publishes an EMPTY list for a signal the
+# user turned off, and the guards drop every entry for it. A null in place of
+# that empty list would silently restore the old charts.
+- id: amp_workspace_id
+  label: AMP workspace ID
+  type: string
+  description: Amazon Managed Prometheus workspace the cluster's metrics collector writes to. Inherited from the selected add-ons module; empty until its stack applies with Amazon Managed Prometheus selected.
+  collapsible: true
+  placeholder: ws-01234567-abcd-4abc-8abc-0123456789ab
+  required: false
+  default: <<ref.stack.output.amp_workspace_id>>
+- id: amp_workspace_region
+  label: AMP region
+  type: string
+  description: Region of the Amazon Managed Prometheus workspace. Inherited from the selected add-ons module; empty until its stack applies with Amazon Managed Prometheus selected.
+  collapsible: true
+  placeholder: us-east-1
+  required: false
+  default: <<ref.stack.output.amp_region>>
+- id: logs_rendering_providers
+  label: Logs rendering providers
+  type: string_array
+  description: Log stores the Logs tab reads from, in fallback order. Inherited from the selected add-ons module; blank means the in-cluster Loki store.
+  collapsible: true
+  placeholder: loki
+  required: false
+  default: <<ref.stack.output.logs_rendering_providers>>
+- id: metrics_rendering_providers
+  label: Metrics rendering providers
+  type: string_array
+  description: Metric stores the Metrics tab reads from, in fallback order. Inherited from the selected add-ons module; blank means Amazon Managed Prometheus.
+  collapsible: true
+  placeholder: amp
+  required: false
+  default: <<ref.stack.output.metrics_rendering_providers>>
+- id: logs_cloudwatch_log_group
+  label: CloudWatch log group
+  type: string
+  description: Log group the cluster's collector writes to when Amazon CloudWatch Logs is a selected logs provider. One stream per pod, named namespace/pod/container.
+  collapsible: true
+  placeholder: /aws/containerinsights/my-eks-cluster/application
+  required: false
+  default: <<ref.stack.output.logs_cloudwatch_log_group>>
+- id: prometheus_endpoint
+  label: In-cluster Prometheus endpoint
+  type: string
+  description: URL of the Prometheus running in the cluster, queried through the Ravion Operator when Prometheus is a selected metrics provider.
+  collapsible: true
+  placeholder: http://prometheus.monitoring.svc.cluster.local:9090
+  required: false
+  default: <<ref.stack.output.prometheus_endpoint>>
+- id: logs_external_links
+  label: Logs vendor links
+  type: array
+  description: One entry per logs provider that ships to a vendor rather than rendering in Ravion, as {provider, name, href_prefix}. The Logs tab turns each into an "Open in ..." action pointing at this workload.
+  collapsible: true
+  placeholder: '[{"provider":"datadog","name":"Datadog","href_prefix":"https://app.datadoghq.com/logs?query="}]'
+  required: false
+  default: <<ref.stack.output.logs_external_links>>
+- id: metrics_external_links
+  label: Metrics vendor links
+  type: array
+  description: One entry per metrics provider that ships to a vendor rather than rendering in Ravion, as {provider, name, href_prefix}. The Metrics tab turns each into an "Open in ..." action pointing at this workload.
+  collapsible: true
+  placeholder: '[{"provider":"datadog","name":"Datadog","href_prefix":"https://app.datadoghq.com/metric/explorer?query="}]'
+  required: false
+  default: <<ref.stack.output.metrics_external_links>>
+# The two Grafana Cloud query URLs and the credentials secret are what the
+# Ravion Operator needs to read Grafana Cloud on the dashboard's behalf, rather
+# than only linking out to it. The add-ons module publishes them now so an
+# instance upgraded today is ready; the log source and metric source that
+# consume them arrive with the Ravion Operator proxy work.
+- id: grafana_cloud_logs_query_url
+  label: Grafana Cloud logs query URL
+  type: string
+  description: Grafana Cloud Loki query endpoint, used when Ravion reads Grafana Cloud logs through the Ravion Operator.
+  collapsible: true
+  placeholder: https://logs-prod-us-central1.grafana.net/loki/api/v1
+  required: false
+  default: <<ref.stack.output.grafana_cloud_logs_query_url>>
+- id: grafana_cloud_metrics_query_url
+  label: Grafana Cloud metrics query URL
+  type: string
+  description: Grafana Cloud Prometheus query endpoint, used when Ravion reads Grafana Cloud metrics through the Ravion Operator.
+  collapsible: true
+  placeholder: https://prometheus-prod-01-prod-us-central-0.grafana.net/api/prom
+  required: false
+  default: <<ref.stack.output.grafana_cloud_metrics_query_url>>
+- id: observability_credentials_secret_name
+  label: Observability credentials secret
+  type: string
+  description: Name of the Kubernetes Secret in the Ravion Operator namespace holding vendor query credentials. A name only - Ravion never reads the values.
+  collapsible: true
+  placeholder: ravion-observability-credentials
+  required: false
+  default: <<ref.stack.output.observability_credentials_secret_name>>

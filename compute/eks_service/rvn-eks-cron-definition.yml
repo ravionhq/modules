@@ -1,0 +1,465 @@
+published: false
+global: false
+definition:
+  type: rvn-eks-cron
+  name: EKS Cron Job
+  description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
+release:
+  version: 0.4.0
+  description: Follow the selected observability providers, group add-ons with cluster selection, use positive scheduling and consistent release and builder field names, use Ravion Operator terminology, clarify ECR settings, keep run outcome charts on Prometheus, and let jobs target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+module:
+  inputs:
+    - id: section_cluster
+      label: EKS cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-eks-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/eks-workload-cluster-mapped-inputs.yml
+      required: true
+    - id: addons
+      label: EKS add-ons
+      type: $ref:rvn-eks-addons
+      description: Select the EKS Add-ons module attached to the cluster above to use its observability providers in the Metrics and Logs tabs.
+      mapped_inputs:
+        - $include: ../../partials/inputs/eks-workload-observability-mapped-inputs.yml
+      required: false
+    - id: section_service
+      label: Cron job
+      type: section
+    - $template: ../../partials/templates/eks-workload-release-inputs.yml
+      with:
+        name_description: Name for the Helm release and the CronJob it creates.
+    - $include: ../../partials/inputs/eks-workload-build-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-image-inputs.yml
+    - id: section_schedule
+      label: Schedule
+      type: section
+    - id: schedule
+      label: Cron schedule
+      type: string
+      description: Five-field cron expression in minute hour day-of-month month day-of-week order, such as 0 3 * * * for daily at 03:00.
+      placeholder: 0 3 * * *
+      required: true
+      patterns:
+        - message: A five-field cron expression, such as 0 3 * * * or */15 * * * *.
+          pattern: ^\s*\S+\s+\S+\s+\S+\s+\S+\s+\S+\s*$
+    - id: time_zone
+      label: Time zone
+      type: string
+      description: IANA time zone the schedule is interpreted in, such as America/New_York. Leave blank to use the cluster's zone, which is normally UTC.
+      placeholder: UTC
+      required: false
+    - id: scheduling_enabled
+      label: Scheduling
+      type: boolean
+      description: Schedule new runs for this job. Turn off to pause future runs without deleting the job; runs already in flight are not affected.
+      default: true
+    - id: concurrency_policy
+      label: Concurrency policy
+      type: string
+      description: What happens when a run is still going at the next scheduled time.
+      collapsible: true
+      default: Forbid
+      values:
+        - label: Forbid
+          description: Skip the new run and leave the running one alone.
+          value: Forbid
+        - label: Allow
+          description: Start the new run alongside the running one.
+          value: Allow
+        - label: Replace
+          description: Cancel the running job and start the new run.
+          value: Replace
+    - id: starting_deadline_seconds
+      label: Starting deadline (secs)
+      type: number
+      description: Seconds after a missed schedule in which a run may still start. Leave blank for no deadline. Useful when the cluster may be briefly unable to schedule pods.
+      collapsible: true
+      required: false
+      max: 86400
+      min: 0
+    - id: section_run
+      label: Run behavior
+      type: section
+    - id: backoff_limit
+      label: Retries
+      type: number
+      description: Retries before a run is marked failed.
+      collapsible: true
+      max: 100
+      min: 0
+      default: 3
+    - id: active_deadline_seconds
+      label: Run timeout (secs)
+      type: number
+      description: Wall-clock seconds a run may take before it is killed. Leave blank for no timeout.
+      collapsible: true
+      required: false
+      max: 604800
+      min: 1
+    - id: restart_policy
+      label: On container failure
+      type: string
+      description: Whether a failed container is restarted in place or replaced with a new pod.
+      collapsible: true
+      default: OnFailure
+      values:
+        - label: Restart the container
+          description: Restart the failed container in the same pod.
+          value: OnFailure
+        - label: Start a new pod
+          description: Leave the failed pod for inspection and start a new one.
+          value: Never
+    - id: termination_grace_period_seconds
+      label: Shutdown grace period (secs)
+      type: number
+      description: Seconds a run has to finish after SIGTERM before it is killed, when it is cancelled or times out.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 30
+    - id: ttl_seconds_after_finished
+      label: Job retention (secs)
+      type: number
+      description: Seconds a finished Job object is kept before deletion. Leave blank to keep finished Jobs until the history limits below evict them.
+      collapsible: true
+      required: false
+      max: 2592000
+      min: 0
+    - id: successful_jobs_history_limit
+      label: Successful runs kept
+      type: number
+      description: Number of successful Job objects retained for inspection.
+      collapsible: true
+      max: 100
+      min: 0
+      default: 3
+    - id: failed_jobs_history_limit
+      label: Failed runs kept
+      type: number
+      description: Number of failed Job objects retained for inspection.
+      collapsible: true
+      max: 100
+      min: 0
+      default: 1
+    - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    # A cron job has no load balancer, so listener_arn is null and
+    # compute/eks_service creates only its optional ECR repository and Fargate
+    # profile. This is the same load-balancer gating shape rvn-ecs-worker uses.
+    $template: ../../partials/templates/opentofu-stack-with-runner-security-group.yml
+    with:
+      base_path: compute/eks_service
+      # The destroy-time Helm uninstall in workload_release.tf runs from the
+      # Terraform runner, which has to reach the Kubernetes API the same way the
+      # deploy runner does: through the cluster's Ravion Runner security group,
+      # the only group a private endpoint admits.
+      runner_security_group_id: << module.input.ravion_runner_security_group_id >>
+      terraform_variables:
+        $merge:
+          - ../../partials/stack/eks-workload-common-terraform-variables.yml
+          - listener_arn: null
+  build:
+    $include: ../../partials/build/eks-workload-image-build.yml
+  deploy:
+    $merge:
+      - ../../partials/deploy/eks-workload-deploy-common.yml
+    definition:
+      $merge:
+        - ../../partials/deploy/eks-workload-helm-definition-common.yml
+        - source:
+            type: git
+            repo_url: https://github.com/ravionhq/modules
+            branch: main
+            ref: $local.module_tag
+            base_path: charts/rvn-eks-cron
+          values:
+            $merge:
+              - ../../partials/deploy/eks-workload-helm-values-common.yml
+              - schedule: << module.input.schedule >>
+                timeZone: '<< module.input.time_zone != nil ? module.input.time_zone : "" >>'
+                suspend: '<< module.input.scheduling_enabled != nil ? !module.input.scheduling_enabled : false >>'
+                concurrencyPolicy: '<< module.input.concurrency_policy != nil ? module.input.concurrency_policy : "Forbid" >>'
+                startingDeadlineSeconds: << module.input.starting_deadline_seconds >>
+                successfulJobsHistoryLimit: '<< module.input.successful_jobs_history_limit != nil ? module.input.successful_jobs_history_limit : 3 >>'
+                failedJobsHistoryLimit: '<< module.input.failed_jobs_history_limit != nil ? module.input.failed_jobs_history_limit : 1 >>'
+                terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                job:
+                  backoffLimit: '<< module.input.backoff_limit != nil ? module.input.backoff_limit : 3 >>'
+                  activeDeadlineSeconds: << module.input.active_deadline_seconds >>
+                  ttlSecondsAfterFinished: << module.input.ttl_seconds_after_finished >>
+                  restartPolicy: '<< module.input.restart_policy != nil ? module.input.restart_policy : "OnFailure" >>'
+  ui:
+    metrics:
+      - $include: ../../partials/ui/eks-workload-pod-metrics.yml
+      # Run outcomes, once per metrics rendering provider under a shared chart
+      # id, in the add-ons module's fallback order. See
+      # partials/ui/eks-workload-pod-metrics.yml for how the chain works and
+      # why an unset provider list reads as "AMP".
+      #
+      # CronJob-created Jobs are named `<name>-<schedule-id>`, where the id is
+      # the schedule time in minutes since the epoch - all digits, hence the
+      # numeric tail in the job_name match.
+      #
+      # Neither chart has a CloudWatch link. Container Insights reports on
+      # running pods and never on Job completion, so there is no metric that
+      # says a run finished, let alone whether it succeeded. With CloudWatch as
+      # the only metrics provider these two charts are empty and the pod charts
+      # still work.
+      - id: job_runs_succeeded
+        name: Runs succeeded
+        type: line
+        enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+        source:
+          type: amp
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.input.amp_workspace_region >>
+          workspace_id: << module.input.amp_workspace_id >>
+          query: 'sum(increase(kube_job_status_succeeded{namespace="<< module.input.namespace >>",job_name=~"<< module.input.name >>-[0-9]+"}[$__interval]))'
+      - id: job_runs_succeeded
+        name: Runs succeeded
+        type: line
+        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << module.input.cluster_arn >>
+          endpoint: << module.input.prometheus_endpoint >>
+          query: 'sum(increase(kube_job_status_succeeded{namespace="<< module.input.namespace >>",job_name=~"<< module.input.name >>-[0-9]+"}[$__interval]))'
+      - id: job_runs_failed
+        name: Runs failed
+        type: line
+        enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+        source:
+          type: amp
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.input.amp_workspace_region >>
+          workspace_id: << module.input.amp_workspace_id >>
+          query: 'sum(increase(kube_job_status_failed{namespace="<< module.input.namespace >>",job_name=~"<< module.input.name >>-[0-9]+"}[$__interval]))'
+      - id: job_runs_failed
+        name: Runs failed
+        type: line
+        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << module.input.cluster_arn >>
+          endpoint: << module.input.prometheus_endpoint >>
+          query: 'sum(increase(kube_job_status_failed{namespace="<< module.input.namespace >>",job_name=~"<< module.input.name >>-[0-9]+"}[$__interval]))'
+    logs:
+      - $include: ../../partials/ui/eks-workload-logs.yml
+  readme: |
+    Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
+
+    ## Overview
+
+    EKS Cron Job runs a container on a schedule on an existing Ravion EKS cluster - nightly reports, cleanup tasks, reconciliation passes, digest emails. Point it at a Git repository or an image you already have, set the schedule and the command in a form, and Ravion builds the image and runs it on that schedule. There are no Kubernetes manifests to write and no Helm charts to maintain.
+
+    Under the hood, each deploy installs a Helm chart that Ravion maintains - a packaged template of the Kubernetes resources a scheduled job needs. The `rvn-eks-cron` chart renders the CronJob that starts each run, a ServiceAccount, and, when the module declares runtime secrets, an `ExternalSecret`. Each release runs `helm upgrade --install --atomic`, so a failed deploy rolls back to the previous revision on its own.
+
+    Deploying updates the schedule and the image the next run uses. It does not trigger a run.
+
+    The Terraform stack creates the ECR repository that Dockerfile and Railpack builds push to and, when Fargate is selected, a workload-specific EKS Fargate profile and pod execution role. On the Pull from image registry path with automatic or EC2 compute, the stack creates no AWS resources. Everything else the module needs - cluster endpoint, certificate authority data, private subnet IDs, and the Ravion Runner role - comes from the selected EKS Cluster module.
+
+    Chart source: [ravionhq/modules/charts/rvn-eks-cron](https://github.com/ravionhq/modules/tree/$local.module_tag/charts/rvn-eks-cron)
+
+    Terraform source: [ravionhq/modules/compute/eks_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/eks_service)
+
+    ## Use cases
+
+    | Scenario | EKS Cron Job helps by... |
+    | -------- | ------------------------ |
+    | Nightly batch work | Running a report or export on a fixed schedule |
+    | Periodic cleanup | Expiring stale rows, files, or cache entries |
+    | Reconciliation | Re-syncing state against an external system on an interval |
+    | Scheduled notifications | Sending digests or reminders at a local time |
+
+    ## Prerequisites
+
+    - An **EKS Cluster** module.
+    - The **External Secrets Operator** add-on on that cluster, if the job uses Runtime secrets.
+
+    ## Schedule
+
+    **Cron schedule** is a five-field expression in `minute hour day-of-month month day-of-week` order. `0 3 * * *` is daily at 03:00; `*/15 * * * *` is every fifteen minutes.
+
+    **Time zone** interprets that expression in an IANA zone such as `America/New_York`, which keeps a job at the same local hour across daylight saving changes. Leave it blank to use the cluster's zone, which is normally UTC.
+
+    **Suspend** stops new runs from being scheduled without deleting anything. Use it to pause a job while investigating, rather than removing the module.
+
+    **Concurrency policy** decides what happens when a run is still going at the next scheduled time. It defaults to **Forbid**, which skips the new run - the safe choice for a job that is not safe to run twice at once. **Allow** starts both. **Replace** cancels the running job and starts the new one.
+
+    **Starting deadline (secs)** is how late a missed run may still start. Without it, a run missed because the cluster could not schedule pods is simply skipped.
+
+    ## Run behavior
+
+    | Field | Default | Description |
+    | ----- | ------- | ----------- |
+    | Retries | 3 | Retries before a run is marked failed |
+    | Run timeout (secs) | - | Wall-clock ceiling on a single run; blank means no timeout |
+    | On container failure | Restart the container | Restart in place, or leave the failed pod and start a new one |
+    | Shutdown grace period (secs) | 30 | Drain window after SIGTERM when a run is cancelled or times out |
+    | Job retention (secs) | - | Delete a finished Job this long after it ends |
+    | Successful runs kept | 3 | Successful Job objects retained for inspection |
+    | Failed runs kept | 1 | Failed Job objects retained for inspection |
+
+    Set **Run timeout (secs)** on any job that could hang; without it a wedged run occupies its slot forever and, under the Forbid policy, silently blocks every later run. Choose **Start a new pod** on container failure when you want the failed pod's logs preserved for inspection.
+
+    ## Build and image options
+
+    | Build source | When to use it |
+    | ------------ | -------------- |
+    | Dockerfile | Build from a Dockerfile in the selected repository |
+    | Railpack | Let Ravion detect the app stack and build an image from source with Railpack |
+    | Pull from image registry | Deploy an existing image from Docker Hub, GHCR, ECR, or another registry |
+
+    For Dockerfile and Railpack builds, provide **Git repository** and optionally **Source base path**. The stack creates an ECR repository named after the job, Ravion pushes each build to it, and the chart deploys the resulting digest. Nodes pull from same-account ECR with their own credentials, so no pull secret is involved.
+
+    A scheduled job usually shares an image with the service it belongs to. Building it here gives the job its own repository and its own release cadence; pointing it at an existing repository with **Pull from image registry** keeps it on exactly the image another module already built.
+
+    Use **Build environment variables** for values the build itself needs - a private registry token, a `NODE_ENV` that changes what gets compiled. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, turn on **Inject environment variables in Dockerfile** to pass them to the build as Docker build arguments; without it they are visible to the builder but not to `docker build`.
+
+    These are separate from **Runtime environment variables** further down, and deliberately so: a credential needed to install dependencies has no business being in the environment of every scheduled run. Anything both halves need has to be set in both places.
+
+    For **Pull from image registry**, provide the **Image repository** without a tag, and use **Image pull secret names** for a private registry - each entry names a Kubernetes Secret of type `kubernetes.io/dockerconfigjson` that already exists in the release namespace.
+
+    Whichever source you choose, the deploy takes an **Image tag or digest**. A value beginning with `sha256:` is used as a digest and everything else as a tag.
+
+    Most jobs need a command: use **Start command** to override the image entrypoint and **Start command arguments** to override its default arguments, for example `rake` with `db:cleanup`.
+
+    ## Builder settings
+
+    Builder settings apply to Dockerfile and Railpack builds only.
+
+    | Field | Default | Description |
+    | ----- | ------- | ----------- |
+    | Builder instance type | ec2 | Use EC2 for predictable availability or EC2 spot for lower cost |
+    | Builder instance size | c7a.4xlarge | EC2 instance size used for builds |
+    | Builder execution environment | Cluster value | Optional override for where image builds run |
+    | Builder AMI | Default image | Optional AMI override for build runners |
+
+    **Scan images on push** asks ECR to run its basic vulnerability scan on every pushed image. **Force delete image repository** lets the repository be destroyed while it still holds images; without it, destroying the module fails until the repository is emptied.
+
+    ## Resources
+
+    Kubernetes schedules on requests and enforces on limits. CPU is measured in cores or millicores: 1 is one vCPU and 100m is a tenth of one. Memory uses binary units: 256Mi, 1Gi (1024Mi).
+
+    | Field | Default | Description |
+    | ----- | ------- | ----------- |
+    | CPU request | 100m | CPU reserved for the run |
+    | Compute target | Automatic | Let Kubernetes choose, require EC2 on-demand or EC2 Spot, or create a dedicated EKS Fargate profile |
+    | CPU limit | - | Optional CPU ceiling. Leaving it blank lets a run burst into spare node CPU |
+    | Memory request | 256Mi | Memory reserved for the run |
+    | Memory limit | 512Mi | Memory ceiling; exceeding it terminates the container with OOMKilled |
+
+    **Fargate** creates a dedicated profile matching this job's namespace and standard app instance label. Fargate pods launch only in the selected cluster's private subnets and use on-demand capacity; EKS Fargate does not offer Spot pricing. Choose EC2 Spot for interruption-tolerant batch work when lower compute cost matters more than serverless pod placement.
+
+    Batch work is often more memory-hungry than the service it belongs to. Size the memory limit for the largest expected input, not the typical one.
+
+    ## Application configuration
+
+    Use **Runtime environment variables** for plain values, as an array of `{name, value}` objects.
+
+    Use **Runtime secrets** for sensitive values, as an array of `{name, value_from}` objects - the same shape as ECS. `value_from` must be a full Secrets Manager or SSM Parameter Store ARN, including the JSON-key extraction suffix when you want a single key out of a JSON secret.
+
+    Ravion never reads these values. The ARNs travel to the chart as references, the chart renders an `ExternalSecret`, and the External Secrets Operator materializes the Kubernetes Secret in the cluster. No secret value reaches Ravion, the Helm values document, or the Helm release history.
+
+    ## Metrics and logs
+
+    The Metrics and Logs tabs follow the providers selected on the EKS add-ons module referenced above. You configure observability once, on that module, and every workload attached to it follows; there is nothing to set here. Without an add-ons reference both tabs stay empty.
+
+    Where several providers can serve the same signal they form a **fallback chain**, not a merge. The tab reads the first store that can answer right now and moves to the next when it cannot, saying which store it ended up using. Reading two stores at once would draw every line twice.
+
+    | Signal | Chain order |
+    | ------ | ----------- |
+    | Logs | In-cluster store (Loki) -> Amazon CloudWatch Logs |
+    | Metrics | Amazon Managed Prometheus -> Prometheus in your cluster -> CloudWatch Container Insights |
+
+    The practical effect is that the in-cluster store's one weakness stops being fatal. Loki is reached through the Ravion Operator, so with the agent offline those logs are unavailable - but if CloudWatch Logs is also selected, the tab shows CloudWatch and says so, then switches back when the agent returns.
+
+    Logs and pod charts cover every run of the job, because both match on the pods the CronJob creates rather than on any one Job object. Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out. Two things differ on the CloudWatch link of the chain:
+
+    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the run's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
+
+    **Runs succeeded** and **Runs failed** are Prometheus-only. Container Insights reports on running pods and never on Job completion, so it has no metric that says a run finished, let alone whether it worked. With CloudWatch as the only metrics provider those two charts are empty while the pod charts still work - so if run outcomes matter to you, keep a Prometheus provider selected.
+
+    A provider that ships to a vendor rather than rendering in Ravion - Datadog, Grafana Cloud, New Relic, OpenSearch, Splunk, or a custom OTLP endpoint - adds an **Open in ...** action to the tab, pointing at this job rather than at the vendor's front page.
+
+    Turning a signal off on the add-ons module empties the matching tab here.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | ----- | -------- | ------- | ----------- |
+    | Cluster | Yes | - | Existing rvn-eks-cluster module instance |
+    | Service name | Yes | {project}-{env}-{module} | Helm release name and name of the CronJob |
+    | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
+    | Create namespace | No | true | Create the namespace if it does not exist |
+    | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |
+    | Git repository | Yes* | - | Required for Dockerfile and Railpack builds |
+    | Source base path | No | . | Repository-relative source and build root |
+    | Dockerfile path | No | Dockerfile | Path to the Dockerfile, for Dockerfile builds |
+    | Docker build context path | No | . | Docker build context, for Dockerfile builds |
+    | Build environment variables | No | - | Values available during Dockerfile and Railpack builds |
+    | Inject environment variables in Dockerfile | No | false | Pass build environment variables to `docker build` as build arguments |
+    | Railpack version | No | Ravion default | Optional pin for Railpack builds |
+    | Install command | No | Railpack default | Optional Railpack dependency install command |
+    | Build command | No | Railpack default | Optional Railpack build command |
+    | Start command (Railpack) | No | Railpack default | Optional Railpack start command |
+    | Image repository | Yes* | - | Image repository without a tag; required for Pull from image registry |
+    | Image pull secret names | No | [] | Existing dockerconfigjson Secrets in the namespace, for Pull from image registry |
+    | Start command | No | [] | Overrides the image entrypoint |
+    | Start command arguments | No | [] | Overrides the image default arguments |
+    | Cron schedule | Yes | - | Five-field cron expression |
+    | Time zone | No | Cluster zone | IANA time zone the schedule is read in |
+    | Suspend | No | false | Stop scheduling new runs |
+    | Concurrency policy | No | Forbid | Behavior when a run overlaps the next schedule |
+    | Starting deadline (secs) | No | - | How late a missed run may still start |
+    | Retries | No | 3 | Retries before a run is marked failed |
+    | Run timeout (secs) | No | - | Wall-clock ceiling on a single run |
+    | On container failure | No | Restart the container | Restart in place or start a new pod |
+    | Shutdown grace period (secs) | No | 30 | Drain window after SIGTERM |
+    | Job retention (secs) | No | - | Delete a finished Job this long after it ends |
+    | Successful runs kept | No | 3 | Successful Job objects retained |
+    | Failed runs kept | No | 1 | Failed Job objects retained |
+    | CPU request | Yes | 100m | CPU reserved per run, in cores or millicores |
+    | Compute target | Yes | Automatic | Automatic, EC2 on-demand, EC2 Spot, or on-demand EKS Fargate placement |
+    | CPU limit | No | - | Optional CPU ceiling |
+    | Memory request | Yes | 256Mi | Memory reserved per run |
+    | Memory limit | Yes | 512Mi | Memory ceiling per run |
+    | Runtime environment variables | No | - | Array of {name, value} objects |
+    | Runtime secrets | No | - | Array of {name, value_from} ARN references |
+    | Builder instance type | No | ec2 | EC2 or EC2 spot capacity for builds |
+    | Builder instance size | No | c7a.4xlarge | EC2 instance size used for builds |
+    | Builder execution environment | No | Cluster value | Optional override for where builds run |
+    | Builder AMI | No | Default image | Optional AMI override for build runners |
+    | Scan images on push | No | true | ECR basic vulnerability scan on every push |
+    | Force delete image repository | No | false | Allow destroying the repository while it holds images |
+    | Tags | No | Standard Ravion tags | Additional tags applied to the ECR repository |
+    | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
+    | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
+    | Ravion Terraform workspace name | No | {project}-{env}-{module} | Override the state backend workspace name |
+
+    ## Design decisions
+
+    - **Terraform owns AWS-side workload infrastructure.** The CronJob itself is Helm-owned; the stack creates an ECR repository when Ravion builds the image and a dedicated EKS Fargate profile when Fargate is selected. With a pulled image and automatic or EC2 compute, it creates nothing.
+    - **No Nixpacks.** ECS still carries a Nixpacks build source for services created before Railpack existed. EKS has no such history, so Dockerfile and Railpack are the only builders.
+    - **Concurrency defaults to Forbid.** Overlapping runs are a common source of duplicated work and lock contention, and a job that is safe to overlap can opt in.
+    - **Deploying does not run the job.** A deploy updates the CronJob; the schedule decides when it next runs.
+    - **Name and namespace are fixed after creation.** Together they identify the Helm release that rollback and history target.
+    - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation, so an `aws_eks_pod_identity_association` can bind an IAM role to it by namespace and name.
+
+    ## Learn more
+
+    - [AWS Fargate profile](https://docs.aws.amazon.com/eks/latest/userguide/fargate-profile.html)
+    - [Kubernetes CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/)
+    - [CronJob schedule syntax](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#cron-schedule-syntax)
+    - [Kubernetes Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/)
+    - [External Secrets Operator](https://external-secrets.io/)

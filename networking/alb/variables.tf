@@ -53,7 +53,7 @@ variable "subnet_ids" {
 
 variable "internal_load_balancer_enabled" {
   type        = bool
-  description = "If true, the ALB will be internal_load_balancer_enabled (not internet-facing)."
+  description = "If true, the ALB will be internal (not internet-facing)."
   default     = false
 }
 

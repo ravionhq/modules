@@ -106,7 +106,7 @@ module "app_dns" {
 module "internal_dns" {
   source = "git::https://github.com/ravionhq/modules.git//networking/route53?ref=v1.0.0"
 
-  name         = "internal_load_balancer_enabled.example.com"
+  name         = "internal.example.com"
   private_zone_enabled = true
 
   vpc_associations = {
@@ -118,7 +118,7 @@ module "internal_dns" {
 
   records = [
     {
-      name    = "db.internal_load_balancer_enabled.example.com"
+      name    = "db.internal.example.com"
       type    = "CNAME"
       ttl     = 60
       records = [module.rds.endpoint]

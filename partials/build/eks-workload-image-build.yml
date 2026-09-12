@@ -1,0 +1,33 @@
+# Image build shared by rvn-eks-web, rvn-eks-worker, and rvn-eks-cron.
+#
+# A port of ../build/ecs-service-image-build.yml with one difference: EKS has no
+# nixpacks build source, only dockerfile, railpack, and image_registry, so the
+# builder expression has no nixpacks branch to fold into railpack.
+#
+# The destination is the ECR repository the stack creates when build_source is
+# dockerfile or railpack. On the image_registry path the whole build is
+# disabled and stack.output.ecr_repository_arn is null, which is consistent:
+# ecr_repository_creation_enabled is false in that case too.
+type: '<< module.input.build_source == "image_registry" ? "disabled" : "image" >>'
+builder: >-
+  << module.input.build_source == "dockerfile" ? {type: "dockerfile", dockerfile: module.input.dockerfile
+  || "Dockerfile", context: module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
+  module.input.dockerfile_environment_variable_injection_enabled, cache_from: {tag: "dockerfile"}} :
+  module.input.build_source == "railpack" ? {type: "railpack", railpack_version:
+  module.input.railpack_version, install_cmd: module.input.railpack_install_cmd,
+  build_cmd: module.input.railpack_build_cmd, start_cmd:
+  module.input.railpack_start_cmd, cache_from: {tag: "railpack"}} : {type: "disabled"} >>
+destinations:
+  - id: ecr
+    type: ecr
+    repository_arn: << stack.output.ecr_repository_arn >>
+    tags:
+      - <<pipeline.run.id>>-<< module.input.build_source >>
+      - << module.input.build_source >>
+environment_variables: << module.input.build_environment_variables >>
+infrastructure:
+  $include: ./infrastructure.yml
+inputs:
+  - $include: ../inputs/build-inputs.yml
+source:
+  $include: ./git-source.yml

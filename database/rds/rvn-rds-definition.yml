@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon RDS database. Supports PostgreSQL, MySQL, MariaDB, Oracle, and SQL Server engines.
 
 release:
-  version: 1.2.0
-  description: Add optional RDS Proxy connection pooling.
+  version: 1.2.1
+  description: Allow major engine upgrades while preventing selection of an older major version.
 module:
   inputs:
     - id: network
@@ -196,8 +196,8 @@ module:
           value: sqlserver-web
     - description: "Examples: 15 for PostgreSQL or SQL Server, 8.0 for MySQL, 19 for Oracle."
       id: engine_major_version
-      immutable: true
       label: Engine major version
+      min_current_value: true
       placeholder: "15"
       required: true
       type: string

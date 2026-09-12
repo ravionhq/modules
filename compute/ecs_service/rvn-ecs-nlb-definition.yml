@@ -4,7 +4,7 @@ definition:
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
   version: 1.2.0
-  description: Automatically enable SOCI lazy loading for Fargate builds to reduce task startup time while keeping it disabled for EC2 capacity.
+  description: Automatically enable SOCI lazy loading for Fargate builds while keeping it disabled for EC2 capacity, clarify ECS cluster labels, standardize health check and builder fields, and keep build policies in advanced settings.
 module:
   inputs:
     - id: section_cluster
@@ -12,7 +12,7 @@ module:
       type: section
     - id: cluster
       immutable: true
-      label: ECS cluster
+      label: Cluster
       type: $ref:rvn-ecs-cluster
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
@@ -223,7 +223,7 @@ module:
       max: 120
       min: 2
       default: 10
-    - id: healthy_threshold
+    - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
       description: Number of consecutive successful checks required before an unhealthy target is considered healthy.
@@ -231,7 +231,7 @@ module:
       max: 10
       min: 2
       default: 3
-    - id: unhealthy_threshold
+    - id: health_check_unhealthy_threshold
       label: Unhealthy threshold
       type: number
       description: Number of consecutive failed checks required before a target is considered unhealthy.
@@ -311,14 +311,14 @@ module:
                     deregistration_delay: << module.input.deregistration_delay >>
                     health_check:
                       enabled: true
-                      healthy_threshold: << module.input.healthy_threshold >>
+                      healthy_threshold: << module.input.health_check_healthy_threshold >>
                       interval: << module.input.health_check_interval >>
                       matcher: '<< module.input.health_check_protocol == "HTTP" || module.input.health_check_protocol == "HTTPS" ? module.input.health_check_matcher : nil >>'
                       path: '<< module.input.health_check_protocol == "HTTP" || module.input.health_check_protocol == "HTTPS" ? module.input.health_check_path : nil >>'
                       port: traffic-port
                       protocol: << module.input.health_check_protocol >>
                       timeout: << module.input.health_check_timeout >>
-                      unhealthy_threshold: << module.input.unhealthy_threshold >>
+                      unhealthy_threshold: << module.input.health_check_unhealthy_threshold >>
                     port: << module.input.listeners[0].container_port >>
                     protocol: '<< module.input.listeners[0].listener_protocol == "TLS" ? module.input.listeners[0].tls_target_protocol : module.input.listeners[0].listener_protocol >>'
                     stickiness:
@@ -605,7 +605,7 @@ module:
 
     | Field                            | Required | Default                  | Description                                      |
     | -------------------------------- | -------- | ------------------------ | ------------------------------------------------ |
-    | ECS cluster                      | Yes      | -                        | Existing rvn-ecs-cluster module instance         |
+    | Cluster                          | Yes      | -                        | Existing rvn-ecs-cluster module instance         |
     | Service name                     | Yes      | {project}-{env}-{module} | Name for the ECS service and related resources   |
     | Public network service           | No       | true                     | Use the public NLB; turn off for the private NLB |
     | Run in private subnets           | No       | true                     | Run tasks in private subnets without public IPs  |

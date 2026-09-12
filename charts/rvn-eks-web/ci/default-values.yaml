@@ -1,0 +1,15 @@
+# Minimal container-only config: the chart's happy path.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
+  tag: v1.2.3
+containerPort: 3000
+env:
+  - name: LOG_LEVEL
+    value: info
+  - name: PORT
+    value: "3000"
+probes:
+  liveness:
+    path: /healthz
+  readiness:
+    path: /healthz

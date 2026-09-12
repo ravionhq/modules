@@ -1,0 +1,31 @@
+{{/*
+ClusterIP Service. It exists to give the TargetGroupBinding a serviceRef; the
+AWS Load Balancer Controller reads the Service's endpoints and registers pod
+IPs directly into the target group, so no NodePort or LoadBalancer type is
+needed.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rvn-eks-web.fullname" . }}
+  labels:
+    {{- include "rvn-eks-web.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- with .Values.service.trafficDistribution }}
+  trafficDistribution: {{ . }}
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort | default "http" }}
+      protocol: TCP
+      {{- with .Values.service.appProtocol }}
+      appProtocol: {{ . }}
+      {{- end }}
+  selector:
+    {{- include "rvn-eks-web.selectorLabels" . | nindent 4 }}

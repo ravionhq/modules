@@ -1,0 +1,31 @@
+# Helm release identity shared by every EKS workload module.
+#
+# Name and namespace are immutable: together they identify the Helm release
+# that rollback and history target, so changing either would orphan the
+# existing release rather than update it.
+- id: name
+  immutable: true
+  label: Service name
+  type: string
+  description: $with.name_description
+  required: true
+  default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+  patterns:
+    - message: 1-53 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+      pattern: ^[a-z0-9]([a-z0-9-]{0,51}[a-z0-9])?$
+- id: namespace
+  immutable: true
+  label: Namespace
+  type: string
+  description: Kubernetes namespace the release installs into.
+  required: true
+  default: <<project.given_id>>-<<environment.given_id>>
+  patterns:
+    - message: 1-63 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+      pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+- id: namespace_creation_enabled
+  label: Create namespace
+  type: boolean
+  description: Create the namespace if it does not already exist. Turn off when the namespace is managed elsewhere.
+  collapsible: true
+  default: true

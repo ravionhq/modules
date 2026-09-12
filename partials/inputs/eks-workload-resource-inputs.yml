@@ -1,0 +1,64 @@
+- id: section_resources
+  label: Resources
+  type: section
+- id: compute_target
+  moved_from:
+    - capacity_type
+  label: Compute target
+  type: string
+  description: Choose whether Kubernetes schedules this workload automatically, on a specific EC2 capacity type, or on a dedicated EKS Fargate profile. EKS Fargate capacity is on-demand only.
+  required: true
+  default: any
+  values:
+    - label: Automatic
+      description: Let Kubernetes choose any matching compute target available in the cluster. EKS Fargate, when matched, is on-demand only.
+      value: any
+    - label: EC2 on-demand
+      description: Require an on-demand EKS managed node or Karpenter node.
+      value: on_demand
+    - label: EC2 Spot
+      description: Require an EKS managed Spot node or Karpenter Spot node; interruptions are possible.
+      value: spot
+    - label: Fargate
+      description: Create a dedicated EKS Fargate profile for this workload. EKS Fargate is on-demand only and does not offer Spot capacity.
+      value: fargate
+- id: cpu_request
+  label: CPU request
+  type: string
+  description: CPU reserved for the pod and its guaranteed share under load. 1 is one vCPU; m is thousandths of a core, so 100m is a tenth. Autoscaling CPU targets are a percentage of this value.
+  placeholder: 100m
+  required: true
+  default: 100m
+  patterns:
+    - message: A CPU quantity such as 100m, 0.5, or 2.
+      pattern: ^[0-9]+(\.[0-9]+)?m?$
+- id: cpu_limit
+  label: CPU limit
+  type: string
+  description: Optional CPU ceiling, in the same units. Leave blank to let a pod burst into spare node CPU.
+  placeholder: Unlimited
+  collapsible: true
+  required: false
+  patterns:
+    - message: A CPU quantity such as 100m, 0.5, or 2.
+      pattern: ^[0-9]+(\.[0-9]+)?m?$
+- id: memory_request
+  label: Memory request
+  type: string
+  description: Memory reserved for the pod, in binary units such as 256Mi or 1Gi (1024Mi). Set this close to steady-state usage.
+  placeholder: 256Mi
+  required: true
+  default: 256Mi
+  patterns:
+    - message: A memory quantity such as 256Mi, 1Gi, or 512M.
+      pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?$
+- id: memory_limit
+  label: Memory limit
+  type: string
+  description: Memory ceiling, in the same units. Exceeding it terminates the container with OOMKilled, so set it above the worst legitimate spike.
+  placeholder: 512Mi
+  required: true
+  default: 512Mi
+  patterns:
+    - message: A memory quantity such as 256Mi, 1Gi, or 512M.
+      pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?$

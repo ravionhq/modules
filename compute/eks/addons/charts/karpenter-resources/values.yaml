@@ -1,0 +1,18 @@
+# All values are supplied by the compute/eks Terraform module.
+ec2NodeClass:
+  name: default
+  # IAM instance profile attached to Karpenter-launched nodes.
+  instanceProfile: ""
+  # Subnets nodes launch into.
+  subnetIds: []
+  # Security groups attached to nodes (typically the EKS cluster security group).
+  securityGroupIds: []
+  tags: {}
+
+nodePool:
+  name: default
+  capacityTypes: ["on-demand", "spot"]
+  instanceCategories: ["c", "m", "r"]
+  architectures: ["amd64"]
+  cpuLimit: 100
+  expireAfter: 720h

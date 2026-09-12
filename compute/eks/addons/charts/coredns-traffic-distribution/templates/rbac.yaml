@@ -1,0 +1,42 @@
+{{/*
+Ordinary (non-hook) resources: they exist before post-install/post-upgrade
+hooks run and are still present while pre-delete hooks run, so both Jobs can
+use them. The Role is scoped to patching the one Service.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "coredns-traffic-distribution.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "coredns-traffic-distribution.labels" . | nindent 4 }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "coredns-traffic-distribution.name" . }}
+  namespace: {{ .Values.service.namespace }}
+  labels:
+    {{- include "coredns-traffic-distribution.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: [{{ .Values.service.name | quote }}]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "coredns-traffic-distribution.name" . }}
+  namespace: {{ .Values.service.namespace }}
+  labels:
+    {{- include "coredns-traffic-distribution.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "coredns-traffic-distribution.name" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "coredns-traffic-distribution.name" . }}
+    namespace: {{ .Release.Namespace }}

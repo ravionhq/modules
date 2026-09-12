@@ -196,7 +196,7 @@ resource "aws_vpc_security_group_ingress_rule" "from_nlb" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| internal_load_balancer_enabled | If true, the NLB will be internal_load_balancer_enabled (not internet-facing) | `bool` | `false` | no |
+| internal_load_balancer_enabled | If true, the NLB will be internal (not internet-facing) | `bool` | `false` | no |
 | deletion_protection_enabled | If true, the resource cannot be deleted via the AWS API until this is set to false | `bool` | `true` | no |
 | cross_zone_load_balancing_enabled | Enable cross-zone load balancing | `bool` | `false` | no |
 | dns_record_client_routing_policy | How traffic is distributed among NLB AZs (any_availability_zone, availability_zone_affinity, partial_availability_zone_affinity) | `string` | `null` | no |

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: rvn-eks-cron
+description: Ravion application chart for a scheduled job on EKS — CronJob with a Pod Identity service account, sharing the rvn-eks-worker pod-spec values.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - ravion
+  - flightcontrol
+  - eks
+  - cron
+maintainers:
+  - name: Flightcontrol
+    url: https://www.flightcontrol.dev/

@@ -1,0 +1,51 @@
+# Every optional surface switched on at once: digest pinning, dual target
+# groups, autoscaling, a startup probe, and both secret providers.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+containerPort: 3000
+command: ["/bin/app"]
+args: ["serve", "--port=3000"]
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+probes:
+  startup:
+    enabled: true
+    path: /startup
+targetGroupArns:
+  - arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/demo-web-tg-1/abc123
+  - arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/demo-web-tg-2/def456
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 80
+# Explicit constraints replace the chart's default zone spread.
+topologySpreadConstraints:
+  - maxSkew: 2
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: rvn-eks-web
+serviceAccount:
+  name: demo-web
+ravion:
+  secrets:
+    - name: DB_PASSWORD
+      provider: secretsManager
+      key: arn:aws:secretsmanager:us-east-1:123456789012:secret:db-AbCdEf
+      property: password
+      version: AWSCURRENT
+    - name: API_KEY
+      provider: secretsManager
+      key: arn:aws:secretsmanager:us-east-1:123456789012:secret:api-GhIjKl
+    - name: FEATURE_FLAGS
+      provider: parameterStore
+      key: arn:aws:ssm:us-east-1:123456789012:parameter/demo/feature-flags

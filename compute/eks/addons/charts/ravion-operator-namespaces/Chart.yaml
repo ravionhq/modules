@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ravion-operator-namespaces
+description: Create missing Ravion Operator workload namespaces without deleting them on uninstall.
+type: application
+version: 0.1.0

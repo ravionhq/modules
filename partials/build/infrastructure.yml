@@ -1,7 +1,7 @@
-ami: << module.input.build_ami || nil >>
+ami: << module.input.build_ami_id || nil >>
 aws_account_id: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.aws_account_id >>"
 execution_environment_id: << module.input.build_execution_environment_id || module.input.execution_environment_id >>
-instance_size: << module.input.build_instance_size >>
+instance_size: << module.input.build_instance_type >>
 permissions: '<< module.input.build_iam_policy_arns ? (module.input.build_default_policies_enabled ? {"attach": module.input.build_iam_policy_arns} : {"replace": module.input.build_iam_policy_arns}) : nil >>'
 region: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.aws_region >>"
-type: << module.input.build_infrastructure_type >>
+type: << module.input.build_capacity_type >>

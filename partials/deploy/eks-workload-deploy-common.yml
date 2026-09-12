@@ -1,0 +1,59 @@
+# Shared `aws:eks` deploy scaffolding.
+# The control plane selects an eligible Operator by cluster ARN and packages the
+# Git-sourced workload chart for in-cluster execution. Runner infrastructure is
+# retained for the fallback path; executor Jobs/HA are configured on EKS Add-ons.
+#
+# `infrastructure` is fed entirely from module inputs mapped off the EKS
+# Cluster reference: the deploy resolver has no `ref` scope, so cross-module
+# values must already be resolved onto this module's inputs.
+#
+# Ravion cross-checks two of these fields against cluster_arn at resolve time -
+# cluster_name against the ARN tail, and region against the ARN's region - and
+# fails the deploy with a config error naming the field when either disagrees.
+type: aws:eks
+concurrency:
+  queue_overflow: oldest
+  queue_size: 1
+timeout: 1800
+infrastructure:
+  cluster_arn: << module.input.cluster_arn >>
+  cluster_name: << module.input.cluster_name >>
+  cluster_endpoint: << module.input.cluster_endpoint >>
+  cluster_certificate_authority_data: << module.input.cluster_certificate_authority_data >>
+  ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
+  # Which saved execution environment the deploy runner launches into. Absent
+  # means the default environment of the account that owns the cluster, so there
+  # is no explicit account-default fallback to write here. The resolved
+  # environment's region must equal the cluster region or the deploy fails.
+  execution_environment_id: << deploy.input.execution_environment_id || module.input.execution_environment_id >>
+  # Replaces individual attributes of whichever environment resolved, named or
+  # account-default. security_group is the only overridable field: subnets and
+  # VPC come from the environment itself. A private cluster endpoint only accepts
+  # callers in a group its control-plane security group allows, and the cluster
+  # module creates exactly that group.
+  execution_environment_overrides:
+    security_group: << module.input.ravion_runner_security_group_id >>
+inputs:
+  - id: image_ref
+    label: Image tag or digest
+    type: string
+    description: >-
+      Tag or digest to deploy from the configured image repository. A value starting with
+      "sha256:" is used as a digest, anything else as a tag. Do not pass a full image URI.
+    placeholder: "sha256:... or latest"
+    required: true
+  # Where the deploy runner executes. The cluster API endpoint is often private,
+  # so the runner has to sit in the cluster VPC to reach it. Left empty, the
+  # module's own environment applies, and failing that the account default -
+  # which the API resolves from the absence of the field, not from a value.
+  - id: execution_environment_id
+    label: Execution environment
+    type: string
+    description: >-
+      Execution environment the deploy runner launches into to reach the Kubernetes API. Leave
+      empty to use the environment inherited from the EKS cluster, or the default environment of
+      the account that owns the cluster. Its region must match the cluster region.
+    collapsible: true
+    required: false
+    default: << module.input.execution_environment_id >>
+    values: $values:ravion/execution_environments

@@ -1,0 +1,106 @@
+{{/*
+Scheduled job. The pod spec mirrors rvn-eks-worker (same image/env/resources/
+secrets values) wrapped in a CronJob's jobTemplate, so a worker can be turned
+into a cron and back without rewriting values.
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "rvn-eks-cron.fullname" . }}
+  labels:
+    {{- include "rvn-eks-cron.labels" . | nindent 4 }}
+  {{- with .Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  schedule: {{ required "schedule is required" .Values.schedule | quote }}
+  {{- with .Values.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  suspend: {{ .Values.suspend }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  {{- with .Values.startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ . }}
+  {{- end }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "rvn-eks-cron.labels" . | nindent 8 }}
+    spec:
+      backoffLimit: {{ .Values.job.backoffLimit }}
+      {{- with .Values.job.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ . }}
+      {{- end }}
+      {{- with .Values.job.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ . }}
+      {{- end }}
+      template:
+        metadata:
+          labels:
+            {{- include "rvn-eks-cron.selectorLabels" . | nindent 12 }}
+            {{- with .Values.podLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: {{ .Values.job.restartPolicy }}
+          serviceAccountName: {{ include "rvn-eks-cron.serviceAccountName" . }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+          containers:
+            - name: {{ .Chart.Name }}
+              image: {{ include "rvn-eks-cron.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              {{- with .Values.command }}
+              command:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with (include "rvn-eks-cron.env" . | trim) }}
+              env:
+                {{- . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.securityContext }}
+              securityContext:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.volumeMounts }}
+              volumeMounts:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.volumes }}
+          volumes:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

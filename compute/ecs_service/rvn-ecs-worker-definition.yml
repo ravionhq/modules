@@ -4,7 +4,7 @@ definition:
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
   version: 1.2.0
-  description: Automatically enable SOCI lazy loading for Fargate builds to reduce task startup time while keeping it disabled for EC2 capacity.
+  description: Automatically enable SOCI lazy loading for Fargate builds while keeping it disabled for EC2 capacity, clarify ECS cluster labels, standardize builder fields, and keep build policies in advanced settings.
 module:
   inputs:
     - id: section_cluster
@@ -12,7 +12,7 @@ module:
       type: section
     - id: cluster
       immutable: true
-      label: ECS cluster
+      label: Cluster
       type: $ref:rvn-ecs-cluster
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
@@ -189,7 +189,7 @@ module:
 
     | Field | Required | Default | Description |
     | ----- | -------- | ------- | ----------- |
-    | ECS cluster | Yes | - | Existing rvn-ecs-cluster module instance |
+    | Cluster | Yes | - | Existing rvn-ecs-cluster module instance |
     | Service name | Yes | {project}-{env}-{module} | Name for the ECS service and related resources |
     | Run in private subnets | No | true | Run tasks in private subnets without public IPs |
     | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |

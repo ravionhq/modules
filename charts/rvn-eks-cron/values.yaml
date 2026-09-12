@@ -1,0 +1,102 @@
+# rvn-eks-cron default values.
+#
+# The image/env/resources/secrets surface is identical to rvn-eks-web and
+# rvn-eks-worker. `schedule` is the only required value beyond the image.
+
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+# -- Replace the generated resource name entirely.
+fullnameOverride: ""
+# -- Extra labels applied to every object (not to the immutable selector).
+commonLabels: {}
+# -- Annotations on the CronJob object itself.
+annotations: {}
+
+image:
+  # -- Image repository. Required.
+  repository: ""
+  # -- Image tag. Required unless digest is set.
+  tag: ""
+  # -- Image digest (sha256:...). Takes precedence over tag when set.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# -- References to Secrets holding registry credentials.
+imagePullSecrets: []
+
+# -- Cron expression, e.g. "0 3 * * *". Required.
+schedule: ""
+# -- IANA time zone the schedule is interpreted in, e.g. "America/New_York".
+# Empty means the kube-controller-manager's zone (usually UTC).
+timeZone: ""
+# -- Allow, Forbid, or Replace when the previous run is still going.
+concurrencyPolicy: Allow
+# -- Set true to stop scheduling new runs without deleting the CronJob.
+suspend: false
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 1
+# -- Seconds after a missed schedule in which the job may still start.
+startingDeadlineSeconds: null
+
+job:
+  # -- Retries before the job is marked failed.
+  backoffLimit: 3
+  # -- Wall-clock seconds a run may take before it is killed.
+  activeDeadlineSeconds: null
+  # -- Seconds a finished Job object is retained.
+  ttlSecondsAfterFinished: null
+  restartPolicy: OnFailure
+
+# -- Override the image ENTRYPOINT.
+command: []
+# -- Override the image CMD, e.g. ["rake", "db:cleanup"].
+args: []
+
+# -- Non-secret environment variables.
+env: []
+
+terminationGracePeriodSeconds: 30
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+serviceAccount:
+  create: true
+  # -- Stable name the EKS Pod Identity association targets. Defaults to the
+  # release fullname. No IRSA annotation is emitted; Pod Identity binds by name.
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: true
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+volumes: []
+volumeMounts: []
+
+# Reserved namespace. Ravion writes this block; user-authored values may not
+# declare a top-level `ravion` key (the tower-side resolver rejects it).
+ravion:
+  secretStores:
+    # -- ClusterSecretStore (default) or SecretStore.
+    kind: ClusterSecretStore
+    # -- Store for `secretsManager` entries. ESO's AWS provider takes one
+    # service per store, so Secrets Manager and Parameter Store need separate
+    # stores. Both are provisioned by the ESO addon in compute/eks/addons,
+    # which exposes these names as Terraform outputs.
+    secretsManager: ravion-aws
+    # -- Store for `parameterStore` entries.
+    parameterStore: ravion-aws-parameter-store
+  # -- How often ESO re-reads the remote values.
+  secretRefreshInterval: 1h
+  # -- Secret REFERENCES, never values.
+  secrets: []

@@ -1,0 +1,22 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: {{ .Values.ec2NodeClass.name }}
+spec:
+  amiSelectorTerms:
+    - alias: al2023@latest
+  instanceProfile: {{ .Values.ec2NodeClass.instanceProfile }}
+  subnetSelectorTerms:
+    {{- range .Values.ec2NodeClass.subnetIds }}
+    - id: {{ . }}
+    {{- end }}
+  securityGroupSelectorTerms:
+    {{- range .Values.ec2NodeClass.securityGroupIds }}
+    - id: {{ . }}
+    {{- end }}
+  metadataOptions:
+    httpTokens: required
+  {{- with .Values.ec2NodeClass.tags }}
+  tags:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}

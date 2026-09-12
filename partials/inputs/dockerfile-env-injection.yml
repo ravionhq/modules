@@ -1,6 +1,6 @@
 default: false
 description: Pass build environment variables into Dockerfile builds as build arguments.
-id: dockerfile_inject_env_variables
+id: dockerfile_environment_variable_injection_enabled
 label: Inject environment variables in Dockerfile
 show_when:
   build_source: dockerfile

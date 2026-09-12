@@ -7,6 +7,7 @@ import (
 	_ "github.com/aws/aws-sdk-go-v2"
 	_ "github.com/aws/aws-sdk-go-v2/config"
 	_ "github.com/aws/aws-sdk-go-v2/service/ec2"
+	_ "github.com/aws/aws-sdk-go-v2/service/ecr"
 	_ "github.com/aws/aws-sdk-go-v2/service/ecs"
 	_ "github.com/aws/aws-sdk-go-v2/service/elasticache"
 	_ "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"

@@ -1,0 +1,142 @@
+# Log sources shared by every EKS workload module, following the logs
+# providers selected on the workload's EKS Add-ons reference.
+#
+# Every entry carries `id: app`, which makes them one fallback chain rather
+# than several sources to merge: the dashboard reads the first entry that can
+# answer right now and moves to the next when it cannot, naming the store it
+# ended up using. Order here is the fallback order the add-ons module
+# publishes - the in-cluster store first, CloudWatch Logs behind it - so an
+# offline Ravion Operator degrades to CloudWatch instead of to an empty tab.
+#
+# `logs_rendering_providers` is mapped off the add-ons reference, and unset is
+# not the same as empty. Unset means the add-ons module is older than 0.8.0 and
+# publishes no such output at all; a workload attached to one must keep the log
+# view it has today, so the guard falls back to Loki. An empty list is a
+# deliberate answer from a module that does know about providers - Logs are
+# turned off for this cluster - and every entry drops.
+#
+# Both Loki fields resolve from the workload's own inputs - the cluster ARN is
+# mapped off the cluster reference and the selector uses the release identity
+# - so the source is declared (and listed as pending until the agent serves
+# it) from the moment the instance exists, with no stack apply involved.
+#
+# `workload` is the collector's hash-stripped controller name, which the
+# deploy pins to `module.input.name` via fullnameOverride. The `app` label is
+# NOT usable here: the charts set app.kubernetes.io/name to the chart name,
+# which is identical for every service deployed from the same chart.
+- id: app
+  name: Application logs
+  enabled: << module.input.logs_rendering_providers == nil || "loki" in module.input.logs_rendering_providers >>
+  source:
+    type: eks_loki
+    cluster_arn: << module.input.cluster_arn >>
+    selector: '{namespace="<< module.input.namespace >>", workload="<< module.input.name >>"}'
+# CloudWatch Logs fallback. The add-ons module writes the whole cluster to one
+# group, one stream per pod named `<namespace>/<pod>/<container>`, so the
+# stream prefix is what narrows the group to this workload: pods are
+# `<name>-<hash>-<suffix>`, hence the trailing hyphen.
+- id: app
+  name: Application logs
+  enabled: << module.input.logs_rendering_providers != nil && "cloudwatch" in module.input.logs_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    log_group: << module.input.logs_cloudwatch_log_group >>
+    log_stream_prefix: << module.input.namespace + "/" + module.input.name + "-" >>
+# "Open in <vendor>" actions, one per logs provider that ships to a vendor
+# instead of rendering in Ravion.
+#
+# Each entry is guarded on the add-ons module having published a link for that
+# provider: it publishes one only for a provider the user actually selected and
+# could build a base URL for, so an unselected vendor drops out. One entry per
+# provider, rather than one mapped over the list, is what lets each link carry
+# that vendor's own search syntax.
+#
+# Both expressions lead with `module.` deliberately. The definition validator
+# only allows a template block to START with a known namespace or one of its
+# helper functions, so `filter`/`reduce` have to sit inside a module-led
+# expression rather than open one. The nil arm and reduce-from-"" also keep
+# each expression total: an add-ons module that publishes no link list at all
+# yields "" instead of failing the whole ui block.
+#
+# The add-ons module owns everything up to and including the query parameter;
+# this file owns the query itself. The workload is matched on a pod-name prefix
+# (`<name>-*`) wherever the vendor supports a wildcard, because that holds for
+# Deployment pods and CronJob pods alike. Grafana Cloud is the exception: it
+# speaks LogQL, so it gets the same selector as the in-cluster store. A custom
+# OTLP endpoint has no search syntax Ravion can assume, so its link is the base
+# URL unmodified. Values are pre-encoded; namespace and name are restricted to
+# lowercase letters, digits, and hyphens by their input patterns, so they need
+# no escaping of their own.
+- id: app
+  name: Open in Datadog
+  enabled: >-
+    << module.input.logs_external_links != nil
+    && len(filter(module.input.logs_external_links, #.provider == "datadog")) > 0 >>
+  source:
+    type: external
+    provider: datadog
+    href: >-
+      << module.input.logs_external_links == nil ? "" :
+      reduce(filter(module.input.logs_external_links, #.provider == "datadog"), #acc + #.href_prefix, "")
+      + "kube_namespace%3A" + module.input.namespace + "%20pod_name%3A" + module.input.name + "-%2A" >>
+- id: app
+  name: Open in Grafana Cloud
+  enabled: >-
+    << module.input.logs_external_links != nil
+    && len(filter(module.input.logs_external_links, #.provider == "grafana_cloud")) > 0 >>
+  source:
+    type: external
+    provider: grafana_cloud
+    href: >-
+      << module.input.logs_external_links == nil ? "" :
+      reduce(filter(module.input.logs_external_links, #.provider == "grafana_cloud"), #acc + #.href_prefix, "")
+      + "%7Bnamespace%3D%22" + module.input.namespace + "%22%2Cworkload%3D%22" + module.input.name + "%22%7D" >>
+- id: app
+  name: Open in New Relic
+  enabled: >-
+    << module.input.logs_external_links != nil
+    && len(filter(module.input.logs_external_links, #.provider == "new_relic")) > 0 >>
+  source:
+    type: external
+    provider: new_relic
+    href: >-
+      << module.input.logs_external_links == nil ? "" :
+      reduce(filter(module.input.logs_external_links, #.provider == "new_relic"), #acc + #.href_prefix, "")
+      + "k8s.namespaceName%3A%27" + module.input.namespace + "%27%20AND%20k8s.podName%3A%27" + module.input.name + "-%2A%27" >>
+- id: app
+  name: Open in OpenSearch Dashboards
+  enabled: >-
+    << module.input.logs_external_links != nil
+    && len(filter(module.input.logs_external_links, #.provider == "opensearch")) > 0 >>
+  source:
+    type: external
+    provider: opensearch
+    href: >-
+      << module.input.logs_external_links == nil ? "" :
+      reduce(filter(module.input.logs_external_links, #.provider == "opensearch"), #acc + #.href_prefix, "")
+      + "resource.k8s.namespace.name%3A%22" + module.input.namespace + "%22%20AND%20resource.k8s.pod.name%3A" + module.input.name + "-%2A" >>
+- id: app
+  name: Open in Splunk
+  enabled: >-
+    << module.input.logs_external_links != nil
+    && len(filter(module.input.logs_external_links, #.provider == "splunk")) > 0 >>
+  source:
+    type: external
+    provider: splunk
+    href: >-
+      << module.input.logs_external_links == nil ? "" :
+      reduce(filter(module.input.logs_external_links, #.provider == "splunk"), #acc + #.href_prefix, "")
+      + "k8s.namespace.name%3D%22" + module.input.namespace + "%22%20k8s.pod.name%3D%22" + module.input.name + "-%2A%22" >>
+- id: app
+  name: Open in the OTLP destination
+  enabled: >-
+    << module.input.logs_external_links != nil
+    && len(filter(module.input.logs_external_links, #.provider == "otlp")) > 0 >>
+  source:
+    type: external
+    provider: otlp
+    href: >-
+      << module.input.logs_external_links == nil ? "" :
+      reduce(filter(module.input.logs_external_links, #.provider == "otlp"), #acc + #.href_prefix, "") >>

@@ -129,8 +129,11 @@ Dependency patterns:
 - Root infrastructure modules expose direct `aws_account_id` and `aws_region` inputs.
 - Dependent modules should prefer a `$ref:<module-type>` input over asking for values already produced by the referenced module.
 - Source the referenced module with `**/<module-type>-definition.yml` before mapping inherited inputs or stack outputs.
+- Give every free-form mapped input with a `ref.*` default an explicit, realistic `placeholder` for "enter your own values" mode. Never let the ref expression itself appear as the placeholder. Use a syntactically representative value such as a complete ARN, resource ID, endpoint URL, cluster name, or subnet ID.
 
-Use `collapsible: true` for advanced settings. Use `show_when` for build-type, EC2-only, load-balancer-only, autoscaling-only, replica-only, alarm-only, custom-credentials-only, existing-resource-only, and engine-specific fields.
+Use `collapsible: true` for advanced settings. Never make an input collapsible when it is required and has no guaranteed non-nil default in every mode where it is visible. A collapsed required field without a default hides unfinished configuration and prevents users from seeing what they must provide. Keep such fields expanded. For mapped inputs, a `default` derived from `ref.*` does not count as a guaranteed default in "enter your own values" mode because no reference exists there.
+
+Use `show_when` for build-type, EC2-only, load-balancer-only, autoscaling-only, replica-only, alarm-only, custom-credentials-only, existing-resource-only, and engine-specific fields.
 
 ## Input Immutability
 
@@ -317,6 +320,8 @@ The local publish path targets `RAVION_API_URL` or `http://localhost:8080` by de
 - Every non-section input is consumed or intentionally provided for ref/dynamic-values wiring.
 - Most user-relevant Terraform variables are exposed as inputs; omissions are deliberate and explainable.
 - Every `module.input.*` reference is backed by a direct input or ref-derived field.
+- Every free-form mapped input with a ref-derived default has a realistic manual-entry placeholder rather than exposing the ref expression.
+- No required input is collapsible unless it has a guaranteed non-nil default in every visible mode; ref-derived mapped-input defaults are treated as absent in manual-entry mode.
 - Required inputs hidden by `show_when` are only required when visible.
 - Every dependent input has `show_when`; no replica-only, alarm-only, engine-only, existing-resource-only, or disabled-default field is visible unconditionally.
 - Every value-producing input hidden by `show_when` is treated as nullable in all runtime templates, including included partials and nested `#.<id>` expressions.
