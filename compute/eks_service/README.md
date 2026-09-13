@@ -137,6 +137,7 @@ while those still exist.
 | ravion_runner_role_arn | The cluster's `<cluster>-ravion-runner` role, assumed via `aws eks get-token` for the uninstall | `string` | `null` | no |
 | release_name | Helm release name Ravion installs for this workload | `string` | `null` | no |
 | release_namespace | Namespace the release is installed into (never removed itself) | `string` | `null` | no |
+| kubernetes_service_enabled | Whether the chart renders a Kubernetes Service named after the release; enables the in-cluster address outputs | `bool` | `false` | no |
 | workload_release_helm_version | Helm downloaded for the uninstall when none is on PATH | `string` | `"v4.2.4"` | no |
 | workload_release_uninstall_timeout | `helm uninstall --wait` timeout | `string` | `"10m"` | no |
 | container_port | Port the application container listens on | `number` | `8080` | no |
@@ -192,6 +193,10 @@ Each entry is `{ type, values }`. Supported types: `host-header`, `path-pattern`
 | load_balancer_dns_name | DNS name of the shared load balancer |
 | load_balancer_zone_id | Route 53 hosted zone ID of the load balancer, for alias records |
 | load_balancer_arn_suffix | ARN suffix of the load balancer, for CloudWatch metrics |
+| service_host | In-cluster DNS name of the Kubernetes Service, `<release_name>.<release_namespace>.svc.cluster.local`; answers once the first Helm deploy creates the Service. Null unless kubernetes_service_enabled |
+| service_port | Port the Kubernetes Service listens on, the container port |
+| service_url | In-cluster URL for service-to-service calls; scheme from the target group protocol |
+| load_balancer_url | URL through the shared load balancer; scheme and port from the listener, host from the first non-wildcard host rule or the load balancer DNS name |
 | ecr_repository_arn | ARN of the ECR repository, the build's push destination |
 | ecr_repository_name | Name of the ECR repository |
 | ecr_repository_url | URL of the ECR repository, passed to the chart as `image.repository` |

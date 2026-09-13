@@ -60,6 +60,38 @@ output "load_balancer_arn_suffix" {
 }
 
 ################################################################################
+# Service Addresses
+#
+# What another workload puts in its configuration to call this service. The
+# in-cluster values are derived from the release identity and resolve on the
+# first apply, before the Helm deploy has created the Service they name; they
+# answer only once that deploy succeeds. They are null unless
+# kubernetes_service_enabled is set, which only the web workload does, and
+# they do not depend on the load balancer. load_balancer_url is null without
+# a listener, like every other load balancer output.
+################################################################################
+
+output "service_host" {
+  description = "In-cluster DNS name of the workload's Kubernetes Service, <release_name>.<release_namespace>.svc.cluster.local. Resolves inside the cluster once the first Helm deploy has created the Service (null unless kubernetes_service_enabled)."
+  value       = local.service_host
+}
+
+output "service_port" {
+  description = "Port the workload's Kubernetes Service listens on, which is the container port (null unless kubernetes_service_enabled)."
+  value       = var.kubernetes_service_enabled ? var.container_port : null
+}
+
+output "service_url" {
+  description = "In-cluster URL of the workload, scheme from the target group protocol plus service_host and service_port. Prefer it for service-to-service calls: traffic stays in the VPC and the Service routes to same-zone pods (null unless kubernetes_service_enabled)."
+  value       = local.service_url
+}
+
+output "load_balancer_url" {
+  description = "URL of the workload through the shared load balancer. Scheme and port come from the listener; the host is the listener rule's first host-header value without a wildcard, otherwise the load balancer DNS name (null if the load balancer is disabled)."
+  value       = local.load_balancer_url
+}
+
+################################################################################
 # ECR Repository
 ################################################################################
 

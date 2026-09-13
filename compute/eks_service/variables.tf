@@ -295,6 +295,12 @@ variable "ravion_runner_role_arn" {
   }
 }
 
+variable "kubernetes_service_enabled" {
+  type        = bool
+  description = "Whether the workload's chart renders a Kubernetes Service named after the release. Enables the in-cluster service_host, service_port and service_url outputs. The web workload sets it; worker and cron render no Service and leave it off."
+  default     = false
+}
+
 variable "release_name" {
   type        = string
   description = "Name of the Helm release Ravion installs for this workload. Required when workload_release_cleanup_enabled is true."

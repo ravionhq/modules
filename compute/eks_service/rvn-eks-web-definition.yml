@@ -5,7 +5,7 @@ definition:
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 1.0.0
-  description: Route in-cluster traffic to this service's same-zone pods by default and spread its pods across availability zones, cutting cross-AZ data transfer charges. Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, use Ravion Operator terminology, clarify target group and ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  description: Route in-cluster traffic to this service's same-zone pods by default and spread its pods across availability zones, cutting cross-AZ data transfer charges. Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, use Ravion Operator terminology, clarify target group and ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute. Publish the service's in-cluster and load balancer addresses as stack outputs so other workloads can be pointed at it.
 module:
   inputs:
     - id: section_cluster
@@ -301,7 +301,8 @@ module:
       terraform_variables:
         $merge:
           - ../../partials/stack/eks-workload-common-terraform-variables.yml
-          - container_port: << module.input.container_port >>
+          - kubernetes_service_enabled: true
+            container_port: << module.input.container_port >>
             listener_arn: >-
               << module.input.public_alb_routing_enabled ? (module.input.public_alb_https_listener_arn ||
               module.input.public_alb_http_listener_arn) : (module.input.private_alb_https_listener_arn ||
@@ -386,8 +387,8 @@ module:
   ui:
     links: |-
       <<
-      stack.output.load_balancer_dns_name ?
-      [{"name":"Load balancer","href":"http://" + stack.output.load_balancer_dns_name}] : []
+      stack.output.load_balancer_url ?
+      [{"name":"Load balancer","href":stack.output.load_balancer_url}] : []
       >>
     metrics:
       - $include: ../../partials/ui/eks-workload-pod-metrics.yml
@@ -547,7 +548,7 @@ module:
 
     | Part | Owns | Changes when |
     | ---- | ---- | ------------ |
-    | Terraform stack | Load balancer target group, listener rule, optional ECR repository, and optional EKS Fargate profile | You change routing, health checks, the container port, build source, or compute target |
+    | Terraform stack | Load balancer target group, listener rule, optional ECR repository, optional EKS Fargate profile, and the service address outputs | You change routing, health checks, the container port, build source, or compute target |
     | Build | The container image, from a Dockerfile or Railpack | Every build, unless the build source is an existing registry image |
     | Helm deploy | Deployment, Service, HPA, secrets wiring | Every release, and whenever runtime settings change |
 
@@ -666,6 +667,21 @@ module:
     ### Zone-local routing
 
     Pods are spread across the cluster's availability zones (a soft `topology.kubernetes.io/zone` spread constraint, so a small cluster never leaves pods pending), and the service's Kubernetes Service is created with `trafficDistribution: PreferClose`. Other workloads in the cluster that call this service by its Service name reach a pod in their own zone whenever one exists, and fall back to every zone otherwise, which keeps AWS cross-AZ data transfer charges off service-to-service traffic. Load balancer traffic is unaffected: the ALB registers pod IPs directly. To fully benefit, run at least as many pods as the cluster has zones. Needs Kubernetes 1.31 or later; older API servers ignore the field.
+
+    ### Service addresses
+
+    The stack publishes where this service can be reached, so other workloads can be pointed at it without assembling hostnames by hand.
+
+    | Output | Value | Notes |
+    | ------ | ----- | ----- |
+    | `service_host` | `{name}.{namespace}.svc.cluster.local` | In-cluster DNS name of the Kubernetes Service |
+    | `service_port` | Container port | Port the Service listens on |
+    | `service_url` | `http://{service_host}:{port}` | In-cluster URL; prefer it for service-to-service calls |
+    | `load_balancer_url` | `https://{host}` | URL through the shared load balancer |
+
+    Prefer `service_url` when the caller runs in the same cluster: traffic never leaves the VPC, skips the load balancer hop, and reaches same-zone pods first (see Zone-local routing above). The in-cluster values are derived from the service name, namespace, and port and do not depend on the load balancer, so they are known on the first apply, but the name resolves only after the first successful deploy creates the Service.
+
+    `load_balancer_url` is for callers outside the cluster. Its scheme and port follow the listener the service is attached to, HTTPS when the selected ALB has an HTTPS listener. Its host is the first **Domain host rule** without a wildcard when one is set, because a request to the bare load balancer hostname would not match a host-scoped rule; otherwise it is the load balancer's DNS name. For a public web service that is the public ALB, and for a private one the private ALB, which is reachable only from inside the VPC.
 
     ## Application configuration
 

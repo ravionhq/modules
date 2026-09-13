@@ -31,4 +31,29 @@ locals {
   # means to reach the cluster; the resource's precondition refuses an apply
   # that enables it without them, rather than a destroy that fails late.
   workload_release_cleanup_enabled = var.workload_release_cleanup_enabled
+
+  # Addresses other workloads use to reach this service. The in-cluster host is
+  # the ClusterIP Service the rvn-eks-web chart names after the release, in the
+  # release namespace, so it is knowable before the first deploy creates it.
+  # Its scheme is the target group protocol, which is what the pods speak. It
+  # does not depend on the load balancer: a service can be cluster-only and
+  # still be dialled by name. Worker and cron render no Service and leave
+  # kubernetes_service_enabled off, so their values are null.
+  #
+  # The load balancer URL takes its scheme and port from the shared listener
+  # and prefers the rule's first concrete host header: a request to the bare
+  # ALB hostname would not match a host-scoped rule. Null without a listener.
+  service_host = var.kubernetes_service_enabled && var.release_name != null && var.release_namespace != null ? "${var.release_name}.${var.release_namespace}.svc.cluster.local" : null
+  service_url  = local.service_host != null ? "${lower(var.target_group_protocol)}://${local.service_host}:${var.container_port}" : null
+
+  load_balancer_host_rules = flatten([
+    for condition in var.listener_rule_conditions :
+    [for value in condition.values : value if !strcontains(value, "*")]
+    if condition.type == "host-header"
+  ])
+  load_balancer_scheme       = local.enable_load_balancer ? lower(data.aws_lb_listener.attached[0].protocol) : null
+  load_balancer_host         = local.enable_load_balancer ? (length(local.load_balancer_host_rules) > 0 ? local.load_balancer_host_rules[0] : data.aws_lb.attached[0].dns_name) : null
+  load_balancer_default_port = local.load_balancer_scheme == "https" ? 443 : 80
+  load_balancer_port_suffix  = local.enable_load_balancer && data.aws_lb_listener.attached[0].port != local.load_balancer_default_port ? ":${data.aws_lb_listener.attached[0].port}" : ""
+  load_balancer_url          = local.enable_load_balancer ? "${local.load_balancer_scheme}://${local.load_balancer_host}${local.load_balancer_port_suffix}" : null
 }
