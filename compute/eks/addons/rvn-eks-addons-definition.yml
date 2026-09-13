@@ -16,10 +16,10 @@ release:
     prevent first-time Karpenter installation failures when AWS Load Balancer Controller is enabled,
     create missing Operator workload namespaces safely, and move the default Operator and observability
     namespace to ravion-operator (existing Helm releases are replaced).
-    Support the Operator public chart, digest-pinned executor Jobs, adaptive HA coordinators sized to available nodes, and explicit full-cluster management.
+    Support the Operator public chart, digest-pinned executor Jobs, HA coordinators placed like Karpenter so they never hold an autoscaled node hostage, and explicit full-cluster management.
     Control Operator installation and in-cluster deployments together with the Ravion EKS Management toggle.
     Use durable executor Jobs by default, with inline execution available as an advanced override.
-    Automatically select a matching published Operator image and chart, enable adaptive HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
+    Automatically select a matching published Operator image and chart, enable HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
     Keep the Operator form to one management switch; execution mode and namespace bootstrap customization use Advanced Terraform variables.
     Rename the Operator Helm releases, credential Secret, and Secrets Manager mirror from beacon to operator names (existing releases are replaced and the retained execution CRD is adopted).
     Pin Operator chart 0.5.1, whose agent reports the full-management deploy scope so in-cluster deployments reach every namespace instead of only the Operator's own, no longer restarts its watches every thirty seconds, labels its executor pods for log collection, reports each workload's pods with its rollout state, and re-reports every tracked workload the moment Ravion's attribution of a release moves so a deploy that changed nothing still shows its workloads at once.
@@ -1293,13 +1293,13 @@ module:
 
     Enabling the toggle does three things in one deployment: Ravion issues the agent's credential — server-side, authorized by the pipeline's own credentials, so there is no API key to paste — writes it into the agent's Kubernetes secret and mirrors it into a Secrets Manager secret **in your own AWS account**, and installs the agent's Helm chart. The plaintext is issued exactly once; rotating or revoking it is a redeploy, not an API call.
 
-    **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, adaptive HA Operator and full-cluster management.
+    **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, HA Operator and full-cluster management.
 
     Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module pins chart `0.5.1` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest as the floor a fresh install starts from. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
 
-    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. One eligible node runs one coordinator, two run two, and three or more run three. It adjusts automatically as nodes join or leave, checking every 30 seconds and waiting two minutes before reducing the count. A single-node cluster works without node-level redundancy.
+    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas=1` through **Advanced Terraform variables**.
 
-    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Eligibility checks readiness and placement constraints; nodes still need free resources to schedule the pods. Adaptive sizing does not provision nodes. Fixed sizing, placement and executor capacity can be overridden through **Advanced Terraform variables**.
+    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Nodes still need free resources to schedule the pods. Replica count, placement and executor capacity can be overridden through **Advanced Terraform variables**.
 
     **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It uses a single retained mutation lane, so only one cluster mutation runs at a time. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` through **Advanced Terraform variables**. Scoped Jobs default to four installation-wide slots for independent namespaces; Kubernetes schedules them against available resources. Drain existing ownership before changing scope or retained capacity. Existing form-level scope, image and HA choices are replaced by these managed defaults; preserve custom settings through advanced overrides before upgrading.
 
@@ -1315,7 +1315,7 @@ module:
     | `ravion_operator_namespace` | `ravion-operator` | Namespace the agent and its credential secret are installed into, created if missing; also the default for shared observability components |
     | `ravion_operator_namespace_scope` | `[]` (cluster-wide read) | Namespaces the agent may observe. Naming namespaces renders no cluster-scoped read role at all, only one namespaced role per entry, so the restriction is enforced by Kubernetes rather than by the agent. A scoped agent cannot read nodes, so cluster node counts show as unknown |
 
-    In restricted mode, deployment namespaces fall back to `ravion_operator_namespace_scope` when empty. Namespace-scoped observation also requires disabling adaptive sizing through the advanced override, since it cannot observe cluster nodes.
+    In restricted mode, deployment namespaces fall back to `ravion_operator_namespace_scope` when empty.
 
     Workload namespace creation is enabled by default. Apply creates missing configured deployment and observation namespaces before installing Operator permissions. Namespaces managed elsewhere are reused without changing ownership. Created namespaces are retained on removal or uninstall. Disable bootstrap with `ravion_operator_namespaces_creation_enabled=false` through **Advanced Terraform variables**. Operator itself can create namespaces only with full management enabled.
 

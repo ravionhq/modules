@@ -249,9 +249,11 @@ resource "helm_release" "ravion_operator" {
           maxConcurrent  = local.ravion_operator_execution_max_concurrent_effective
           fullManagement = var.ravion_operator_full_management_enabled
         }
+        # Placed the way Karpenter places itself (see the chart's coordinator
+        # values): a fixed count on nodes Karpenter does not manage, so a
+        # coordinator can never keep an autoscaled node alive.
         coordinator = {
           enabled              = var.ravion_operator_coordinator_enabled
-          adaptive             = var.ravion_operator_coordinator_adaptive_enabled
           replicas             = var.ravion_operator_coordinator_replicas
           requireDistinctNodes = var.ravion_operator_coordinator_distinct_nodes_enabled
         }
@@ -308,8 +310,8 @@ resource "helm_release" "ravion_operator" {
       error_message = "HA coordinators require ravion_operator_execution_jobs_enabled."
     }
     precondition {
-      condition     = !var.ravion_operator_coordinator_enabled || !var.ravion_operator_coordinator_adaptive_enabled || (var.ravion_operator_coordinator_distinct_nodes_enabled && length(var.ravion_operator_namespace_scope) == 0)
-      error_message = "Adaptive coordinators require distinct nodes and cluster-wide observation. Disable adaptive mode for namespace-scoped observation or custom affinity."
+      condition     = !var.ravion_operator_coordinator_enabled || !var.ravion_operator_coordinator_distinct_nodes_enabled || !local.ravion_operator_self_update_effective || var.ravion_operator_coordinator_replicas >= 2
+      error_message = "A single HA coordinator on distinct nodes leaves no surviving replica to revert a failed self-update. Set ravion_operator_coordinator_replicas >= 2, ravion_operator_coordinator_distinct_nodes_enabled = false, or ravion_operator_self_update_enabled = false."
     }
     precondition {
       condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && local.ravion_operator_execution_max_concurrent_effective == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)

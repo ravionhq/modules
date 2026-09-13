@@ -848,17 +848,10 @@ variable "ravion_operator_coordinator_enabled" {
   nullable    = false
 }
 
-variable "ravion_operator_coordinator_adaptive_enabled" {
-  type        = bool
-  description = "Automatically run one coordinator per eligible node, up to ravion_operator_coordinator_replicas. Requires a matching adaptive-capable Operator image/chart, cluster-wide observation and distinct nodes."
-  default     = true
-  nullable    = false
-}
-
 variable "ravion_operator_coordinator_replicas" {
   type        = number
-  description = "Maximum coordinator replicas in adaptive mode, or fixed replica count otherwise (1-9). Defaults to a cap of three. Each coordinator requests 500m CPU and 1Gi memory by default."
-  default     = 3
+  description = "Fixed HA coordinator count (1-9), sized the way Karpenter sizes itself: a replica with no eligible node stays Pending until one appears and never keeps a node alive. Defaults to two, matching the system node group. Use 1 on a cluster with a single eligible node, with ravion_operator_coordinator_distinct_nodes_enabled = false when self-update is on. Each coordinator requests 500m CPU and 1Gi memory by default."
+  default     = 2
   nullable    = false
 
   validation {
@@ -869,7 +862,7 @@ variable "ravion_operator_coordinator_replicas" {
 
 variable "ravion_operator_coordinator_distinct_nodes_enabled" {
   type        = bool
-  description = "Require a distinct node per HA coordinator. Required in adaptive mode; disable adaptive mode before supplying custom affinity through Helm values."
+  description = "Place HA coordinators as Karpenter places itself: one per node, spread across zones, tolerating CriticalAddonsOnly, at system-cluster-critical priority and never on a Karpenter-provisioned node, so a coordinator can never hold an autoscaled node hostage. Needs a node group Karpenter does not manage, such as the system node group. Disable before supplying custom affinity through Helm values."
   default     = true
   nullable    = false
 }

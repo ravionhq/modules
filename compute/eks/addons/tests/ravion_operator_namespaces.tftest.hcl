@@ -172,16 +172,18 @@ run "operator_ha_full_management" {
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == var.ravion_operator_execution_image &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.fullManagement &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 1 &&
-      yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 3 &&
-      yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.adaptive &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 2 &&
+      !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).coordinator), "adaptive") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
       length(helm_release.ravion_operator_namespaces) == 0
     )
-    error_message = "Full management must wire one retained lane, adaptive coordinators capped at three, and the bundled image with self-update disabled in both enrollment and Helm."
+    error_message = "Full management must wire one retained lane, two fixed Karpenter-placed coordinators, and the bundled image with self-update disabled in both enrollment and Helm."
   }
 }
 
-run "adaptive_requires_node_observation" {
+# Fixed coordinators never list nodes, so scoped observation no longer
+# constrains HA.
+run "scoped_observation_allows_ha" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled = true
@@ -190,24 +192,43 @@ run "adaptive_requires_node_observation" {
     ravion_operator_coordinator_enabled    = true
     ravion_operator_namespace_scope        = ["rvn-app"]
   }
-  expect_failures = [helm_release.ravion_operator]
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.enabled && yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 2 && yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes
+    error_message = "HA coordinators must keep their fixed Karpenter-style placement under scoped observation."
+  }
 }
 
-run "fixed_single_replica_with_scoped_observation" {
+# A single eligible node runs one coordinator; under self-update it must drop
+# the distinct-node placement so the rollout can surge and keep an observer.
+run "single_replica_without_distinct_nodes" {
   command = plan
   variables {
-    ravion_operator_execution_jobs_enabled       = true
-    ravion_operator_execution_image              = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ravion_operator_chart_version                = "0.4.1-ci.test"
-    ravion_operator_coordinator_enabled          = true
-    ravion_operator_coordinator_adaptive_enabled = false
-    ravion_operator_coordinator_replicas         = 1
-    ravion_operator_namespace_scope              = ["rvn-app"]
+    ravion_operator_execution_jobs_enabled             = true
+    ravion_operator_execution_image                    = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_chart_version                      = "0.4.1-ci.test"
+    ravion_operator_self_update_enabled                = true
+    ravion_operator_coordinator_enabled                = true
+    ravion_operator_coordinator_replicas               = 1
+    ravion_operator_coordinator_distinct_nodes_enabled = false
+    ravion_operator_namespace_scope                    = ["rvn-app"]
   }
   assert {
-    condition     = !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.adaptive && yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 1
-    error_message = "Fixed mode must support a single replica without needing cluster-wide node observation."
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 1 && !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes
+    error_message = "A single coordinator without distinct nodes must plan for a single-node cluster."
   }
+}
+
+run "single_replica_on_distinct_nodes_needs_an_observer" {
+  command = plan
+  variables {
+    ravion_operator_execution_jobs_enabled = true
+    ravion_operator_execution_image        = "public.ecr.aws/a8z1i1r2/operator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ravion_operator_chart_version          = "0.4.1-ci.test"
+    ravion_operator_self_update_enabled    = true
+    ravion_operator_coordinator_enabled    = true
+    ravion_operator_coordinator_replicas   = 1
+  }
+  expect_failures = [helm_release.ravion_operator]
 }
 
 run "jobs_use_bundled_image_and_scoped_capacity_default" {

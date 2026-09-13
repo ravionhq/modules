@@ -457,7 +457,7 @@ The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
 executor Jobs and workload namespace bootstrap are enabled automatically;
 customization uses **Advanced Terraform variables**. The module automatically pins chart
 `0.5.1`, whose package bundles the matching verified multiarch image digest as the
-floor a fresh install starts from, and enables adaptive HA and full-cluster
+floor a fresh install starts from, and enables two-replica HA and full-cluster
 management with Jobs. Self-update stays on in Job mode: Ravion rolls the agent
 forward and the chart preserves the running image on later applies. Direct
 Terraform callers opt in with `ravion_operator_execution_jobs_enabled = true`.
@@ -475,7 +475,7 @@ ravion_operator_coordinator_enabled    = true
 
 Job mode keeps self-update on (chart 0.5.0+). Only the elected coordinator patches the Deployment when Ravion assigns a version, and it pins new executor Jobs to the image digest it is itself running, so coordinators and executors never skew; the chart's bundled execution image is the floor a fresh install starts from and live-image preservation applies on later applies. With `ravion_operator_self_update_enabled = false` the chart instead uses the execution image for **both coordinators and executors**, overriding live-image preservation. The stable enrollment ID is passed as `cluster.installationId` and exposed as `ravion_operator_installation_id`.
 
-HA defaults to adaptive sizing and requires a replica-aware gateway and a matching adaptive-capable Operator image/chart. One eligible node runs one coordinator, two run two, and three or more run three with the default cap. The elected coordinator checks Ready, uncordoned nodes and placement constraints every 30 seconds; decreases require two minutes of a stable target. Helm leaves the runtime replica count to Operator. Single-node clusters work without node-level redundancy. Set `ravion_operator_coordinator_adaptive_enabled=false` for fixed sizing, namespace-scoped observation, or custom affinity; `ravion_operator_coordinator_replicas` is a maximum in adaptive mode and a fixed count otherwise.
+HA requires a replica-aware gateway and runs a fixed number of coordinators, two by default, placed the way Karpenter places itself: one per node, spread across zones, tolerating a `CriticalAddonsOnly` system node group, at `system-cluster-critical` priority, and never on a node Karpenter provisioned. A coordinator therefore can never hold an autoscaled node hostage, and a replica with no eligible node stays Pending until one appears; nothing sizes the count to the cluster or adds a node. The install needs a node group Karpenter does not manage, which the `compute/eks` system node group provides with two nodes by default. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas = 1`, and with self-update on also `ravion_operator_coordinator_distinct_nodes_enabled = false` so the rollout can surge; with two replicas there the second pod is permanently Pending, the Deployment never settles and a rollout cannot complete. Disabling distinct nodes drops the placement rules and permits custom affinity through `ravion_operator_helm_values`.
 
 Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each executor requests 1 CPU/2Gi memory/1Gi ephemeral storage and limits at 4 CPU/8Gi/20Gi. Nodes still need enough free resources to schedule the pods; resource overrides use `coordinator.resources` and `executionJobs.resources` in `ravion_operator_helm_values`.
 
@@ -490,7 +490,7 @@ ravion_operator_full_management_enabled = false
 ravion_operator_deploy_namespaces       = ["app-prod"]
 ```
 
-Namespace-scoped observation additionally requires `ravion_operator_coordinator_adaptive_enabled = false`. Existing form-level execution mode, namespace bootstrap, image, chart, scope and HA choices are replaced by managed defaults; preserve custom settings through advanced overrides before upgrading. Existing retained capacity must be preserved explicitly or migrated after draining executions.
+Existing form-level execution mode, namespace bootstrap, image, chart, scope and HA choices are replaced by managed defaults; preserve custom settings through advanced overrides before upgrading. Existing retained capacity must be preserved explicitly or migrated after draining executions.
 
 To use legacy inline execution, set these advanced overrides together:
 
@@ -509,7 +509,7 @@ The web, worker and cron modules continue to submit their existing Git-sourced H
 
 Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities.
 
-The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, executor Jobs, namespace bootstrap, adaptive HA and full management are automatic. Execution mode, namespace bootstrap, inline self-update, image/chart, scope, HA, capacity and Helm customization are available through **Advanced Terraform variables**.
+The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, executor Jobs, namespace bootstrap, HA and full management are automatic. Execution mode, namespace bootstrap, inline self-update, image/chart, scope, HA, capacity and Helm customization are available through **Advanced Terraform variables**.
 
 #### Rotating and revoking
 
@@ -654,9 +654,8 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_execution_image | Optional digest-pinned coordinator/executor image override; empty uses the published chart's bundled digest. | `string` | `""` | no |
 | ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; null selects 1 for full management or 4 for scoped Jobs. | `number` | `null` | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
-| ravion_operator_coordinator_adaptive_enabled | Adapt coordinator count to eligible nodes, up to the replica limit. | `bool` | `true` | no |
-| ravion_operator_coordinator_replicas | Maximum adaptive replicas or fixed count, 1-9. | `number` | `3` | no |
-| ravion_operator_coordinator_distinct_nodes_enabled | Require a distinct node per coordinator. | `bool` | `true` | no |
+| ravion_operator_coordinator_replicas | Fixed coordinator count, 1-9; use 1 on a single eligible node. | `number` | `2` | no |
+| ravion_operator_coordinator_distinct_nodes_enabled | Karpenter-style placement: one per node, zone spread, never on a Karpenter-provisioned node. | `bool` | `true` | no |
 | ravion_operator_full_management_enabled | Explicit wildcard Kubernetes RBAC and a single retained mutation lane. | `bool` | `false` | no |
 | ravion_operator_exec_enabled | Grant `create` on `pods/exec` — the only way Ravion Operator can run a command inside a container. | `bool` | `false` | no |
 | ravion_operator_self_update_enabled | Let the control plane roll the agent forward by patching its own Deployment. | `bool` | `true` | no |
