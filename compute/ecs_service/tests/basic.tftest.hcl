@@ -892,3 +892,204 @@ run "default_container_port" {
     error_message = "Container name should be 'app'"
   }
 }
+
+################################################################################
+# Test: CloudWatch alarms disabled by default
+################################################################################
+
+run "cloudwatch_alarms_disabled_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.cpu_utilization) == 0 && length(aws_cloudwatch_metric_alarm.memory_utilization) == 0 && length(aws_cloudwatch_metric_alarm.running_tasks) == 0
+    error_message = "No service alarms should be created by default"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 0 && length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 0
+    error_message = "No target group alarms should be created by default"
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 0
+    error_message = "cloudwatch_alarm_arns should be empty when alarms are disabled"
+  }
+}
+
+################################################################################
+# Test: CloudWatch alarms for a worker (no load balancer)
+################################################################################
+
+run "cloudwatch_alarms_worker" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = true
+    cloudwatch_alarm_cpu_threshold     = 70
+    cloudwatch_alarm_memory_threshold  = 75
+    cloudwatch_alarm_actions           = ["arn:aws:sns:us-east-1:123456789012:alerts"]
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.cpu_utilization) == 1 && length(aws_cloudwatch_metric_alarm.memory_utilization) == 1 && length(aws_cloudwatch_metric_alarm.running_tasks) == 1
+    error_message = "CPU, memory, and running task alarms should be created when enabled"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 0 && length(aws_cloudwatch_metric_alarm.alb_target_5xx) == 0 && length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 0
+    error_message = "Target group alarms should not be created without a load balancer"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.cpu_utilization[0].namespace == "AWS/ECS" && aws_cloudwatch_metric_alarm.cpu_utilization[0].threshold == 70 && aws_cloudwatch_metric_alarm.memory_utilization[0].threshold == 75
+    error_message = "Utilization alarms should use AWS/ECS with the configured thresholds"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.cpu_utilization[0].dimensions["ClusterName"] == "test-cluster" && aws_cloudwatch_metric_alarm.cpu_utilization[0].dimensions["ServiceName"] == "test-service"
+    error_message = "Utilization alarms should be dimensioned by cluster and service name"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.running_tasks[0].namespace == "ECS/ContainerInsights" && aws_cloudwatch_metric_alarm.running_tasks[0].metric_name == "RunningTaskCount" && aws_cloudwatch_metric_alarm.running_tasks[0].comparison_operator == "LessThanThreshold" && aws_cloudwatch_metric_alarm.running_tasks[0].threshold == 1
+    error_message = "Running task alarm should fire when Container Insights RunningTaskCount drops below the minimum"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.running_tasks[0].alarm_actions) == 1 && contains(aws_cloudwatch_metric_alarm.running_tasks[0].alarm_actions, "arn:aws:sns:us-east-1:123456789012:alerts")
+    error_message = "Alarms should notify the configured alarm actions"
+  }
+}
+
+################################################################################
+# Test: CloudWatch alarms for an ALB-attached service
+################################################################################
+
+run "cloudwatch_alarms_alb_service" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled              = true
+    cloudwatch_alarm_unhealthy_hosts_threshold      = 1
+    cloudwatch_alarm_target_5xx_threshold           = 25
+    cloudwatch_alarm_target_response_time_threshold = 2
+    container_port                                  = 8080
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "path-pattern"
+          values = ["/api/*"]
+        }]
+      }]
+    }
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 1 && length(aws_cloudwatch_metric_alarm.alb_target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.alb_target_response_time) == 1
+    error_message = "ALB target group alarms should be created for an ALB-attached service"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 0
+    error_message = "NLB alarms should not be created for an ALB-attached service"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].namespace == "AWS/ApplicationELB" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].metric_name == "UnHealthyHostCount" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].statistic == "Maximum" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].threshold == 1
+    error_message = "Unhealthy host alarm should use the maximum UnHealthyHostCount"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx[0].dimensions["TargetGroup"] == "targetgroup/mock-tg/1234567890123456"
+    error_message = "ALB target alarms should be dimensioned by the production target group"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx[0].threshold == 25 && aws_cloudwatch_metric_alarm.alb_target_response_time[0].threshold == 2
+    error_message = "ALB target alarms should use the configured thresholds"
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 6
+    error_message = "cloudwatch_alarm_arns should list the three service alarms and three ALB target alarms"
+  }
+}
+
+################################################################################
+# Test: CloudWatch alarms for an NLB-attached service with two listeners
+################################################################################
+
+run "cloudwatch_alarms_nlb_service" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = true
+    deployment_type                    = "rolling"
+    container_port                     = 5000
+    load_balancer_security_group_id    = "sg-12345678"
+    load_balancer_ingress_cidr_blocks  = ["0.0.0.0/0"]
+    load_balancer_attachment = {
+      target_group = {
+        port     = 5000
+        protocol = "TCP"
+      }
+      nlb_listeners = [
+        {
+          nlb_arn         = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-nlb/1234567890123456"
+          port            = 5000
+          protocol        = "TCP"
+          container_port  = 5000
+          target_protocol = "TCP"
+        },
+        {
+          nlb_arn         = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/my-nlb/1234567890123456"
+          port            = 5443
+          protocol        = "TCP"
+          container_port  = 5443
+          target_protocol = "TCP"
+        },
+      ]
+    }
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 2 && contains(keys(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts), "primary") && contains(keys(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts), "5443")
+    error_message = "One NLB unhealthy host alarm should be created per listener target group"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts["primary"].namespace == "AWS/NetworkELB" && aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts["primary"].threshold == 0
+    error_message = "NLB alarms should use the AWS/NetworkELB namespace and the default threshold"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 0 && length(aws_cloudwatch_metric_alarm.alb_target_5xx) == 0
+    error_message = "ALB target alarms should not be created for an NLB-attached service"
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 5
+    error_message = "cloudwatch_alarm_arns should list three service alarms and two NLB alarms"
+  }
+}
+
+################################################################################
+# Test: CloudWatch alarm variable validation
+################################################################################
+
+run "cloudwatch_alarm_invalid_period" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = true
+    cloudwatch_alarm_period            = 120
+  }
+
+  expect_failures = [var.cloudwatch_alarm_period]
+}

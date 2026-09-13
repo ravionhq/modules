@@ -23,6 +23,13 @@
   type: string
   required: true
   default: <<ref.stack.output.cluster_arn>>
+- id: cluster_log_retention_days
+  label: Cluster default log retention (days)
+  type: number
+  description: Default CloudWatch Logs retention inherited from the selected ECS cluster. Override it per service in the Compliance section.
+  collapsible: true
+  required: false
+  default: <<ref.stack.output.log_retention_days>>
 - id: vpc_id
   immutable: true
   label: VPC ID

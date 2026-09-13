@@ -13,6 +13,7 @@ This module creates an AWS Application Load Balancer (ALB) with HTTP and HTTPS l
 - SNI support with additional SSL certificates
 - TLS 1.3 support with modern SSL policies
 - Security hardening (invalid header dropping, desync mitigation)
+- Optional CloudWatch alarms for load balancer 5xx, target 5xx, and target response time
 
 ## Usage
 
@@ -95,6 +96,29 @@ module "alb" {
   default_action_message     = "Not Found"
 }
 ```
+
+### With CloudWatch Alarms
+
+Alarms use the load balancer's own metrics, so they work regardless of which services attach. Point the actions at an SNS topic:
+
+```hcl
+module "alb" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/alb?ref=v1.0.0"
+
+  name       = "main"
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.public_subnet_ids
+
+  cloudwatch_alarms_creation_enabled              = true
+  cloudwatch_alarm_elb_5xx_threshold              = 10
+  cloudwatch_alarm_target_5xx_threshold           = 10
+  cloudwatch_alarm_target_response_time_threshold = 1
+  cloudwatch_alarm_actions                        = [aws_sns_topic.alerts.arn]
+  cloudwatch_ok_actions                           = [aws_sns_topic.alerts.arn]
+}
+```
+
+Unhealthy host count is a per-target-group metric, so alarm on it from the service that owns the target group.
 
 ### Integration with ECS Service
 
@@ -311,6 +335,19 @@ spec:
 | waf_association_enabled | Whether to associate a WAF Web ACL with the ALB | `bool` | `false` | no |
 | web_acl_arn | The ARN of a WAFv2 Web ACL to associate with the ALB | `string` | `null` | no |
 
+### CloudWatch Alarms
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| cloudwatch_alarms_creation_enabled | Create alarms for ELB 5xx, target 5xx, and target response time | `bool` | `false` | no |
+| cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
+| cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
+| cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime in seconds above which the alarm fires (> 0) | `number` | `1` | no |
+| cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
+| cloudwatch_alarm_period | Period in seconds (10, 30, 60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
+| cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
+
 ## Outputs
 
 ### Application Load Balancer
@@ -343,6 +380,12 @@ spec:
 |------|-------------|
 | access_logs_bucket_name | The name of the S3 bucket for access logs (null if disabled or using existing) |
 | access_logs_bucket_arn | The ARN of the S3 bucket for access logs (null if disabled or using existing) |
+
+### CloudWatch Alarms
+
+| Name | Description |
+|------|-------------|
+| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `elb_5xx`, `target_5xx`, and `target_response_time` (empty when disabled) |
 
 ## Architecture
 

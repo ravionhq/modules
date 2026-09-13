@@ -70,6 +70,19 @@ output "access_logs_bucket_arn" {
 }
 
 ################################################################################
+# CloudWatch Alarms
+################################################################################
+
+output "cloudwatch_alarm_arns" {
+  description = "Map of CloudWatch alarm ARNs created by this module (empty when alarms are disabled)."
+  value = local.create_cloudwatch_alarms ? {
+    elb_5xx              = aws_cloudwatch_metric_alarm.elb_5xx[0].arn
+    target_5xx           = aws_cloudwatch_metric_alarm.target_5xx[0].arn
+    target_response_time = aws_cloudwatch_metric_alarm.target_response_time[0].arn
+  } : {}
+}
+
+################################################################################
 # Account & Region
 ################################################################################
 
