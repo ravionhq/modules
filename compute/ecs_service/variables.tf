@@ -838,3 +838,124 @@ variable "region" {
   description = "AWS region. When null, the provider's configured region is used."
   default     = null
 }
+
+################################################################################
+# CloudWatch Alarms
+################################################################################
+
+variable "cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create CloudWatch alarms for service CPU, memory, running task count, and load balancer target health."
+  default     = false
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_cpu_threshold" {
+  type        = number
+  description = "Average service CPU utilization (percent) above which the alarm fires."
+  default     = 80
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_cpu_threshold >= 0 && var.cloudwatch_alarm_cpu_threshold <= 100
+    error_message = "The cloudwatch_alarm_cpu_threshold must be between 0 and 100."
+  }
+}
+
+variable "cloudwatch_alarm_memory_threshold" {
+  type        = number
+  description = "Average service memory utilization (percent) above which the alarm fires."
+  default     = 80
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_memory_threshold >= 0 && var.cloudwatch_alarm_memory_threshold <= 100
+    error_message = "The cloudwatch_alarm_memory_threshold must be between 0 and 100."
+  }
+}
+
+variable "cloudwatch_alarm_running_tasks_minimum" {
+  type        = number
+  description = "Alarm when the Container Insights RunningTaskCount drops below this number. Requires Container Insights on the cluster."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_running_tasks_minimum >= 1
+    error_message = "The cloudwatch_alarm_running_tasks_minimum must be at least 1."
+  }
+}
+
+variable "cloudwatch_alarm_unhealthy_hosts_threshold" {
+  type        = number
+  description = "Number of unhealthy targets (UnHealthyHostCount, maximum per period) above which the alarm fires. Applies only when a load balancer is attached."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_unhealthy_hosts_threshold >= 0
+    error_message = "The cloudwatch_alarm_unhealthy_hosts_threshold must be at least 0."
+  }
+}
+
+variable "cloudwatch_alarm_target_5xx_threshold" {
+  type        = number
+  description = "Number of target 5xx responses (HTTPCode_Target_5XX_Count, summed per period) above which the alarm fires. ALB attachments only."
+  default     = 10
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_target_5xx_threshold >= 0
+    error_message = "The cloudwatch_alarm_target_5xx_threshold must be at least 0."
+  }
+}
+
+variable "cloudwatch_alarm_target_response_time_threshold" {
+  type        = number
+  description = "Average target response time in seconds (TargetResponseTime) above which the alarm fires. ALB attachments only."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_target_response_time_threshold > 0
+    error_message = "The cloudwatch_alarm_target_response_time_threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "The number of periods over which data is compared to the threshold."
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1
+    error_message = "The cloudwatch_alarm_evaluation_periods must be at least 1."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "The period in seconds over which the statistic is applied."
+  default     = 300
+  nullable    = false
+
+  validation {
+    condition     = contains([10, 30, 60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "The cloudwatch_alarm_period must be one of: 10, 30, 60, 300, 900, or 3600 seconds."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "A list of ARNs to notify when a CloudWatch alarm transitions to ALARM state."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "A list of ARNs to notify when a CloudWatch alarm transitions to OK state."
+  default     = []
+  nullable    = false
+}

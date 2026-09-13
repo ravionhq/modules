@@ -1,0 +1,50 @@
+# Compliance section shared by every ECS service definition: log retention
+# and service-level CloudWatch alarms. Follow with the load-balancer-specific
+# alarm inputs (ALB or NLB) when the service has one, then
+# cloudwatch-alarm-common-inputs.yml.
+- id: section_compliance
+  label: Compliance
+  type: section
+  description: Log retention and CloudWatch alarms that support availability and monitoring controls. Alarm thresholds are hidden until alarms are enabled.
+- id: log_retention_days
+  label: Log retention (days)
+  type: number
+  description: Days to keep the service CloudWatch log group. Leave blank to inherit the retention configured on the ECS cluster. Must be a standard CloudWatch Logs retention value such as 30, 90, 180, or 365. Use 0 to retain logs indefinitely.
+  collapsible: true
+  placeholder: Inherited from the ECS cluster
+  required: false
+  min: 0
+- id: cloudwatch_alarms_creation_enabled
+  label: Create CloudWatch alarms
+  type: boolean
+  description: Create CloudWatch alarms for service CPU, memory, running task count, and load balancer target health when the service has a load balancer.
+  default: false
+- id: cloudwatch_alarm_cpu_threshold
+  label: CPU alarm threshold (%)
+  type: number
+  description: Alarm when average service CPU utilization exceeds this percentage.
+  collapsible: true
+  max: 100
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 80
+- id: cloudwatch_alarm_memory_threshold
+  label: Memory alarm threshold (%)
+  type: number
+  description: Alarm when average service memory utilization exceeds this percentage.
+  collapsible: true
+  max: 100
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 80
+- id: cloudwatch_alarm_running_tasks_minimum
+  label: Minimum running tasks
+  type: number
+  description: Alarm when fewer than this many tasks are running. Uses the Container Insights RunningTaskCount metric, so the ECS cluster must have Container Insights enabled.
+  collapsible: true
+  min: 1
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 1

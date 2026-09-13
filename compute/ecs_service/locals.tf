@@ -44,6 +44,9 @@ locals {
   # Determine if load balancer is configured
   enable_load_balancer = var.load_balancer_attachment != null && var.load_balancer_attachment.enabled
 
+  # Cluster name for CloudWatch dimensions (cluster ARN: .../cluster/<name>)
+  cluster_name = split("/", var.cluster_arn)[1]
+
   # Determine if NLB listeners should be created (vs ALB listener rules).
   enable_nlb_listener = local.enable_load_balancer && length(try(var.load_balancer_attachment.nlb_listeners, [])) > 0
 

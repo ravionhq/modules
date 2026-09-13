@@ -24,7 +24,7 @@ output "service_cluster" {
 
 output "cluster_name" {
   description = "The name of the ECS cluster where the service is running."
-  value       = split("/", var.cluster_arn)[1]
+  value       = local.cluster_name
 }
 
 ################################################################################
@@ -302,4 +302,25 @@ output "aws_account_id" {
 output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
+}
+
+################################################################################
+# CloudWatch Alarms
+################################################################################
+
+output "cloudwatch_alarm_arns" {
+  description = "Map of CloudWatch alarm ARNs created by this module (empty when alarms are disabled)."
+  value = merge(
+    local.create_cloudwatch_alarms ? {
+      cpu_utilization    = aws_cloudwatch_metric_alarm.cpu_utilization[0].arn
+      memory_utilization = aws_cloudwatch_metric_alarm.memory_utilization[0].arn
+      running_tasks      = aws_cloudwatch_metric_alarm.running_tasks[0].arn
+    } : {},
+    local.alb_target_alarms_enabled ? {
+      unhealthy_hosts      = aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].arn
+      target_5xx           = aws_cloudwatch_metric_alarm.alb_target_5xx[0].arn
+      target_response_time = aws_cloudwatch_metric_alarm.alb_target_response_time[0].arn
+    } : {},
+    { for key, alarm in aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts : "nlb_${key}_unhealthy_hosts" => alarm.arn }
+  )
 }

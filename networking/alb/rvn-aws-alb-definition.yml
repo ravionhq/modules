@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.1.0
+  description: Add optional CloudWatch alarms for load balancer 5xx responses, target 5xx responses, and target response time.
 module:
   inputs:
     - id: network
@@ -157,6 +157,17 @@ module:
       show_when:
         access_logs_enabled: true
       default: 90
+    - id: section_cloudwatch_alarms
+      label: CloudWatch alarms
+      type: section
+      description: Alarm on load balancer errors and latency. Add SNS topic ARNs as alarm actions to be notified.
+    - id: cloudwatch_alarms_creation_enabled
+      label: Create CloudWatch alarms
+      type: boolean
+      description: Create CloudWatch alarms for load balancer 5xx responses, target 5xx responses, and target response time.
+      default: false
+    - $include: ../../partials/inputs/alb-cloudwatch-alarm-inputs.yml
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -173,6 +184,14 @@ module:
           << module.input.https_listener_enabled ?
           ((module.input.certificate_arns != nil ? module.input.certificate_arns : []) |
           concat(module.input.additional_certificate_arns != nil ? module.input.additional_certificate_arns : [])) : [] >>
+        cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions || [] >>
+        cloudwatch_alarm_elb_5xx_threshold: << module.input.cloudwatch_alarm_elb_5xx_threshold >>
+        cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
+        cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+        cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
+        cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
+        cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
+        cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions || [] >>
         deletion_protection_enabled: << module.input.deletion_protection_enabled >>
         http_listener_enabled: << module.input.http_listener_enabled >>
         http_listener_port: << module.input.http_listener_port >>
@@ -269,7 +288,7 @@ module:
 
     ## Overview
 
-    Use this module to create an Application Load Balancer inside a VPC that is shared by one or more services. Select a VPC network and Ravion provisions the load balancer, its security group, HTTP and HTTPS listeners with a fixed default response, optional access logging, and optional WAF association.
+    Use this module to create an Application Load Balancer inside a VPC that is shared by one or more services. Select a VPC network and Ravion provisions the load balancer, its security group, HTTP and HTTPS listeners with a fixed default response, optional access logging, optional WAF association, and optional CloudWatch alarms.
 
     The load balancer intentionally serves no traffic by itself. Services that reference this module, such as EC2 services, create their own target groups and listener rules on the shared listeners.
 
@@ -300,6 +319,20 @@ module:
 
     Enable Access logs to write load balancer access logs to S3. Leave the bucket ARN blank to create a bucket with the configured retention, or point at an existing bucket. Associate a WAFv2 Web ACL by providing its ARN.
 
+    ## CloudWatch alarms
+
+    Enable Create CloudWatch alarms to add three alarms on the load balancer's own metrics:
+
+    | Alarm | Metric | Fires when |
+    | --- | --- | --- |
+    | Load balancer 5xx | HTTPCode_ELB_5XX_Count (sum) | The load balancer itself returns more 5xx responses than the threshold in a period, such as 502 or 503 from unreachable targets or the fixed 503 for unmatched routes |
+    | Target 5xx | HTTPCode_Target_5XX_Count (sum) | Targets return more 5xx responses than the threshold in a period |
+    | Target response time | TargetResponseTime (average) | Targets take longer than the threshold, in seconds, to respond |
+
+    Each alarm must breach for the configured number of consecutive evaluation periods before it fires, and missing data is treated as not breaching, so an idle load balancer never alarms. Add SNS topic ARNs as Alarm actions and OK actions to be notified. Alarm ARNs are exposed as the `cloudwatch_alarm_arns` stack output.
+
+    The alarms use the load balancer dimension only. Health-based metrics such as unhealthy host count are reported per target group, and target groups belong to the services that attach to this load balancer, so alarm on those from the service modules.
+
     ## Configuration
 
     | Field | Required | Default | Description |
@@ -322,6 +355,14 @@ module:
     | Access logs | No | false | Write access logs to S3 |
     | Access logs bucket ARN | No | Created bucket | Existing bucket for access logs |
     | Access logs retention (days) | No | 90 | Retention for the created bucket |
+    | Create CloudWatch alarms | No | false | Adds load balancer 5xx, target 5xx, and target response time alarms |
+    | Load balancer 5xx alarm threshold | No | 10 | 5xx responses generated by the load balancer per period |
+    | Target 5xx alarm threshold | No | 10 | 5xx responses generated by targets per period |
+    | Target response time alarm threshold (seconds) | No | 1 | Average target response time |
+    | Alarm evaluation periods | No | 2 | Consecutive breaching periods before an alarm fires |
+    | Alarm period | No | 5 minutes | Length of each evaluation period |
+    | Alarm actions | No | [] | ARNs notified on ALARM, such as an SNS topic |
+    | OK actions | No | [] | ARNs notified on OK |
     | Tags | No | Standard Ravion tags | Additional tags applied to resources |
     | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
     | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
@@ -336,6 +377,7 @@ module:
     - Internal ingress defaults to RFC1918 IPv4 ranges with no IPv6 ingress, while internet-facing ingress defaults to all IPv4 and IPv6 sources.
     - HTTP-only is allowed for development, but production load balancers should enable HTTPS with an ACM certificate.
     - Advanced ALB behaviors such as desync mitigation, header handling, and HTTP/2 keep their safe Terraform defaults and are available through Advanced Terraform variables.
+    - CloudWatch alarms are off by default and cover only load-balancer-level metrics. Per-target-group health alarms belong to the services that own the target groups.
 
     ## Learn more
 
