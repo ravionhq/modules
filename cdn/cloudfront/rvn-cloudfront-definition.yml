@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.3.0
-  description: Revert the default cache policy to the AWS managed policy.
+  version: 1.3.1
+  description: Accept UUID-format CloudFront key group IDs for signed URLs.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -529,12 +529,13 @@ module:
           type: string_array
           description: Existing CloudFront key group IDs whose public keys are trusted for signed URLs or signed cookies on this path.
           add_button_label: Add key group ID
+          placeholder: e0d28d26-1487-4059-9792-38defebe52ba
           required: true
           show_when:
             signed_urls_enabled: true
           patterns:
-            - message: Invalid CloudFront key group ID.
-              pattern: ^[A-Z0-9]+$
+            - message: Invalid CloudFront key group ID. Use the 36-character key group ID from CloudFront key management, not the public key ID.
+              pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
           default: []
       default: []
     - id: section_signed_urls
@@ -551,12 +552,13 @@ module:
       type: string_array
       description: Existing CloudFront key group IDs whose public keys are trusted for signed URLs or signed cookies. Add at least one key group before enabling Require signed URLs on the default behavior or any custom cache behavior.
       add_button_label: Add key group ID
+      placeholder: e0d28d26-1487-4059-9792-38defebe52ba
       required: true
       show_when:
         signed_urls_enabled: true
       patterns:
-        - message: Invalid CloudFront key group ID.
-          pattern: ^[A-Z0-9]+$
+        - message: Invalid CloudFront key group ID. Use the 36-character key group ID from CloudFront key management, not the public key ID.
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
       default: []
     - id: response_headers_policy
       label: Response headers policy
