@@ -1,4 +1,4 @@
-type: '<< module.input.build_source == "image_registry" ? "disabled" : "image" >>'
+type: '<< module.input.build_source == "image_registry" || module.input.build_source == "ecr" ? "disabled" : "image" >>'
 builder: >-
   << module.input.build_source == "dockerfile" ? {type: "dockerfile", dockerfile: module.input.dockerfile
   || "Dockerfile", context: module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:

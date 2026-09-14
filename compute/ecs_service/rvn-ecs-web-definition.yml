@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.3.0
-  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
+  version: 1.4.0
+  description: "Add the Managed ECR repository build source: Ravion manages the service's ECR repository while a pipeline build step pushes the image."
 module:
   inputs:
     - id: section_cluster
@@ -612,6 +612,7 @@ module:
     | Hosting an internal HTTP service | Routing private traffic through the private cluster ALB          |
     | Building from source             | Creating images with Railpack or a Dockerfile and pushing to ECR |
     | Bringing an existing image       | Deploying a public or private registry image by tag or digest    |
+    | Managed ECR repository            | Letting a pipeline push images to an ECR repository managed by Ravion |
     | Tuning production capacity       | Combining Fargate, Fargate Spot, or EC2 with autoscaling         |
     | Running release tasks            | Running pre-deploy or post-deploy ECS tasks with the app image   |
     | Debugging running tasks          | Enabling ECS Exec when shell access is needed                    |
@@ -631,12 +632,15 @@ module:
     | Railpack        | Let Ravion detect the app stack and build an image from source with Railpack |
     | Dockerfile      | Build from a Dockerfile in the selected repository                |
     | Pull from image registry | Deploy an existing image from Docker Hub, GHCR, ECR, or registry |
+    | Managed ECR repository | Push an image from a pipeline to the ECR repository managed by Ravion |
 
     For Railpack and Dockerfile builds, provide Git repository, Git branch, and optionally Base path. Ravion pushes built images to the service ECR repository and deploys by image digest.
 
     Railpack settings let you optionally pin the Railpack version and override install, build, and start commands. Leave them blank to use Railpack defaults and autodetection.
 
     For Pull from image registry, provide the image repository without the tag. At deploy time, provide the tag to use. Use Registry credentials secret ARN for private registries that require ECS repository credentials. Use Start command to override the image default CMD when the image needs a different service command.
+
+    For Managed ECR repository, Ravion creates and manages the service ECR repository. Push the image from a pipeline `build:image` step, then provide its tag or digest at deploy time.
 
     ## Routing and health checks
 
@@ -717,6 +721,7 @@ module:
     | ---------------------- | --------------------------------------------------- |
     | Railpack or Dockerfile | Image digest such as sha256:...            |
     | Pull from image registry | Tag for the configured repository, such as latest   |
+    | Managed ECR repository | Tag or digest in the service ECR repository |
     | Disabled               | Full image URI, ideally pinned by digest            |
 
     Run pre-deploy command and Run post-deploy command start optional one-off ECS tasks before or after each deployment. These commands use the deployed app image, the app container name, the configured task role and execution role, the selected capacity provider strategy, service subnets, service security groups, runtime environment variables, and runtime secrets. Leave either toggle disabled to skip that hook and hide its settings.
@@ -793,7 +798,7 @@ module:
     | Run in private subnets          | No       | true                       | Run tasks in private subnets without public IPs    |
     | Service name                    | Yes      | {project}-{env}-{module}   | Name for the ECS service and related resources     |
     | ECS cluster                     | Yes      | -                          | Existing rvn-ecs-cluster module instance           |
-    | Build source                    | Yes      | dockerfile                 | Dockerfile, Railpack, Pull from image registry, or Disabled |
+    | Build source                    | Yes      | dockerfile                 | Dockerfile, Railpack, Managed ECR repository, Pull from image registry, or Disabled |
     | Git repository                  | Yes*     | -                          | Required for Railpack and Dockerfile builds |
     | Git branch                      | Yes*     | -                          | Required for Railpack and Dockerfile builds |
     | Source base path                | No       | .                          | Path from repository root to source code           |
@@ -842,7 +847,7 @@ module:
 
     - The module always models an HTTP web service behind an Application Load Balancer. NLB, worker, and service discovery patterns are intentionally outside this module definition.
     - Tasks default to private subnets even for public web services. The ALB is public; the tasks remain private when the VPC has NAT or equivalent egress.
-    - Built images are pushed to an ECR repository created with the service stack. Pull from image registry lets teams bring their own image pipeline.
+    - Built images are pushed to an ECR repository created with the service stack. Managed ECR repository lets a pipeline push images to that repository without a module build config. Pull from image registry lets teams bring their own image pipeline.
     - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 

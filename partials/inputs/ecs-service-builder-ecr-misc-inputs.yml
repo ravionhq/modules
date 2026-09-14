@@ -14,6 +14,7 @@
       - dockerfile
       - railpack
       - nixpacks
+      - ecr
 - id: ecr_scan_on_push_enabled
   label: Scan images on push
   type: boolean
@@ -24,6 +25,7 @@
       - dockerfile
       - railpack
       - nixpacks
+      - ecr
   default: true
 - id: ecr_force_deletion_enabled
   label: Force delete image repository
@@ -35,6 +37,7 @@
       - dockerfile
       - railpack
       - nixpacks
+      - ecr
   default: false
 - $include: ./misc-section.yml
 - id: new_deployment_forcing_enabled
