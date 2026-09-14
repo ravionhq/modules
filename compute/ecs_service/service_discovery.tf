@@ -27,6 +27,15 @@ resource "aws_service_discovery_service" "this" {
   tags = merge(local.tags, {
     Name = var.name
   })
+
+  # The service name becomes one DNS label under the namespace, so the wider
+  # 255-character ECS name limit does not apply here.
+  lifecycle {
+    precondition {
+      condition     = can(regex("^[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?$", var.name))
+      error_message = "service_discovery requires name to be a single DNS label of at most 63 letters, numbers, hyphens, or underscores."
+    }
+  }
 }
 
 

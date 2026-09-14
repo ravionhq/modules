@@ -227,4 +227,37 @@ locals {
 
   # Service discovery settings
   enable_service_discovery = var.service_discovery != null
+
+  # Service addresses, the ECS counterpart of compute/eks_service's. The
+  # in-cluster host is the Cloud Map record <name>.<namespace>, lowercased
+  # because DNS is case-insensitive while ECS names are not. Its scheme is
+  # what the container speaks (the target group protocol), since the record
+  # resolves straight to task IPs and bypasses the load balancer.
+  service_host   = local.enable_service_discovery ? lower("${var.name}.${var.service_discovery.namespace_name}") : null
+  service_port   = local.enable_load_balancer ? local.primary_load_balancer_container_port : var.container_port
+  service_scheme = local.enable_load_balancer ? lower(local.primary_target_group_protocol) : "http"
+  service_url    = local.service_host != null ? "${local.service_scheme}://${local.service_host}:${local.service_port}" : null
+
+  # The load balancer URL takes scheme and port from the attached listener. An
+  # ALB rule scoped to a host header does not match the bare ALB hostname, so
+  # the first concrete host header wins over the DNS name. NLB listeners have
+  # no host and no default port, so the URL always carries the port.
+  alb_listener_attached = length(data.aws_lb_listener.attached) > 0
+  load_balancer_host_rules = local.alb_listener_attached ? flatten([
+    for condition in var.load_balancer_attachment.listener_rules[0].conditions :
+    [for value in condition.values : value if !strcontains(value, "*")]
+    if condition.type == "host-header"
+  ]) : []
+  load_balancer_scheme = local.enable_nlb_listener ? lower(local.primary_nlb_listener.protocol) : (
+    local.alb_listener_attached ? lower(data.aws_lb_listener.attached[0].protocol) : null
+  )
+  load_balancer_port = local.enable_nlb_listener ? local.primary_nlb_listener.port : (
+    local.alb_listener_attached ? data.aws_lb_listener.attached[0].port : null
+  )
+  load_balancer_default_port = local.load_balancer_scheme == "https" ? 443 : (local.load_balancer_scheme == "http" ? 80 : null)
+  load_balancer_host = length(data.aws_lb.attached) > 0 ? (
+    length(local.load_balancer_host_rules) > 0 ? local.load_balancer_host_rules[0] : data.aws_lb.attached[0].dns_name
+  ) : null
+  load_balancer_port_suffix = local.load_balancer_port != null && local.load_balancer_port != local.load_balancer_default_port ? ":${local.load_balancer_port}" : ""
+  load_balancer_url         = local.load_balancer_host != null && local.load_balancer_scheme != null ? "${local.load_balancer_scheme}://${local.load_balancer_host}${local.load_balancer_port_suffix}" : null
 }

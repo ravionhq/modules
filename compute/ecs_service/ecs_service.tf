@@ -125,13 +125,15 @@ resource "aws_ecs_service" "this" {
   # Health check grace period
   health_check_grace_period_seconds = local.enable_load_balancer ? var.health_check_grace_period_seconds : null
 
-  # Service discovery
+  # Service discovery. A records in awsvpc mode resolve to the task ENI and
+  # ECS rejects a container name and port on them; only SRV records carry the
+  # pair so the record can publish the port.
   dynamic "service_registries" {
     for_each = local.enable_service_discovery ? [1] : []
     content {
       registry_arn   = aws_service_discovery_service.this[0].arn
-      container_name = local.lb_container_name
-      container_port = local.primary_load_balancer_container_port
+      container_name = var.service_discovery.dns_record_type == "SRV" ? local.lb_container_name : null
+      container_port = var.service_discovery.dns_record_type == "SRV" ? local.service_port : null
     }
   }
 

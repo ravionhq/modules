@@ -703,6 +703,30 @@ variable "private_nlb_elastic_ip_allocation_ids" {
   }
 }
 
+################################################################################
+# Service Discovery
+################################################################################
+
+variable "service_discovery_namespace_enabled" {
+  type        = bool
+  description = "Create a Cloud Map private DNS namespace in the cluster VPC so ECS services can reach each other at <service name>.<namespace> without a load balancer."
+  default     = true
+}
+
+variable "service_discovery_namespace_name" {
+  type        = string
+  description = "Name of the private DNS namespace. Defaults to \"<name>.internal\" when null."
+  default     = null
+
+  validation {
+    condition = var.service_discovery_namespace_name == null || (
+      length(var.service_discovery_namespace_name) <= 253
+      && can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$", var.service_discovery_namespace_name))
+    )
+    error_message = "service_discovery_namespace_name must be a lowercase DNS name: labels of 1-63 letters, numbers, or hyphens separated by dots, no trailing dot, 253 characters at most."
+  }
+}
+
 variable "region" {
   type        = string
   description = "AWS region. When null, the provider's configured region is used."

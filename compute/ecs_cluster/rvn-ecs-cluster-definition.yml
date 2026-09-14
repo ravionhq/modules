@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.1.0
+  description: Give the cluster a private DNS namespace so ECS web and network services can call each other at <service name>.<cluster>.internal without going through a load balancer, and let you rename or turn off the namespace.
 module:
   inputs:
     - id: network
@@ -496,6 +496,28 @@ module:
         private_nlb_enabled: true
         private_nlb_access_logs_enabled: true
       type: string
+    - description: Creates a private Cloud Map DNS namespace in the cluster VPC. ECS web and network services register in it, so a service in the VPC reaches another at <service name>.<namespace> directly, without going through a load balancer.
+      id: section_service_discovery
+      label: Service discovery
+      type: section
+    - default: true
+      description: Create the cluster's private DNS namespace. Turning it off after services have registered fails until those services turn service discovery off.
+      id: service_discovery_namespace_enabled
+      label: Service discovery namespace
+      type: boolean
+    - collapsible: true
+      description: Private DNS suffix services register under. Leave blank for <cluster name>.internal. Other services embed this in the addresses they call, so it cannot change after creation.
+      id: service_discovery_namespace_name
+      immutable: true
+      label: Namespace name
+      patterns:
+        - message: Use lowercase letters, numbers, hyphens, and dots. Each dot-separated label is 1-63 characters and starts and ends with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$
+      placeholder: my-cluster.internal
+      required: false
+      show_when:
+        service_discovery_namespace_enabled: true
+      type: string
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -521,6 +543,7 @@ module:
     | Scenario                       | ECS cluster helps by...                                          |
     | ------------------------------ | ---------------------------------------------------------------- |
     | Running web apps and APIs      | Providing Fargate capacity and shared ALBs for HTTP traffic      |
+    | Services calling each other    | Giving every web and network service a private DNS name in the VPC |
     | Reducing compute cost          | Allowing services to use Fargate Spot or EC2 Spot capacity       |
     | Hosting private services       | Creating internal load balancers reachable only inside the VPC   |
     | Running TCP/UDP workloads      | Creating Network Load Balancers for non-HTTP protocols           |
@@ -573,6 +596,14 @@ module:
 
     Use Network Load Balancers for TCP/UDP workloads, static IP requirements, very high-throughput connections, or protocols that do not need HTTP routing. For normal web apps and HTTP APIs, prefer an Application Load Balancer.
 
+    ## Service discovery
+
+    The cluster creates a private Cloud Map DNS namespace, `<cluster name>.internal` by default, in the cluster VPC. ECS Web Service and ECS Network Service modules on the cluster register in it, so any task in the VPC can call one of them at `<service name>.<namespace>` and reach its tasks directly. That skips the load balancer hop and needs no host rule per service; it is the ECS counterpart of a Kubernetes Service name. Each registered service publishes the resulting address as a stack output.
+
+    A namespace is a Route 53 private hosted zone, so the VPC must have DNS support and DNS hostnames enabled, which the Ravion VPC module does by default. Clusters created before this version gain the namespace on their next apply; services attached to them see no namespace until then and skip registration.
+
+    Change **Namespace name** only when the default suffix clashes with a name already used in the VPC. The name is fixed after creation because other services embed it in the addresses they call. Turn **Service discovery namespace** off for clusters whose services should only ever be reached through a load balancer; a namespace that still holds registered services cannot be removed until those services turn service discovery off.
+
     ## Observability
 
     Container Insights collects ECS cluster, service, and task CPU, memory, network, and storage metrics in CloudWatch. The module dashboard includes:
@@ -600,6 +631,8 @@ module:
     | Private load balancer | No       | `false`              | Create an internal ALB                                        |
     | Public NLB            | No       | `false`              | Create an internet-facing Network Load Balancer               |
     | Private NLB           | No       | `false`              | Create an internal Network Load Balancer                      |
+    | Service discovery namespace | No | `true`             | Create a private DNS namespace services register in           |
+    | Namespace name        | No       | `{cluster}.internal` | DNS suffix of the namespace; fixed after creation             |
     | Tags                  | No       | Environment, Project | Custom tags applied to all resources                          |
 
     ## EC2 capacity settings
@@ -706,6 +739,8 @@ module:
         public_nlb_security_group_ids: << module.input.public_nlb_security_group_ids >>
         public_subnet_ids: << module.input.public_subnet_ids || [] >>
         region: << module.input.aws_region >>
+        service_discovery_namespace_enabled: << module.input.service_discovery_namespace_enabled >>
+        service_discovery_namespace_name: << module.input.service_discovery_namespace_name || nil >>
         tags:
           $include: ../stack/ravion-tags.yml
         vpc_id: << module.input.vpc_id >>

@@ -151,6 +151,14 @@
   collapsible: true
   required: false
   default: []
+- id: allowed_security_group_ids
+  label: Allowed security groups
+  type: string_array
+  description: With service discovery on, any task in the VPC can reach this service at its service discovery address. List caller security group IDs here, such as another service's security_group_id stack output, to restrict in-VPC access to those callers only. Has no effect on workers, which register no address.
+  collapsible: true
+  placeholder: sg-0123456789abcdef0
+  required: false
+  default: []
 - id: sidecars
   label: Sidecars
   type: object_array

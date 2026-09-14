@@ -238,6 +238,30 @@ output "private_nlb_security_group_id" {
 
 
 ################################################################################
+# Service Discovery
+################################################################################
+
+output "service_discovery_namespace_id" {
+  description = "The ID of the Cloud Map private DNS namespace services register in (null if disabled)."
+  value       = var.service_discovery_namespace_enabled ? aws_service_discovery_private_dns_namespace.this[0].id : null
+}
+
+output "service_discovery_namespace_arn" {
+  description = "The ARN of the Cloud Map private DNS namespace (null if disabled)."
+  value       = var.service_discovery_namespace_enabled ? aws_service_discovery_private_dns_namespace.this[0].arn : null
+}
+
+output "service_discovery_namespace_name" {
+  description = "DNS suffix of the private namespace. A registered service resolves at <service name>.<this value> inside the VPC (null if disabled)."
+  value       = var.service_discovery_namespace_enabled ? aws_service_discovery_private_dns_namespace.this[0].name : null
+}
+
+output "service_discovery_namespace_hosted_zone_id" {
+  description = "The Route 53 private hosted zone ID backing the namespace (null if disabled)."
+  value       = var.service_discovery_namespace_enabled ? aws_service_discovery_private_dns_namespace.this[0].hosted_zone : null
+}
+
+################################################################################
 # Account & Region
 ################################################################################
 

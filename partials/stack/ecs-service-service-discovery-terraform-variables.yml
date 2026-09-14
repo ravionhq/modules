@@ -1,0 +1,14 @@
+# Cloud Map registration for ECS services that listen on a port (web and
+# network services). Merged into their stack terraform_variables; the worker
+# leaves the Terraform default of null and registers nothing.
+#
+# The namespace values are mapped inputs from the cluster reference and are
+# nil when the cluster has service discovery off or has not been applied since
+# gaining the namespace, in which case the service silently skips registration
+# rather than failing the apply. A records with an ECS-managed custom health
+# check are the standard shape for awsvpc tasks.
+service_discovery: >-
+  << module.input.service_discovery_enabled && module.input.service_discovery_namespace_id &&
+  module.input.service_discovery_namespace_name ? {"namespace_id": module.input.service_discovery_namespace_id,
+  "namespace_name": module.input.service_discovery_namespace_name, "dns_record_type": "A", "dns_ttl": 10,
+  "routing_policy": "MULTIVALUE", "health_check_custom_config": {"failure_threshold": 1}} : nil >>

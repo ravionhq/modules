@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.3.0
-  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
+  version: 1.4.0
+  description: Give the service a private DNS name in the cluster's service discovery namespace and publish its in-VPC and load balancer addresses as stack outputs, so other services can call it directly. Restrict those in-VPC callers with Allowed security groups. The dashboard link now uses the load balancer address with the right scheme.
 module:
   inputs:
     - id: section_cluster
@@ -45,6 +45,11 @@ module:
       label: Public web service
       type: boolean
       description: Expose this service through the public ALB. Turn off to use the private ALB.
+      default: true
+    - id: service_discovery_enabled
+      label: Service discovery
+      type: boolean
+      description: Register this service in the cluster's private DNS namespace so other services in the VPC can call it at <service name>.<namespace> without going through the load balancer. Has no effect when the cluster has service discovery turned off.
       default: true
     - $include: ../../partials/inputs/private-subnet-placement.yml
     - $include: ../../partials/inputs/ecs-service-build-inputs.yml
@@ -325,6 +330,7 @@ module:
           terraform_variables:
             $merge:
               - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - ../../partials/stack/ecs-service-service-discovery-terraform-variables.yml
               - container_port: << module.input.container_port >>
                 health_check_grace_period_seconds: << module.input.health_check_grace_period_seconds >>
                 load_balancer_attachment:
@@ -488,6 +494,11 @@ module:
         (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars
         : []) >>
   ui:
+    links: |-
+      <<
+      stack.output.load_balancer_url ?
+      [{"name":"Load balancer","href":stack.output.load_balancer_url}] : []
+      >>
     logs:
       - id: ecs_service_logs
         name: ECS service logs
@@ -610,6 +621,7 @@ module:
     | -------------------------------- | --------------------------------------------------------------- |
     | Deploying a public web app       | Routing host or path traffic through the public cluster ALB      |
     | Hosting an internal HTTP service | Routing private traffic through the private cluster ALB          |
+    | Calling another service          | Reaching it at its private DNS name, with no load balancer hop   |
     | Building from source             | Creating images with Railpack or a Dockerfile and pushing to ECR |
     | Bringing an existing image       | Deploying a public or private registry image by tag or digest    |
     | Tuning production capacity       | Combining Fargate, Fargate Spot, or EC2 with autoscaling         |
@@ -618,7 +630,7 @@ module:
 
     ## Cluster and networking
 
-    An ECS cluster is required. The cluster reference supplies the cluster ARN, VPC ID, public and private subnet IDs, load balancer listeners, load balancer security groups, capacity provider names, AWS account, region, and execution environment.
+    An ECS cluster is required. The cluster reference supplies the cluster ARN, VPC ID, public and private subnet IDs, load balancer listeners, load balancer security groups, capacity provider names, service discovery namespace, AWS account, region, and execution environment.
 
     Use Public web service when the service should be reachable through the public Application Load Balancer. Turn it off for internal services that should use the private Application Load Balancer.
 
@@ -658,6 +670,23 @@ module:
     | Health check grace period (secs) | 0       | Startup window where ECS ignores load balancer health failures |
 
     Increase the grace period for apps with slow boot times. Keep health check endpoints lightweight and unauthenticated.
+
+    ### Service addresses
+
+    With **Service discovery** on, the default, the service registers in the cluster's private DNS namespace and the stack publishes where it can be reached, so other services can be pointed at it without assembling hostnames by hand.
+
+    | Output | Value | Notes |
+    | ------ | ----- | ----- |
+    | `service_host` | `{service name}.{namespace}` | In-VPC DNS name served by Cloud Map, for example `billing.acme-prod.internal` |
+    | `service_port` | Container port | Port the tasks listen on |
+    | `service_url` | `http://{service_host}:{port}` | In-VPC URL; prefer it for service-to-service calls |
+    | `load_balancer_url` | `https://{host}` | URL through the shared load balancer |
+
+    Prefer `service_url` when the caller runs in the same VPC: the name resolves straight to the running task IPs, so traffic skips the load balancer hop and needs no host rule. Only healthy, running tasks are in the answer, and the record has a 10 second TTL. Use a lowercase service name; DNS is case-insensitive, so `Api` and `api` would share one record.
+
+    `load_balancer_url` is for callers outside the VPC. Its scheme and port follow the listener the service is attached to, HTTPS when the selected ALB has an HTTPS listener. Its host is the first **Domain host rule** without a wildcard when one is set, because a request to the bare load balancer hostname would not match a host-scoped rule; otherwise it is the load balancer's DNS name.
+
+    Service discovery also opens the container port to the whole VPC on the service security group, so any task can call the address. To restrict that, list the callers' security group IDs in **Allowed security groups**; the VPC-wide rule is then replaced by one rule per listed group. Load balancer traffic is unaffected either way. A cluster with service discovery turned off, or one not yet re-applied since it gained a namespace, leaves the service unregistered and these outputs empty.
 
     ## Capacity and runtime
 
@@ -790,6 +819,8 @@ module:
     | Field                           | Required | Default                    | Description                                        |
     | ------------------------------- | -------- | -------------------------- | -------------------------------------------------- |
     | Public web service              | No       | true                       | Use the public ALB; turn off for the private ALB   |
+    | Service discovery               | No       | true                       | Register {service name}.{namespace} in the cluster's private DNS namespace |
+    | Allowed security groups         | No       | []                         | Restrict in-VPC callers of the service discovery address to these security groups |
     | Run in private subnets          | No       | true                       | Run tasks in private subnets without public IPs    |
     | Service name                    | Yes      | {project}-{env}-{module}   | Name for the ECS service and related resources     |
     | ECS cluster                     | Yes      | -                          | Existing rvn-ecs-cluster module instance           |
@@ -840,7 +871,9 @@ module:
 
     ## Design decisions
 
-    - The module always models an HTTP web service behind an Application Load Balancer. NLB, worker, and service discovery patterns are intentionally outside this module definition.
+    - The module always models an HTTP web service behind an Application Load Balancer. NLB and worker patterns are separate module definitions.
+    - **Service discovery is on by default and opens the container port to the VPC.** A private DNS name is only useful if callers can reach it, so a registered service accepts in-VPC traffic on its port until Allowed security groups narrows the callers. The load balancer path is unchanged.
+    - **A records, not SRV.** Tasks run in awsvpc mode and own their IP, so the name resolves directly to task IPs and the port stays in `service_url`. Cloud Map uses ECS-managed health so only running tasks are answered.
     - Tasks default to private subnets even for public web services. The ALB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Built images are pushed to an ECR repository created with the service stack. Pull from image registry lets teams bring their own image pipeline.
     - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.

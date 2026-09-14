@@ -306,6 +306,13 @@ module "api_service" {
 | private_nlb_elastic_ips_enabled | Enable static IPs | `bool` | `false` | no |
 | private_nlb_elastic_ip_allocation_ids | Elastic IP allocation IDs | `list(string)` | `[]` | no |
 
+### Service Discovery
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| service_discovery_namespace_enabled | Create a Cloud Map private DNS namespace for service-to-service discovery | `bool` | `true` | no |
+| service_discovery_namespace_name | Private DNS suffix for the namespace; defaults to `<name>.internal` | `string` | `null` | no |
+
 ## Outputs
 
 ### ECS Cluster
@@ -382,6 +389,15 @@ module "api_service" {
 | private_nlb_dns_name | Private NLB DNS name |
 | private_nlb_zone_id | Private NLB hosted zone ID |
 | private_nlb_arn_suffix | Private NLB ARN suffix |
+
+### Service Discovery
+
+| Name | Description |
+|------|-------------|
+| service_discovery_namespace_id | Cloud Map private DNS namespace ID (null if disabled) |
+| service_discovery_namespace_arn | Cloud Map private DNS namespace ARN (null if disabled) |
+| service_discovery_namespace_name | DNS suffix services register under, e.g. `my-cluster.internal` (null if disabled) |
+| service_discovery_namespace_hosted_zone_id | Route 53 private hosted zone backing the namespace (null if disabled) |
 
 ## Architecture
 

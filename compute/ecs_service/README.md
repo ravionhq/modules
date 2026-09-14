@@ -146,11 +146,13 @@ module "backend_service" {
   load_balancer_attachment = null
 
   service_discovery = {
-    namespace_id = aws_service_discovery_private_dns_namespace.main.id
+    namespace_id   = aws_service_discovery_private_dns_namespace.main.id
+    namespace_name = aws_service_discovery_private_dns_namespace.main.name
   }
 }
 
 # Service is now accessible at: backend.internal.local
+# module.backend_service.service_url == "http://backend.internal.local:3000"
 ```
 
 ### With NLB (TCP/TLS)
@@ -278,6 +280,7 @@ module "worker_service" {
 | public_ip_assignment_enabled | Assign public IP to tasks (for Fargate in public subnets without NAT) | `bool` | `false` | no |
 | security_group_ids | Additional security group IDs to attach | `list(string)` | `[]` | no |
 | allowed_cidr_blocks | CIDR blocks allowed to access the service | `list(string)` | `[]` | no |
+| allowed_security_group_ids | Security groups allowed to call the service discovery address; empty admits the whole VPC CIDR on the container port | `list(string)` | `[]` | no |
 
 ### ECS Cluster
 
@@ -379,6 +382,7 @@ The `auto_scaling` object includes:
 
 The `service_discovery` object includes:
 - `namespace_id` - Cloud Map namespace ID
+- `namespace_name` - DNS suffix of the namespace; the service registers as `<name>.<namespace_name>`
 - `dns_record_type` - DNS record type (A or SRV, default: A)
 - `dns_ttl` - DNS TTL in seconds (default: 10)
 - `routing_policy` - Routing policy (MULTIVALUE or WEIGHTED)
@@ -463,6 +467,16 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 |------|-------------|
 | service_discovery_arn | Cloud Map service ARN |
 | service_discovery_id | Cloud Map service ID |
+| service_discovery_namespace_name | DNS suffix the service registered under |
+
+### Service Addresses
+
+| Name | Description |
+|------|-------------|
+| service_host | In-VPC DNS name `<name>.<namespace>` (null without service discovery) |
+| service_port | Container port to pair with `service_host` (null without service discovery) |
+| service_url | In-VPC URL, scheme from the target group protocol (null without service discovery) |
+| load_balancer_url | URL through the ALB (listener scheme, first non-wildcard host rule or ALB DNS name) or NLB (protocol, DNS name, listener port) |
 
 ### Container Information
 

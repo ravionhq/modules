@@ -58,6 +58,15 @@ mock_provider "aws" {
       arn = "arn:aws:autoscaling:us-east-1:123456789012:autoScalingGroup:12345678-1234-1234-1234-123456789012:autoScalingGroupName/test-cluster-ecs"
     }
   }
+
+  override_resource {
+    target = aws_service_discovery_private_dns_namespace.this
+    values = {
+      arn         = "arn:aws:servicediscovery:us-east-1:123456789012:namespace/ns-abcdefghij1234567"
+      id          = "ns-abcdefghij1234567"
+      hosted_zone = "Z0123456789ABCDEFGHIJ"
+    }
+  }
 }
 
 variables {

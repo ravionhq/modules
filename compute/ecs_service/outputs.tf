@@ -84,6 +84,11 @@ output "security_group_arn" {
   value       = module.security_group.security_group_arn
 }
 
+output "security_group_ingress_rules" {
+  description = "Ingress rules applied to the service security group, in order: load balancer, allowed CIDR blocks, then the service discovery peer rules (VPC CIDR, or the allowed security groups)."
+  value       = local.security_group_ingress_rules
+}
+
 ################################################################################
 # Target Groups
 #
@@ -236,6 +241,40 @@ output "service_discovery_arn" {
 output "service_discovery_id" {
   description = "The ID of the Cloud Map service (null if service discovery disabled)."
   value       = local.enable_service_discovery ? aws_service_discovery_service.this[0].id : null
+}
+
+output "service_discovery_namespace_name" {
+  description = "DNS suffix of the Cloud Map namespace the service registers in (null if service discovery disabled)."
+  value       = local.enable_service_discovery ? var.service_discovery.namespace_name : null
+}
+
+################################################################################
+# Service Addresses
+#
+# What another workload puts in its configuration to call this service. The
+# in-VPC values come from the Cloud Map registration and resolve to task IPs
+# once the service's tasks are running; they are null without service
+# discovery. load_balancer_url is null without a load balancer attachment.
+################################################################################
+
+output "service_host" {
+  description = "In-VPC DNS name of the service, <name>.<namespace>, served by Cloud Map. Resolves to running task IPs inside the VPC (null if service discovery disabled)."
+  value       = local.service_host
+}
+
+output "service_port" {
+  description = "Port the service's container listens on, for use with service_host (null if service discovery disabled)."
+  value       = local.enable_service_discovery ? local.service_port : null
+}
+
+output "service_url" {
+  description = "In-VPC URL of the service, scheme from the target group protocol plus service_host and service_port. Prefer it for service-to-service calls: traffic goes straight to the tasks with no load balancer hop (null if service discovery disabled)."
+  value       = local.service_url
+}
+
+output "load_balancer_url" {
+  description = "URL of the service through its load balancer. For an ALB the scheme and port come from the listener and the host is the rule's first host-header value without a wildcard, otherwise the ALB DNS name. For an NLB it is the listener protocol, the NLB DNS name, and the listener port (null if no load balancer attachment)."
+  value       = local.load_balancer_url
 }
 
 ################################################################################
