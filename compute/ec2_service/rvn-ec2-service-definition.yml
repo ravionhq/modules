@@ -103,7 +103,7 @@ module:
         - description: Deploy an image from a registry configured on this module. Provide only the tag or digest at deploy time.
           label: Pull from image registry
           value: image_registry
-        - description: Ravion creates and manages an ECR repository for this service without a build config. Push images to it from a pipeline `build:image` step, then provide only the tag or digest at deploy time.
+        - description: Ravion manages an ECR repository that a pipeline build step pushes to. Provide only the tag or digest at deploy time.
           label: Managed ECR repository
           value: ecr
     - $template: ../../partials/inputs/build-git-source.yml
