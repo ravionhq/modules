@@ -619,7 +619,7 @@ describe("compiler", () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"));
     const inputs = getModuleInputs(compiled.module);
 
-    assert.deepEqual(getValueOptions(findInput(inputs, "build_source")), ["dockerfile", "railpack", "image_registry"]);
+    assert.deepEqual(getValueOptions(findInput(inputs, "build_source")), ["dockerfile", "railpack", "image_registry", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "source_repo")), ["dockerfile", "railpack"]);
 
     const basePath = findInput(inputs, "source_base_path");
@@ -641,11 +641,18 @@ describe("compiler", () => {
     }
 
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_builder_config")), ["dockerfile", "railpack", "nixpacks"]);
-    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_ecr")), ["dockerfile", "railpack", "nixpacks"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_ecr")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_scan_on_push_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_force_deletion_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["image_registry", "ecr"]);
     assert.equal(findInput(inputs, "min_capacity").label, "Minimum tasks");
     assert.equal(findInput(inputs, "max_capacity").label, "Maximum tasks");
 
     const build = getModuleBuild(compiled.module);
+    assert.equal(
+      build.type,
+      '<< module.input.build_source == "image_registry" || module.input.build_source == "ecr" ? "disabled" : "image" >>',
+    );
     const builder = assertString(build.builder);
     assert.match(builder, /module\.input\.build_source == "railpack"/);
     assert.match(builder, /module\.input\.build_source == "nixpacks"/);
@@ -662,7 +669,7 @@ describe("compiler", () => {
     const ecrRepositoryCreationEnabled = getTerraformVariable(compiled.module, "ecr_repository_creation_enabled");
     assert.equal(
       ecrRepositoryCreationEnabled,
-      '<< module.input.build_source == "dockerfile" || module.input.build_source == "railpack" || module.input.build_source == "nixpacks" >>',
+      '<< module.input.build_source == "dockerfile" || module.input.build_source == "railpack" || module.input.build_source == "nixpacks" || module.input.build_source == "ecr" >>',
     );
   });
 
