@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.4.0
-  description: "Add the Managed ECR repository build source: Ravion manages the service's ECR repository while a pipeline build step pushes the image. Also clarifies ECS cluster labels, standardizes health check and builder fields, and keeps build policies in advanced settings."
+  version: 1.5.0
+  description: Clarify ECS cluster labels, standardize health check and builder field names, and keep build policies in advanced settings.
 module:
   inputs:
     - id: section_cluster
