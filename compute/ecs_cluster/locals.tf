@@ -21,6 +21,10 @@ locals {
   # Cluster name
   cluster_name = var.name
 
+  # Private DNS suffix services register under. The cluster name cannot hold a
+  # dot, so the default appends one label to it.
+  service_discovery_namespace_name = coalesce(var.service_discovery_namespace_name, "${var.name}.internal")
+
   # EC2 capacity provider name
   ec2_capacity_provider_name = local.enable_ec2 ? "${var.name}-ec2" : null
 

@@ -13,7 +13,13 @@ module "security_group" {
 
   all_egress_enabled = true
 
-  ingress_rules = concat(
+  ingress_rules = local.security_group_ingress_rules
+}
+
+locals {
+  # Every ingress rule on the service security group, in state-index order.
+  # Exposed as an output so the effective ingress can be read and tested.
+  security_group_ingress_rules = concat(
     # Load balancer ingress (from LB security group if provided, else VPC CIDR)
     local.enable_load_balancer ? [
       for mapping in local.load_balancer_port_mappings : var.load_balancer_security_group_id != null ? {
@@ -41,7 +47,30 @@ module "security_group" {
           cidr_ipv4   = cidr
         }
       ]
-    ])
+    ]),
+    # Peer ingress for callers of the service discovery address. The whole
+    # VPC may reach the container port unless specific security groups are
+    # listed, in which case only those groups may. Appended last: the rules
+    # above are index-keyed in state, so inserting earlier would recreate
+    # every one of them on upgrade.
+    local.enable_service_discovery ? flatten([
+      for mapping in local.load_balancer_port_mappings :
+      length(var.allowed_security_group_ids) == 0 ? [{
+        description = "Allow VPC traffic to the service discovery address on port ${mapping.container_port}"
+        from_port   = mapping.container_port
+        to_port     = mapping.container_port
+        ip_protocol = mapping.protocol
+        cidr_ipv4   = data.aws_vpc.this.cidr_block
+        }] : [
+        for sg in var.allowed_security_group_ids : {
+          description                  = "Allow traffic from security group ${sg} on port ${mapping.container_port}"
+          from_port                    = mapping.container_port
+          to_port                      = mapping.container_port
+          ip_protocol                  = mapping.protocol
+          referenced_security_group_id = sg
+        }
+      ]
+    ]) : []
   )
 }
 

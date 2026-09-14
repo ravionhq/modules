@@ -36,6 +36,8 @@ mock_provider "aws" {
   mock_data "aws_lb_listener" {
     defaults = {
       load_balancer_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/mock-alb/1234567890123456"
+      protocol          = "HTTPS"
+      port              = 443
     }
   }
   mock_data "aws_lb" {
@@ -67,6 +69,12 @@ mock_provider "aws" {
   mock_resource "aws_lb_listener" {
     defaults = {
       arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/net/mock-nlb/1234567890123456/1234567890123456"
+    }
+  }
+  mock_resource "aws_service_discovery_service" {
+    defaults = {
+      arn = "arn:aws:servicediscovery:us-east-1:123456789012:service/srv-abcdef1234567890"
+      id  = "srv-abcdef1234567890"
     }
   }
 }

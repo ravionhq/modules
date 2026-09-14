@@ -168,6 +168,15 @@ mock_provider "aws" {
       id  = "test-private-alb-access-logs-123456789012-us-east-1"
     }
   }
+
+  override_resource {
+    target = aws_service_discovery_private_dns_namespace.this
+    values = {
+      arn         = "arn:aws:servicediscovery:us-east-1:123456789012:namespace/ns-abcdefghij1234567"
+      id          = "ns-abcdefghij1234567"
+      hosted_zone = "Z0123456789ABCDEFGHIJ"
+    }
+  }
 }
 
 variables {

@@ -1,5 +1,6 @@
 ...overrides: << module.input.advanced_terraform_variables >>
 allowed_cidr_blocks: << module.input.allowed_cidr_blocks >>
+allowed_security_group_ids: << module.input.allowed_security_group_ids >>
 public_ip_assignment_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
 auto_scaling:
   enabled: << module.input.auto_scaling_enabled >>

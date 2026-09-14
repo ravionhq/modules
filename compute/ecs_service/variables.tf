@@ -536,6 +536,17 @@ variable "allowed_cidr_blocks" {
   }
 }
 
+variable "allowed_security_group_ids" {
+  type        = list(string)
+  description = "Security groups whose members may call this service at its service discovery address. Empty means the whole VPC CIDR is allowed on the container port; listing groups restricts in-VPC callers to those groups. Applies only when service_discovery is set."
+  default     = []
+
+  validation {
+    condition     = alltrue([for sg in var.allowed_security_group_ids : can(regex("^sg-", sg))])
+    error_message = "All allowed_security_group_ids must be valid security group IDs starting with 'sg-'."
+  }
+}
+
 ################################################################################
 # Load Balancer
 ################################################################################
@@ -755,6 +766,7 @@ variable "auto_scaling" {
 variable "service_discovery" {
   type = object({
     namespace_id    = string
+    namespace_name  = string
     dns_record_type = optional(string, "A")
     dns_ttl         = optional(number, 10)
     routing_policy  = optional(string, "MULTIVALUE")
@@ -763,7 +775,7 @@ variable "service_discovery" {
       failure_threshold = optional(number, 1)
     }), null)
   })
-  description = "AWS Cloud Map service discovery configuration."
+  description = "AWS Cloud Map service discovery configuration. namespace_name is the namespace's DNS suffix; the module registers the service as <name>.<namespace_name> and exposes that address as service_host."
   default     = null
 }
 

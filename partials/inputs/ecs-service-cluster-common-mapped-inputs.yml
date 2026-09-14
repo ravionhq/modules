@@ -75,3 +75,24 @@
   show_when:
     capacity_provider: ec2
   default: ""
+- id: section_cluster_service_discovery
+  label: Cluster service discovery
+  type: section
+- id: service_discovery_namespace_id
+  immutable: true
+  label: Service discovery namespace ID
+  type: string
+  description: Cloud Map private DNS namespace ID from the selected cluster. Empty when the cluster has service discovery turned off or has not been applied since it gained the namespace.
+  collapsible: true
+  placeholder: ns-abcdefghij1234567
+  required: false
+  default: <<ref.stack.output.service_discovery_namespace_id>>
+- id: service_discovery_namespace_name
+  immutable: true
+  label: Service discovery namespace name
+  type: string
+  description: DNS suffix of the cluster namespace. Services register as <service name>.<namespace>. Empty when the cluster has service discovery turned off.
+  collapsible: true
+  placeholder: my-cluster.internal
+  required: false
+  default: <<ref.stack.output.service_discovery_namespace_name>>

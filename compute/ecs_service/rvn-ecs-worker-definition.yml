@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.3.0
-  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
+  version: 1.4.0
+  description: Show the cluster's service discovery namespace on the cluster reference and add an Allowed security groups field for parity with web and network services. Workers register no service name, so neither changes how a worker is reached.
 module:
   inputs:
     - id: section_cluster
@@ -177,6 +177,8 @@ module:
     ## Networking
 
     Workers do not expose a primary app port and are not registered with an Application Load Balancer. Run in private subnets is enabled by default so tasks stay private while using NAT or equivalent egress for outbound dependencies.
+
+    Workers also register no name in the cluster's service discovery namespace, since nothing listens for callers. The namespace fields on the cluster reference and the Allowed security groups field are shown for parity with web and network services and have no effect here. A worker that calls a web or network service uses that service's `service_url` stack output.
 
     Sidecars may still define port mappings for task-local agents, proxies, or helper containers. Those sidecar ports are not exposed through a load balancer by this module.
 

@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.3.0
-  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
+  version: 1.4.0
+  description: Give the service a private DNS name in the cluster's service discovery namespace and publish its in-VPC and load balancer addresses as stack outputs, so other services can call it directly. Restrict those in-VPC callers with Allowed security groups.
 module:
   inputs:
     - id: section_cluster
@@ -35,6 +35,11 @@ module:
       label: Public network service
       type: boolean
       description: Expose this service through the public NLB. Turn off to use the private NLB.
+      default: true
+    - id: service_discovery_enabled
+      label: Service discovery
+      type: boolean
+      description: Register this service in the cluster's private DNS namespace so other services in the VPC can call it at <service name>.<namespace> without going through the load balancer. Has no effect when the cluster has service discovery turned off.
       default: true
     - id: private_subnet_placement_enabled
       label: Run in private subnets
@@ -291,6 +296,7 @@ module:
           terraform_variables:
             $merge:
               - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - ../../partials/stack/ecs-service-service-discovery-terraform-variables.yml
               - container_port: << module.input.listeners[0].container_port >>
                 health_check_grace_period_seconds: << module.input.health_check_grace_period_seconds >>
                 load_balancer_ingress_cidr_blocks: >-
@@ -473,6 +479,7 @@ module:
     | -------------------------------- | --------------------------------------------------------------- |
     | Exposing a public TCP service    | Creating a listener on the public cluster Network Load Balancer |
     | Hosting an internal protocol     | Routing traffic through the private cluster Network Load Balancer |
+    | Calling another service          | Reaching it at its private DNS name, with no load balancer hop    |
     | Serving UDP workloads            | Registering UDP container ports and target groups               |
     | Terminating TLS at the NLB       | Creating a TLS listener with an ACM certificate                 |
     | Passing TLS through to the task  | Using TLS target protocol for encrypted backend traffic         |
@@ -483,7 +490,7 @@ module:
 
     ## Cluster and networking
 
-    An ECS cluster is required. The cluster reference supplies the cluster ARN, VPC ID, public and private subnet IDs, Network Load Balancer ARNs, NLB security groups, capacity provider names, AWS account, region, and execution environment.
+    An ECS cluster is required. The cluster reference supplies the cluster ARN, VPC ID, public and private subnet IDs, Network Load Balancer ARNs, NLB security groups, capacity provider names, service discovery namespace, AWS account, region, and execution environment.
 
     Use Public network service when the service should be reachable through the public Network Load Balancer. Turn it off for internal services that should use the private Network Load Balancer.
 
@@ -520,6 +527,21 @@ module:
     Each TLS listener requires its own ACM certificate module reference. TLS SSL policy defaults to `ELBSecurityPolicy-TLS13-1-2-2021-06`. TLS ALPN policy is optional; leave it as None unless clients need a specific ALPN behavior. TLS target protocol controls traffic from the NLB to the ECS task: use TCP when the NLB terminates TLS, or TLS when the task should receive encrypted backend traffic.
 
     Source IP stickiness is off by default. Enable it when repeat traffic from the same source IP should stay on the same task when possible.
+
+    ### Service addresses
+
+    With **Service discovery** on, the default, the service registers in the cluster's private DNS namespace and the stack publishes where it can be reached.
+
+    | Output | Value | Notes |
+    | ------ | ----- | ----- |
+    | `service_host` | `{service name}.{namespace}` | In-VPC DNS name served by Cloud Map |
+    | `service_port` | First listener's container port | Port the tasks listen on |
+    | `service_url` | `tcp://{service_host}:{port}` | In-VPC address; the scheme is the first listener's target protocol |
+    | `load_balancer_url` | `tcp://{nlb dns name}:{listener port}` | Address through the Network Load Balancer, using the first listener |
+
+    Prefer `service_host` and `service_port` for callers in the same VPC: the name resolves straight to running task IPs with a 10 second TTL and skips the load balancer. Additional listeners share the same host; only the first listener's ports appear in the outputs. Use a lowercase service name, since DNS is case-insensitive.
+
+    Service discovery opens every listener's container port to the whole VPC on the service security group. To restrict that, list the callers' security group IDs in **Allowed security groups**; the VPC-wide rules are then replaced by one rule per listed group and port. NLB traffic is unaffected either way. A cluster with service discovery turned off leaves the service unregistered and these outputs empty.
 
     ## Health checks
 
@@ -617,6 +639,7 @@ module:
     | ECS cluster                      | Yes      | -                        | Existing rvn-ecs-cluster module instance         |
     | Service name                     | Yes      | {project}-{env}-{module} | Name for the ECS service and related resources   |
     | Public network service           | No       | true                     | Use the public NLB; turn off for the private NLB |
+    | Service discovery                | No       | true                     | Register {service name}.{namespace} in the cluster's private DNS namespace |
     | Run in private subnets           | No       | true                     | Run tasks in private subnets without public IPs  |
     | Build source                     | Yes      | dockerfile               | Dockerfile, Railpack, or Pull from image registry |
     | Git repository                   | Yes*     | -                        | Required for Railpack and Dockerfile builds      |
@@ -651,6 +674,7 @@ module:
     | Run post-deploy command          | No       | false                    | Enable a task after each successful deployment   |
     | Additional security groups       | No       | []                       | Extra security groups attached to ECS tasks      |
     | Allowed CIDR blocks              | No       | []                       | Direct service access in addition to load balancer traffic |
+    | Allowed security groups          | No       | []                       | Restrict in-VPC callers of the service discovery address to these security groups |
     | Sidecars                         | No       | []                       | Additional containers in the ECS task            |
     | EFS file system                  | No       | false                    | Mount an EFS file system into the app container |
     | EFS mount path                   | Yes*     | /mnt/efs                 | App container path for the referenced file system |
@@ -669,6 +693,7 @@ module:
     - The first listener supplies the `PORT` environment variable and the target group shown in the built-in healthy and unhealthy host metrics.
     - Tasks default to private subnets even for public network services. The NLB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Health checks default to TCP because the module supports non-HTTP protocols.
+    - Service discovery is on by default and opens the container ports to the VPC. A private DNS name is only useful if callers can reach it, so a registered service accepts in-VPC traffic on its ports until Allowed security groups narrows the callers. The NLB path is unchanged.
     - Built images are pushed to an ECR repository created with the service stack. Pull from image registry lets teams bring their own image pipeline.
     - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
