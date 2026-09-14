@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.3.0
-  description: Rolling deployments now succeed as soon as the new tasks are healthy, while old tasks drain in the background. Choose a lower healthy-task threshold or wait for old tasks to drain in deployment settings.
+  version: 1.4.0
+  description: "Add the Managed ECR repository build source: Ravion manages the service's ECR repository while a pipeline build step pushes the image."
 module:
   inputs:
     - id: section_cluster
@@ -182,7 +182,9 @@ module:
 
     ## Build and deployment
 
-    Workers support Dockerfile, Railpack, and Pull from image registry deployments. Deployments update the ECS service task definition with the selected image, generated container definition, logs, runtime environment variables, secrets, IAM roles, volumes, sidecars, and selected capacity provider settings. For Railpack builds, you can optionally pin the Railpack version and override install, build, and start commands. For Fargate and Fargate Spot, App ephemeral storage uses the AWS default of 20 GiB unless you increase it to 21-200 GiB. For image registry deployments, use Start command to override the image default CMD when the worker process uses a different command.
+    Workers support Dockerfile, Railpack, Managed ECR repository, and Pull from image registry deployments. Deployments update the ECS service task definition with the selected image, generated container definition, logs, runtime environment variables, secrets, IAM roles, volumes, sidecars, and selected capacity provider settings. For Railpack builds, you can optionally pin the Railpack version and override install, build, and start commands. For Fargate and Fargate Spot, App ephemeral storage uses the AWS default of 20 GiB unless you increase it to 21-200 GiB. For image registry deployments, use Start command to override the image default CMD when the worker process uses a different command.
+
+    For Managed ECR repository, Ravion creates and manages the service ECR repository. Push the image from a pipeline `build:image` step, then provide its tag or digest at deploy time.
 
     ## Persistent storage
 
@@ -201,7 +203,7 @@ module:
     | ECS cluster | Yes | - | Existing rvn-ecs-cluster module instance |
     | Service name | Yes | {project}-{env}-{module} | Name for the ECS service and related resources |
     | Run in private subnets | No | true | Run tasks in private subnets without public IPs |
-    | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |
+    | Build source | Yes | dockerfile | Dockerfile, Railpack, Managed ECR repository, or Pull from image registry |
     | Start command | No | [] | Command arguments that override an image default CMD |
     | Capacity provider | Yes | fargate | Primary service capacity provider |
     | App size | No | 2 vCPU, 4 GB | Fargate task CPU and memory |
