@@ -9,7 +9,7 @@
 resource "aws_lb_target_group" "tg_1" {
   count = local.enable_load_balancer ? 1 : 0
 
-  name        = "${substr(var.name, 0, min(length(var.name), 24))}-tg-1"
+  name        = "${substr(local.target_group_base_name, 0, min(length(var.name), 24))}-tg-1"
   port        = local.primary_target_group_port
   protocol    = local.primary_target_group_protocol
   vpc_id      = var.vpc_id
@@ -60,7 +60,7 @@ resource "aws_lb_target_group" "tg_1" {
 resource "aws_lb_target_group" "tg_2" {
   count = local.traffic_shift_infrastructure_enabled ? 1 : 0
 
-  name        = "${substr(var.name, 0, min(length(var.name), 24))}-tg-2"
+  name        = "${substr(local.target_group_base_name, 0, min(length(var.name), 24))}-tg-2"
   port        = local.primary_target_group_port
   protocol    = local.primary_target_group_protocol
   vpc_id      = var.vpc_id
@@ -104,7 +104,7 @@ resource "aws_lb_target_group" "tg_2" {
 resource "aws_lb_target_group" "nlb_additional" {
   for_each = local.additional_nlb_listeners
 
-  name        = "${substr(var.name, 0, min(length(var.name), 18))}-${each.key}-tg"
+  name        = "${substr(local.target_group_base_name, 0, min(length(var.name), 18))}-${each.key}-tg"
   port        = each.value.container_port
   protocol    = each.value.target_protocol
   vpc_id      = var.vpc_id
