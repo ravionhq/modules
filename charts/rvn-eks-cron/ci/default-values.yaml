@@ -1,0 +1,9 @@
+# Minimal container-only cron config.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-cron
+  tag: v1.2.3
+schedule: "0 3 * * *"
+args: ["rake", "db:cleanup"]
+env:
+  - name: LOG_LEVEL
+    value: info

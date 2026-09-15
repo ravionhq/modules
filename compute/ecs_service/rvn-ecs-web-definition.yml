@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.4.0
-  description: "Add the Managed ECR repository build source: Ravion manages the service's ECR repository while a pipeline build step pushes the image."
+  version: 1.5.0
+  description: Standardize cluster, routing, health check, and builder field names, add a configurable target group deregistration delay, and clarify advanced build and listener-rule settings.
 module:
   inputs:
     - id: section_cluster
@@ -12,7 +12,7 @@ module:
       type: section
     - id: cluster
       immutable: true
-      label: ECS cluster
+      label: Cluster
       type: $ref:rvn-ecs-cluster
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
@@ -41,7 +41,7 @@ module:
       patterns:
         - message: Use 1-255 letters, numbers, underscores, or hyphens, starting with a letter or number.
           pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$
-    - id: public_web_service_enabled
+    - id: public_alb_routing_enabled
       label: Public web service
       type: boolean
       description: Expose this service through the public ALB. Turn off to use the private ALB.
@@ -229,7 +229,7 @@ module:
       max: 120
       min: 2
       default: 4
-    - id: healthy_threshold
+    - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
       description: Number of consecutive successful checks required before an unhealthy target is considered healthy.
@@ -237,7 +237,7 @@ module:
       max: 10
       min: 2
       default: 2
-    - id: unhealthy_threshold
+    - id: health_check_unhealthy_threshold
       label: Unhealthy threshold
       type: number
       description: Number of consecutive failed checks required before a target is considered unhealthy.
@@ -252,6 +252,14 @@ module:
       collapsible: true
       min: 0
       default: 0
+    - id: target_group_deregistration_delay
+      label: Deregistration delay (secs)
+      type: number
+      description: Seconds the load balancer allows in-flight requests to complete after a task starts deregistering.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 300
     - id: target_group_slow_start
       label: Slow start duration (secs)
       type: number
@@ -335,19 +343,20 @@ module:
                     attachment_control:
                       enabled: true
                     listener_arn: >-
-                      << module.input.public_web_service_enabled ? (module.input.public_alb_https_listener_arn ||
+                      << module.input.public_alb_routing_enabled ? (module.input.public_alb_https_listener_arn ||
                       module.input.public_alb_http_listener_arn) :
                       (module.input.private_alb_https_listener_arn ||
                       module.input.private_alb_http_listener_arn) >>
                     target_group:
+                      deregistration_delay: << module.input.target_group_deregistration_delay >>
                       health_check:
                         enabled: true
-                        healthy_threshold: << module.input.healthy_threshold >>
+                        healthy_threshold: << module.input.health_check_healthy_threshold >>
                         interval: << module.input.health_check_interval >>
                         matcher: << module.input.health_check_matcher >>
                         path: << module.input.health_check_path >>
                         timeout: << module.input.health_check_timeout >>
-                        unhealthy_threshold: << module.input.unhealthy_threshold >>
+                        unhealthy_threshold: << module.input.health_check_unhealthy_threshold >>
                       port: << module.input.container_port >>
                       protocol: HTTP
                       slow_start: << module.input.target_group_slow_start >>
@@ -361,7 +370,7 @@ module:
                         type: '<< module.input.target_group_stickiness_enabled ? module.input.target_group_stickiness_type : "lb_cookie" >>'
                       target_type: ip
                 load_balancer_security_group_id: >-
-                  << module.input.public_web_service_enabled ? module.input.public_alb_security_group_id :
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_security_group_id :
                   module.input.private_alb_security_group_id >>
           tool: opentofu
           tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
@@ -508,7 +517,7 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
+              << module.input.public_alb_routing_enabled ? module.input.public_alb_arn_suffix :
               module.input.private_alb_arn_suffix >>
           name: RequestCount
           namespace: AWS/ApplicationELB
@@ -523,7 +532,7 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
+              << module.input.public_alb_routing_enabled ? module.input.public_alb_arn_suffix :
               module.input.private_alb_arn_suffix >>
           name: HTTPCode_Target_5XX_Count
           namespace: AWS/ApplicationELB
@@ -538,7 +547,7 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
+              << module.input.public_alb_routing_enabled ? module.input.public_alb_arn_suffix :
               module.input.private_alb_arn_suffix >>
           name: HTTPCode_Target_4XX_Count
           namespace: AWS/ApplicationELB
@@ -553,7 +562,7 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
+              << module.input.public_alb_routing_enabled ? module.input.public_alb_arn_suffix :
               module.input.private_alb_arn_suffix >>
           name: TargetResponseTime
           namespace: AWS/ApplicationELB
@@ -568,7 +577,7 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
+              << module.input.public_alb_routing_enabled ? module.input.public_alb_arn_suffix :
               module.input.private_alb_arn_suffix >>
           name: HealthyHostCount
           namespace: AWS/ApplicationELB
@@ -583,7 +592,7 @@ module:
           dimensions:
             TargetGroup: << stack.output.target_group_arn_suffix >>
             LoadBalancer: >-
-              << module.input.public_web_service_enabled ? module.input.public_alb_arn_suffix :
+              << module.input.public_alb_routing_enabled ? module.input.public_alb_arn_suffix :
               module.input.private_alb_arn_suffix >>
           name: UnHealthyHostCount
           namespace: AWS/ApplicationELB
@@ -660,6 +669,7 @@ module:
     | Healthy threshold                | 2       | Successful checks needed to mark a target healthy              |
     | Unhealthy threshold              | 2       | Failed checks needed to mark a target unhealthy                |
     | Health check grace period (secs) | 0       | Startup window where ECS ignores load balancer health failures |
+    | Deregistration delay (secs)      | 300     | Drain window for a task that is deregistering                   |
 
     Increase the grace period for apps with slow boot times. Keep health check endpoints lightweight and unauthenticated.
 
@@ -807,6 +817,7 @@ module:
     | Start command                   | No       | []                         | Command arguments that override an image default CMD |
     | Container port                  | Yes      | 80                         | Port exposed by the app container                  |
     | Health check path               | Yes      | /                          | HTTP path used by the target group health check    |
+    | Deregistration delay (secs)     | No       | 300                        | Drain window for a task that is deregistering      |
     | Sticky sessions                 | No       | true                       | Keep clients on the same task, and on the same traffic-shift target group when enabled |
     | Domain host rules               | No       | -                          | Hostnames such as app.example.com or *.example.com |
     | Path rules                      | No       | -                          | Path patterns such as /*, /api/*, or /app/*        |

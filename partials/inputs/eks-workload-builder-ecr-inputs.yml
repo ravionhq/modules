@@ -1,0 +1,49 @@
+# Builder and ECR lifecycle inputs shared by rvn-eks-web, rvn-eks-worker, and
+# rvn-eks-cron.
+#
+# A port of ./ecs-service-builder-ecr-misc-inputs.yml, minus the nixpacks
+# show_when value EKS does not have and minus the ECS-only tail (misc section,
+# new_deployment_forcing_enabled, tags, terraform settings) - the EKS
+# definitions include those pieces themselves.
+#
+# The builder template reads module.input.aws_account_id, aws_region, and
+# execution_environment_id. All three are mapped onto every EKS workload from
+# its EKS Cluster reference by ./eks-workload-cluster-mapped-inputs.yml, so
+# nothing extra is needed for the instance-type value list to load.
+#
+# Every field here is hidden on the image_registry path: nothing is built, so
+# there is no builder to size and no repository to manage.
+- $template: ../templates/builder-infrastructure-inputs.yml
+  with:
+    no_options_message: Select an EKS cluster, or enter an AWS account and region, to load available EC2 instance types.
+    show_when:
+      build_source:
+        - dockerfile
+        - railpack
+- id: section_ecr
+  label: Image registry lifecycle
+  type: section
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- id: ecr_image_scan_on_push_enabled
+  label: Scan images on push
+  type: boolean
+  description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy.
+  collapsible: true
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+  default: true
+- id: ecr_force_delete_enabled
+  label: Force delete image repository
+  type: boolean
+  description: Allow the ECR repository to be deleted even when it contains images. Use with care.
+  collapsible: true
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+  default: false

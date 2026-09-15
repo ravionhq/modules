@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon Aurora cluster. Supports Aurora PostgreSQL and Aurora MySQL with provisioned or Serverless v2 capacity.
 
 release:
-  version: 1.2.0
-  description: Add optional RDS Proxy connection pooling.
+  version: 1.2.1
+  description: Prevent selecting an older major engine version when updating a database.
 module:
   inputs:
     - id: network
@@ -180,6 +180,7 @@ module:
     - description: "Examples: 16 for Aurora PostgreSQL or 8.0 for Aurora MySQL."
       id: engine_major_version
       label: Engine major version
+      min_current_value: true
       placeholder: "16"
       required: true
       type: string

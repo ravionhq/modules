@@ -1,0 +1,39 @@
+name: Helm Charts
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - '.github/workflows/helm-charts.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - '.github/workflows/helm-charts.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and Template Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        with:
+          version: v3.16.3
+
+      # yq is preinstalled on ubuntu-latest runners; pinned here so the
+      # assertion syntax in charts/test.sh cannot drift underneath us.
+      - name: Setup yq
+        uses: mikefarah/yq@bbdd97482f2d439126582a59689eb1c855944955 # v4.44.3
+
+      - name: Lint and template tests
+        run: ./charts/test.sh

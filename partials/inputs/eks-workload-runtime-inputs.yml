@@ -1,0 +1,17 @@
+- id: section_app_config
+  label: Environment variables
+  type: section
+- id: environment_variables
+  label: Runtime environment variables
+  type: array
+  description: Plain environment variables passed to the container, as an array of {name, value} objects.
+  placeholder: |-
+    - name: LOG_LEVEL
+      value: info
+- id: secrets
+  label: Runtime secrets
+  type: array
+  description: Secret references injected at runtime, as an array of {name, value_from} objects. value_from must be a full Secrets Manager or SSM Parameter Store ARN. Ravion never reads these values; the External Secrets Operator resolves them inside the cluster.
+  placeholder: |-
+    - name: DATABASE_URL
+      value_from: arn:aws:secretsmanager:us-east-1:123456789012:secret:db-AbCdEf:url::

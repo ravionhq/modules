@@ -1,0 +1,105 @@
+# Values an EKS workload inherits from its EKS Cluster reference.
+#
+# Every field the `aws:eks` deploy block's `infrastructure` object requires is
+# here, because the deploy resolver has no `ref` scope: cross-module values
+# reach a deploy only as resolved `module.input.*`.
+- id: section_aws
+  label: AWS account & region
+  type: section
+- id: aws_account_id
+  immutable: true
+  label: AWS account
+  type: string
+  default: << ref.input.aws_account_id >>
+  values: $values:ravion/aws_accounts
+- id: aws_region
+  immutable: true
+  label: Region
+  type: string
+  description: Region of the selected cluster. Must match the region in the cluster ARN, which Ravion cross-checks on every deploy.
+  default: << ref.input.aws_region >>
+  values: $values:aws/regions
+- id: execution_environment_id
+  label: Terraform execution environment
+  type: string
+  description: Terraform execution environment inherited from the selected EKS cluster.
+  collapsible: true
+  default: << ref.input.execution_environment_id >>
+  values: $values:ravion/execution_environments
+- id: section_cluster_identity
+  label: EKS cluster
+  type: section
+- id: cluster_name
+  immutable: true
+  label: EKS cluster name
+  type: string
+  placeholder: my-eks-cluster
+  required: true
+  default: <<ref.stack.output.cluster_name>>
+- id: cluster_arn
+  immutable: true
+  label: Cluster ARN
+  type: string
+  description: Ravion resolves the owning AWS account and region from this ARN, and rejects a deploy whose cluster name or region disagrees with it.
+  placeholder: arn:aws:eks:us-east-1:123456789012:cluster/my-eks-cluster
+  required: true
+  default: <<ref.stack.output.cluster_arn>>
+- id: cluster_endpoint
+  immutable: true
+  label: Cluster API endpoint
+  type: string
+  description: HTTPS endpoint of the Kubernetes API server. May be private-only; the deploy runner executes inside the cluster VPC.
+  placeholder: https://ABCDEF0123456789ABCDEF0123456789.gr7.us-east-1.eks.amazonaws.com
+  required: true
+  default: <<ref.stack.output.cluster_endpoint>>
+- id: cluster_certificate_authority_data
+  immutable: true
+  label: Cluster certificate authority data
+  type: string
+  description: Base64-encoded CA bundle used to verify the API server's TLS certificate. Public key material, not a credential.
+  placeholder: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg...
+  required: true
+  default: <<ref.stack.output.cluster_certificate_authority_data>>
+- id: ravion_runner_role_arn
+  immutable: true
+  label: Ravion Runner role ARN
+  type: string
+  description: Stable IAM role the deploy runner assumes to obtain a cluster token. Registered as an EKS access entry by the cluster module.
+  placeholder: arn:aws:iam::123456789012:role/my-eks-cluster-ravion-runner
+  required: true
+  default: <<ref.stack.output.ravion_runner_role_arn>>
+- id: ravion_runner_security_group_id
+  immutable: true
+  label: Ravion Runner security group ID
+  type: string
+  description: >-
+    Security group the deploy runner's network interface joins so it can reach the cluster API
+    endpoint. Null when the cluster module did not create one, which is only workable if the
+    endpoint is public or the execution environment supplies its own group.
+  collapsible: true
+  placeholder: sg-0123456789abcdef0
+  required: false
+  default: <<ref.stack.output.ravion_runner_security_group_id>>
+- id: vpc_id
+  immutable: true
+  label: VPC ID
+  type: string
+  description: VPC the cluster runs in. Load balancer target groups must live in the same VPC as the pods they register.
+  placeholder: vpc-0123456789abcdef0
+  required: true
+  # Read from the cluster's input, not its stack output: the cluster carries
+  # vpc_id as an input mapped off its own network reference, so this resolves
+  # as soon as a cluster is selected. ref.stack.output.vpc_id would resolve
+  # only after the cluster stack had applied, leaving this required field empty
+  # while adding a workload. Matches ecs-service-cluster-common-mapped-inputs.
+  default: <<ref.input.vpc_id>>
+- id: cluster_private_subnet_ids
+  immutable: true
+  label: Cluster private subnet IDs
+  type: string_array
+  description: Private subnets from the selected EKS cluster. A workload targeting Fargate launches pod network interfaces in these subnets; EKS Fargate does not support public subnets.
+  placeholder: subnet-0123456789abcdef0
+  required: true
+  show_when:
+    compute_target: fargate
+  default: <<ref.input.subnet_ids>>

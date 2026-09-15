@@ -108,7 +108,7 @@ variable "ingress_ipv6_cidr_blocks" {
 
 variable "internal_load_balancer_enabled" {
   type        = bool
-  description = "If true, the NLB will be internal_load_balancer_enabled (not internet-facing)."
+  description = "If true, the NLB will be internal (not internet-facing)."
   default     = false
 }
 

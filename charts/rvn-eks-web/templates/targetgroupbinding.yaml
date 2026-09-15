@@ -1,0 +1,34 @@
+{{/*
+Load balancer attachment (ENG-5033, 2026-08-06 ADR update).
+
+This chart does NOT emit an Ingress. The workload module's Terraform owns the
+aws_lb_target_group and aws_lb_listener_rule against the shared load balancer
+created by `compute/eks/addons` — mirroring rvn-ecs-web's target_groups.tf /
+listener_rules.tf. All the chart contributes is the binding that tells the AWS
+Load Balancer Controller to register this Service's pod IPs into that target
+group.
+
+One TargetGroupBinding is emitted per ARN, so a Service fronted by several
+listeners (e.g. a public and a private ALB) can be bound to each one's target
+group. Nothing renders when targetGroupArns is empty; the controller is
+installed by the addons module whenever a shared LB is enabled, so the CRD can
+be assumed present exactly when an ARN is supplied.
+*/}}
+{{- range $index, $arn := .Values.targetGroupArns }}
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ printf "%s-%d" (include "rvn-eks-web.fullname" $) $index | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "rvn-eks-web.labels" $ | nindent 4 }}
+spec:
+  serviceRef:
+    name: {{ include "rvn-eks-web.fullname" $ }}
+    port: {{ $.Values.service.port }}
+  targetGroupARN: {{ $arn | quote }}
+  targetType: {{ $.Values.targetGroupBinding.targetType }}
+  {{- with $.Values.targetGroupBinding.vpcId }}
+  vpcID: {{ . | quote }}
+  {{- end }}
+{{- end }}

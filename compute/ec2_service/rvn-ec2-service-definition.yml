@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.5.0
-  description: "Add the Managed ECR repository build source: Ravion manages the service's ECR repository while a pipeline build step pushes the image."
+  version: 1.6.0
+  description: Default new services to one instance, standardize health check and builder field names, keep build policies in advanced settings, and clarify listener-rule guidance.
 module:
   inputs:
     - id: network
@@ -399,7 +399,7 @@ module:
       show_when:
         http_traffic_enabled: true
       default: 5
-    - id: healthy_threshold
+    - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
       description: Consecutive successful ALB checks required before an instance is healthy.
@@ -409,7 +409,7 @@ module:
       show_when:
         http_traffic_enabled: true
       default: 2
-    - id: unhealthy_threshold
+    - id: health_check_unhealthy_threshold
       label: Unhealthy threshold
       type: number
       description: Consecutive failed ALB checks required before an instance is unhealthy.
@@ -761,8 +761,8 @@ module:
                 matcher: << module.input.health_check_matcher >>
                 interval: << module.input.health_check_interval >>
                 timeout: << module.input.health_check_timeout >>
-                healthy_threshold: << module.input.healthy_threshold >>
-                unhealthy_threshold: << module.input.unhealthy_threshold >>
+                healthy_threshold: << module.input.health_check_healthy_threshold >>
+                unhealthy_threshold: << module.input.health_check_unhealthy_threshold >>
               stickiness: >-
                 << module.input.target_group_stickiness_enabled ? {
                   "enabled": true,

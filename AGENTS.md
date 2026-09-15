@@ -18,10 +18,9 @@ This is the **Ravion Modules** repository - an OpenTofu/Terraform module library
 |----------|---------|
 | `cache/` | Caching infrastructure (ElastiCache) |
 | `cdn/` | Content delivery (CloudFront) |
-| `compute/` | Compute resources (EC2, ECS, Lambda, Auto Scaling) |
+| `compute/` | Compute resources (EC2, ECS, EKS, Lambda, Auto Scaling) |
 | `database/` | Database services (RDS, DynamoDB, Aurora) |
 | `hosting/` | Composite end-to-end hosting solutions for deployable workloads (composes primitives from other categories) |
-| `kubernetes/` | Kubernetes resources |
 | `messaging/` | Message queues and notifications (SQS, SNS) |
 | `monitoring/` | Observability and alerting (CloudWatch) |
 | `networking/` | Network infrastructure (VPC, Security Groups, Load Balancers, Route53) |

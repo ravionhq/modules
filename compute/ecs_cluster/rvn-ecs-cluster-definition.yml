@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.0.2
+  description: Clarify ECS cluster labels and identify additional Network Load Balancer security groups in module forms.
 module:
   inputs:
     - id: network
@@ -28,7 +28,7 @@ module:
       description: Name prefix for all resources. Terraform requires 1-28 characters so generated ALB names fit AWS limits.
       id: name
       immutable: true
-      label: Name slug
+      label: ECS cluster name
       patterns:
         - message: The name must be 1-28 characters, contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]{0,26}[a-z0-9])?$
@@ -389,9 +389,9 @@ module:
       type: boolean
     - add_button_label: Add security group ID
       collapsible: true
-      description: Security groups for the public NLB.
-      id: public_nlb_security_group_ids
-      label: Security groups
+      description: Additional security groups for the public NLB.
+      id: public_nlb_additional_security_group_ids
+      label: Additional security groups
       placeholder: sg-...
       show_when:
         public_nlb_enabled: true
@@ -446,9 +446,9 @@ module:
       type: boolean
     - add_button_label: Add security group ID
       collapsible: true
-      description: Security groups for the private NLB.
-      id: private_nlb_security_group_ids
-      label: Security groups
+      description: Additional security groups for the private NLB.
+      id: private_nlb_additional_security_group_ids
+      label: Additional security groups
       placeholder: sg-...
       show_when:
         private_nlb_enabled: true
@@ -591,7 +591,7 @@ module:
     | Field                 | Required | Default              | Description                                                   |
     | --------------------- | -------- | -------------------- | ------------------------------------------------------------- |
     | VPC network           | Yes      | —                    | Existing VPC, subnets, AWS account, and region                |
-    | Name slug             | Yes      | `{project}-{env}`    | Name prefix for ECS and load balancer resources               |
+    | ECS cluster name      | Yes      | `{project}-{env}`    | Name prefix for ECS and load balancer resources               |
     | Container insights    | No       | `enhanced`           | Collect enhanced task, service, cluster, and EC2 metrics in CloudWatch |
     | Fargate               | No       | `true`               | Allow services to use Fargate capacity                        |
     | Fargate Spot          | No       | `true`               | Allow services to use lower-cost interruptible Fargate Spot   |
@@ -687,7 +687,7 @@ module:
         private_nlb_access_logs_enabled: << module.input.private_nlb_access_logs_enabled >>
         private_nlb_cross_zone_load_balancing_enabled: << module.input.private_nlb_cross_zone_load_balancing_enabled >>
         private_nlb_elastic_ips_enabled: << module.input.private_nlb_elastic_ips_enabled >>
-        private_nlb_security_group_ids: << module.input.private_nlb_security_group_ids >>
+        private_nlb_security_group_ids: << module.input.private_nlb_additional_security_group_ids >>
         private_subnet_ids: << module.input.private_subnet_ids >>
         public_alb_access_logs_bucket_arn: << module.input.public_alb_access_logs_bucket_arn >>
         public_alb_certificate_arns: >-
@@ -703,7 +703,7 @@ module:
         public_nlb_access_logs_enabled: << module.input.public_nlb_access_logs_enabled >>
         public_nlb_cross_zone_load_balancing_enabled: << module.input.public_nlb_cross_zone_load_balancing_enabled >>
         public_nlb_elastic_ips_enabled: << module.input.public_nlb_elastic_ips_enabled >>
-        public_nlb_security_group_ids: << module.input.public_nlb_security_group_ids >>
+        public_nlb_security_group_ids: << module.input.public_nlb_additional_security_group_ids >>
         public_subnet_ids: << module.input.public_subnet_ids || [] >>
         region: << module.input.aws_region >>
         tags:

@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.1.0
-  description: Add Builder IAM policies inputs that attach extra IAM managed policies to the EC2 build runner role or replace the step default policies entirely for the duration of each build.
+  version: 1.1.1
+  description: Use consistent Dockerfile and builder field names and keep default build policies in advanced builder settings so routine build forms stay focused.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1058,7 +1058,7 @@ module:
       << module.input.lambda_type != "edge" && module.input.package_type == "Image" && module.input.build_source == "dockerfile" ? {type:
       "dockerfile", dockerfile: module.input.dockerfile || "Dockerfile", context:
       module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
-      module.input.dockerfile_inject_env_variables, cache_from: {tag: "dockerfile"}} :
+      module.input.dockerfile_environment_variable_injection_enabled, cache_from: {tag: "dockerfile"}} :
       module.input.lambda_type != "edge" && module.input.package_type == "Image" && module.input.build_source == "nixpacks" ? {type:
       "nixpacks", install_cmd: module.input.nixpacks_install_cmd, build_cmd:
       module.input.nixpacks_build_cmd, start_cmd: module.input.nixpacks_start_cmd, config_file_path:
@@ -1068,7 +1068,7 @@ module:
       cache_from: {tag: "nixpacks"}} : module.input.build_source == "dockerfile" ? {type:
       "dockerfile", dockerfile: module.input.dockerfile || "Dockerfile", context:
       module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
-      module.input.dockerfile_inject_env_variables, output_directory: module.input.output_directory} :
+      module.input.dockerfile_environment_variable_injection_enabled, output_directory: module.input.output_directory} :
       module.input.build_source == "nixpacks" ? {type: "nixpacks", install_cmd:
       module.input.nixpacks_install_cmd, build_cmd: module.input.nixpacks_build_cmd,
       config_file_path: module.input.nixpacks_config_file_path, build_path:

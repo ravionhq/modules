@@ -1,0 +1,24 @@
+# All values are supplied by the compute/eks/addons Terraform module.
+
+# Cluster-scoped store the secrets are read through. Created by
+# external_secrets.tf; its credentials are the operator's Pod Identity role.
+storeName: ravion-aws
+storeKind: ClusterSecretStore
+
+# How often the operator re-reads Secrets Manager. Rotating a vendor token then
+# reaches the collectors within this window with no redeploy.
+refreshInterval: 1h
+
+# One entry per credential. `data` maps a Secrets Manager ARN onto a key in the
+# rendered Kubernetes Secret; `template` adds literal keys (a Grafana Cloud user
+# id, say) and may reference the fetched keys as {{ .key }}.
+#
+# - name: ravion-observability-datadog
+#   namespace: ravion-operator
+#   data:
+#     - secretKey: apiKey
+#       remoteRef: arn:aws:secretsmanager:us-east-2:111122223333:secret:datadog-api-key
+#   template:
+#     username: "12345"
+#     password: "{{ .apiKey }}"
+externalSecrets: []

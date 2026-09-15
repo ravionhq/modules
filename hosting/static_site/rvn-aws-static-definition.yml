@@ -3,14 +3,14 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.1.1
-  description: Prevent applies from failing with CloudFront in-use errors when changing a cache policy or disabling a module-managed feature.
+  version: 1.1.2
+  description: Use consistent Dockerfile and builder field names and keep default build policies in advanced builder settings so routine build forms stay focused.
 module:
   build:
     builder: >-
       << module.input.build_source == "dockerfile" ? {type: "dockerfile", dockerfile: module.input.dockerfile
       || "Dockerfile", context: module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
-      module.input.dockerfile_inject_env_variables, output_directory: module.input.output_directory} :
+      module.input.dockerfile_environment_variable_injection_enabled, output_directory: module.input.output_directory} :
       (module.input.build_source == "railpack" || module.input.build_source == "nixpacks") ? {type: "railpack", railpack_version:
       module.input.railpack_version, install_cmd: module.input.railpack_install_cmd,
       build_cmd: module.input.railpack_build_cmd, output_directory: module.input.output_directory} :

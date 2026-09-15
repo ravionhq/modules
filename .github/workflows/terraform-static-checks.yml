@@ -63,6 +63,7 @@ jobs:
         with:
           scan-type: config
           scan-ref: .
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: '1'
           severity: HIGH,CRITICAL

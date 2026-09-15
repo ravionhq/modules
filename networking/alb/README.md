@@ -250,7 +250,7 @@ spec:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| internal_load_balancer_enabled | If true, the ALB will be internal_load_balancer_enabled (not internet-facing) | `bool` | `false` | no |
+| internal_load_balancer_enabled | If true, the ALB will be internal (not internet-facing) | `bool` | `false` | no |
 | deletion_protection_enabled | If true, the resource cannot be deleted via the AWS API until this is set to false | `bool` | `true` | no |
 | idle_timeout | The time in seconds that the connection is allowed to be idle (1-4000) | `number` | `60` | no |
 | http2_enabled | Enable HTTP/2 on the ALB | `bool` | `true` | no |
