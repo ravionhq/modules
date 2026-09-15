@@ -4,7 +4,7 @@
 
 variable "name" {
   type        = string
-  description = "Name for the target group, listener rule, and related resources."
+  description = "Name for the target group, listener rule, and related resources. Underscores are replaced with hyphens in the target group name, which ELBv2 restricts to alphanumerics and hyphens."
 
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$", var.name))
