@@ -93,7 +93,8 @@ resource "helm_release" "karpenter_default_node_pool" {
           deviceName = "/dev/xvda"
           size       = var.karpenter_default_node_pool.root_volume_size
           type       = var.karpenter_default_node_pool.root_volume_type
-          kmsKeyId   = coalesce(var.karpenter_default_node_pool.ebs_kms_key_arn, "")
+          # Not coalesce(): it rejects "" as a fallback, which broke every install without a customer key.
+          kmsKeyId   = var.karpenter_default_node_pool.ebs_kms_key_arn != null ? var.karpenter_default_node_pool.ebs_kms_key_arn : ""
         }
         tags = local.tags
       }
