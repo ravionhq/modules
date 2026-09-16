@@ -240,6 +240,32 @@ test_rvn_eks_web() {
   assert_eq "web: every parameterStore secret still lands as env" \
     "FEATURE_FLAGS RATE_LIMIT" \
     "$(q "${ssm_only}" "[${ctr} | .env[] | select(.valueFrom.secretKeyRef != null) | .name] | join(\" \")")"
+
+  # --- ingress allow-list ----------------------------------------------------
+  local np='.[] | select(.kind == "NetworkPolicy")'
+  assert_eq "web: no NetworkPolicy renders by default" \
+    "0" "$(count "${default}" NetworkPolicy)"
+  assert_eq "web: an enabled allow-list renders one NetworkPolicy" \
+    "1" "$(count "${full}" NetworkPolicy)"
+  assert_eq "web: the NetworkPolicy selects this release's pods" \
+    "test-release" "$(q "${full}" "${np} | .spec.podSelector.matchLabels[\"app.kubernetes.io/instance\"]")"
+  assert_eq "web: only ingress is restricted, egress stays open" \
+    "Ingress" "$(q "${full}" "${np} | .spec.policyTypes | join(\",\")")"
+  assert_eq "web: allowed releases become same-namespace pod selectors" \
+    "api,worker" "$(q "${full}" "${np} | [.spec.ingress[0].from[] | select(.podSelector) | .podSelector.matchLabels[\"app.kubernetes.io/instance\"]] | join(\",\")")"
+  assert_eq "web: allowed namespaces become namespace selectors" \
+    "monitoring" "$(q "${full}" "${np} | [.spec.ingress[0].from[] | select(.namespaceSelector) | .namespaceSelector.matchLabels[\"kubernetes.io/metadata.name\"]] | join(\",\")")"
+  assert_eq "web: load balancer CIDRs become ipBlocks" \
+    "10.0.0.0/20,10.0.16.0/20" "$(q "${full}" "${np} | [.spec.ingress[0].from[] | select(.ipBlock) | .ipBlock.cidr] | join(\",\")")"
+  assert_eq "web: the allow-list opens only the container port" \
+    "3000" "$(q "${full}" "${np} | .spec.ingress[0].ports[0].port")"
+
+  local deny_all
+  deny_all="$(render "${chart}" deny-all --values "${CHARTS_DIR}/${chart}/ci/network-policy-deny-all-values.yaml")"
+  assert_eq "web: an allow-list with no sources still renders a policy" \
+    "1" "$(count "${deny_all}" NetworkPolicy)"
+  assert_eq "web: an allow-list with no sources denies every ingress peer" \
+    "0" "$(q "${deny_all}" "${np} | .spec.ingress | length")"
 }
 
 ################################################################################

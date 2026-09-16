@@ -370,6 +370,39 @@
     },
     "ravion": {
       "$ref": "#/definitions/ravion"
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fromReleases": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "fromNamespaces": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "fromCIDRs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "definitions": {

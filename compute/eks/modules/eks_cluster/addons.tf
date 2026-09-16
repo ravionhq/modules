@@ -15,7 +15,7 @@ resource "aws_eks_addon" "vpc_cni" {
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = "vpc-cni"
   addon_version               = var.vpc_cni_addon_version
-  configuration_values        = var.vpc_cni_addon_configuration_values
+  configuration_values        = local.vpc_cni_addon_configuration_values
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 

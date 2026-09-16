@@ -1,10 +1,10 @@
 ################################################################################
 # Launch Template
 #
-# Created only when the caller customizes anything beyond AMI/instance shape.
-# Without it, EKS uses an internally-managed launch template (which we cannot
-# modify), so any of: custom user-data, EBS encryption, extra SGs, IMDS
-# tweaks, monitoring → triggers creation here.
+# Created whenever the caller needs anything the EKS-managed launch template
+# cannot express: custom user-data, an encrypted root volume, extra SGs, IMDS
+# hardening, or detailed monitoring. Root volume encryption and an IMDS hop
+# limit of 1 are the defaults, so this normally exists.
 ################################################################################
 
 resource "aws_launch_template" "this" {
@@ -28,15 +28,15 @@ resource "aws_launch_template" "this" {
   }
 
   dynamic "block_device_mappings" {
-    for_each = var.disk_size != null || var.disk_type != null || var.ebs_kms_key_arn != null ? [1] : []
+    for_each = local.configure_root_volume ? [1] : []
     content {
-      device_name = "/dev/xvda"
+      device_name = local.root_device_name
       ebs {
         volume_size           = var.disk_size
         volume_type           = var.disk_type
         iops                  = var.disk_iops
         throughput            = var.disk_throughput
-        encrypted             = var.ebs_kms_key_arn != null ? true : null
+        encrypted             = var.ebs_encryption_enabled || var.ebs_kms_key_arn != null
         kms_key_id            = var.ebs_kms_key_arn
         delete_on_termination = true
       }

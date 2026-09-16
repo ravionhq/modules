@@ -8,6 +8,17 @@ locals {
 
   node_subnet_ids = coalesce(var.node_subnet_ids, var.subnet_ids)
 
+  # Ravion creates a fresh IAM role for every EC2 pipeline run, named
+  # rvn-ci-ec2-role-<slug> or rvn-ci-ec2-spot-role-<slug> under the /rvn-ci/
+  # path. Those runs are the only callers that should assume the cluster-admin
+  # Ravion Runner role, so the trust policy admits just that pattern unless the
+  # caller supplies its own list.
+  ravion_runner_role_trusted_principal_arns = (
+    length(var.ravion_runner_role_trusted_principal_arns) > 0
+    ? var.ravion_runner_role_trusted_principal_arns
+    : ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/rvn-ci/rvn-ci-*"]
+  )
+
   # CoreDNS answers every in-cluster lookup, so a replica in each zone is what
   # lets the kube-dns Service (patched by compute/eks/addons) keep DNS traffic
   # zone-local. ScheduleAnyway rather than DoNotSchedule: a two-node cluster

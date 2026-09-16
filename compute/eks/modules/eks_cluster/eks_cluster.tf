@@ -47,6 +47,14 @@ resource "aws_eks_cluster" "this" {
       condition     = alltrue([for subnet in data.aws_subnet.selected : subnet.vpc_id == var.vpc_id])
       error_message = "All subnet_ids must belong to vpc_id."
     }
+
+    # In API authentication mode nothing but access entries can reach the
+    # Kubernetes API. Refuse to create a cluster nobody can administer, which
+    # would otherwise need an out-of-band eks:CreateAccessEntry to recover.
+    precondition {
+      condition     = local.cluster_has_an_administrator
+      error_message = "The cluster would have no administrator: bootstrap_cluster_creator_admin_permissions_enabled is false and no access_entries entry carries a policy association or Kubernetes group. Add an access entry for an operator role, enable the bootstrap creator admin, or set cluster_admin_access_managed_externally when you register an admin entry yourself."
+    }
   }
 
   depends_on = [

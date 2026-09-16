@@ -197,6 +197,7 @@ Each entry is `{ type, values }`. Supported types: `host-header`, `path-pattern`
 | service_port | Port the Kubernetes Service listens on, the container port |
 | service_url | In-cluster URL for service-to-service calls; scheme from the target group protocol |
 | load_balancer_url | URL through the shared load balancer; scheme and port from the listener, host from the first non-wildcard host rule or the load balancer DNS name |
+| load_balancer_subnet_cidr_blocks | Sorted IPv4 CIDRs of the load balancer's subnets, admitted by the workload's ingress allow-list (empty without a load balancer) |
 | ecr_repository_arn | ARN of the ECR repository, the build's push destination |
 | ecr_repository_name | Name of the ECR repository |
 | ecr_repository_url | URL of the ECR repository, passed to the chart as `image.repository` |

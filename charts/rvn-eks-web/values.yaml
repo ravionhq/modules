@@ -96,6 +96,24 @@ service:
   # 1.31+; older API servers ignore the field. Set "" to spread across zones.
   trafficDistribution: PreferClose
 
+# -- Ingress allow-list rendered as a NetworkPolicy. Needs NetworkPolicy
+# enforcement in the cluster (the EKS Cluster module turns it on in the VPC
+# CNI). When enabled, only the listed sources may reach the container port;
+# everything else in the cluster is denied. Egress is never restricted.
+# Release peers are matched by pod label, so the namespace is the trust
+# boundary: anyone able to create pods in it can impersonate an allowed
+# release. Isolate separately trusted teams by namespace instead.
+networkPolicy:
+  enabled: false
+  ingress:
+    # -- Helm release names in this namespace whose pods may call this service.
+    fromReleases: []
+    # -- Namespaces whose pods may call this service (all pods in each).
+    fromNamespaces: []
+    # -- CIDR blocks that may call this service, typically the shared load
+    # balancer's subnets so its health checks and forwarded requests get in.
+    fromCIDRs: []
+
 # -- ARNs of Terraform-owned target groups to register this Service's pods into.
 # One TargetGroupBinding is rendered per ARN; nothing renders when empty.
 targetGroupArns: []

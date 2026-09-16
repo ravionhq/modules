@@ -50,6 +50,7 @@ helm template my-app charts/rvn-eks-web --values charts/rvn-eks-web/ci/full-valu
 | Port | `containerPort` | Rendered as the container port named `http`; the Service and all probes default to it. |
 | Health check path | `probes.liveness.path`, `probes.readiness.path` | Both default to `/`. |
 | Health check timings | `probes.*.initialDelaySeconds`, `.periodSeconds`, `.timeoutSeconds`, `.failureThreshold` | |
+| Ingress allow-list | `networkPolicy.enabled`, `networkPolicy.ingress.fromReleases`, `.fromNamespaces`, `.fromCIDRs` | Renders a NetworkPolicy admitting only the listed releases (same namespace), namespaces and CIDRs on the container port. Needs NetworkPolicy enforcement in the cluster; egress is never restricted. Release peers are matched by pod label, so the namespace is the trust boundary: anyone who can create pods in it can impersonate an allowed release. |
 | CPU / memory | `resources.requests`, `resources.limits` | Passed through verbatim as Kubernetes quantities. |
 | Environment variables | `env` — `[{name, value}]` | Values are always quoted, so numeric-looking values stay strings. |
 | Secrets | `ravion.secrets` — references only | See [the secrets contract](../README.md#the-secrets-contract). |

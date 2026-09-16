@@ -7,10 +7,12 @@
 # cluster-admin, so ephemeral per-run runner roles never need their own access
 # entries — they assume this role for `aws eks get-token` and nothing else.
 #
-# Trust defaults to the cluster's own AWS account, which still requires the
-# caller to hold sts:AssumeRole on this role's ARN — Ravion grants that to
-# step executions configured to assume it. Tighten the trust further with
-# ravion_runner_role_trusted_principal_arns.
+# Trust is limited to this AWS account and, through an aws:PrincipalArn
+# condition, to the per-run EC2 pipeline runner roles Ravion creates
+# (rvn-ci-ec2-role-<slug> and rvn-ci-ec2-spot-role-<slug> under /rvn-ci/).
+# Callers still need sts:AssumeRole on this role's ARN, which Ravion grants to
+# step executions configured to assume it. Override the pattern list with
+# ravion_runner_role_trusted_principal_arns to admit other callers.
 ################################################################################
 
 data "aws_caller_identity" "current" {}
@@ -25,10 +27,10 @@ module "ravion_runner_role" {
 
   trusted_aws_principals = [data.aws_caller_identity.current.account_id]
 
-  assume_role_conditions = length(var.ravion_runner_role_trusted_principal_arns) == 0 ? [] : [{
+  assume_role_conditions = [{
     test     = "ArnLike"
     variable = "aws:PrincipalArn"
-    values   = var.ravion_runner_role_trusted_principal_arns
+    values   = local.ravion_runner_role_trusted_principal_arns
   }]
 
   # `aws eks get-token` needs no IAM permissions; DescribeCluster covers

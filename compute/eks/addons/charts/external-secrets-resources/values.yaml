@@ -3,6 +3,11 @@
 # AWS region the stores read from.
 region: ""
 
+# Namespaces whose ExternalSecrets may use these cluster-scoped stores. Empty
+# leaves the stores open to every namespace; the Terraform module fills this
+# with the Ravion Operator's workload namespaces by default.
+allowedNamespaces: []
+
 # Cluster-scoped store backed by AWS Secrets Manager. This is the default
 # store Ravion app charts reference.
 secretsManagerStore:

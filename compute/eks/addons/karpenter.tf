@@ -88,7 +88,14 @@ resource "helm_release" "karpenter_default_node_pool" {
         instanceProfile  = module.karpenter[0].node_instance_profile_name
         subnetIds        = var.node_subnet_ids
         securityGroupIds = [var.cluster_security_group_id]
-        tags             = local.tags
+        metadataHopLimit = 1
+        rootVolume = {
+          deviceName = "/dev/xvda"
+          size       = var.karpenter_default_node_pool.root_volume_size
+          type       = var.karpenter_default_node_pool.root_volume_type
+          kmsKeyId   = coalesce(var.karpenter_default_node_pool.ebs_kms_key_arn, "")
+        }
+        tags = local.tags
       }
       nodePool = {
         name               = "default"

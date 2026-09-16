@@ -76,6 +76,11 @@ output "ravion_runner_role_arn" {
   value       = var.ravion_runner_role_creation_enabled ? module.ravion_runner_role[0].role_arn : null
 }
 
+output "ravion_runner_role_trusted_principal_arns" {
+  description = "IAM principal ARN patterns the Ravion Runner role trusts through its aws:PrincipalArn condition (empty when the role is disabled)."
+  value       = var.ravion_runner_role_creation_enabled ? local.ravion_runner_role_trusted_principal_arns : []
+}
+
 output "ravion_runner_security_group_id" {
   description = "ID of the Ravion Runner security group allowed to reach the cluster API endpoint (null if disabled)."
   value       = var.ravion_runner_security_group_creation_enabled ? aws_security_group.ravion_runner[0].id : null

@@ -16,6 +16,18 @@ spec:
     {{- end }}
   metadataOptions:
     httpTokens: required
+    httpPutResponseHopLimit: {{ .Values.ec2NodeClass.metadataHopLimit }}
+  blockDeviceMappings:
+    - deviceName: {{ .Values.ec2NodeClass.rootVolume.deviceName }}
+      rootVolume: true
+      ebs:
+        volumeSize: {{ .Values.ec2NodeClass.rootVolume.size }}
+        volumeType: {{ .Values.ec2NodeClass.rootVolume.type }}
+        encrypted: true
+        deleteOnTermination: true
+        {{- with .Values.ec2NodeClass.rootVolume.kmsKeyId }}
+        kmsKeyID: {{ . | quote }}
+        {{- end }}
   {{- with .Values.ec2NodeClass.tags }}
   tags:
     {{- toYaml . | nindent 4 }}

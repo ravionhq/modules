@@ -54,16 +54,18 @@ Prefer the [`compute/eks`](../..) composite. This module is nested under
 | ip_family | `ipv4` or `ipv6`. | `string` | `"ipv4"` | no |
 | cluster_security_group_additional_cidr_ingress_rules | Extra cluster-SG ingress rules sourced by IPv4 CIDR. | `list(object)` | `[]` | no |
 | cluster_security_group_additional_referenced_security_group_ingress_rules | Extra cluster-SG ingress rules sourced by another security group. | `list(object)` | `[]` | no |
-| bootstrap_cluster_creator_admin_permissions_enabled | Auto-grant cluster-admin to the creating principal during cluster bootstrap. | `bool` | `true` | no |
-| access_entries | EKS access entries to create (replaces aws-auth ConfigMap). | `map(object)` | `{}` | no |
+| bootstrap_cluster_creator_admin_permissions_enabled | Give the creating principal a permanent cluster-admin access entry. Creation-time only; ignored afterwards. | `bool` | `false` | no |
+| cluster_admin_access_managed_externally | Declare that the caller registers an admin access entry itself, satisfying the no-administrator guard. | `bool` | `false` | no |
+| access_entries | EKS access entries to create (replaces aws-auth ConfigMap). The plan fails when neither this, bootstrap access nor the external declaration grants anyone access. | `map(object)` | `{}` | no |
 | oidc_provider_creation_enabled | Create an IAM OIDC provider for IRSA workloads. | `bool` | `false` | no |
 | vpc_resource_controller_policy_enabled | Attach AmazonEKSVPCResourceController for Windows networking or security groups for pods. | `bool` | `false` | no |
 | enabled_cluster_log_types | Control plane log types to ship to CloudWatch. | `list(string)` | `["api","audit","authenticator"]` | no |
-| cluster_log_retention_in_days | Retention for the control plane log group. | `number` | `30` | no |
+| cluster_log_retention_in_days | Retention for the control plane log group. | `number` | `365` | no |
 | secrets_encryption_enabled | Envelope-encrypt Kubernetes secrets with KMS. | `bool` | `true` | no |
 | secrets_kms_key_arn | Existing KMS key ARN; null = create one. | `string` | `null` | no |
 | vpc_cni_addon_version / kube_proxy_addon_version | Pinned add-on versions. | `string` | `null` | no |
 | vpc_cni_addon_configuration_values / kube_proxy_addon_configuration_values | JSON config overrides. | `string` | `null` | no |
+| network_policy_enabled | Enforce Kubernetes NetworkPolicy through the VPC CNI. | `bool` | `true` | no |
 | pod_identity_agent_enabled | Install eks-pod-identity-agent. | `bool` | `true` | no |
 | pod_identity_agent_addon_version | Pin pod identity agent add-on version. | `string` | `null` | no |
 | aws_load_balancer_controller_pod_identity_creation_enabled | Create the AWS Load Balancer Controller Pod Identity role and association. | `bool` | `true` | no |

@@ -41,12 +41,13 @@ Prefer the [`compute/eks`](../..) composite. This module is nested under
 | labels | Kubernetes labels. | `map(string)` | `{}` | no |
 | taints | Kubernetes taints. | `list(object)` | `[]` | no |
 | disk_size / disk_type / disk_iops / disk_throughput | Root volume tuning (triggers launch template). | `number/string/number/number` | `null` | no |
-| ebs_kms_key_arn | Encrypt root volume with this KMS key (triggers launch template). | `string` | `null` | no |
+| ebs_encryption_enabled | Encrypt the root volume (AWS-managed key unless `ebs_kms_key_arn` is set). | `bool` | `true` | no |
+| ebs_kms_key_arn | Encrypt root volume with this customer-managed KMS key. | `string` | `null` | no |
 | user_data | Custom user data, base64-encoded internally and merged by EKS with its own bootstrap user data (triggers launch template). Format depends on `ami_type` — see [User data format](#user-data-format). | `string` | `null` | no |
 | security_group_ids | Extra SGs on node ENIs (triggers launch template). | `list(string)` | `[]` | no |
 | detailed_monitoring_enabled | Enable EC2 1-minute monitoring. | `bool` | `false` | no |
 | metadata_http_tokens | IMDSv2 enforcement. | `string` | `"required"` | no |
-| metadata_http_put_response_hop_limit | IMDS hop limit. | `number` | `2` | no |
+| metadata_http_put_response_hop_limit | IMDS hop limit. 1 keeps node credentials away from pods. | `number` | `1` | no |
 | node_role_arn | BYO node role. When null, module creates one. | `string` | `null` | no |
 | node_role_additional_managed_policy_arns | Extra managed policies on the module-created role. | `list(string)` | `[]` | no |
 | node_role_additional_inline_policy_statements | Extra inline statements on the module-created role. | `list(object)` | `[]` | no |
@@ -135,5 +136,6 @@ Reference: [Customize managed nodes with launch templates — Amazon EC2 user da
 
 - The default node role grants `AmazonEKSWorkerNodePolicy`, `AmazonEKS_CNI_Policy`, and `AmazonEC2ContainerRegistryPullOnly`. Upgrading replaces the broader ECR `ReadOnly` attachment with `PullOnly` without replacing nodes. Explicit additional policies remain supported.
 - `desired_size` is honored on create and ignored thereafter via `lifecycle.ignore_changes` so an autoscaler can manage capacity without drifting against terraform state. Use `min_size` / `max_size` to constrain it.
-- A launch template is only created when at least one of `disk_size`, `disk_type`, `disk_iops`, `disk_throughput`, `ebs_kms_key_arn`, `user_data`, `security_group_ids`, `detailed_monitoring_enabled`, or non-default IMDS settings is supplied. Otherwise EKS uses its internal default template (which we cannot modify directly).
+- A launch template is created whenever the node needs anything the EKS-managed template cannot express. Because root volume encryption and an IMDS hop limit of 1 are on by default, one normally exists; only a caller that sets `ebs_encryption_enabled = false` and `metadata_http_put_response_hop_limit = 2` without other customizations falls back to the EKS internal template.
+- **Upgrading a node group created without a launch template.** EKS cannot attach a launch template to an existing node group, so adopting the hardened defaults plans a replacement of that node group, and the fixed `node_group_name` means the old group is destroyed before the new one exists. To keep the group in place set `ebs_encryption_enabled = false` and `metadata_http_put_response_hop_limit = 2`. To migrate without downtime, add a second node group with the defaults, let workloads move, then remove the old one.
 - The default node role does not grant Systems Manager access. If Session Manager is required, explicitly include `AmazonSSMManagedInstanceCore` in `node_role_additional_managed_policy_arns`. Upgrading detaches the previously default policy unless it is explicitly included; it does not replace nodes.
