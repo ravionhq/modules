@@ -229,6 +229,8 @@ module:
       show_when:
         target_group_stickiness_type: app_cookie
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
+      with:
+        field_overrides: {}
     - id: ingress_allowed_workloads
       label: Ingress allow-list
       type: string_array
@@ -238,8 +240,6 @@ module:
       collapsible: true
       required: false
       default: null
-      with:
-        field_overrides: {}
     - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
     - id: section_scaling
       label: Scaling
