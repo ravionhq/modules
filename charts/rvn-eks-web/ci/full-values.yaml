@@ -1,5 +1,6 @@
 # Every optional surface switched on at once: digest pinning, dual target
-# groups, autoscaling, a startup probe, and both secret providers.
+# groups, autoscaling, a startup probe, an ingress allow-list, and both secret
+# providers.
 image:
   repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -36,6 +37,12 @@ topologySpreadConstraints:
         app.kubernetes.io/name: rvn-eks-web
 serviceAccount:
   name: demo-web
+networkPolicy:
+  enabled: true
+  ingress:
+    fromReleases: [api, worker]
+    fromNamespaces: [monitoring]
+    fromCIDRs: [10.0.0.0/20, 10.0.16.0/20]
 ravion:
   secrets:
     - name: DB_PASSWORD

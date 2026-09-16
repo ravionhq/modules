@@ -154,6 +154,15 @@ variable "ravion_runner_role_creation_enabled" {
   type        = bool
   description = "Create an IAM role that Ravion Runner step executions can assume for Kubernetes API access, registered as an EKS access entry with cluster-admin."
   default     = true
+
+  validation {
+    condition = (
+      var.ravion_runner_role_creation_enabled
+      || var.bootstrap_cluster_creator_admin_permissions_enabled
+      || length([for key, entry in var.access_entries : key if length(entry.policy_associations) > 0 || length(entry.kubernetes_groups) > 0]) > 0
+    )
+    error_message = "The cluster would have no administrator: the Ravion Runner role is off, the bootstrap creator admin is off, and no access_entries entry carries a policy association or Kubernetes group. Add an access entry for an operator role or keep one of the other two on."
+  }
 }
 
 variable "ravion_runner_role_trusted_principal_arns" {
@@ -187,7 +196,7 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation."
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation. The plan fails if this, the Ravion Runner role and access_entries would all leave the cluster without an administrator."
   default     = false
 }
 
@@ -229,8 +238,8 @@ variable "enabled_cluster_log_types" {
 
 variable "cluster_log_retention_in_days" {
   type        = number
-  description = "Retention (days) for the EKS control plane CloudWatch log group."
-  default     = 30
+  description = "Retention (days) for the EKS control plane CloudWatch log group. Defaults to a year so the audit and authenticator trail outlives the usual compliance evidence window."
+  default     = 365
 }
 
 variable "secrets_encryption_enabled" {
@@ -253,8 +262,15 @@ variable "vpc_cni_addon_version" {
 
 variable "vpc_cni_addon_configuration_values" {
   type        = string
-  description = "JSON string of add-on configuration overrides for vpc-cni."
+  description = "JSON string of add-on configuration overrides for vpc-cni. Replaces the generated document, so include enableNetworkPolicy yourself if you still want enforcement."
   default     = null
+}
+
+variable "network_policy_enabled" {
+  type        = bool
+  description = "Turn on Kubernetes NetworkPolicy enforcement in the VPC CNI. Without it every NetworkPolicy in the cluster is silently ignored. Ignored when vpc_cni_addon_configuration_values is set."
+  default     = true
+  nullable    = false
 }
 
 variable "kube_proxy_addon_version" {
@@ -341,12 +357,13 @@ variable "system_node_group" {
     disk_type                                = optional(string)
     disk_iops                                = optional(number)
     disk_throughput                          = optional(number)
+    ebs_encryption_enabled                   = optional(bool, true)
     ebs_kms_key_arn                          = optional(string)
     user_data                                = optional(string)
     security_group_ids                       = optional(list(string), [])
     detailed_monitoring_enabled              = optional(bool, false)
     metadata_http_tokens                     = optional(string, "required")
-    metadata_http_put_response_hop_limit     = optional(number, 2)
+    metadata_http_put_response_hop_limit     = optional(number, 1)
     node_role_arn                            = optional(string)
     node_role_additional_managed_policy_arns = optional(list(string), [])
     node_role_additional_inline_policy_statements = optional(list(object({
@@ -387,12 +404,13 @@ variable "node_groups" {
     disk_type                                = optional(string)
     disk_iops                                = optional(number)
     disk_throughput                          = optional(number)
+    ebs_encryption_enabled                   = optional(bool, true)
     ebs_kms_key_arn                          = optional(string)
     user_data                                = optional(string)
     security_group_ids                       = optional(list(string), [])
     detailed_monitoring_enabled              = optional(bool, false)
     metadata_http_tokens                     = optional(string, "required")
-    metadata_http_put_response_hop_limit     = optional(number, 2)
+    metadata_http_put_response_hop_limit     = optional(number, 1)
     node_role_arn                            = optional(string)
     node_role_additional_managed_policy_arns = optional(list(string), [])
     node_role_additional_inline_policy_statements = optional(list(object({

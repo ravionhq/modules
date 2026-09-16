@@ -139,8 +139,15 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default; manage access via aws_eks_access_entry instead. Only evaluated at cluster creation."
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default; manage access via aws_eks_access_entry instead. Only evaluated at cluster creation. With this off, the plan fails unless access_entries grants someone access or cluster_admin_access_managed_externally is set, so a cluster is never created without an administrator."
   default     = false
+}
+
+variable "cluster_admin_access_managed_externally" {
+  type        = bool
+  description = "Declare that the caller registers an administrator access entry on this cluster itself (the compute/eks composite does so for its Ravion Runner role). Satisfies the no-administrator guard without bootstrap access or access_entries."
+  default     = false
+  nullable    = false
 }
 
 variable "oidc_provider_creation_enabled" {
@@ -234,8 +241,8 @@ variable "enabled_cluster_log_types" {
 
 variable "cluster_log_retention_in_days" {
   type        = number
-  description = "Retention (days) for the EKS control plane CloudWatch log group. Ignored when enabled_cluster_log_types is empty."
-  default     = 30
+  description = "Retention (days) for the EKS control plane CloudWatch log group. Ignored when enabled_cluster_log_types is empty. Defaults to a year so the audit and authenticator trail outlives the usual compliance evidence window."
+  default     = 365
 
   validation {
     condition = contains(
@@ -279,8 +286,15 @@ variable "vpc_cni_addon_version" {
 
 variable "vpc_cni_addon_configuration_values" {
   type        = string
-  description = "JSON string of add-on configuration overrides for vpc-cni. See AWS docs for available keys."
+  description = "JSON string of add-on configuration overrides for vpc-cni. See AWS docs for available keys. When set it replaces the generated document entirely, so include enableNetworkPolicy yourself if you still want enforcement."
   default     = null
+}
+
+variable "network_policy_enabled" {
+  type        = bool
+  description = "Turn on Kubernetes NetworkPolicy enforcement in the VPC CNI (the aws-network-policy-agent). Without it every NetworkPolicy object in the cluster is silently ignored. Ignored when vpc_cni_addon_configuration_values is set."
+  default     = true
+  nullable    = false
 }
 
 variable "kube_proxy_addon_version" {

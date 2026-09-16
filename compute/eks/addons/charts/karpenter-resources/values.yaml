@@ -7,6 +7,16 @@ ec2NodeClass:
   subnetIds: []
   # Security groups attached to nodes (typically the EKS cluster security group).
   securityGroupIds: []
+  # IMDSv2 only, and a hop limit of 1 so pods cannot read the node's
+  # instance credentials. Workloads get AWS access through Pod Identity.
+  metadataHopLimit: 1
+  # Root volume. Always encrypted so nodes never depend on the account's
+  # EBS-encryption-by-default setting; kmsKeyId "" means the AWS-managed key.
+  rootVolume:
+    deviceName: /dev/xvda
+    size: 20Gi
+    type: gp3
+    kmsKeyId: ""
   tags: {}
 
 nodePool:

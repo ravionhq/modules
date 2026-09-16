@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.0.0
-  description: Route in-cluster traffic to this service's same-zone pods by default and spread its pods across availability zones, cutting cross-AZ data transfer charges. Simplify health configuration and form layout, use consistent routing, scaling, release, and builder field names, use Ravion Operator terminology, clarify target group and ECR settings, keep default build policies in advanced settings, and let workloads target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute. Publish the service's in-cluster and load balancer addresses as stack outputs so other workloads can be pointed at it.
+  version: 1.1.0
+  description: Add an ingress allow-list. Name the other EKS services in the namespace that may call this one and Ravion renders a NetworkPolicy that denies every other pod; the shared load balancer's subnets are admitted automatically so routed traffic and health checks still arrive. A service that is not attached to a load balancer no longer renders a broken TargetGroupBinding.
 module:
   inputs:
     - id: section_cluster
@@ -229,6 +229,15 @@ module:
       show_when:
         target_group_stickiness_type: app_cookie
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
+    - id: ingress_allowed_workloads
+      label: Ingress allow-list
+      type: string_array
+      description: Names of other EKS services in this namespace that may call this service. When set, a NetworkPolicy denies every other pod in the cluster; traffic from the shared load balancer is always allowed. Leave empty to accept traffic from any pod.
+      add_button_label: Add service
+      placeholder: api
+      collapsible: true
+      required: false
+      default: null
       with:
         field_overrides: {}
     - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
@@ -369,8 +378,14 @@ module:
                 # The chart renders one TargetGroupBinding per ARN, which is what makes the
                 # AWS Load Balancer Controller register this Service's pod IPs into the
                 # target group the stack above created.
-                targetGroupArns:
-                  - << stack.output.target_group_arn >>
+                # Empty when the service is not attached to a load balancer, so the
+                # chart renders no TargetGroupBinding for a cluster-only service.
+                targetGroupArns: '<< stack.output.target_group_arn ? [stack.output.target_group_arn] : [] >>'
+                networkPolicy:
+                  enabled: '<< module.input.ingress_allowed_workloads != nil && len(module.input.ingress_allowed_workloads) > 0 >>'
+                  ingress:
+                    fromReleases: '<< module.input.ingress_allowed_workloads != nil ? module.input.ingress_allowed_workloads : [] >>'
+                    fromCIDRs: '<< stack.output.load_balancer_subnet_cidr_blocks != nil ? stack.output.load_balancer_subnet_cidr_blocks : [] >>'
                 targetGroupBinding:
                   targetType: ip
                   vpcId: << module.input.vpc_id >>

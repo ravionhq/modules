@@ -1,4 +1,9 @@
 mock_provider "aws" {
+  # Every node group now carries a launch template; the node group resource
+  # validates the id's lt- prefix, which a generated mock value would fail.
+  mock_resource "aws_launch_template" {
+    defaults = { id = "lt-0123456789abcdef0", latest_version = 1 }
+  }
   mock_data "aws_iam_policy_document" {
     defaults = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
   }

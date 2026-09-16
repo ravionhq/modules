@@ -40,6 +40,12 @@ mock_provider "aws" {
     defaults = {
       dns_name = "test.us-east-1.elb.amazonaws.com"
       zone_id  = "Z35SXDOTRQ7X7K"
+      subnets  = ["subnet-0a", "subnet-0b"]
+    }
+  }
+  mock_data "aws_subnet" {
+    defaults = {
+      cidr_block = "10.0.0.0/20"
     }
   }
   mock_resource "aws_lb_target_group" {
@@ -218,3 +224,26 @@ run "load_balancer_url_omits_the_default_http_port" {
     error_message = "An HTTP listener on port 80 must produce an http URL with no port."
   }
 }
+
+run "load_balancer_subnets_are_published_for_the_ingress_allow_list" {
+  command = plan
+
+  assert {
+    condition     = output.load_balancer_subnet_cidr_blocks == tolist(["10.0.0.0/20", "10.0.0.0/20"])
+    error_message = "With a listener attached the stack must publish one CIDR per load balancer subnet so the workload's NetworkPolicy can admit the load balancer nodes."
+  }
+}
+
+run "no_load_balancer_means_no_subnet_cidrs" {
+  command = plan
+
+  variables {
+    listener_arn = null
+  }
+
+  assert {
+    condition     = length(output.load_balancer_subnet_cidr_blocks) == 0
+    error_message = "A cluster-only service has no load balancer subnets to admit."
+  }
+}
+

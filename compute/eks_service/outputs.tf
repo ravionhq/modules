@@ -124,6 +124,11 @@ output "fargate_profile_arn" {
   value       = one(module.fargate_profile[*].fargate_profile_arn)
 }
 
+output "load_balancer_subnet_cidr_blocks" {
+  description = "IPv4 CIDR blocks of the shared load balancer's subnets, sorted. The workload chart's NetworkPolicy admits them so health checks and forwarded requests reach the pods (empty if the load balancer is disabled)."
+  value       = sort([for subnet in data.aws_subnet.load_balancer : subnet.cidr_block])
+}
+
 ################################################################################
 # General
 ################################################################################

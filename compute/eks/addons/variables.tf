@@ -187,6 +187,18 @@ variable "eso_kms_key_arns" {
   }
 }
 
+variable "eso_allowed_namespaces" {
+  type        = list(string)
+  description = "Namespaces whose ExternalSecrets may read through the module's ClusterSecretStores. Empty means the Ravion Operator's workload namespaces (ravion_operator_namespace_scope plus deploy namespaces); when those are empty too the stores stay open to every namespace. The Secrets Manager and SSM ARN scope still applies on top."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for namespace in var.eso_allowed_namespaces : can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", namespace))])
+    error_message = "Each eso_allowed_namespaces entry must be a valid Kubernetes namespace (1-63 lowercase letters, digits, or hyphens, starting and ending with a letter or digit)."
+  }
+}
+
 variable "eso_cluster_secret_stores_creation_enabled" {
   type        = bool
   description = "Create the Ravion ClusterSecretStores. Disable to manage SecretStore resources yourself; workload charts then need their own store reference."
@@ -680,9 +692,17 @@ variable "karpenter_default_node_pool" {
     architectures       = optional(list(string), ["amd64"])
     cpu_limit           = optional(number, 100)
     expire_after        = optional(string, "720h")
+    root_volume_size    = optional(string, "20Gi")
+    root_volume_type    = optional(string, "gp3")
+    ebs_kms_key_arn     = optional(string)
   })
-  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, and node expiry."
+  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
   default     = {}
+
+  validation {
+    condition     = var.karpenter_default_node_pool.ebs_kms_key_arn == null || can(regex("^arn:aws[a-zA-Z-]*:kms:", var.karpenter_default_node_pool.ebs_kms_key_arn))
+    error_message = "The karpenter_default_node_pool.ebs_kms_key_arn must be a KMS key ARN when set."
+  }
 
   validation {
     condition     = alltrue([for t in var.karpenter_default_node_pool.capacity_types : contains(["on-demand", "spot"], t)])

@@ -22,6 +22,9 @@ module "cluster" {
 
   bootstrap_cluster_creator_admin_permissions_enabled = var.bootstrap_cluster_creator_admin_permissions_enabled
   access_entries                                      = var.access_entries
+  # The Ravion Runner role's cluster-admin access entry lives in this module,
+  # outside the submodule, so tell the submodule an administrator exists.
+  cluster_admin_access_managed_externally = var.ravion_runner_role_creation_enabled
 
   oidc_provider_creation_enabled         = var.oidc_provider_creation_enabled
   vpc_resource_controller_policy_enabled = var.vpc_resource_controller_policy_enabled
@@ -34,6 +37,7 @@ module "cluster" {
 
   vpc_cni_addon_version                 = var.vpc_cni_addon_version
   vpc_cni_addon_configuration_values    = var.vpc_cni_addon_configuration_values
+  network_policy_enabled                = var.network_policy_enabled
   kube_proxy_addon_version              = var.kube_proxy_addon_version
   kube_proxy_addon_configuration_values = var.kube_proxy_addon_configuration_values
 

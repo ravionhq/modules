@@ -31,11 +31,12 @@ module "system_node_group" {
   labels = var.system_node_group.labels
   taints = var.system_node_group.taints
 
-  disk_size       = var.system_node_group.disk_size
-  disk_type       = var.system_node_group.disk_type
-  disk_iops       = var.system_node_group.disk_iops
-  disk_throughput = var.system_node_group.disk_throughput
-  ebs_kms_key_arn = var.system_node_group.ebs_kms_key_arn
+  disk_size              = var.system_node_group.disk_size
+  disk_type              = var.system_node_group.disk_type
+  disk_iops              = var.system_node_group.disk_iops
+  disk_throughput        = var.system_node_group.disk_throughput
+  ebs_encryption_enabled = var.system_node_group.ebs_encryption_enabled
+  ebs_kms_key_arn        = var.system_node_group.ebs_kms_key_arn
 
   user_data                            = var.system_node_group.user_data
   security_group_ids                   = var.system_node_group.security_group_ids
@@ -82,11 +83,12 @@ module "node_groups" {
   labels = each.value.labels
   taints = each.value.taints
 
-  disk_size       = each.value.disk_size
-  disk_type       = each.value.disk_type
-  disk_iops       = each.value.disk_iops
-  disk_throughput = each.value.disk_throughput
-  ebs_kms_key_arn = each.value.ebs_kms_key_arn
+  disk_size              = each.value.disk_size
+  disk_type              = each.value.disk_type
+  disk_iops              = each.value.disk_iops
+  disk_throughput        = each.value.disk_throughput
+  ebs_encryption_enabled = each.value.ebs_encryption_enabled
+  ebs_kms_key_arn        = each.value.ebs_kms_key_arn
 
   user_data                            = each.value.user_data
   security_group_ids                   = each.value.security_group_ids

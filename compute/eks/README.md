@@ -103,16 +103,17 @@ module "eks" {
 | ip_family | `ipv4` or `ipv6`. | `string` | `"ipv4"` | no |
 | cluster_security_group_additional_cidr_ingress_rules | Extra cluster-SG ingress sourced by IPv4 CIDR. | `list(object)` | `[]` | no |
 | cluster_security_group_additional_referenced_security_group_ingress_rules | Extra cluster-SG ingress sourced by another security group. | `list(object)` | `[]` | no |
-| bootstrap_cluster_creator_admin_permissions_enabled | Give the creating principal a permanent cluster-admin access entry. Creation-time only; ignored afterwards. | `bool` | `false` | no |
+| bootstrap_cluster_creator_admin_permissions_enabled | Give the creating principal a permanent cluster-admin access entry. Creation-time only; ignored afterwards. The plan fails if this, the Ravion Runner role and `access_entries` would all leave the cluster without an administrator. | `bool` | `false` | no |
 | access_entries | EKS access entries. | `map(object)` | `{}` | no |
 | oidc_provider_creation_enabled | Create an IAM OIDC provider for IRSA workloads. | `bool` | `false` | no |
 | vpc_resource_controller_policy_enabled | Attach the cluster policy for Windows networking or security groups for pods. | `bool` | `false` | no |
 | enabled_cluster_log_types | Control plane log types. | `list(string)` | `["api","audit","authenticator"]` | no |
-| cluster_log_retention_in_days | Control plane log retention. | `number` | `30` | no |
+| cluster_log_retention_in_days | Control plane log retention. | `number` | `365` | no |
 | secrets_encryption_enabled | Envelope-encrypt Kubernetes secrets. | `bool` | `true` | no |
 | secrets_kms_key_arn | Existing secrets KMS key ARN. | `string` | `null` | no |
 | vpc_cni_addon_version / kube_proxy_addon_version | Pinned DaemonSet add-on versions. | `string` | `null` | no |
 | vpc_cni_addon_configuration_values / kube_proxy_addon_configuration_values | JSON config overrides. | `string` | `null` | no |
+| network_policy_enabled | Enforce Kubernetes NetworkPolicy through the VPC CNI. | `bool` | `true` | no |
 | pod_identity_agent_enabled | Install eks-pod-identity-agent. | `bool` | `true` | no |
 | pod_identity_agent_addon_version | Pin pod identity agent version. | `string` | `null` | no |
 | aws_load_balancer_controller_pod_identity_creation_enabled | Create the AWS Load Balancer Controller Pod Identity role and association. | `bool` | `true` | no |

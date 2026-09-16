@@ -5,7 +5,7 @@ definition:
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
   version: 0.3.0
-  description: Lock down cluster access by default. The Ravion Runner role now trusts only Ravion's per-run pipeline runner roles instead of every principal in the account, and the principal that creates the cluster no longer keeps a permanent cluster-admin access entry, so people get access through explicit access entries.
+  description: Lock down cluster and node defaults. The Ravion Runner role now trusts only Ravion's per-run pipeline runner roles instead of every principal in the account, and the principal that creates the cluster no longer keeps a permanent cluster-admin access entry, so people get access through explicit access entries; the plan refuses a configuration that would leave the cluster with no administrator at all. Managed nodes launch with an encrypted root volume and an IMDS hop limit of 1, so pods cannot read node credentials. NetworkPolicy enforcement is on in the VPC CNI, and control plane logs are kept for a year.
 module:
   inputs:
     - id: network
@@ -320,6 +320,12 @@ module:
       type: string_array
     - collapsible: true
       default: true
+      description: Enforce Kubernetes NetworkPolicy objects through the VPC CNI. Needed for the ingress allow-list on EKS Web services; without it every NetworkPolicy in the cluster is ignored.
+      id: network_policy_enabled
+      label: Network policy enforcement
+      type: boolean
+    - collapsible: true
+      default: true
       description: Create an IAM role that Ravion Runner step executions assume for Kubernetes API access, registered as an EKS access entry with cluster-admin. Used by the EKS Add-ons module to install Helm charts.
       id: ravion_runner_role_creation_enabled
       label: Ravion Runner role
@@ -450,7 +456,7 @@ module:
         - label: Scheduler
           value: scheduler
     - collapsible: true
-      default: 30
+      default: 365
       description: Retention in days for the control plane CloudWatch log group.
       id: control_plane_log_retention_days
       label: Log retention (days)
@@ -478,6 +484,7 @@ module:
         endpoint_public_access_enabled: << module.input.endpoint_public_access_enabled >>
         public_access_cidrs: << module.input.endpoint_public_access_cidrs || ["0.0.0.0/0"] >>
         ravion_runner_role_creation_enabled: << module.input.ravion_runner_role_creation_enabled >>
+        network_policy_enabled: '<< module.input.network_policy_enabled != nil ? module.input.network_policy_enabled : true >>'
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>
           capacity_type: << module.input.system_node_capacity_type >>
@@ -635,7 +642,7 @@ module:
 
     A **Ravion Runner role** is also created by default: a stable IAM role registered as an EKS access entry with cluster-admin, which Ravion Runner step executions assume when they need the Kubernetes API. This keeps per-run pipeline roles out of the cluster's access configuration — the EKS Add-ons module assumes it automatically via `aws eks get-token`. Its ARN is available as the `ravion_runner_role_arn` stack output. The trust policy admits only Ravion's per-run pipeline runner roles in this account (`role/rvn-ci/rvn-ci-*`); widen it with the `ravion_runner_role_trusted_principal_arns` Terraform variable if other callers must assume it.
 
-    EKS access entries control which IAM principals can access the cluster. The IAM principal that creates the cluster is not kept as an admin (opt back in with the `bootstrap_cluster_creator_admin_permissions_enabled` Terraform variable before the cluster is created; it cannot change afterwards). Grant people and automation access through the **Access entries** form: give each entry an IAM principal ARN, then attach EKS access policies scoped to the whole cluster or to selected namespaces, and optionally map the principal to Kubernetes RBAC groups. Automatic access for Ravion deploys will be wired here in a future release.
+    EKS access entries control which IAM principals can access the cluster. The IAM principal that creates the cluster is not kept as an admin (opt back in with the `bootstrap_cluster_creator_admin_permissions_enabled` Terraform variable before the cluster is created; it cannot change afterwards). The plan fails if the Ravion Runner role, the creator bootstrap and the access entries would all leave the cluster without an administrator, since recovering from that needs an out-of-band `eks:CreateAccessEntry` call. Grant people and automation access through the **Access entries** form: give each entry an IAM principal ARN, then attach EKS access policies scoped to the whole cluster or to selected namespaces, and optionally map the principal to Kubernetes RBAC groups. Automatic access for Ravion deploys will be wired here in a future release.
 
     ### IAM compatibility when upgrading
 
@@ -692,6 +699,9 @@ module:
     - **Ordered provisioning:** CoreDNS is installed only after the default capacity node group exists, avoiding the add-on deadlock that occurs on clusters without compute
     - **Private by default:** the API endpoint is private unless public access is explicitly enabled
     - **Encrypted secrets:** Kubernetes secrets are envelope-encrypted with KMS by default
+    - **Hardened nodes:** managed nodes launch with an encrypted root volume (AWS-managed key unless you supply one) and IMDSv2 with a hop limit of 1, so pods cannot read the node's instance credentials; workloads get AWS access through Pod Identity instead
+    - **NetworkPolicy enforced:** the VPC CNI's network policy agent is on, so the ingress allow-list on EKS Web services actually restricts traffic
+    - **Least-privilege access:** Ravion's cluster-admin runner role trusts only Ravion's per-run pipeline runner roles, and the principal that creates the cluster keeps no admin access; people are granted access through explicit access entries
     - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, preventing accidental destroys
     - **Autoscaler-friendly sizing:** Terraform sets the initial node count but never fights an autoscaler over the running count
     - **Pod Identity over IRSA:** add-on IAM roles use EKS Pod Identity associations; creating an IAM OIDC provider for IRSA workloads is opt-in

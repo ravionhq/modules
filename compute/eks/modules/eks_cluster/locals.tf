@@ -35,3 +35,29 @@ locals {
     }]
   })
 }
+
+locals {
+  # An access entry only grants access when it carries a policy association
+  # or maps to Kubernetes groups; a bare entry authenticates but authorizes
+  # nothing.
+  granting_access_entries = [
+    for key, entry in var.access_entries : key
+    if length(entry.policy_associations) > 0 || length(entry.kubernetes_groups) > 0
+  ]
+
+  cluster_has_an_administrator = (
+    var.bootstrap_cluster_creator_admin_permissions_enabled
+    || var.cluster_admin_access_managed_externally
+    || length(local.granting_access_entries) > 0
+  )
+}
+
+locals {
+  # The CNI add-on schema takes enableNetworkPolicy as a string. An explicit
+  # configuration document wins untouched, matching the other add-ons.
+  vpc_cni_addon_configuration_values = (
+    var.vpc_cni_addon_configuration_values != null
+    ? var.vpc_cni_addon_configuration_values
+    : (var.network_policy_enabled ? jsonencode({ enableNetworkPolicy = "true" }) : null)
+  )
+}

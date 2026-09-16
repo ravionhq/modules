@@ -246,9 +246,16 @@ variable "disk_throughput" {
   default     = null
 }
 
+variable "ebs_encryption_enabled" {
+  type        = bool
+  description = "Encrypt the root EBS volume of every node. On by default so nodes never depend on the account's EBS-encryption-by-default setting. Uses the AWS-managed EBS key unless ebs_kms_key_arn is set."
+  default     = true
+  nullable    = false
+}
+
 variable "ebs_kms_key_arn" {
   type        = string
-  description = "KMS key ARN for root EBS volume encryption. When null, defaults to the AWS-managed EBS key."
+  description = "KMS key ARN for root EBS volume encryption. When null, the AWS-managed EBS key is used."
   default     = null
 
   validation {
@@ -293,8 +300,8 @@ variable "metadata_http_tokens" {
 
 variable "metadata_http_put_response_hop_limit" {
   type        = number
-  description = "IMDS hop limit. AWS recommends 2 to allow containerized workloads to reach IMDS."
-  default     = 2
+  description = "IMDS hop limit. 1 keeps the node's instance credentials away from pods, which is safe because workloads get AWS credentials through EKS Pod Identity rather than IMDS. Raise to 2 only for legacy pods that read IMDS directly."
+  default     = 1
 
   validation {
     condition     = var.metadata_http_put_response_hop_limit >= 1 && var.metadata_http_put_response_hop_limit <= 64
