@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -34,6 +34,15 @@ for tool in helm yq; do
     exit 1
   }
 done
+
+# Where a chart lives. Service charts sit next to this script; the add-ons
+# module carries its own charts and they are tested from here too.
+chart_path() {
+  case "$1" in
+    karpenter-resources) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    *) echo "${CHARTS_DIR}/$1" ;;
+  esac
+}
 
 pass() {
   PASS=$((PASS + 1))
@@ -62,7 +71,7 @@ render() {
   local chart="$1" label="$2"
   shift 2
   local out="${WORK_DIR}/${chart}-${label}.yaml"
-  helm template test-release "${CHARTS_DIR}/${chart}" "$@" |
+  helm template test-release "$(chart_path "${chart}")" "$@" |
     yq ea '[.] | map(select(. != null))' >"${out}"
   echo "${out}"
 }
@@ -88,10 +97,10 @@ count() {
 
 lint_chart() {
   local chart="$1"
-  for values in "${CHARTS_DIR}/${chart}"/ci/*-values.yaml; do
+  for values in "$(chart_path "${chart}")"/ci/*-values.yaml; do
     local label
     label="$(basename "${values}")"
-    if helm lint "${CHARTS_DIR}/${chart}" --values "${values}" >"${WORK_DIR}/lint.out" 2>&1; then
+    if helm lint "$(chart_path "${chart}")" --values "${values}" >"${WORK_DIR}/lint.out" 2>&1; then
       pass "lint ${chart} (${label})"
     else
       fail "lint ${chart} (${label})" "exit 0" "$(cat "${WORK_DIR}/lint.out")"
@@ -469,6 +478,41 @@ test_secrets_contract() {
 }
 
 ################################################################################
+# karpenter-resources (compute/eks/addons)
+################################################################################
+
+test_karpenter_resources() {
+  local chart="karpenter-resources"
+  local default with_key ebs
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  with_key="$(render "${chart}" customer-key --values "$(chart_path "${chart}")/ci/customer-key-values.yaml")"
+  ebs='.[] | select(.kind == "EC2NodeClass") | .spec.blockDeviceMappings[0]'
+
+  assert_eq "${chart}: renders one EC2NodeClass and one NodePool" \
+    "1 1" "$(count "${default}" EC2NodeClass) $(count "${default}" NodePool)"
+
+  # The Terraform module hands the chart kmsKeyId "" when no customer key is
+  # set; the manifest must then carry no kmsKeyID at all, or Karpenter would
+  # try to use an empty key and fail every launch.
+  assert_eq "${chart}: no customer key omits kmsKeyID from the manifest" \
+    "false" "$(q "${default}" "${ebs} | .ebs | has(\"kmsKeyID\")")"
+  assert_eq "${chart}: root volume is always encrypted" \
+    "true" "$(q "${default}" "${ebs} | .ebs.encrypted")"
+  assert_eq "${chart}: root volume is marked as the root device and deleted with the node" \
+    "true true" "$(q "${default}" "${ebs} | .rootVolume") $(q "${default}" "${ebs} | .ebs.deleteOnTermination")"
+  assert_eq "${chart}: default root volume is 20Gi gp3 on /dev/xvda" \
+    "/dev/xvda 20Gi gp3" "$(q "${default}" "${ebs} | .deviceName") $(q "${default}" "${ebs} | .ebs.volumeSize") $(q "${default}" "${ebs} | .ebs.volumeType")"
+  assert_eq "${chart}: IMDSv2 is required with a hop limit of 1" \
+    "required 1" "$(q "${default}" '.[] | select(.kind == "EC2NodeClass") | .spec.metadataOptions.httpTokens') $(q "${default}" '.[] | select(.kind == "EC2NodeClass") | .spec.metadataOptions.httpPutResponseHopLimit')"
+
+  assert_eq "${chart}: a customer-managed key is rendered as kmsKeyID" \
+    "arn:aws:kms:us-east-2:123456789012:key/11111111-2222-3333-4444-555555555555" \
+    "$(q "${with_key}" "${ebs} | .ebs.kmsKeyID")"
+  assert_eq "${chart}: a customer root volume size reaches the manifest" \
+    "50Gi" "$(q "${with_key}" "${ebs} | .ebs.volumeSize")"
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -477,6 +521,7 @@ for chart in "${CHARTS[@]}"; do
     rvn-eks-web) test_rvn_eks_web ;;
     rvn-eks-worker) test_rvn_eks_worker ;;
     rvn-eks-cron) test_rvn_eks_cron ;;
+    karpenter-resources) test_karpenter_resources ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

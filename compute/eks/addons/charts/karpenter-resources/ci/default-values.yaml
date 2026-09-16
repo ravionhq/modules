@@ -1,0 +1,6 @@
+# The Terraform module always supplies these; the chart's own defaults are
+# empty placeholders. No customer KMS key: the AWS-managed key applies.
+ec2NodeClass:
+  instanceProfile: test-cluster-karpenter-node
+  subnetIds: [subnet-0a, subnet-0b]
+  securityGroupIds: [sg-12345678]

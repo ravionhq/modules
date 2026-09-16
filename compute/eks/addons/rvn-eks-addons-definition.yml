@@ -4,8 +4,10 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.0
+  version: 0.9.1
   description: >-
+    Fix the default Karpenter NodePool render, which 0.9.0 broke for every cluster without a
+    customer-managed EBS key (plan failed with "coalesce: no non-null, non-empty-string arguments").
     Harden node and secret defaults. Karpenter nodes launch with an encrypted root volume and an
     IMDS hop limit of 1, so pods cannot read node credentials and volumes no longer depend on the
     account's EBS-encryption-by-default setting. The External Secrets cluster stores now accept

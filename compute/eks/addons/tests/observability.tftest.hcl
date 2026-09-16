@@ -82,6 +82,9 @@ variables {
   cluster_name      = "test-cluster"
   region            = "us-east-2"
   karpenter_enabled = false
+  # The cluster secret stores refuse to render unconditioned; the definition
+  # always supplies the service namespace, so mirror that here.
+  eso_allowed_namespaces = ["test-apps"]
 }
 
 ################################################################################
@@ -286,7 +289,7 @@ run "namespace_exclusions_reach_both_collectors" {
   }
 
   assert {
-    condition     = strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "regex         = \"kube-system|ravion-beacon\"")
+    condition     = strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "regex         = \"(kube-system|ravion-beacon);\"")
     error_message = "Alloy must drop excluded namespaces at discovery"
   }
 
