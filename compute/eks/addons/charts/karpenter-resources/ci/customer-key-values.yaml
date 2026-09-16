@@ -1,0 +1,7 @@
+ec2NodeClass:
+  instanceProfile: test-cluster-karpenter-node
+  subnetIds: [subnet-0a, subnet-0b]
+  securityGroupIds: [sg-12345678]
+  rootVolume:
+    size: 50Gi
+    kmsKeyId: arn:aws:kms:us-east-2:123456789012:key/11111111-2222-3333-4444-555555555555
