@@ -890,6 +890,15 @@ run "logging_destination_rejects_unknown" {
   expect_failures = [var.logging_destination]
 }
 
+run "logging_retention_days_defaults_to_365" {
+  command = plan
+
+  assert {
+    condition     = var.logging_retention_days == 365
+    error_message = "logging_retention_days should default to 365."
+  }
+}
+
 run "cloudwatch_retention_rejects_invalid_value" {
   command = plan
 

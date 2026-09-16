@@ -97,6 +97,11 @@ run "basic_alb_http_only" {
     condition     = length(aws_lb_listener.https) == 0
     error_message = "HTTPS listener should not be created by default"
   }
+
+  assert {
+    condition     = var.access_logs_retention_days == 365
+    error_message = "access_logs_retention_days should default to 365"
+  }
 }
 
 # Test 2: Internal ALB

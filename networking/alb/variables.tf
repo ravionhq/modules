@@ -284,7 +284,7 @@ variable "access_logs_prefix" {
 variable "access_logs_retention_days" {
   type        = number
   description = "The number of days to retain access logs in S3."
-  default     = 90
+  default     = 365
 
   validation {
     condition     = var.access_logs_retention_days >= 1

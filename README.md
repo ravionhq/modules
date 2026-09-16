@@ -66,9 +66,9 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
-| `rvn-aws-static` | Static Hosting | v1.1.2 | `hosting/static_site/` |
-| `rvn-cloudfront` | CloudFront CDN | v1.3.1 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v1.6.0 | `compute/ec2_service/` |
+| `rvn-aws-static` | Static Hosting | v1.1.3 | `hosting/static_site/` |
+| `rvn-cloudfront` | CloudFront CDN | v1.3.2 | `cdn/cloudfront/` |
+| `rvn-ec2-service` | EC2 Service | v1.6.1 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v1.1.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v1.6.0 | `compute/ecs_service/` |
 | `rvn-ecs-web` | ECS Web Service | v1.6.0 | `compute/ecs_service/` |
@@ -80,7 +80,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-worker` | EKS Worker | v0.4.1 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
 | `rvn-guardduty` | AWS GuardDuty | v0.1.0 | `security/guardduty/` |
-| `rvn-lambda` | Lambda Function | v1.1.1 | `compute/lambda/` |
+| `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.2.1 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.0.3 | `networking/route53/` |
