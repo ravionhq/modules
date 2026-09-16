@@ -318,7 +318,7 @@ module "worker_service" {
 | cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum) above which the alarm fires; ALB only | `number` | `10` | no |
 | cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime (seconds) above which the alarm fires; ALB only | `number` | `1` | no |
 | cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
-| cloudwatch_alarm_period | Period in seconds (10, 30, 60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
 | cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
 | cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
 
@@ -499,7 +499,7 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 
 | Name | Description |
 |------|-------------|
-| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `cpu_utilization`, `memory_utilization`, `running_tasks`, and, when a load balancer is attached, `unhealthy_hosts`, `target_5xx`, `target_response_time` (ALB) or `nlb_<listener>_unhealthy_hosts` (NLB). Empty when disabled |
+| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `cpu_utilization`, `memory_utilization`, `running_tasks`, and, when a load balancer is attached, `<target_group>_unhealthy_hosts`, `<target_group>_target_5xx`, `<target_group>_target_response_time` per ALB target group (`production`, plus `alternate` when traffic-shift infrastructure exists) or `nlb_<listener>_unhealthy_hosts` (NLB). Empty when disabled |
 
 ## Architecture
 

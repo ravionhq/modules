@@ -779,13 +779,13 @@ variable "cloudwatch_alarm_evaluation_periods" {
 
 variable "cloudwatch_alarm_period" {
   type        = number
-  description = "The period in seconds over which the statistic is applied."
+  description = "The period in seconds over which the statistic is applied. AWS service metrics are published at one-minute resolution, so 60 is the shortest useful period."
   default     = 300
   nullable    = false
 
   validation {
-    condition     = contains([10, 30, 60, 300, 900, 3600], var.cloudwatch_alarm_period)
-    error_message = "The cloudwatch_alarm_period must be one of: 10, 30, 60, 300, 900, or 3600 seconds."
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "The cloudwatch_alarm_period must be one of: 60, 300, 900, or 3600 seconds. AWS service metrics are published at one-minute resolution, so shorter periods never receive datapoints."
   }
 }
 

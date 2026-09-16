@@ -344,7 +344,7 @@ spec:
 | cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
 | cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime in seconds above which the alarm fires (> 0) | `number` | `1` | no |
 | cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
-| cloudwatch_alarm_period | Period in seconds (10, 30, 60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
 | cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
 | cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
 
