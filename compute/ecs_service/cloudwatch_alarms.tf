@@ -17,6 +17,13 @@ locals {
     && try(length(var.load_balancer_attachment.listener_rules), 0) > 0
   )
 
+  # Native blue/green, linear, and canary deploys shift production traffic
+  # between tg_1 and tg_2, so alarm on both whenever the alternate exists.
+  alb_alarm_target_groups = local.alb_target_alarms_enabled ? merge(
+    { production = aws_lb_target_group.tg_1[0].arn_suffix },
+    local.traffic_shift_infrastructure_enabled ? { alternate = aws_lb_target_group.tg_2[0].arn_suffix } : {}
+  ) : {}
+
   # NLB services can have one target group per listener; alarm on each.
   nlb_alarm_target_groups = local.create_cloudwatch_alarms && local.enable_nlb_listener ? merge(
     { primary = aws_lb_target_group.tg_1[0].arn_suffix },
@@ -115,13 +122,17 @@ resource "aws_cloudwatch_metric_alarm" "running_tasks" {
 
 ################################################################################
 # ALB target group health (AWS/ApplicationELB)
+#
+# One alarm per target group in local.alb_alarm_target_groups (production, and
+# alternate when traffic-shift infrastructure exists) so coverage follows the
+# target group that is actually serving production traffic.
 ################################################################################
 
 resource "aws_cloudwatch_metric_alarm" "alb_unhealthy_hosts" {
-  count = local.alb_target_alarms_enabled ? 1 : 0
+  for_each = local.alb_alarm_target_groups
 
-  alarm_name          = "${local.cloudwatch_alarm_name_prefix}-unhealthy-hosts"
-  alarm_description   = "Unhealthy ALB targets for ${var.name}"
+  alarm_name          = "${local.cloudwatch_alarm_name_prefix}-${each.key}-unhealthy-hosts"
+  alarm_description   = "Unhealthy ALB targets (${each.key}) for ${var.name}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = var.cloudwatch_alarm_evaluation_periods
   metric_name         = "UnHealthyHostCount"
@@ -133,7 +144,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_unhealthy_hosts" {
 
   dimensions = {
     LoadBalancer = data.aws_lb.attached[0].arn_suffix
-    TargetGroup  = aws_lb_target_group.tg_1[0].arn_suffix
+    TargetGroup  = each.value
   }
 
   alarm_actions = var.cloudwatch_alarm_actions
@@ -143,10 +154,10 @@ resource "aws_cloudwatch_metric_alarm" "alb_unhealthy_hosts" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_target_5xx" {
-  count = local.alb_target_alarms_enabled ? 1 : 0
+  for_each = local.alb_alarm_target_groups
 
-  alarm_name          = "${local.cloudwatch_alarm_name_prefix}-target-5xx"
-  alarm_description   = "Target 5xx responses for ${var.name}"
+  alarm_name          = "${local.cloudwatch_alarm_name_prefix}-${each.key}-target-5xx"
+  alarm_description   = "Target 5xx responses (${each.key}) for ${var.name}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = var.cloudwatch_alarm_evaluation_periods
   metric_name         = "HTTPCode_Target_5XX_Count"
@@ -158,7 +169,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_target_5xx" {
 
   dimensions = {
     LoadBalancer = data.aws_lb.attached[0].arn_suffix
-    TargetGroup  = aws_lb_target_group.tg_1[0].arn_suffix
+    TargetGroup  = each.value
   }
 
   alarm_actions = var.cloudwatch_alarm_actions
@@ -168,10 +179,10 @@ resource "aws_cloudwatch_metric_alarm" "alb_target_5xx" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_target_response_time" {
-  count = local.alb_target_alarms_enabled ? 1 : 0
+  for_each = local.alb_alarm_target_groups
 
-  alarm_name          = "${local.cloudwatch_alarm_name_prefix}-target-response-time"
-  alarm_description   = "Average target response time for ${var.name}"
+  alarm_name          = "${local.cloudwatch_alarm_name_prefix}-${each.key}-target-response-time"
+  alarm_description   = "Average target response time (${each.key}) for ${var.name}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = var.cloudwatch_alarm_evaluation_periods
   metric_name         = "TargetResponseTime"
@@ -183,7 +194,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_target_response_time" {
 
   dimensions = {
     LoadBalancer = data.aws_lb.attached[0].arn_suffix
-    TargetGroup  = aws_lb_target_group.tg_1[0].arn_suffix
+    TargetGroup  = each.value
   }
 
   alarm_actions = var.cloudwatch_alarm_actions

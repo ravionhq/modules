@@ -12,16 +12,12 @@
 - id: cloudwatch_alarm_period
   label: Alarm period
   type: number
-  description: Length of each evaluation period.
+  description: Length of each evaluation period. AWS service metrics are published once a minute, so 60 seconds is the shortest useful period.
   collapsible: true
   show_when:
     cloudwatch_alarms_creation_enabled: true
   default: 300
   values:
-    - label: 10 seconds
-      value: 10
-    - label: 30 seconds
-      value: 30
     - label: 60 seconds
       value: 60
     - label: 5 minutes

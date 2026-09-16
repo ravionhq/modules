@@ -991,8 +991,8 @@ run "cloudwatch_alarms_alb_service" {
   }
 
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 1 && length(aws_cloudwatch_metric_alarm.alb_target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.alb_target_response_time) == 1
-    error_message = "ALB target group alarms should be created for an ALB-attached service"
+    condition     = keys(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == ["alternate", "production"] && keys(aws_cloudwatch_metric_alarm.alb_target_5xx) == ["alternate", "production"] && keys(aws_cloudwatch_metric_alarm.alb_target_response_time) == ["alternate", "production"]
+    error_message = "ALB target group alarms should cover both the production and alternate target groups"
   }
 
   assert {
@@ -1001,23 +1001,23 @@ run "cloudwatch_alarms_alb_service" {
   }
 
   assert {
-    condition     = aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].namespace == "AWS/ApplicationELB" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].metric_name == "UnHealthyHostCount" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].statistic == "Maximum" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts[0].threshold == 1
+    condition     = aws_cloudwatch_metric_alarm.alb_unhealthy_hosts["production"].namespace == "AWS/ApplicationELB" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts["production"].metric_name == "UnHealthyHostCount" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts["production"].statistic == "Maximum" && aws_cloudwatch_metric_alarm.alb_unhealthy_hosts["production"].threshold == 1
     error_message = "Unhealthy host alarm should use the maximum UnHealthyHostCount"
   }
 
   assert {
-    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx[0].dimensions["TargetGroup"] == "targetgroup/mock-tg/1234567890123456"
-    error_message = "ALB target alarms should be dimensioned by the production target group"
+    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx["production"].dimensions["TargetGroup"] == "targetgroup/mock-tg/1234567890123456" && aws_cloudwatch_metric_alarm.alb_target_5xx["alternate"].dimensions["TargetGroup"] == "targetgroup/mock-tg/1234567890123456"
+    error_message = "ALB target alarms should be dimensioned by their own target group"
   }
 
   assert {
-    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx[0].threshold == 25 && aws_cloudwatch_metric_alarm.alb_target_response_time[0].threshold == 2
+    condition     = aws_cloudwatch_metric_alarm.alb_target_5xx["alternate"].threshold == 25 && aws_cloudwatch_metric_alarm.alb_target_response_time["alternate"].threshold == 2
     error_message = "ALB target alarms should use the configured thresholds"
   }
 
   assert {
-    condition     = length(output.cloudwatch_alarm_arns) == 6
-    error_message = "cloudwatch_alarm_arns should list the three service alarms and three ALB target alarms"
+    condition     = length(output.cloudwatch_alarm_arns) == 9 && contains(keys(output.cloudwatch_alarm_arns), "production_unhealthy_hosts") && contains(keys(output.cloudwatch_alarm_arns), "alternate_target_response_time")
+    error_message = "cloudwatch_alarm_arns should list the three service alarms and three ALB target alarms per target group"
   }
 }
 

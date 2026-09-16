@@ -16,7 +16,7 @@ Enables Amazon GuardDuty threat detection in a list of AWS Regions for one accou
 
 ```hcl
 module "guardduty" {
-  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=rvn-guardduty@0.1.0"
 
   regions = ["us-east-1", "us-west-2", "eu-west-1"]
 
@@ -30,7 +30,7 @@ module "guardduty" {
 
 ```hcl
 module "guardduty" {
-  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=rvn-guardduty@0.1.0"
 
   regions = ["us-east-1"]
 
@@ -43,7 +43,7 @@ module "guardduty" {
 
 ```hcl
 module "guardduty" {
-  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=rvn-guardduty@0.1.0"
 
   regions = ["us-east-1", "eu-central-1"]
 

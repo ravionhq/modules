@@ -221,7 +221,7 @@ module "api_service" {
 | alb_cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
 | alb_cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime (seconds) above which the ALB alarm fires | `number` | `1` | no |
 | cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
-| cloudwatch_alarm_period | Period in seconds (10, 30, 60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
 | cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
 | cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
 | capacity_provider_default | Family for the cluster default strategy: `ec2`, `fargate` (includes Fargate Spot when enabled), or `fargate_spot`. AWS forbids mixing Fargate and EC2 providers in one strategy. Defaults to `ec2` if EC2 is enabled, then `fargate`, then `fargate_spot` | `string` | `null` | no |
