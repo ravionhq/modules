@@ -324,7 +324,7 @@ spec:
 | access_logs_enabled | Enable access logging for the ALB | `bool` | `false` | no |
 | access_logs_bucket_arn | Existing S3 bucket ARN for access logs (creates new if null) | `string` | `null` | no |
 | access_logs_prefix | S3 prefix for access logs | `string` | `""` | no |
-| access_logs_retention_days | Days to retain access logs in S3 | `number` | `90` | no |
+| access_logs_retention_days | Days to retain access logs in S3 | `number` | `365` | no |
 | access_logs_kms_key_id | KMS key ID for S3 bucket encryption (uses AES256 if null) | `string` | `null` | no |
 | access_logs_versioning_enabled | Enable versioning for the access logs S3 bucket | `bool` | `false` | no |
 

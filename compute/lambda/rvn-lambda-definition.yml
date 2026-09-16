@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.1.1
-  description: Use consistent Dockerfile and builder field names and keep default build policies in advanced builder settings so routine build forms stay focused.
+  version: 1.1.2
+  description: Document that image scanning on push is enabled by default for SOC 2 compliance.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -910,7 +910,7 @@ module:
     - id: ecr_scan_on_push_enabled
       label: Scan images on push
       type: boolean
-      description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy.
+      description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy. Enabled by default to satisfy SOC 2 vulnerability-scanning requirements.
       collapsible: true
       default: true
       show_when:

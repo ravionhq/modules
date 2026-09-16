@@ -428,7 +428,7 @@ No external apply-time tools required.
 | logging_bucket_creation_enabled | Create a new S3 bucket for logs. Only applies when `logging_destination = "s3"`. | `bool` | `false` |
 | logging_bucket_domain_name | Existing logging bucket domain name. Only applies when `logging_destination = "s3"`. | `string` | `null` |
 | logging_prefix | Base prefix for log files. Only applies when `logging_destination = "s3"`. | `string` | `""` |
-| logging_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `90` |
+| logging_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `365` |
 
 ### Deploy Role
 

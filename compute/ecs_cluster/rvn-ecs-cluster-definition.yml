@@ -4,7 +4,7 @@ definition:
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
   version: 1.1.0
-  description: Add a Compliance section with a default log retention that ECS services inherit and optional CloudWatch alarms for the public and private Application Load Balancers.
+  description: Add a Compliance section with a default log retention that ECS services inherit and optional CloudWatch alarms for the public and private Application Load Balancers, and document that Container Insights is enabled by default for SOC 2 compliance.
 module:
   inputs:
     - id: network
@@ -40,7 +40,7 @@ module:
       label: Load balancer deletion protection
       type: boolean
     - default: enhanced
-      description: Configures CloudWatch Container Insights for the ECS cluster. Enhanced observability adds detailed task and container metrics and may increase CloudWatch costs. Service running-task alarms depend on Container Insights being enabled.
+      description: Configures CloudWatch Container Insights for the ECS cluster. Enabled by default to satisfy SOC 2 monitoring requirements. Enhanced observability adds detailed task and container metrics and may increase CloudWatch costs. Service running-task alarms depend on Container Insights being enabled.
       id: container_insights
       label: Container insights
       type: string
