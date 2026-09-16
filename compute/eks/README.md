@@ -103,7 +103,7 @@ module "eks" {
 | ip_family | `ipv4` or `ipv6`. | `string` | `"ipv4"` | no |
 | cluster_security_group_additional_cidr_ingress_rules | Extra cluster-SG ingress sourced by IPv4 CIDR. | `list(object)` | `[]` | no |
 | cluster_security_group_additional_referenced_security_group_ingress_rules | Extra cluster-SG ingress sourced by another security group. | `list(object)` | `[]` | no |
-| bootstrap_cluster_creator_admin_permissions_enabled | Auto-grant cluster-admin to the creating principal during cluster bootstrap. | `bool` | `true` | no |
+| bootstrap_cluster_creator_admin_permissions_enabled | Give the creating principal a permanent cluster-admin access entry. Creation-time only; ignored afterwards. | `bool` | `false` | no |
 | access_entries | EKS access entries. | `map(object)` | `{}` | no |
 | oidc_provider_creation_enabled | Create an IAM OIDC provider for IRSA workloads. | `bool` | `false` | no |
 | vpc_resource_controller_policy_enabled | Attach the cluster policy for Windows networking or security groups for pods. | `bool` | `false` | no |
@@ -119,7 +119,7 @@ module "eks" {
 | aws_load_balancer_controller_namespace / aws_load_balancer_controller_service_account | AWS Load Balancer Controller service account location. | `string` | `"kube-system"` / `"aws-load-balancer-controller"` | no |
 | ravion_runner_security_group_creation_enabled | Create a Ravion Runner SG allowed to reach the API endpoint (443). | `bool` | `true` | no |
 | ravion_runner_role_creation_enabled | Create an assumable IAM role registered as an EKS access entry with cluster-admin, for runner Kubernetes API access. | `bool` | `true` | no |
-| ravion_runner_role_trusted_principal_arns | ArnLike patterns restricting who can assume the Ravion Runner role (empty = same-account principals with sts:AssumeRole). | `list(string)` | `[]` | no |
+| ravion_runner_role_trusted_principal_arns | ArnLike patterns restricting who can assume the Ravion Runner role (empty = Ravion's per-run pipeline runner roles, `role/rvn-ci/rvn-ci-*`, in this account). | `list(string)` | `[]` | no |
 | pod_identity_associations | Extra Pod Identity associations. | `map(object)` | `{}` | no |
 | deletion_protection_enabled | Protect the cluster from API deletion. | `bool` | `true` | no |
 | system_node_group | Default managed node group config. The minimum size is also its initial size. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
@@ -140,6 +140,7 @@ module "eks" {
 | oidc_issuer_url / oidc_provider_arn | IRSA wiring; provider ARN is null unless creation is enabled. |
 | cluster_security_group_id | EKS-managed cluster security group. |
 | node_subnet_ids | Subnets used for node placement (consumed by `addons`). |
+| ravion_runner_role_trusted_principal_arns | ArnLike patterns the Ravion Runner role trusts (empty if disabled). |
 | ravion_runner_security_group_id | Ravion Runner SG allowed to reach the API endpoint (null if disabled). |
 | ravion_runner_role_arn | IAM role runners assume for Kubernetes API access (null if disabled). |
 | secrets_kms_key_arn | Secrets KMS key (null if disabled). |

@@ -54,7 +54,7 @@ Prefer the [`compute/eks`](../..) composite. This module is nested under
 | ip_family | `ipv4` or `ipv6`. | `string` | `"ipv4"` | no |
 | cluster_security_group_additional_cidr_ingress_rules | Extra cluster-SG ingress rules sourced by IPv4 CIDR. | `list(object)` | `[]` | no |
 | cluster_security_group_additional_referenced_security_group_ingress_rules | Extra cluster-SG ingress rules sourced by another security group. | `list(object)` | `[]` | no |
-| bootstrap_cluster_creator_admin_permissions_enabled | Auto-grant cluster-admin to the creating principal during cluster bootstrap. | `bool` | `true` | no |
+| bootstrap_cluster_creator_admin_permissions_enabled | Give the creating principal a permanent cluster-admin access entry. Creation-time only; ignored afterwards. | `bool` | `false` | no |
 | access_entries | EKS access entries to create (replaces aws-auth ConfigMap). | `map(object)` | `{}` | no |
 | oidc_provider_creation_enabled | Create an IAM OIDC provider for IRSA workloads. | `bool` | `false` | no |
 | vpc_resource_controller_policy_enabled | Attach AmazonEKSVPCResourceController for Windows networking or security groups for pods. | `bool` | `false` | no |

@@ -139,8 +139,8 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster the EKS cluster admin permissions automatically. AWS recommends managing access via aws_eks_access_entry instead."
-  default     = true
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default; manage access via aws_eks_access_entry instead. Only evaluated at cluster creation."
+  default     = false
 }
 
 variable "oidc_provider_creation_enabled" {

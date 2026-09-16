@@ -158,7 +158,7 @@ variable "ravion_runner_role_creation_enabled" {
 
 variable "ravion_runner_role_trusted_principal_arns" {
   type        = list(string)
-  description = "IAM principal ARN patterns allowed to assume the Ravion Runner role (aws:PrincipalArn ArnLike condition). Empty means any principal in this account that holds sts:AssumeRole on the role's ARN."
+  description = "IAM principal ARN patterns allowed to assume the Ravion Runner role (aws:PrincipalArn ArnLike condition). Empty means only Ravion's per-run EC2 pipeline runner roles in this account (role/rvn-ci/rvn-ci-*). Set explicit patterns to admit other callers, such as an operator role for local troubleshooting."
   default     = []
 
   validation {
@@ -187,8 +187,8 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster the EKS cluster admin permissions automatically."
-  default     = true
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation."
+  default     = false
 }
 
 variable "oidc_provider_creation_enabled" {

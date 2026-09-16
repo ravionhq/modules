@@ -135,3 +135,85 @@ run "node_image_pulls_preserve_bootstrap_permissions" {
     error_message = "Nodes need worker, CNI and pull-only permissions without default ECR ReadOnly or SSM access."
   }
 }
+
+run "cluster_creator_keeps_no_admin_access_by_default" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                       = "test-cluster"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+  }
+  assert {
+    condition     = aws_eks_cluster.this.access_config[0].bootstrap_cluster_creator_admin_permissions == false
+    error_message = "The ephemeral principal that creates the cluster must not become a permanent cluster-admin access entry."
+  }
+}
+
+run "cluster_creator_admin_opt_in" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                                                = "test-cluster"
+    vpc_id                                              = "vpc-12345678"
+    subnet_ids                                          = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled                          = false
+    bootstrap_cluster_creator_admin_permissions_enabled = true
+  }
+  assert {
+    condition     = aws_eks_cluster.this.access_config[0].bootstrap_cluster_creator_admin_permissions == true
+    error_message = "Callers must still be able to keep the creator as an admin at creation time."
+  }
+}
+
+run "runner_role_trusts_only_ravion_runners_by_default" {
+  command = plan
+  variables {
+    name                       = "test-cluster"
+    region                     = "us-east-2"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+  }
+  assert {
+    condition     = output.ravion_runner_role_trusted_principal_arns == tolist(["arn:aws:iam::123456789012:role/rvn-ci/rvn-ci-*"])
+    error_message = "Without an override the cluster-admin runner role must trust only Ravion's per-run pipeline runner roles in this account."
+  }
+}
+
+run "runner_role_trust_override_replaces_the_default" {
+  command = plan
+  variables {
+    name                                      = "test-cluster"
+    region                                    = "us-east-2"
+    vpc_id                                    = "vpc-12345678"
+    subnet_ids                                = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled                = false
+    ravion_runner_role_trusted_principal_arns = ["arn:aws:iam::123456789012:role/PlatformAdmins"]
+  }
+  assert {
+    condition     = output.ravion_runner_role_trusted_principal_arns == tolist(["arn:aws:iam::123456789012:role/PlatformAdmins"])
+    error_message = "An explicit pattern list must replace the default runner pattern rather than merge with it."
+  }
+}
+
+run "runner_role_trust_output_is_empty_when_disabled" {
+  command = plan
+  variables {
+    name                                = "test-cluster"
+    region                              = "us-east-2"
+    vpc_id                              = "vpc-12345678"
+    subnet_ids                          = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled          = false
+    ravion_runner_role_creation_enabled = false
+  }
+  assert {
+    condition     = length(output.ravion_runner_role_trusted_principal_arns) == 0
+    error_message = "With no runner role there is nothing to trust."
+  }
+}

@@ -47,6 +47,11 @@ resource "aws_eks_cluster" "this" {
       condition     = alltrue([for subnet in data.aws_subnet.selected : subnet.vpc_id == var.vpc_id])
       error_message = "All subnet_ids must belong to vpc_id."
     }
+
+    # EKS only reads this flag when the cluster is created and the AWS
+    # provider replaces the cluster if it changes afterwards, so a changed
+    # default or a later opt-in must never diff an existing cluster.
+    ignore_changes = [access_config[0].bootstrap_cluster_creator_admin_permissions]
   }
 
   depends_on = [
