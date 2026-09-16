@@ -5,6 +5,13 @@ enforcement on in the VPC CNI by default). Sources are listed as OR-ed peers:
 pods of the named releases in this namespace, every pod in the named
 namespaces, and the given CIDR blocks. With enabled and no sources the policy
 denies all ingress. policyTypes lists only Ingress, so egress stays open.
+
+Trust boundary: a release peer is matched by its app.kubernetes.io/instance
+pod label, which is all NetworkPolicy can see. Anyone who can create pods in
+this namespace can label them as an allowed release, so the allow-list
+separates workloads within one trust domain; it does not defend a namespace
+against its own deployers. Put separately trusted teams in separate
+namespaces and admit them with fromNamespaces.
 */}}
 {{- if .Values.networkPolicy.enabled }}
 apiVersion: networking.k8s.io/v1

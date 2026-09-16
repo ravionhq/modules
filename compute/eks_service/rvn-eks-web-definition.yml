@@ -232,7 +232,7 @@ module:
     - id: ingress_allowed_workloads
       label: Ingress allow-list
       type: string_array
-      description: Names of other EKS services in this namespace that may call this service. When set, a NetworkPolicy denies every other pod in the cluster; traffic from the shared load balancer is always allowed. Leave empty to accept traffic from any pod.
+      description: Names of other EKS services in this namespace that may call this service. When set, a NetworkPolicy denies every other pod in the cluster; traffic from the shared load balancer is always allowed. Leave empty to accept traffic from any pod. Callers are matched by pod label, so this separates services that share a namespace and trust its deployers; keep separately trusted teams in separate namespaces.
       add_button_label: Add service
       placeholder: api
       collapsible: true

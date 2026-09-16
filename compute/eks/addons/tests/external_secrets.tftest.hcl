@@ -92,13 +92,34 @@ run "explicit_namespaces_replace_the_default" {
   }
 }
 
-run "stores_stay_open_when_nothing_scopes_them" {
+run "stores_are_refused_when_nothing_scopes_them" {
   command = plan
   variables {
     ravion_operator_enabled = false
   }
+  expect_failures = [helm_release.external_secrets_stores]
+}
+
+run "explicit_namespaces_scope_the_stores_without_the_operator" {
+  command = plan
+  variables {
+    ravion_operator_enabled = false
+    eso_allowed_namespaces  = ["ravion-prod"]
+  }
   assert {
-    condition     = length(yamldecode(helm_release.external_secrets_stores[0].values[0]).allowedNamespaces) == 0
-    error_message = "With no operator namespaces and no explicit list the chart must receive an empty list, which renders no condition."
+    condition     = yamldecode(helm_release.external_secrets_stores[0].values[0]).allowedNamespaces == ["ravion-prod"]
+    error_message = "An explicit list must scope the stores even when Ravion Operator is not installed."
+  }
+}
+
+run "skipping_the_stores_needs_no_namespaces" {
+  command = plan
+  variables {
+    ravion_operator_enabled                    = false
+    eso_cluster_secret_stores_creation_enabled = false
+  }
+  assert {
+    condition     = length(helm_release.external_secrets_stores) == 0
+    error_message = "Callers who bring their own stores must not be forced to list namespaces."
   }
 }

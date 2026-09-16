@@ -5,7 +5,7 @@ definition:
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
   version: 0.3.0
-  description: Lock down cluster and node defaults. The Ravion Runner role now trusts only Ravion's per-run pipeline runner roles instead of every principal in the account, and the principal that creates the cluster no longer keeps a permanent cluster-admin access entry, so people get access through explicit access entries; the plan refuses a configuration that would leave the cluster with no administrator at all. Managed nodes launch with an encrypted root volume and an IMDS hop limit of 1, so pods cannot read node credentials. NetworkPolicy enforcement is on in the VPC CNI, and control plane logs are kept for a year.
+  description: Lock down cluster and node defaults. The Ravion Runner role now trusts only Ravion's per-run pipeline runner roles instead of every principal in the account, and the principal that creates the cluster no longer keeps a permanent cluster-admin access entry, so people get access through explicit access entries; the plan refuses a configuration that would leave the cluster with no administrator at all. Managed nodes launch with an encrypted root volume and an IMDS hop limit of 1, so pods cannot read node credentials; a node group created by an earlier release without a launch template is replaced on upgrade, so add a second node group first or keep the old settings through advanced Terraform variables. NetworkPolicy enforcement is on in the VPC CNI, and control plane logs are kept for a year.
 module:
   inputs:
     - id: network

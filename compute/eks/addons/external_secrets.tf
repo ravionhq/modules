@@ -91,5 +91,16 @@ resource "helm_release" "external_secrets_stores" {
     }),
   ]
 
+  # An unconditioned ClusterSecretStore is usable from every namespace, and
+  # the controller role reads every secret in the account and region by
+  # default, so an empty namespace list would let any pod-creating principal
+  # read any secret. Refuse to create the stores in that state.
+  lifecycle {
+    precondition {
+      condition     = length(local.eso_allowed_namespaces) > 0
+      error_message = "The External Secrets cluster stores would be usable from every namespace: eso_allowed_namespaces is empty and Ravion Operator manages no namespaces (it is disabled or in full-cluster mode). Set eso_allowed_namespaces to the namespaces that may read secrets, or set eso_cluster_secret_stores_creation_enabled = false and create your own stores."
+    }
+  }
+
   depends_on = [helm_release.external_secrets]
 }

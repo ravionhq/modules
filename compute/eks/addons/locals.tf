@@ -122,7 +122,8 @@ locals {
 locals {
   # Cluster-scoped secret stores are reachable from every namespace unless
   # conditioned. Default to the namespaces Ravion Operator manages, which is
-  # where Ravion-deployed workloads (and their ExternalSecrets) live.
+  # where Ravion-deployed workloads (and their ExternalSecrets) live. An empty
+  # result fails the stores release's precondition rather than opening them.
   eso_allowed_namespaces = sort(distinct(
     length(var.eso_allowed_namespaces) > 0
     ? var.eso_allowed_namespaces

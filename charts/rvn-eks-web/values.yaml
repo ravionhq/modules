@@ -100,6 +100,9 @@ service:
 # enforcement in the cluster (the EKS Cluster module turns it on in the VPC
 # CNI). When enabled, only the listed sources may reach the container port;
 # everything else in the cluster is denied. Egress is never restricted.
+# Release peers are matched by pod label, so the namespace is the trust
+# boundary: anyone able to create pods in it can impersonate an allowed
+# release. Isolate separately trusted teams by namespace instead.
 networkPolicy:
   enabled: false
   ingress:

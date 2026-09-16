@@ -9,8 +9,9 @@ release:
     Harden node and secret defaults. Karpenter nodes launch with an encrypted root volume and an
     IMDS hop limit of 1, so pods cannot read node credentials and volumes no longer depend on the
     account's EBS-encryption-by-default setting. The External Secrets cluster stores now accept
-    ExternalSecrets only from the Ravion Operator's workload namespaces by default; list other
-    namespaces under Allowed namespaces.
+    ExternalSecrets only from the default service namespace (or the Ravion Operator's workload
+    namespaces when it is scoped); list other namespaces under Allowed namespaces. The stores are
+    never created unconditioned.
     Rename the Terraform-facing Ravion Operator variables and outputs from beacon_* to ravion_operator_*.
     Automatically attach the cluster's Ravion Runner security group to add-on runs, render metrics from
     Amazon Managed Prometheus, provision new installations with supported Ravion Operator credentials,
@@ -1005,7 +1006,7 @@ module:
       type: string_array
     - add_button_label: Add namespace
       collapsible: true
-      description: Kubernetes namespaces whose ExternalSecrets may use the shared secret stores. Leave empty to allow the namespaces Ravion Operator manages, which is where Ravion-deployed services run. Add namespaces for workloads deployed by other means.
+      description: Kubernetes namespaces whose ExternalSecrets may use the shared secret stores. Leave empty to allow the namespaces Ravion Operator manages, or the default service namespace (project and environment given IDs joined with a hyphen) when the Operator manages the whole cluster. Add every namespace an EKS service with a custom namespace uses, and any workloads deployed by other means.
       id: eso_allowed_namespaces
       label: Allowed namespaces
       placeholder: my-namespace
@@ -1125,7 +1126,9 @@ module:
         eso_chart_version: << module.input.eso_chart_version || "2.8.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
-        eso_allowed_namespaces: '<< module.input.eso_allowed_namespaces != nil ? module.input.eso_allowed_namespaces : [] >>'
+        # Full-cluster Operator mode (the default) manages no specific namespaces,
+        # so fall back to the namespace EKS services deploy into by default.
+        eso_allowed_namespaces: '<< module.input.eso_allowed_namespaces != nil && len(module.input.eso_allowed_namespaces) > 0 ? module.input.eso_allowed_namespaces : [project.given_id + "-" + environment.given_id] >>'
         ravion_operator_enabled: << module.input.ravion_operator_enabled >>
         ravion_operator_deploy_enabled: << module.input.ravion_operator_enabled >>
         # The selected chart bundles the matching verified multiarch image digest,

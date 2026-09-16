@@ -189,7 +189,7 @@ variable "eso_kms_key_arns" {
 
 variable "eso_allowed_namespaces" {
   type        = list(string)
-  description = "Namespaces whose ExternalSecrets may read through the module's ClusterSecretStores. Empty means the Ravion Operator's workload namespaces (ravion_operator_namespace_scope plus deploy namespaces); when those are empty too the stores stay open to every namespace. The Secrets Manager and SSM ARN scope still applies on top."
+  description = "Namespaces whose ExternalSecrets may read through the module's ClusterSecretStores. Empty means the Ravion Operator's workload namespaces (ravion_operator_namespace_scope plus deploy namespaces). The plan fails if the resulting list is empty while the stores are created, so the stores are never left open to every namespace. The Secrets Manager and SSM ARN scope still applies on top."
   default     = []
   nullable    = false
 
