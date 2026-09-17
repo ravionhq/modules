@@ -2,6 +2,11 @@
 # Application Load Balancer
 ################################################################################
 
+output "load_balancer_name" {
+  description = "The name of the load balancer, as passed in var.name."
+  value       = aws_lb.this.name
+}
+
 output "alb_id" {
   description = "The ID of the Application Load Balancer."
   value       = aws_lb.this.id
@@ -44,6 +49,11 @@ output "https_listener_arn" {
 ################################################################################
 # Security Group
 ################################################################################
+
+output "security_group_name" {
+  description = "The name of the load balancer's security group (<name>-<type>)."
+  value       = module.security_group.security_group_name
+}
 
 output "security_group_id" {
   description = "The ID of the ALB security group."

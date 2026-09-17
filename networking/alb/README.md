@@ -317,6 +317,7 @@ spec:
 
 | Name | Description |
 |------|-------------|
+| load_balancer_name | The name of the Application Load Balancer, as passed in `name` |
 | alb_id | The ID of the Application Load Balancer |
 | alb_arn | The ARN of the Application Load Balancer |
 | alb_arn_suffix | The ARN suffix of the ALB for use with CloudWatch Metrics |
@@ -334,6 +335,7 @@ spec:
 
 | Name | Description |
 |------|-------------|
+| security_group_name | The name of the ALB security group |
 | security_group_id | The ID of the ALB security group |
 | security_group_arn | The ARN of the ALB security group |
 

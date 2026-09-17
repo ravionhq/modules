@@ -664,6 +664,7 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_project_id / ravion_operator_environment_id / ravion_operator_aws_account_record_id | Ravion record ids recorded on the agent when its credential is minted. Optional. | `string` | `null` | no |
 | public_subnet_ids | Public subnets for internet-facing load balancers. Required when the public ALB or public NLB is enabled. | `list(string)` | `[]` | no |
 | load_balancer_deletion_protection_enabled | Deletion protection on the shared load balancers. | `bool` | `false` | no |
+| load_balancer_name_prefix | Prefix for the shared load balancer and security group names (`<prefix>-pub`, `<prefix>-priv`, `<prefix>-pub-nlb`, `<prefix>-priv-nlb`); defaults to the cluster name. Up to 23 characters. | `string` | `null` | no |
 | public_alb_creation_enabled / private_alb_creation_enabled | Create a shared public / private ALB. | `bool` | `false` | no |
 | public_alb_https_enabled / private_alb_https_enabled | HTTPS listener (with HTTP→HTTPS redirect). | `bool` | `false` | no |
 | public_alb_certificate_arns / private_alb_certificate_arns | ACM certificates for the HTTPS listener (first is default, rest SNI). | `list(string)` | `[]` | no |
