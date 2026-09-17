@@ -339,3 +339,57 @@ variable "workload_release_uninstall_timeout" {
   description = "How long `helm uninstall --wait` waits for the workload's objects to be gone before the destroy fails."
   default     = "10m"
 }
+
+################################################################################
+# Pod Identity
+################################################################################
+
+variable "pod_identity_role_creation_enabled" {
+  type        = bool
+  description = "Create an IAM role for the workload and bind it to the release's ServiceAccount through EKS Pod Identity, so the AWS SDK in the pods obtains short-lived credentials for it. The EKS analogue of the ECS task role. Requires cluster_name, release_namespace and a ServiceAccount name (release_name or pod_identity_service_account_name)."
+  default     = false
+
+  validation {
+    condition     = !var.pod_identity_role_creation_enabled || (var.cluster_name != null && var.release_namespace != null && (var.release_name != null || var.pod_identity_service_account_name != null))
+    error_message = "pod_identity_role_creation_enabled requires cluster_name, release_namespace, and release_name (or pod_identity_service_account_name): the association binds the role to a ServiceAccount in a namespace on a cluster."
+  }
+}
+
+variable "pod_identity_role_name" {
+  type        = string
+  description = "Name of the Pod Identity role. Defaults to `<cluster_name>-<name>-task`, which is unique per cluster in the account and distinct from the `<name>-task` role the ECS module creates for the same workload."
+  default     = null
+
+  validation {
+    condition     = var.pod_identity_role_name == null || can(regex("^[\\w+=,.@-]{1,64}$", var.pod_identity_role_name))
+    error_message = "pod_identity_role_name must be 1-64 characters of letters, digits, and + = , . @ _ -."
+  }
+}
+
+variable "pod_identity_service_account_name" {
+  type        = string
+  description = "Kubernetes ServiceAccount the association targets, in release_namespace. Defaults to release_name, which is what the rvn-eks-* charts name the ServiceAccount (fullnameOverride)."
+  default     = null
+}
+
+variable "pod_identity_managed_policy_arns" {
+  type        = list(string)
+  description = "Managed IAM policy ARNs to attach to the Pod Identity role."
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.pod_identity_managed_policy_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::", arn))])
+    error_message = "All pod_identity_managed_policy_arns must be IAM policy ARNs."
+  }
+}
+
+variable "pod_identity_inline_policies" {
+  type        = any
+  description = "Inline IAM policies to attach to the Pod Identity role, keyed by policy name. Values are policy documents as HCL/JSON objects, the same shape as compute/ecs_service's task_role_inline_policies."
+  default     = {}
+
+  validation {
+    condition     = can(keys(var.pod_identity_inline_policies))
+    error_message = "The pod_identity_inline_policies must be an object keyed by policy name."
+  }
+}

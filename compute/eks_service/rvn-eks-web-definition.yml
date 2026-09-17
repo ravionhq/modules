@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.1.0
-  description: Add an ingress allow-list. Name the other EKS services in the namespace that may call this one and Ravion renders a NetworkPolicy that denies every other pod; the shared load balancer's subnets are admitted automatically so routed traffic and health checks still arrive. A service that is not attached to a load balancer no longer renders a broken TargetGroupBinding.
+  version: 1.1.1
+  description: Add AWS permissions. Turn on Create IAM role and the service gets an IAM role bound to its pods through EKS Pod Identity, with managed policy ARNs and inline policies in the same shape as the ECS task role; the AWS SDK in the pods picks up short-lived credentials for it with no keys to manage. The role ARN is a stack output for other modules to pin.
 module:
   inputs:
     - id: section_cluster
@@ -294,6 +294,7 @@ module:
         autoscaling_enabled: false
       default: 1
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -788,6 +789,9 @@ module:
     | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
+    | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |
+    | IAM policy ARNs | No | [] | Managed policy ARNs attached to the workload role |
+    | IAM inline policies | No | - | Inline policy documents keyed by name, the ECS task role shape |
     | Builder instance type | No | ec2 | EC2 or EC2 spot capacity for builds |
     | Builder instance size | No | c7a.4xlarge | EC2 instance size used for builds |
     | Builder execution environment | No | Cluster value | Optional override for where builds run |
@@ -808,7 +812,7 @@ module:
     - **One Fargate profile per Fargate workload.** The profile selects only this release's namespace and app instance label, while an explicit pod label chooses it when profiles overlap. Automatic and EC2 targets create no profile.
     - **No Nixpacks.** ECS still carries a Nixpacks build source for services created before Railpack existed. EKS has no such history, so Dockerfile and Railpack are the only builders.
     - **Service name and container port are fixed after creation.** Both feed target group identity; changing them would orphan the existing target group and its registrations.
-    - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation, so an `aws_eks_pod_identity_association` can bind an IAM role to it by namespace and name.
+    - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation. With **Create IAM role** on, the stack creates the role and an `aws_eks_pod_identity_association` binding it to that ServiceAccount by namespace and name; the trust policy is pinned to this cluster and account. No IAM OIDC provider is involved.
 
     ## Learn more
 
