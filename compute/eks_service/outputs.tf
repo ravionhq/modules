@@ -130,6 +130,34 @@ output "load_balancer_subnet_cidr_blocks" {
 }
 
 ################################################################################
+# Pod Identity
+#
+# Null unless pod_identity_role_creation_enabled. The role ARN is what other
+# stacks pin (a KMS key policy, a bucket policy, another service's allow-list)
+# so the workload can be granted access by identity.
+################################################################################
+
+output "pod_identity_role_arn" {
+  description = "ARN of the IAM role the workload's pods assume through EKS Pod Identity (null if disabled)."
+  value       = one(aws_iam_role.pod_identity[*].arn)
+}
+
+output "pod_identity_role_name" {
+  description = "Name of the Pod Identity role, `<name>-task` unless overridden (null if disabled)."
+  value       = one(aws_iam_role.pod_identity[*].name)
+}
+
+output "pod_identity_service_account_name" {
+  description = "ServiceAccount in release_namespace the Pod Identity association binds the role to (null if disabled)."
+  value       = one(aws_eks_pod_identity_association.this[*].service_account)
+}
+
+output "pod_identity_association_id" {
+  description = "ID of the EKS Pod Identity association (null if disabled)."
+  value       = one(aws_eks_pod_identity_association.this[*].association_id)
+}
+
+################################################################################
 # General
 ################################################################################
 

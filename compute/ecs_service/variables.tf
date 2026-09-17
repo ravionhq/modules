@@ -475,6 +475,11 @@ variable "capacity_provider_strategies" {
   }))
   description = "Capacity provider strategies for the service. If empty, uses launch_type instead."
   default     = []
+
+  validation {
+    condition     = alltrue([for s in var.capacity_provider_strategies : try(trimspace(s.capacity_provider), "") != ""])
+    error_message = "Each capacity_provider_strategies entry must name a capacity provider. An empty name usually means the selected cluster does not have that capacity provider enabled."
+  }
 }
 
 ################################################################################
