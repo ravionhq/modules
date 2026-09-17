@@ -13,6 +13,11 @@
 
 locals {
   vpc_id = data.aws_eks_cluster.this.vpc_config[0].vpc_id
+
+  # Load balancer names are unique per account and region, and an ECS cluster
+  # module with the same name derives the very same <name>-pub / <name>-priv,
+  # so the prefix can be moved off the cluster name.
+  load_balancer_name_prefix = coalesce(var.load_balancer_name_prefix, var.cluster_name)
 }
 
 ################################################################################
@@ -24,7 +29,7 @@ module "public_alb" {
 
   source = "../../../networking/alb"
 
-  name   = "${var.cluster_name}-pub"
+  name   = "${local.load_balancer_name_prefix}-pub"
   tags   = local.tags
   vpc_id = local.vpc_id
 
@@ -79,7 +84,7 @@ module "private_alb" {
 
   source = "../../../networking/alb"
 
-  name   = "${var.cluster_name}-priv"
+  name   = "${local.load_balancer_name_prefix}-priv"
   tags   = local.tags
   vpc_id = local.vpc_id
 
@@ -131,7 +136,7 @@ module "public_nlb" {
 
   source = "../../../networking/nlb"
 
-  name   = "${var.cluster_name}-pub-nlb"
+  name   = "${local.load_balancer_name_prefix}-pub-nlb"
   tags   = local.tags
   vpc_id = local.vpc_id
 
@@ -176,7 +181,7 @@ module "private_nlb" {
 
   source = "../../../networking/nlb"
 
-  name   = "${var.cluster_name}-priv-nlb"
+  name   = "${local.load_balancer_name_prefix}-priv-nlb"
   tags   = local.tags
   vpc_id = local.vpc_id
 

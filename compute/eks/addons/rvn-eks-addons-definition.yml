@@ -4,8 +4,12 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.1
+  version: 0.9.2
   description: >-
+    Add a load balancer name prefix so the shared ALBs and NLBs can be named apart from the
+    cluster: an ECS cluster with the same name already owns <name>-pub and <name>-priv, and
+    creating the EKS add-ons next to it failed on the duplicate security group. The prefix
+    defaults to the cluster name, so existing installations are unchanged.
     Fix the default Karpenter NodePool render, which 0.9.0 broke for every cluster without a
     customer-managed EBS key (plan failed with "coalesce: no non-null, non-empty-string arguments").
     Harden node and secret defaults. Karpenter nodes launch with an encrypted root volume and an
@@ -122,6 +126,12 @@ module:
       id: section_alb
       label: Application load balancers
       type: section
+    - collapsible: true
+      description: Prefix for the shared load balancer names (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb) and their security groups. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
+      id: load_balancer_name_prefix
+      label: Load balancer name prefix
+      placeholder: my-cluster-eks
+      type: string
     - default: true
       description: Create an internet-facing Application Load Balancer for traffic from the public internet.
       id: public_alb_creation_enabled
@@ -1146,6 +1156,7 @@ module:
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
+        load_balancer_name_prefix: << module.input.load_balancer_name_prefix >>
         public_alb_creation_enabled: << module.input.public_alb_creation_enabled >>
         public_alb_https_enabled: << module.input.public_alb_https_enabled >>
         public_alb_certificate_arns: >-
