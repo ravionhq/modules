@@ -4,7 +4,7 @@ definition:
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
   version: 1.5.1
-  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference, including services created before this fix.
+  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference, including services created before this fix. Pre-deploy and post-deploy tasks now follow a capacity provider strategy set in advanced Terraform variables.
 module:
   inputs:
     - id: section_cluster
