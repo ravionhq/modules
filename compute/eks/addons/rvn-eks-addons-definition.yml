@@ -35,7 +35,7 @@ module:
           values: $values:aws/regions
         - collapsible: true
           default: << ref.input.execution_environment_id >>
-          description: Name used for everything the add-ons create - the shared load balancers and their security groups (<name>-pub, <name>-priv), the Pod Identity roles, the Loki bucket, the log group and the Karpenter queue. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
+          description: Execution environment used by OpenTofu. For a private endpoint, choose one in the cluster VPC; the cluster's Ravion Runner security group is attached automatically for each run.
           id: execution_environment_id
           label: Terraform execution environment
           type: string
@@ -106,7 +106,7 @@ module:
       label: Application load balancers
       type: section
     - collapsible: true
-      description: Prefix for the shared load balancer names (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb) and their security groups. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
+      description: Name used for everything the add-ons create - the shared load balancers and their security groups (<name>-pub, <name>-priv, <name>-pub-nlb, <name>-priv-nlb), the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter queue. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
       id: name
       label: Name slug
       placeholder: my-cluster-eks

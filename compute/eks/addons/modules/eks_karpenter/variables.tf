@@ -16,6 +16,11 @@ variable "name" {
   type        = string
   description = "Name slug for the controller role, node role, instance profile and interruption queue (<name>-karpenter, <name>-karpenter-node, karpenter-<name>). Defaults to cluster_name, which is still what the controller is pointed at and what the kubernetes.io/cluster tags carry."
   default     = null
+
+  validation {
+    condition     = var.name == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.name))
+    error_message = "The name must be 1-23 characters of letters, digits and hyphens, starting with a letter or digit, so the role, instance profile and queue names it builds are valid."
+  }
 }
 
 variable "tags" {
