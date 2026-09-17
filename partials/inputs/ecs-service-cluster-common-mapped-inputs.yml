@@ -60,16 +60,19 @@
   immutable: true
   label: Fargate capacity provider
   type: string
+  collapsible: true
   default: <<ref.stack.output.fargate_capacity_provider_name>>
 - id: fargate_spot_capacity_provider_name
   immutable: true
   label: Fargate spot capacity provider
   type: string
+  collapsible: true
   default: <<ref.stack.output.fargate_spot_capacity_provider_name>>
 - id: ec2_capacity_provider_name
   immutable: true
   label: EC2 capacity provider
   type: string
+  collapsible: true
   description: EC2 capacity provider name from the selected cluster.
   required: false
   default: <<ref.stack.output.ec2_capacity_provider_name>>
