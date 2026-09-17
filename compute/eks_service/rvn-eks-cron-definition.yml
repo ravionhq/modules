@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.0
-  description: Follow the selected observability providers, group add-ons with cluster selection, use positive scheduling and consistent release and builder field names, use Ravion Operator terminology, clarify ECR settings, keep run outcome charts on Prometheus, and let jobs target automatic, EC2 on-demand, EC2 Spot, or on-demand Fargate compute.
+  version: 0.4.1
+  description: Add AWS permissions. Turn on Create IAM role and the job gets an IAM role bound to its pods through EKS Pod Identity, with managed policy ARNs and inline policies in the same shape as the ECS task role; the AWS SDK in the pods picks up short-lived credentials for it with no keys to manage. The role ARN is a stack output for other modules to pin.
 module:
   inputs:
     - id: section_cluster
@@ -147,6 +147,7 @@ module:
       default: 1
     - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -436,6 +437,10 @@ module:
     | Memory limit | Yes | 512Mi | Memory ceiling per run |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
+    | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |
+    | IAM role name | No | {service}-task | Explicit role name, for a service whose ECS task role already holds the default |
+    | IAM policy ARNs | No | [] | Managed policy ARNs attached to the workload role |
+    | IAM inline policies | No | - | Inline policy documents keyed by name, the ECS task role shape |
     | Builder instance type | No | ec2 | EC2 or EC2 spot capacity for builds |
     | Builder instance size | No | c7a.4xlarge | EC2 instance size used for builds |
     | Builder execution environment | No | Cluster value | Optional override for where builds run |
@@ -454,7 +459,7 @@ module:
     - **Concurrency defaults to Forbid.** Overlapping runs are a common source of duplicated work and lock contention, and a job that is safe to overlap can opt in.
     - **Deploying does not run the job.** A deploy updates the CronJob; the schedule decides when it next runs.
     - **Name and namespace are fixed after creation.** Together they identify the Helm release that rollback and history target.
-    - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation, so an `aws_eks_pod_identity_association` can bind an IAM role to it by namespace and name.
+    - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation. With **Create IAM role** on, the stack creates the role and an `aws_eks_pod_identity_association` binding it to that ServiceAccount by namespace and name; the trust policy is pinned to this cluster and account. No IAM OIDC provider is involved.
 
     ## Learn more
 

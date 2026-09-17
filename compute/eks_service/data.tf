@@ -4,6 +4,12 @@
 
 data "aws_region" "current" {}
 
+# Account and partition build the cluster ARN the Pod Identity trust policy is
+# pinned to (see pod_identity.tf).
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
 # Resolve the load balancer behind the listener so its DNS name and zone ID can
 # be exposed as outputs, for CloudFront origins, DNS records, and the module's
 # dashboard link.

@@ -69,14 +69,14 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-cloudfront` | CloudFront CDN | v1.3.1 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v1.6.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v1.0.2 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v1.5.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v1.5.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v1.5.0 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v1.5.1 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v1.5.1 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v1.5.1 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
 | `rvn-eks-addons` | EKS Add-ons | v0.9.3 | `compute/eks/addons/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.3.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.1.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.4.0 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.1.1 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.4.1 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v1.1.1 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.2.1 | `database/rds/` |
