@@ -7,32 +7,9 @@ release:
   version: 0.9.2
   description: >-
     Add a load balancer name prefix so the shared ALBs and NLBs can be named apart from the
-    cluster: an ECS cluster with the same name already owns <name>-pub and <name>-priv, and
+    cluster. An ECS cluster with the same name already owns <name>-pub and <name>-priv, and
     creating the EKS add-ons next to it failed on the duplicate security group. The prefix
     defaults to the cluster name, so existing installations are unchanged.
-    Fix the default Karpenter NodePool render, which 0.9.0 broke for every cluster without a
-    customer-managed EBS key (plan failed with "coalesce: no non-null, non-empty-string arguments").
-    Harden node and secret defaults. Karpenter nodes launch with an encrypted root volume and an
-    IMDS hop limit of 1, so pods cannot read node credentials and volumes no longer depend on the
-    account's EBS-encryption-by-default setting. The External Secrets cluster stores now accept
-    ExternalSecrets only from the default service namespace (or the Ravion Operator's workload
-    namespaces when it is scoped); list other namespaces under Allowed namespaces. The stores are
-    never created unconditioned.
-    Rename the Terraform-facing Ravion Operator variables and outputs from beacon_* to ravion_operator_*.
-    Automatically attach the cluster's Ravion Runner security group to add-on runs, render metrics from
-    Amazon Managed Prometheus, provision new installations with supported Ravion Operator credentials,
-    prevent first-time Karpenter installation failures when AWS Load Balancer Controller is enabled,
-    create missing Operator workload namespaces safely, and move the default Operator and observability
-    namespace to ravion-operator (existing Helm releases are replaced).
-    Support the Operator public chart, digest-pinned executor Jobs, HA coordinators placed like Karpenter so they never hold an autoscaled node hostage, and explicit full-cluster management.
-    Control Operator installation and in-cluster deployments together with the Ravion EKS Management toggle.
-    Use durable executor Jobs by default, with inline execution available as an advanced override.
-    Automatically select a matching published Operator image and chart, enable HA and full-cluster management, and size namespace-scoped executor capacity to four by default.
-    Keep the Operator form to one management switch; execution mode and namespace bootstrap customization use Advanced Terraform variables.
-    Rename the Operator Helm releases, credential Secret, and Secrets Manager mirror from beacon to operator names (existing releases are replaced and the retained execution CRD is adopted).
-    Pin Operator chart 0.5.1, whose agent reports the full-management deploy scope so in-cluster deployments reach every namespace instead of only the Operator's own, no longer restarts its watches every thirty seconds, labels its executor pods for log collection, reports each workload's pods with its rollout state, and re-reports every tracked workload the moment Ravion's attribution of a release moves so a deploy that changed nothing still shows its workloads at once.
-    Collect Ravion Operator executor logs into the in-cluster Loki, labelled by module deployment, so the deploy page can show an in-cluster deploy's Helm output; attach the pod name to every log line as structured metadata so the workload log view can show one replica at a time.
-    Pin Operator chart 0.5.1 and keep self-update on with executor Jobs, so Ravion rolls the agent forward per organization, project or cluster without a Terraform apply; the pinned chart is only the floor a fresh install starts from.
 module:
   inputs:
     - id: cluster
