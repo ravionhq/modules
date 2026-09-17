@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - 'charts/**'
+      - 'compute/eks/addons/charts/**'
       - '.github/workflows/helm-charts.yml'
   push:
     branches:
       - main
     paths:
       - 'charts/**'
+      - 'compute/eks/addons/charts/**'
       - '.github/workflows/helm-charts.yml'
 
 permissions:

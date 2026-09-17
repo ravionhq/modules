@@ -2,6 +2,17 @@
 # General
 ################################################################################
 
+variable "load_balancer_name_prefix" {
+  type        = string
+  description = "Prefix for the names of the shared load balancers and their security groups (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb). Defaults to the cluster name. Set it when another stack in the account already uses those names, for example an ECS cluster with the same name whose ALB is called <cluster>-pub."
+  default     = null
+
+  validation {
+    condition     = var.load_balancer_name_prefix == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.load_balancer_name_prefix))
+    error_message = "The load_balancer_name_prefix must be 1-23 characters of letters, digits and hyphens, starting with a letter or digit, so that <prefix>-priv-nlb fits the 32-character load balancer name limit."
+  }
+}
+
 variable "cluster_name" {
   type        = string
   description = "Name of the existing EKS cluster to install add-ons onto."
