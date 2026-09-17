@@ -783,6 +783,44 @@ run "ephemeral_storage_requires_fargate_task_compatibility" {
 }
 
 ################################################################################
+# Test: Capacity Provider Strategies
+################################################################################
+
+run "capacity_provider_strategy_uses_named_provider" {
+  command = plan
+
+  variables {
+    requires_compatibilities     = ["EC2"]
+    capacity_provider_strategies = [{ capacity_provider = "test-cluster-ec2" }]
+  }
+
+  assert {
+    condition     = one(aws_ecs_service.this.capacity_provider_strategy).capacity_provider == "test-cluster-ec2"
+    error_message = "Service should use the named capacity provider"
+  }
+}
+
+run "capacity_provider_strategy_rejects_empty_name" {
+  command = plan
+
+  variables {
+    capacity_provider_strategies = [{ capacity_provider = "" }]
+  }
+
+  expect_failures = [var.capacity_provider_strategies]
+}
+
+run "capacity_provider_strategy_rejects_null_name" {
+  command = plan
+
+  variables {
+    capacity_provider_strategies = [{ capacity_provider = null }]
+  }
+
+  expect_failures = [var.capacity_provider_strategies]
+}
+
+################################################################################
 # Test: IAM Role Creation
 ################################################################################
 

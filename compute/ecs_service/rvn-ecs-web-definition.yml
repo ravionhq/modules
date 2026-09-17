@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.5.0
-  description: Standardize cluster, routing, health check, and builder field names, add a configurable target group deregistration delay, and clarify advanced build and listener-rule settings.
+  version: 1.5.1
+  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference.
 module:
   inputs:
     - id: section_cluster

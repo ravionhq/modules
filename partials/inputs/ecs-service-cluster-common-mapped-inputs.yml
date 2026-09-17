@@ -70,8 +70,6 @@
   immutable: true
   label: EC2 capacity provider
   type: string
-  description: EC2 capacity provider name from the selected cluster. Required only when using EC2 capacity.
+  description: EC2 capacity provider name from the selected cluster.
   required: false
-  show_when:
-    capacity_provider: ec2
-  default: ""
+  default: <<ref.stack.output.ec2_capacity_provider_name>>
