@@ -14,7 +14,7 @@
 module "node_role" {
   source = "../../../../../security/iam"
 
-  name        = "${var.cluster_name}-karpenter-node"
+  name        = "${local.name}-karpenter-node"
   description = "Karpenter-launched node IAM role for ${var.cluster_name}"
 
   trusted_services = ["ec2.amazonaws.com"]
@@ -29,7 +29,7 @@ module "node_role" {
   )
 
   instance_profile_creation_enabled = true
-  instance_profile_name             = "${var.cluster_name}-karpenter-node"
+  instance_profile_name             = "${local.name}-karpenter-node"
 
   tags = local.tags
 }

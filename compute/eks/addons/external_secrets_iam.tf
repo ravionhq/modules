@@ -86,7 +86,7 @@ module "external_secrets_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-external-secrets"
+  name        = "${local.name}-external-secrets"
   description = "External Secrets Operator Pod Identity role for ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy

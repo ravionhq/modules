@@ -261,7 +261,7 @@ module "otel_logs_collector_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-otel-logs-collector"
+  name        = "${local.name}-otel-logs-collector"
   description = "Log collector Pod Identity role for ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy

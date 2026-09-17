@@ -15,6 +15,7 @@ module "karpenter" {
   partition = data.aws_partition.current.partition
 
   cluster_name = var.cluster_name
+  name         = local.name
 
   controller_namespace       = var.karpenter_controller_namespace
   controller_service_account = var.karpenter_controller_service_account

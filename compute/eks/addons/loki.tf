@@ -41,7 +41,7 @@ locals {
   # that makes it unique always survives; a trailing hyphen left by the
   # truncation would be an invalid name, hence the trim.
   loki_cluster_slug = replace(
-    substr(replace(lower(var.cluster_name), "/[^a-z0-9-]/", "-"), 0, 38),
+    substr(replace(lower(local.name), "/[^a-z0-9-]/", "-"), 0, 38),
     "/-+$/",
     "",
   )
@@ -158,7 +158,7 @@ module "loki_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-loki"
+  name        = "${local.name}-loki"
   description = "Loki log storage Pod Identity role for ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy

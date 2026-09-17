@@ -12,6 +12,12 @@ variable "cluster_name" {
   }
 }
 
+variable "name" {
+  type        = string
+  description = "Name slug for the controller role, node role, instance profile and interruption queue (<name>-karpenter, <name>-karpenter-node, karpenter-<name>). Defaults to cluster_name, which is still what the controller is pointed at and what the kubernetes.io/cluster tags carry."
+  default     = null
+}
+
 variable "tags" {
   type        = map(string)
   description = "A map of tags to assign to all resources."

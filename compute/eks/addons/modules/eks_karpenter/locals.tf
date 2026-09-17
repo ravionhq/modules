@@ -1,4 +1,6 @@
 locals {
+  name = coalesce(var.name, var.cluster_name)
+
   region     = data.aws_region.current.region
   partition  = var.partition != null ? var.partition : data.aws_partition.current.partition
   account_id = data.aws_caller_identity.current.account_id
@@ -16,7 +18,7 @@ locals {
 
   tags = merge(local.default_tags, var.tags)
 
-  queue_name = coalesce(var.interruption_queue_name, "karpenter-${var.cluster_name}")
+  queue_name = coalesce(var.interruption_queue_name, "karpenter-${local.name}")
 
   pod_identity_trust_policy = jsonencode({
     Version = "2012-10-17"
