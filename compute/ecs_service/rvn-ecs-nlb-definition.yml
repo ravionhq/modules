@@ -4,7 +4,7 @@ definition:
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
   version: 1.5.1
-  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference.
+  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference, including services created before this fix.
 module:
   inputs:
     - id: section_cluster

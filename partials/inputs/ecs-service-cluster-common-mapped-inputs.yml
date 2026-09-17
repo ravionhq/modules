@@ -66,7 +66,14 @@
   label: Fargate spot capacity provider
   type: string
   default: <<ref.stack.output.fargate_spot_capacity_provider_name>>
-- id: ec2_capacity_provider_name
+# Renamed from ec2_capacity_provider_name, which defaulted to "" rather than the
+# cluster output. The platform restores stored immutable values after resolving
+# defaults, so instances created before the fix would keep the empty string
+# under the old id. moved_from keeps the old value from being restored and lets
+# the cluster output reach existing services on upgrade.
+- id: cluster_ec2_capacity_provider_name
+  moved_from:
+    - ec2_capacity_provider_name
   immutable: true
   label: EC2 capacity provider
   type: string
