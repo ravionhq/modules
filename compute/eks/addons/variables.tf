@@ -4,7 +4,7 @@
 
 variable "load_balancer_name_prefix" {
   type        = string
-  description = "Prefix for the names of the shared load balancers and their security groups (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb). Defaults to the cluster name. Set it when another stack in the account already uses those names, for example an ECS cluster with the same name whose ALB is called <cluster>-pub."
+  description = "Prefix for the names of the shared load balancers and their security groups (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb). Defaults to <cluster name>-eks, which keeps clear of the <cluster name>-pub / -priv names the ECS cluster module uses for a same-named cluster. Changing it on an existing installation replaces the load balancers."
   default     = null
 
   validation {

@@ -1,7 +1,7 @@
-# The shared load balancers default to <cluster>-pub / <cluster>-priv, which is
-# exactly what the ECS cluster module names its own, so a same-named ECS cluster
-# in the account makes the add-ons apply fail on a duplicate security group.
-# load_balancer_name_prefix moves the names without touching anything else.
+# The ECS cluster module names its load balancers <cluster>-pub / <cluster>-priv,
+# and a cluster migrating from ECS is naturally named like the ECS one, so the
+# add-ons default to <cluster>-eks-* and never collide. load_balancer_name_prefix
+# still moves the names outright without touching anything else.
 
 mock_provider "aws" {
   mock_data "aws_iam_policy_document" {
@@ -55,39 +55,39 @@ variables {
   ravion_operator_enabled      = false
 }
 
-run "names_default_to_the_cluster_name" {
+run "names_default_to_the_cluster_name_with_an_eks_suffix" {
   command = plan
 
   assert {
-    condition     = module.public_alb[0].security_group_name == "test-cluster-pub-alb" && module.public_alb[0].load_balancer_name == "test-cluster-pub"
-    error_message = "Without a prefix the public ALB and its security group must keep the <cluster>-pub names."
+    condition     = module.public_alb[0].security_group_name == "test-cluster-eks-pub-alb" && module.public_alb[0].load_balancer_name == "test-cluster-eks-pub"
+    error_message = "Without a prefix the public ALB and its security group must be named <cluster>-eks-pub, clear of the ECS module's <cluster>-pub."
   }
   assert {
-    condition     = module.private_alb[0].load_balancer_name == "test-cluster-priv"
-    error_message = "Without a prefix the private ALB must keep the <cluster>-priv name."
+    condition     = module.private_alb[0].load_balancer_name == "test-cluster-eks-priv"
+    error_message = "Without a prefix the private ALB must be named <cluster>-eks-priv."
   }
   assert {
-    condition     = module.public_nlb[0].load_balancer_name == "test-cluster-pub-nlb" && module.private_nlb[0].load_balancer_name == "test-cluster-priv-nlb"
-    error_message = "Without a prefix the NLBs must keep the <cluster>-pub-nlb and <cluster>-priv-nlb names."
+    condition     = module.public_nlb[0].load_balancer_name == "test-cluster-eks-pub-nlb" && module.private_nlb[0].load_balancer_name == "test-cluster-eks-priv-nlb"
+    error_message = "Without a prefix the NLBs must be named <cluster>-eks-pub-nlb and <cluster>-eks-priv-nlb."
   }
 }
 
 run "prefix_moves_every_load_balancer_and_security_group" {
   command = plan
   variables {
-    load_balancer_name_prefix = "test-cluster-eks"
+    load_balancer_name_prefix = "shared-lb"
   }
 
   assert {
-    condition     = module.public_alb[0].load_balancer_name == "test-cluster-eks-pub" && module.public_alb[0].security_group_name == "test-cluster-eks-pub-alb"
+    condition     = module.public_alb[0].load_balancer_name == "shared-lb-pub" && module.public_alb[0].security_group_name == "shared-lb-pub-alb"
     error_message = "The prefix must rename the public ALB and its security group together."
   }
   assert {
-    condition     = module.private_alb[0].load_balancer_name == "test-cluster-eks-priv" && module.private_alb[0].security_group_name == "test-cluster-eks-priv-alb"
+    condition     = module.private_alb[0].load_balancer_name == "shared-lb-priv" && module.private_alb[0].security_group_name == "shared-lb-priv-alb"
     error_message = "The prefix must rename the private ALB and its security group together."
   }
   assert {
-    condition     = module.public_nlb[0].load_balancer_name == "test-cluster-eks-pub-nlb" && module.private_nlb[0].load_balancer_name == "test-cluster-eks-priv-nlb"
+    condition     = module.public_nlb[0].load_balancer_name == "shared-lb-pub-nlb" && module.private_nlb[0].load_balancer_name == "shared-lb-priv-nlb"
     error_message = "The prefix must rename both NLBs."
   }
 }

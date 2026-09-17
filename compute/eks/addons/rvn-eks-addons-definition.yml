@@ -4,8 +4,13 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.2
+  version: 0.9.3
   description: >-
+    Name the shared load balancers <cluster>-eks-pub, <cluster>-eks-priv, <cluster>-eks-pub-nlb and
+    <cluster>-eks-priv-nlb by default instead of <cluster>-pub and friends, which are the names the ECS
+    cluster module uses and which a cluster migrating from ECS collides with. Any add-ons installation
+    created before 0.9.3 that has not set the load balancer name prefix will have its load balancers
+    replaced under the new names on upgrade; set the prefix to the cluster name first to keep them.
     Add a load balancer name prefix so the shared ALBs and NLBs can be named apart from the
     cluster. An ECS cluster with the same name already owns <name>-pub and <name>-priv, and
     creating the EKS add-ons next to it failed on the duplicate security group. The prefix
@@ -104,7 +109,7 @@ module:
       label: Application load balancers
       type: section
     - collapsible: true
-      description: Prefix for the shared load balancer names (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb) and their security groups. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
+      description: Prefix for the shared load balancer names (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb) and their security groups. Defaults to the cluster name plus -eks, which keeps clear of a same-named ECS cluster's load balancers. Changing it later replaces the load balancers. Up to 23 letters, digits and hyphens.
       id: load_balancer_name_prefix
       label: Load balancer name prefix
       placeholder: my-cluster-eks

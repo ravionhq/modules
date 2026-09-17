@@ -14,10 +14,11 @@
 locals {
   vpc_id = data.aws_eks_cluster.this.vpc_config[0].vpc_id
 
-  # Load balancer names are unique per account and region, and an ECS cluster
-  # module with the same name derives the very same <name>-pub / <name>-priv,
-  # so the prefix can be moved off the cluster name.
-  load_balancer_name_prefix = coalesce(var.load_balancer_name_prefix, var.cluster_name)
+  # Load balancer names are unique per account and region, and the ECS cluster
+  # module names its own <name>-pub / <name>-priv. A cluster migrating from ECS
+  # is naturally named like the ECS cluster, so the default carries an -eks
+  # suffix and never collides; the prefix can still be set outright.
+  load_balancer_name_prefix = coalesce(var.load_balancer_name_prefix, "${var.cluster_name}-eks")
 }
 
 ################################################################################
