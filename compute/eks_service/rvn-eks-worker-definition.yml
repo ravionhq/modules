@@ -361,6 +361,7 @@ module:
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
     | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |
+    | IAM role name | No | {service}-task | Explicit role name, for a service whose ECS task role already holds the default |
     | IAM policy ARNs | No | [] | Managed policy ARNs attached to the workload role |
     | IAM inline policies | No | - | Inline policy documents keyed by name, the ECS task role shape |
     | Builder instance type | No | ec2 | EC2 or EC2 spot capacity for builds |

@@ -346,7 +346,7 @@ variable "workload_release_uninstall_timeout" {
 
 variable "pod_identity_role_creation_enabled" {
   type        = bool
-  description = "Create an IAM role for the workload and bind it to the release's ServiceAccount through EKS Pod Identity, so the AWS SDK in the pods obtains short-lived credentials for it. The EKS analogue of the ECS task role. Requires cluster_name, release_namespace and a ServiceAccount name (release_name or pod_identity_service_account_name)."
+  description = "Create an IAM role for the workload and bind it to the release's ServiceAccount through EKS Pod Identity, so the AWS SDK in the pods obtains short-lived credentials for it. The EKS analogue of the ECS task role. Requires cluster_name, release_namespace and a ServiceAccount name (release_name or pod_identity_service_account_name), and a cluster running the eks-pod-identity-agent add-on (the plan checks for it)."
   default     = false
 
   validation {
@@ -357,7 +357,7 @@ variable "pod_identity_role_creation_enabled" {
 
 variable "pod_identity_role_name" {
   type        = string
-  description = "Name of the Pod Identity role. Defaults to `<cluster_name>-<name>-task`, which is unique per cluster in the account and distinct from the `<name>-task` role the ECS module creates for the same workload."
+  description = "Name of the Pod Identity role. Defaults to `<name>-task`, the same shape as the ECS task role. IAM role names are unique per account, so a workload that also runs on ECS, or on another cluster, needs an explicit name (for example `web-eks-prod`)."
   default     = null
 
   validation {
@@ -378,7 +378,7 @@ variable "pod_identity_managed_policy_arns" {
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.pod_identity_managed_policy_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::", arn))])
+    condition     = alltrue([for arn in var.pod_identity_managed_policy_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::(aws|[0-9]{12}):policy/.+$", arn))])
     error_message = "All pod_identity_managed_policy_arns must be IAM policy ARNs."
   }
 }

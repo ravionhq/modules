@@ -27,9 +27,14 @@ mock_provider "aws" {
   }
   # The association validates role_arn as an ARN at plan time, so the mocked
   # role must produce one rather than the provider's random string.
+  mock_data "aws_eks_addon" {
+    defaults = {
+      addon_version = "v1.3.4-eksbuild.1"
+    }
+  }
   mock_resource "aws_iam_role" {
     defaults = {
-      arn = "arn:aws:iam::123456789012:role/acme-prod-api-task"
+      arn = "arn:aws:iam::123456789012:role/api-task"
     }
   }
 }
@@ -66,8 +71,8 @@ run "binds_a_cluster_pinned_role_to_the_release_service_account" {
   }
 
   assert {
-    condition     = aws_iam_role.pod_identity[0].name == "acme-prod-api-task" && output.pod_identity_role_name == "acme-prod-api-task"
-    error_message = "The default role name must be <cluster_name>-<name>-task so it is unique per cluster and distinct from the ECS <name>-task role."
+    condition     = aws_iam_role.pod_identity[0].name == "api-task" && output.pod_identity_role_name == "api-task"
+    error_message = "The default role name must be <name>-task, the same shape as the ECS task role."
   }
 
   assert {
@@ -104,6 +109,22 @@ run "binds_a_cluster_pinned_role_to_the_release_service_account" {
     condition     = length(aws_iam_role_policy_attachment.pod_identity_managed) == 0 && length(aws_iam_role_policy.pod_identity_inline) == 0
     error_message = "A role with no policies configured must carry no permissions."
   }
+
+  assert {
+    condition     = data.aws_eks_addon.pod_identity_agent[0].cluster_name == "acme-prod" && data.aws_eks_addon.pod_identity_agent[0].addon_name == "eks-pod-identity-agent"
+    error_message = "The plan must look up the Pod Identity Agent add-on on the workload's cluster."
+  }
+}
+
+run "rejects_a_role_arn_where_a_policy_arn_is_expected" {
+  command = plan
+
+  variables {
+    pod_identity_role_creation_enabled = true
+    pod_identity_managed_policy_arns   = ["arn:aws:iam::123456789012:role/not-a-policy"]
+  }
+
+  expect_failures = [var.pod_identity_managed_policy_arns]
 }
 
 run "attaches_managed_and_inline_policies" {
@@ -141,12 +162,12 @@ run "honours_explicit_role_and_service_account_names" {
 
   variables {
     pod_identity_role_creation_enabled = true
-    pod_identity_role_name             = "api-pods"
+    pod_identity_role_name             = "web-eks-prod"
     pod_identity_service_account_name  = "api-sa"
   }
 
   assert {
-    condition     = aws_iam_role.pod_identity[0].name == "api-pods"
+    condition     = aws_iam_role.pod_identity[0].name == "web-eks-prod"
     error_message = "An explicit pod_identity_role_name must replace the derived default."
   }
 
@@ -183,8 +204,7 @@ run "rejects_a_derived_role_name_over_the_iam_limit" {
 
   variables {
     pod_identity_role_creation_enabled = true
-    cluster_name                       = "a-cluster-name-that-is-already-quite-long-for-an-iam-role-prefix"
-    name                               = "and-a-workload-name-to-match"
+    name                               = "a-workload-name-that-is-far-too-long-to-fit-into-an-iam-role-name"
   }
 
   expect_failures = [aws_iam_role.pod_identity]

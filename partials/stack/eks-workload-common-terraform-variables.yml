@@ -38,5 +38,6 @@ tags:
 # (fullnameOverride), which is what the association targets, so no value
 # crosses from the stack to the deploy for this.
 pod_identity_role_creation_enabled: << module.input.pod_identity_role_creation_enabled >>
+pod_identity_role_name: << module.input.pod_identity_role_name >>
 pod_identity_managed_policy_arns: '<< module.input.pod_identity_managed_policy_arns != nil ? module.input.pod_identity_managed_policy_arns : [] >>'
 pod_identity_inline_policies: '<< module.input.pod_identity_inline_policies != nil ? module.input.pod_identity_inline_policies : {} >>'

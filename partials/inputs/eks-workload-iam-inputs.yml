@@ -10,8 +10,20 @@
 - id: pod_identity_role_creation_enabled
   label: Create IAM role
   type: boolean
-  description: Create an IAM role for this workload and bind it to its pods through EKS Pod Identity, so the AWS SDK obtains short-lived credentials for it without any keys. Leave off for a workload that calls no AWS API as itself. The role is named <cluster>-<service>-task; its ARN is a stack output other modules can pin.
+  description: Create an IAM role for this workload and bind it to its pods through EKS Pod Identity, so the AWS SDK obtains short-lived credentials for it without any keys. Leave off for a workload that calls no AWS API as itself. The role ARN is a stack output other modules can pin.
   default: false
+- id: pod_identity_role_name
+  label: IAM role name
+  type: string
+  description: Name of the workload's IAM role. Leave blank for <service>-task, the ECS task role shape. IAM role names are unique per account, so a service that also runs on ECS, or on another cluster, needs its own name, for example <service>-eks-<environment>.
+  placeholder: web-eks-prod
+  collapsible: true
+  required: false
+  show_when:
+    pod_identity_role_creation_enabled: true
+  patterns:
+    - message: 1-64 characters of letters, digits and + = , . @ _ -
+      pattern: ^[\w+=,.@-]{1,64}$
 - id: pod_identity_managed_policy_arns
   label: IAM policy ARNs
   type: string_array

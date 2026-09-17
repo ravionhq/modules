@@ -133,8 +133,8 @@ output "load_balancer_subnet_cidr_blocks" {
 # Pod Identity
 #
 # Null unless pod_identity_role_creation_enabled. The role ARN is what other
-# stacks pin (a KMS key policy, a bucket policy, the credentials broker's
-# caller matrix) so the workload can be granted access by identity.
+# stacks pin (a KMS key policy, a bucket policy, another service's allow-list)
+# so the workload can be granted access by identity.
 ################################################################################
 
 output "pod_identity_role_arn" {
@@ -143,7 +143,7 @@ output "pod_identity_role_arn" {
 }
 
 output "pod_identity_role_name" {
-  description = "Name of the Pod Identity role, `<cluster_name>-<name>-task` unless overridden (null if disabled)."
+  description = "Name of the Pod Identity role, `<name>-task` unless overridden (null if disabled)."
   value       = one(aws_iam_role.pod_identity[*].name)
 }
 

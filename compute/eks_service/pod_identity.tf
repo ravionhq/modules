@@ -17,10 +17,10 @@
 locals {
   pod_identity_enabled = var.pod_identity_role_creation_enabled
 
-  # <cluster>-<workload>-task by default: unique across clusters in the account
-  # and distinct from the <workload>-task role the ECS module creates, so the
-  # same service can run on both during a migration.
-  pod_identity_role_name            = local.pod_identity_enabled ? coalesce(var.pod_identity_role_name, "${var.cluster_name}-${var.name}-task") : null
+  # <workload>-task by default, the same shape compute/ecs_service gives its
+  # task role. IAM role names are unique per account, so a service that also
+  # runs on ECS (or on a second cluster) sets pod_identity_role_name.
+  pod_identity_role_name            = local.pod_identity_enabled ? coalesce(var.pod_identity_role_name, "${var.name}-task") : null
   pod_identity_service_account_name = local.pod_identity_enabled ? coalesce(var.pod_identity_service_account_name, var.release_name) : null
 
   cluster_arn = local.pod_identity_enabled ? "arn:${data.aws_partition.current.partition}:eks:${local.region}:${data.aws_caller_identity.current.account_id}:cluster/${var.cluster_name}" : null
@@ -38,6 +38,16 @@ locals {
       }
     }]
   }) : null
+}
+
+# The Pod Identity Agent add-on is what hands the SDK its credentials. Without
+# it the role and association apply cleanly and every AWS call in the pods
+# fails at runtime, so look the add-on up and let the plan fail instead.
+data "aws_eks_addon" "pod_identity_agent" {
+  count = local.pod_identity_enabled ? 1 : 0
+
+  cluster_name = var.cluster_name
+  addon_name   = "eks-pod-identity-agent"
 }
 
 resource "aws_iam_role" "pod_identity" {
@@ -83,4 +93,11 @@ resource "aws_eks_pod_identity_association" "this" {
   role_arn        = aws_iam_role.pod_identity[0].arn
 
   tags = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = data.aws_eks_addon.pod_identity_agent[0].addon_version != ""
+      error_message = "Cluster ${var.cluster_name} does not run the eks-pod-identity-agent add-on, so nothing would supply credentials to the pods. Enable pod_identity_agent_enabled on the cluster before creating a Pod Identity role."
+    }
+  }
 }
