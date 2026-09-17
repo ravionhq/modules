@@ -11,7 +11,7 @@ module "ebs_csi_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-ebs-csi"
+  name        = "${local.name}-ebs-csi"
   description = "EBS CSI driver Pod Identity role for ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy

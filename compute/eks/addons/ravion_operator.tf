@@ -51,7 +51,7 @@ locals {
   ravion_operator_client_secret_key = "clientSecret"
 
   # Deterministic so an operator can find the mirror without consulting state.
-  ravion_operator_credential_secret_name = "ravion/operator/${var.cluster_name}/credential"
+  ravion_operator_credential_secret_name = "ravion/operator/${local.name}/credential"
 
   # The provider's namespace_scope is a set, and an absent one means cluster-wide
   # observation. An empty list is therefore sent as null rather than as an empty

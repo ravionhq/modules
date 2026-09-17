@@ -4,12 +4,17 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.2
+  version: 0.9.3
   description: >-
-    Add a load balancer name prefix so the shared ALBs and NLBs can be named apart from the
-    cluster. An ECS cluster with the same name already owns <name>-pub and <name>-priv, and
-    creating the EKS add-ons next to it failed on the duplicate security group. The prefix
-    defaults to the cluster name, so existing installations are unchanged.
+    Replace the load balancer name prefix with a name slug, like every other module. The slug
+    names everything the add-ons create: the shared load balancers and their security groups,
+    the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter
+    interruption queue. It defaults to the cluster name, so existing installations are
+    unchanged; an installation that set the load balancer prefix should set the same value
+    as the name, and expects the roles, bucket, queue and log group to be renamed. Every log the
+    add-ons keep now defaults to a year: Loki and CloudWatch workload logs (previously 30 days)
+    and load balancer access log buckets (previously 90 days), matching the cluster's control
+    plane logs. Existing installations keep the value they set.
 module:
   inputs:
     - id: cluster
@@ -104,9 +109,9 @@ module:
       label: Application load balancers
       type: section
     - collapsible: true
-      description: Prefix for the shared load balancer names (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb) and their security groups. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
-      id: load_balancer_name_prefix
-      label: Load balancer name prefix
+      description: Name used for everything the add-ons create - the shared load balancers and their security groups (<name>-pub, <name>-priv, <name>-pub-nlb, <name>-priv-nlb), the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter queue. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
+      id: name
+      label: Name slug
       placeholder: my-cluster-eks
       type: string
     - default: true
@@ -167,7 +172,7 @@ module:
         public_alb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: public_alb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -252,7 +257,7 @@ module:
         private_alb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: private_alb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -313,7 +318,7 @@ module:
         public_nlb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: public_nlb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -370,7 +375,7 @@ module:
         private_nlb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: private_nlb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -561,7 +566,7 @@ module:
           label: Custom OTLP endpoint
           value: otlp
     - collapsible: true
-      default: 30
+      default: 365
       description: Number of days logs remain searchable before deletion. Enter 1-3650.
       id: loki_retention_days
       label: Retention (days)
@@ -580,7 +585,7 @@ module:
         logs_enabled: true
         logs_providers: loki
       type: string
-    - default: 30
+    - default: 365
       description: Retention for the module-managed CloudWatch log groups, in days.
       id: cloudwatch_logs_retention_days
       label: CloudWatch retention (days)
@@ -1055,10 +1060,10 @@ module:
         metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
-          retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 30 >>'
+          retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
           s3_bucket_name: << module.input.loki_s3_bucket_name >>
         logs_cloudwatch:
-          retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 30 >>'
+          retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 365 >>'
         logs_grafana_cloud:
           url: << module.input.grafana_cloud_logs_url >>
           user: << module.input.grafana_cloud_logs_user >>
@@ -1133,7 +1138,7 @@ module:
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
-        load_balancer_name_prefix: << module.input.load_balancer_name_prefix >>
+        name: << module.input.name >>
         public_alb_creation_enabled: << module.input.public_alb_creation_enabled >>
         public_alb_https_enabled: << module.input.public_alb_https_enabled >>
         public_alb_certificate_arns: >-

@@ -97,7 +97,7 @@ module "grafana_workspace_read_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-grafana-amp"
+  name        = "${local.name}-grafana-amp"
   description = "In-cluster Grafana Pod Identity role for querying the AMP workspace of ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy

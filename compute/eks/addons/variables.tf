@@ -2,14 +2,25 @@
 # General
 ################################################################################
 
-variable "load_balancer_name_prefix" {
+variable "name" {
   type        = string
-  description = "Prefix for the names of the shared load balancers and their security groups (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb). Defaults to the cluster name. Set it when another stack in the account already uses those names, for example an ECS cluster with the same name whose ALB is called <cluster>-pub."
+  description = "Name slug for everything this stack creates: the shared load balancers and their security groups (<name>-pub, <name>-priv, <name>-pub-nlb, <name>-priv-nlb), the Pod Identity roles (<name>-external-secrets, <name>-karpenter, <name>-karpenter-node, ...), the Loki bucket, the log group, the AMP alias and the Karpenter interruption queue. Defaults to the cluster name. Set it when another stack in the account already uses those names, for example an ECS cluster with the same name whose ALB is called <cluster>-pub. The cluster itself is always addressed by cluster_name."
   default     = null
 
   validation {
-    condition     = var.load_balancer_name_prefix == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.load_balancer_name_prefix))
-    error_message = "The load_balancer_name_prefix must be 1-23 characters of letters, digits and hyphens, starting with a letter or digit, so that <prefix>-priv-nlb fits the 32-character load balancer name limit."
+    condition     = var.name == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.name))
+    error_message = "The name must be 1-23 characters of letters, digits and hyphens, starting with a letter or digit, so that <name>-priv-nlb fits the 32-character load balancer name limit."
+  }
+}
+
+variable "load_balancer_access_logs_retention_days" {
+  type        = number
+  description = "Days the buckets created for load balancer access logs keep their objects. Applies to every shared ALB and NLB whose access logs are enabled without an existing bucket. Defaults to a year, like every other log the EKS modules keep."
+  default     = 365
+
+  validation {
+    condition     = var.load_balancer_access_logs_retention_days >= 1 && var.load_balancer_access_logs_retention_days <= 3650
+    error_message = "The load_balancer_access_logs_retention_days must be between 1 and 3650."
   }
 }
 
@@ -1103,8 +1114,8 @@ variable "loki_s3_bucket_name" {
 
 variable "log_retention_days" {
   type        = number
-  description = "How long logs are queryable. Enforced by Loki's compactor, which deletes chunks whose retention has expired; the created bucket additionally carries a lifecycle expiration a week later as a backstop for anything the compactor orphans."
-  default     = 30
+  description = "How long logs are queryable. Enforced by Loki's compactor, which deletes chunks whose retention has expired; the created bucket additionally carries a lifecycle expiration a week later as a backstop for anything the compactor orphans. Defaults to a year, like every other log the EKS modules keep."
+  default     = 365
   nullable    = false
 
   validation {

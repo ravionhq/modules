@@ -9,7 +9,7 @@
 module "controller_role" {
   source = "../../../../../security/iam"
 
-  name        = "${var.cluster_name}-karpenter"
+  name        = "${local.name}-karpenter"
   description = "Karpenter controller Pod Identity role for ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy
