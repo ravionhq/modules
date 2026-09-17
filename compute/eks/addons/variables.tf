@@ -13,6 +13,17 @@ variable "name" {
   }
 }
 
+variable "load_balancer_access_logs_retention_days" {
+  type        = number
+  description = "Days the buckets created for load balancer access logs keep their objects. Applies to every shared ALB and NLB whose access logs are enabled without an existing bucket. Defaults to a year, like every other log the EKS modules keep."
+  default     = 365
+
+  validation {
+    condition     = var.load_balancer_access_logs_retention_days >= 1 && var.load_balancer_access_logs_retention_days <= 3650
+    error_message = "The load_balancer_access_logs_retention_days must be between 1 and 3650."
+  }
+}
+
 variable "cluster_name" {
   type        = string
   description = "Name of the existing EKS cluster to install add-ons onto."
@@ -1103,8 +1114,8 @@ variable "loki_s3_bucket_name" {
 
 variable "log_retention_days" {
   type        = number
-  description = "How long logs are queryable. Enforced by Loki's compactor, which deletes chunks whose retention has expired; the created bucket additionally carries a lifecycle expiration a week later as a backstop for anything the compactor orphans."
-  default     = 30
+  description = "How long logs are queryable. Enforced by Loki's compactor, which deletes chunks whose retention has expired; the created bucket additionally carries a lifecycle expiration a week later as a backstop for anything the compactor orphans. Defaults to a year, like every other log the EKS modules keep."
+  default     = 365
   nullable    = false
 
   validation {

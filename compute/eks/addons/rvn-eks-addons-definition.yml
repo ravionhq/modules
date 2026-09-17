@@ -11,7 +11,10 @@ release:
     the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter
     interruption queue. It defaults to the cluster name, so existing installations are
     unchanged; an installation that set the load balancer prefix should set the same value
-    as the name, and expects the roles, bucket, queue and log group to be renamed.
+    as the name, and expects the roles, bucket, queue and log group to be renamed. Every log the
+    add-ons keep now defaults to a year: Loki and CloudWatch workload logs (previously 30 days)
+    and load balancer access log buckets (previously 90 days), matching the cluster's control
+    plane logs. Existing installations keep the value they set.
 module:
   inputs:
     - id: cluster
@@ -169,7 +172,7 @@ module:
         public_alb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: public_alb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -254,7 +257,7 @@ module:
         private_alb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: private_alb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -315,7 +318,7 @@ module:
         public_nlb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: public_nlb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -372,7 +375,7 @@ module:
         private_nlb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: private_nlb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -563,7 +566,7 @@ module:
           label: Custom OTLP endpoint
           value: otlp
     - collapsible: true
-      default: 30
+      default: 365
       description: Number of days logs remain searchable before deletion. Enter 1-3650.
       id: loki_retention_days
       label: Retention (days)
@@ -582,7 +585,7 @@ module:
         logs_enabled: true
         logs_providers: loki
       type: string
-    - default: 30
+    - default: 365
       description: Retention for the module-managed CloudWatch log groups, in days.
       id: cloudwatch_logs_retention_days
       label: CloudWatch retention (days)
@@ -1057,10 +1060,10 @@ module:
         metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
-          retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 30 >>'
+          retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
           s3_bucket_name: << module.input.loki_s3_bucket_name >>
         logs_cloudwatch:
-          retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 30 >>'
+          retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 365 >>'
         logs_grafana_cloud:
           url: << module.input.grafana_cloud_logs_url >>
           user: << module.input.grafana_cloud_logs_user >>

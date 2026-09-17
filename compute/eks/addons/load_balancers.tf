@@ -50,8 +50,9 @@ module "public_alb" {
   ingress_security_group_ids = var.public_alb_ingress_security_group_ids
 
   # Access logs
-  access_logs_enabled    = var.public_alb_access_logs_enabled
-  access_logs_bucket_arn = var.public_alb_access_logs_bucket_arn
+  access_logs_enabled        = var.public_alb_access_logs_enabled
+  access_logs_bucket_arn     = var.public_alb_access_logs_bucket_arn
+  access_logs_retention_days = var.load_balancer_access_logs_retention_days
 
   # WAF
   web_acl_arn = var.public_alb_web_acl_arn
@@ -105,8 +106,9 @@ module "private_alb" {
   ingress_security_group_ids = var.private_alb_ingress_security_group_ids
 
   # Access logs
-  access_logs_enabled    = var.private_alb_access_logs_enabled
-  access_logs_bucket_arn = var.private_alb_access_logs_bucket_arn
+  access_logs_enabled        = var.private_alb_access_logs_enabled
+  access_logs_bucket_arn     = var.private_alb_access_logs_bucket_arn
+  access_logs_retention_days = var.load_balancer_access_logs_retention_days
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cluster_from_private_alb" {
@@ -146,8 +148,9 @@ module "public_nlb" {
   additional_security_group_ids = var.public_nlb_security_group_ids
 
   # Access logs
-  access_logs_enabled    = var.public_nlb_access_logs_enabled
-  access_logs_bucket_arn = var.public_nlb_access_logs_bucket_arn
+  access_logs_enabled        = var.public_nlb_access_logs_enabled
+  access_logs_bucket_arn     = var.public_nlb_access_logs_bucket_arn
+  access_logs_retention_days = var.load_balancer_access_logs_retention_days
 
   # Elastic IPs
   elastic_ips_enabled       = var.public_nlb_elastic_ips_enabled
@@ -191,8 +194,9 @@ module "private_nlb" {
   additional_security_group_ids = var.private_nlb_security_group_ids
 
   # Access logs
-  access_logs_enabled    = var.private_nlb_access_logs_enabled
-  access_logs_bucket_arn = var.private_nlb_access_logs_bucket_arn
+  access_logs_enabled        = var.private_nlb_access_logs_enabled
+  access_logs_bucket_arn     = var.private_nlb_access_logs_bucket_arn
+  access_logs_retention_days = var.load_balancer_access_logs_retention_days
 
   # Elastic IPs
   elastic_ips_enabled       = var.private_nlb_elastic_ips_enabled

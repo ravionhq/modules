@@ -58,7 +58,7 @@ module "eks_addons" {
 
   # Workload logs into an in-cluster Loki backed by S3 in this account.
   logs_providers     = ["loki"]
-  log_retention_days = 30
+  log_retention_days = 365
 
   # Shared public ALB that web workloads bind to via TargetGroupBinding
   public_alb_creation_enabled = true
@@ -593,7 +593,7 @@ failed during initialization have no provider resources to migrate.
 | observability_namespace | Namespace for the collectors, the log store, and the materialized vendor credentials. Null shares Ravion Operator's namespace, which is what keeps Loki's Service URL stable. | `string` | `null` | no |
 | logs_excluded_namespaces | Namespaces no log collector reads from, for every destination. | `list(string)` | `["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"]` | no |
 | logs_loki | `{ retention_days, s3_bucket_name, persistence_enabled, persistence_size }`. Falls back to the flat `log_retention_days` / `loki_s3_bucket_name` / `loki_persistence_*`. | `object` | `{}` | no |
-| logs_cloudwatch | `{ retention_days, log_group_name }`. Default group `/ravion/eks/<cluster>`, retention 30 days. | `object` | `{}` | no |
+| logs_cloudwatch | `{ retention_days, log_group_name }`. Default group `/ravion/eks/<cluster>`, retention a year. | `object` | `{}` | no |
 | logs_grafana_cloud / metrics_grafana_cloud | `{ url, user, token_secret_arn, stack_url }` — the Loki push URL / Prometheus remote-write URL, the tenant id, the Secrets Manager ARN of the token, and the stack URL used for the deep link. | `object` | `{}` | no |
 | logs_datadog / metrics_datadog | `{ site, api_key_secret_arn }`. Shared between the signals: whichever is set wins for both. | `object` | `{}` | no |
 | logs_new_relic / metrics_new_relic | `{ region, license_key_secret_arn }`, region `us` or `eu`. | `object` | `{}` | no |
@@ -625,7 +625,8 @@ failed during initialization have no provider resources to migrate.
 | grafana_source_account_id | Account whose Grafana workspaces may assume that role (`aws:SourceAccount`). Null uses this account. | `string` | `null` | no |
 | logs_enabled | Collect container logs with Alloy into an in-cluster Loki storing to S3 in this account. | `bool` | `false` | no |
 | loki_s3_bucket_name | Existing bucket for log chunks and index. Null creates `ravion-loki-<cluster>-<account>`. | `string` | `null` | no |
-| log_retention_days | How long logs stay queryable. Enforced by Loki's compactor; the bucket expires a week later as a backstop. | `number` | `30` | no |
+| log_retention_days | How long logs stay queryable. Enforced by Loki's compactor; the bucket expires a week later as a backstop. | `number` | `365` | no |
+| load_balancer_access_logs_retention_days | Days the created load balancer access log buckets keep their objects. | `number` | `365` | no |
 | logs_namespace | Namespace for Loki and Alloy. Null shares Ravion Operator's namespace. | `string` | `null` | no |
 | loki_chart_version | grafana/loki chart version. | `string` | `"7.3.0"` | no |
 | loki_service_account | Loki's service account; the Pod Identity association binds to this name. | `string` | `"ravion-loki"` | no |
