@@ -77,6 +77,19 @@ module:
           value: private
         - label: Kubernetes service (no load balancer)
           value: kubernetes_service
+    - id: target_group_name
+      label: Target group name
+      type: string
+      description: Name for the load balancer target group. Leave blank to derive it from the service name. Set it when another service in the VPC already owns that name, since target group names are unique per region.
+      placeholder: my-service-eks-tg
+      collapsible: true
+      required: false
+      patterns:
+        - message: Use 1-32 letters, numbers, or hyphens, starting and ending with a letter or number.
+          pattern: ^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
     - id: section_health
@@ -347,6 +360,7 @@ module:
               module.input.public_alb_http_listener_arn) : (module.input.load_balancer == "private" ?
               (module.input.private_alb_https_listener_arn || module.input.private_alb_http_listener_arn) : nil) >>
             listener_rule_priority: << module.input.listener_rule_priority >>
+            target_group_name: << module.input.target_group_name >>
             listener_rule_conditions: >-
               << (module.input.host_header_values != nil && module.input.host_header_values != [] ?
               [{type: "host-header", values: module.input.host_header_values}] : []) |

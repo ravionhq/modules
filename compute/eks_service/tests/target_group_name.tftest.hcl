@@ -113,3 +113,17 @@ run "hash_is_keyed_on_the_raw_name" {
     error_message = "The collision hash must be computed from the raw name so it stays stable."
   }
 }
+
+run "an_explicit_name_replaces_the_derived_one" {
+  command = plan
+
+  variables {
+    name              = "my_web_app"
+    target_group_name = "my-web-app-eks-tg"
+  }
+
+  assert {
+    condition     = output.target_group_name == "my-web-app-eks-tg"
+    error_message = "An explicit target_group_name must be used verbatim, for a workload whose derived name another target group already owns."
+  }
+}
