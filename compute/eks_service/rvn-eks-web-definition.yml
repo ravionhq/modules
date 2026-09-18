@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.1.2
-  description: Fix the plan of a workload with IAM inline policies, which failed on OpenTofu 1.11 with "Inconsistent conditional result types" before any policy was attached. No change for workloads without inline policies.
+  version: 1.1.3
+  description: Replace the Public web service toggle with a Load balancer choice of public ALB, private ALB or Kubernetes service. Kubernetes service creates no target group or listener rule, so the workload is reachable only through its in-cluster Service. Add an optional target group name for a workload whose derived name is already taken in the VPC. Existing instances must set load_balancer (public or private) in place of public_alb_routing_enabled when upgrading.
 module:
   inputs:
     - id: section_cluster
@@ -64,11 +64,32 @@ module:
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
         name_description: Name for the Helm release, Kubernetes objects, target group, and listener rule.
-    - id: public_alb_routing_enabled
-      label: Public web service
-      type: boolean
-      description: Route this service through the shared public ALB. Turn off to use the shared private ALB.
-      default: true
+    - id: load_balancer
+      label: Load balancer
+      type: string
+      description: How traffic reaches the service. Public and private use the shared ALBs the EKS Add-ons module owns. Kubernetes service creates no target group or listener rule, so the service is reachable only from inside the cluster through its Service name.
+      required: true
+      default: public
+      values:
+        - label: Public ALB
+          value: public
+        - label: Private ALB
+          value: private
+        - label: Kubernetes service (no load balancer)
+          value: kubernetes_service
+    - id: target_group_name
+      label: Target group name
+      type: string
+      description: Name for the load balancer target group. Leave blank to derive it from the service name. Set it when another service in the VPC already owns that name, since target group names are unique per region.
+      placeholder: my-service-eks-tg
+      collapsible: true
+      required: false
+      patterns:
+        - message: Use 1-32 letters, numbers, or hyphens, starting and ending with a letter or number.
+          pattern: ^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
     - id: section_health
@@ -178,6 +199,9 @@ module:
     - id: section_traffic_behavior
       label: Traffic behavior
       type: section
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_deregistration_delay
       label: Deregistration delay (secs)
       type: number
@@ -186,6 +210,9 @@ module:
       max: 3600
       min: 0
       default: 300
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_slow_start
       label: Slow start duration (secs)
       type: number
@@ -194,17 +221,25 @@ module:
       max: 900
       min: 0
       default: 0
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_stickiness_enabled
       label: Sticky sessions
       type: boolean
       description: Enable load balancer cookie stickiness so repeat requests are routed to the same pod when possible.
       collapsible: true
       default: false
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_stickiness_type
       label: Stickiness type
       type: string
       collapsible: true
       show_when:
+        load_balancer:
+          not: kubernetes_service
         target_group_stickiness_enabled: true
       default: lb_cookie
       values:
@@ -219,6 +254,8 @@ module:
       max: 604800
       min: 1
       show_when:
+        load_balancer:
+          not: kubernetes_service
         target_group_stickiness_enabled: true
       default: 86400
     - id: target_group_stickiness_cookie_name
@@ -227,10 +264,15 @@ module:
       required: false
       collapsible: true
       show_when:
+        load_balancer:
+          not: kubernetes_service
         target_group_stickiness_type: app_cookie
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
-        field_overrides: {}
+        field_overrides:
+          show_when:
+            load_balancer:
+              not: kubernetes_service
     - id: ingress_allowed_workloads
       label: Ingress allow-list
       type: string_array
@@ -314,10 +356,11 @@ module:
           - kubernetes_service_enabled: true
             container_port: << module.input.container_port >>
             listener_arn: >-
-              << module.input.public_alb_routing_enabled ? (module.input.public_alb_https_listener_arn ||
-              module.input.public_alb_http_listener_arn) : (module.input.private_alb_https_listener_arn ||
-              module.input.private_alb_http_listener_arn) >>
+              << module.input.load_balancer == "public" ? (module.input.public_alb_https_listener_arn ||
+              module.input.public_alb_http_listener_arn) : (module.input.load_balancer == "private" ?
+              (module.input.private_alb_https_listener_arn || module.input.private_alb_http_listener_arn) : nil) >>
             listener_rule_priority: << module.input.listener_rule_priority >>
+            target_group_name: << module.input.target_group_name >>
             listener_rule_conditions: >-
               << (module.input.host_header_values != nil && module.input.host_header_values != [] ?
               [{type: "host-header", values: module.input.host_header_values}] : []) |
@@ -476,10 +519,12 @@ module:
           endpoint: << module.input.prometheus_endpoint >>
           query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
       # The load balancer charts below read the ALB the Terraform stack owns,
-      # not the cluster's observability stack, so no provider guard applies.
+      # not the cluster's observability stack, so no provider guard applies;
+      # they are off when the service has no load balancer at all.
       - id: request_count
         name: Request count
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -492,6 +537,7 @@ module:
       - id: target_5xx_errors
         name: 5xx errors
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -504,6 +550,7 @@ module:
       - id: target_4xx_errors
         name: 4xx errors
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -516,6 +563,7 @@ module:
       - id: target_response_time
         name: Target response time
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -528,6 +576,7 @@ module:
       - id: healthy_hosts
         name: Healthy pods
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -540,6 +589,7 @@ module:
       - id: unhealthy_hosts
         name: Unhealthy pods
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -597,7 +647,7 @@ module:
 
     The EKS cluster reference supplies the AWS account, region, VPC, cluster ARN, cluster endpoint, certificate authority data, and the Ravion Runner role the deploy assumes to reach the Kubernetes API. The EKS add-ons reference supplies the shared ALB listeners.
 
-    Use **Public web service** when the service should be reachable from the internet through the shared public ALB. Turn it off for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP.
+    Set **Load balancer** to **Public ALB** when the service should be reachable from the internet, or **Private ALB** for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP. Choose **Kubernetes service** for a service that should not sit behind any load balancer: no target group or listener rule is created and other workloads reach it only through its in-cluster Service name.
 
     ## Routing, readiness, and recovery
 
@@ -748,7 +798,7 @@ module:
     | Service name | Yes | {project}-{env}-{module} | Helm release name and name of the Kubernetes and load balancer objects |
     | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
     | Create namespace | No | true | Create the namespace if it does not exist |
-    | Public web service | No | true | Use the shared public ALB; turn off for the private ALB |
+    | Load balancer | Yes | public | `public` or `private` for the shared ALBs, `kubernetes_service` for no load balancer |
     | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |
     | Git repository | Yes* | - | Required for Dockerfile and Railpack builds |
     | Source base path | No | . | Repository-relative source and build root |
