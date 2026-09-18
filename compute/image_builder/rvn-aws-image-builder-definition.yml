@@ -1,0 +1,473 @@
+definition:
+  type: rvn-aws-image-builder
+  name: EC2 Image Builder
+  description: Creates an EC2 Image Builder pipeline that bakes an AMI from a parent image and ordered components, then distributes it across regions, privately or publicly.
+release:
+  version: 0.1.0
+  description: Build AMIs with EC2 Image Builder from inline or existing components, distribute them to additional regions, and share them with selected accounts or publicly.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_pipeline
+      label: Pipeline
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Name of the pipeline and the prefix of the recipe, components, configurations, and build instance role.
+      id: name
+      immutable: true
+      label: Pipeline name
+      patterns:
+        - message: 2-64 letters, numbers, hyphens, or underscores. Start with a letter or number.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$
+      required: true
+      type: string
+    - description: Description stored on the pipeline, the recipe, and the configurations.
+      id: description
+      label: Description
+      patterns:
+        - message: 1024 characters or fewer.
+          pattern: ^.{0,1024}$
+      type: string
+    - default: false
+      description: Build an image during every deploy that changes the recipe. The deploy waits for the build and its distribution, commonly 20-60 minutes. Off leaves builds to the schedule or a manual pipeline run.
+      id: build_on_apply
+      label: Build on deploy
+      type: boolean
+    - collapsible: true
+      description: Cron expression the pipeline runs on. Leave blank to run it manually.
+      id: schedule_expression
+      label: Schedule
+      patterns:
+        - message: Use an Image Builder cron expression, for example cron(0 0 * * ? *).
+          pattern: ^$|^cron\(.+\)$
+      placeholder: cron(0 0 * * ? *)
+      type: string
+    - collapsible: true
+      default: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
+      description: Whether a scheduled run always builds, or only when the parent image or a wildcard-versioned component has an update.
+      id: schedule_start_condition
+      label: Scheduled run condition
+      type: string
+      values:
+        - label: Only when dependencies have updates
+          value: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
+        - label: Every scheduled run
+          value: EXPRESSION_MATCH_ONLY
+    - id: section_parent_image
+      label: Parent image
+      type: section
+    - default: image
+      description: Pin one parent image, or look up the newest image an owner publishes under a name pattern on every deploy.
+      id: parent_image_source
+      label: Parent image source
+      required: true
+      type: string
+      values:
+        - label: Specific image
+          description: An AMI ID, an Image Builder image ARN, or an SSM parameter.
+          value: image
+        - label: Newest matching AMI
+          description: The newest AMI from an owner whose name matches a pattern. A newer parent image produces a new recipe on the next deploy.
+          value: lookup
+    - description: AMI ID, Image Builder image ARN, or SSM parameter written as ssm:<parameter name>.
+      id: parent_image
+      label: Parent image
+      patterns:
+        - message: Use an AMI ID, an Image Builder image ARN, or ssm:<parameter name>.
+          pattern: ^(ami-[0-9a-f]{8,17}|arn:aws[a-z-]*:imagebuilder:[a-z0-9-]+:(aws|[0-9]{12}):image/.+|ssm:.+)$
+      placeholder: ami-0123456789abcdef0
+      required: true
+      show_when:
+        parent_image_source: image
+      type: string
+    - add_button_label: Add owner
+      default: []
+      description: AWS account IDs or owner aliases (amazon, aws-marketplace) that publish the parent image.
+      id: parent_image_owners
+      label: Image owners
+      placeholder: "123456789012"
+      required: true
+      show_when:
+        parent_image_source: lookup
+      type: string_array
+    - description: AMI name pattern. Use * as a wildcard.
+      id: parent_image_name
+      label: Image name pattern
+      placeholder: al2023-ami-2023.*-x86_64
+      required: true
+      show_when:
+        parent_image_source: lookup
+      type: string
+    - default: x86_64
+      id: parent_image_architecture
+      label: Architecture
+      required: true
+      show_when:
+        parent_image_source: lookup
+      type: string
+      values:
+        - label: x86_64
+          value: x86_64
+        - label: arm64
+          value: arm64
+    - id: section_recipe
+      label: Recipe
+      type: section
+    - default: []
+      description: Components the recipe runs, in order. Write a component document inline, or reference an AWS-managed or existing component by ARN.
+      id: components
+      item_inputs:
+        - description: Short name for this component. Used in the created component's name.
+          id: name
+          label: Name
+          patterns:
+            - message: 1-40 letters, numbers, hyphens, or underscores. Start with a letter or number.
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$
+          placeholder: provision
+          required: true
+          type: string
+        - default: inline
+          id: source
+          label: Source
+          required: true
+          type: string
+          values:
+            - label: Inline document
+              value: inline
+            - label: Existing component ARN
+              value: arn
+        - description: Image Builder component document in YAML. Changing it creates a new component and a new recipe.
+          id: data
+          label: Component document
+          placeholder: |-
+            name: provision
+            schemaVersion: 1.0
+            phases:
+              - name: build
+                steps:
+                  - name: Install
+                    action: ExecuteBash
+                    inputs:
+                      commands:
+                        - echo hello
+          required: true
+          show_when:
+            source: inline
+          type: text
+        - description: ARN of an AWS-managed component or one that already exists in this account. Use x.x.x for the latest version.
+          id: arn
+          label: Component ARN
+          patterns:
+            - message: Use an Image Builder component ARN.
+              pattern: ^arn:aws[a-z-]*:imagebuilder:[a-z0-9-]+:(aws|[0-9]{12}):component/.+$
+          placeholder: arn:aws:imagebuilder:us-east-1:aws:component/update-linux/x.x.x
+          required: true
+          show_when:
+            source: arn
+          type: string
+        - collapsible: true
+          default: Linux
+          id: platform
+          label: Platform
+          show_when:
+            source: inline
+          type: string
+          values:
+            - label: Linux
+              value: Linux
+            - label: Windows
+              value: Windows
+            - label: macOS
+              value: macOS
+        - collapsible: true
+          default: {}
+          description: Values for the parameters the component document declares. Changing a value creates a new recipe over the same component.
+          id: parameters
+          label: Parameters
+          type: keyvalue
+      item_label: Component
+      item_title:
+        fallback: Component
+        template: "{name}"
+      label: Components
+      required: true
+      type: object_array
+    - collapsible: true
+      description: User data the build instance launches with. Supplying it replaces the script Image Builder uses to install the Systems Manager agent, so it must install the agent on a parent image that does not ship one.
+      id: user_data
+      label: Build instance user data
+      type: text
+    - collapsible: true
+      default: true
+      description: Remove the Systems Manager agent from the image when Image Builder installed it for the build.
+      id: ssm_agent_uninstall_after_build
+      label: Remove Systems Manager agent after build
+      type: boolean
+    - collapsible: true
+      description: Root device name of the parent image, for example /dev/xvda or /dev/sda1. Leave blank to keep the parent image's volume.
+      id: root_device_name
+      label: Root device name
+      placeholder: /dev/xvda
+      type: string
+    - collapsible: true
+      default: 30
+      description: Size of the image's root snapshot, which is the smallest root volume an instance can launch the image with.
+      id: root_volume_size_gb
+      label: Root volume size (GiB)
+      max: 65536
+      min: 1
+      show_when:
+        root_device_name:
+          not: ""
+      type: number
+    - id: section_build
+      label: Build infrastructure
+      type: section
+    - add_button_label: Add instance type
+      default:
+        - m7i.large
+      description: Instance types the build may run on, in order of preference. They must match the parent image's architecture.
+      id: instance_types
+      label: Instance types
+      required: true
+      type: string_array
+    - collapsible: true
+      description: Subnet the build instance launches in. It needs outbound access to Systems Manager, Image Builder, S3, and whatever the components download. Leave blank to use the default VPC.
+      id: subnet_id
+      label: Subnet ID
+      patterns:
+        - message: Use a subnet ID.
+          pattern: ^$|^subnet-[0-9a-f]{8,17}$
+      placeholder: subnet-0123456789abcdef0
+      type: string
+    - add_button_label: Add security group ID
+      collapsible: true
+      default: []
+      description: Security groups for the build instance. Required with a subnet ID.
+      id: security_group_ids
+      label: Security group IDs
+      placeholder: sg-0123456789abcdef0
+      show_when:
+        subnet_id:
+          not: ""
+      type: string_array
+    - add_button_label: Add managed policy ARN
+      collapsible: true
+      default: []
+      description: Managed policies attached to the build instance's role, beyond the two Image Builder requires.
+      id: instance_managed_policy_arns
+      label: Build instance managed policy ARNs
+      patterns:
+        - message: Use a valid IAM managed policy ARN.
+          pattern: ^arn:aws(-cn|-us-gov)?:iam::(aws|\d{12}):policy/.+$
+      placeholder: arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      type: string_array
+    - collapsible: true
+      description: Inline IAM policy for the build instance's role. Grant what the components need to reach, such as read access to a release bucket.
+      id: instance_policy_json
+      label: Build instance policy JSON
+      patterns:
+        - message: Include a JSON object with Version and Statement properties.
+          pattern: ^\s*$|^\s*\{[\s\S]*"Version"[\s\S]*"Statement"[\s\S]*\}\s*$
+      placeholder: |-
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:GetObject"],
+              "Resource": ["arn:aws:s3:::my-bucket/releases/*"]
+            }
+          ]
+        }
+      type: text
+    - collapsible: true
+      default: true
+      description: Terminate the build instance when a build fails. Turn off to keep it for debugging.
+      id: terminate_instance_on_failure
+      label: Terminate instance on failure
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Launch a test instance from the new image and run the components' test phases. Turn off for an image that does not start the Systems Manager agent on boot.
+      id: image_tests_enabled
+      label: Run image tests
+      type: boolean
+    - id: section_distribution
+      label: Distribution
+      type: section
+    - collapsible: true
+      description: Name of each image produced. Include {{ imagebuilder:buildDate }} so that every build gets its own name. Defaults to the pipeline name followed by the build date.
+      id: ami_name
+      label: AMI name
+      patterns:
+        - message: Include {{ imagebuilder:buildDate }} or {{ imagebuilder:buildVersion }}.
+          pattern: ^$|\{\{\s*imagebuilder:build(Date|Version)\s*\}\}
+      placeholder: my-image-{{ imagebuilder:buildDate }}
+      type: string
+    - collapsible: true
+      default: {}
+      description: Tags written on each image produced, in every region. Tags are visible only to the owning account, even on a public image.
+      id: ami_tags
+      label: AMI tags
+      type: keyvalue
+    - add_button_label: Add region
+      default: []
+      description: Regions the finished image is copied to, beyond the build region.
+      id: distribution_regions
+      label: Additional regions
+      placeholder: us-east-1
+      type: string_array
+    - default: false
+      description: Make every image produced launchable by any AWS account. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in every region the image lands in.
+      id: public
+      label: Public image
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Turn off the account-wide block on public AMI sharing in the build region and every additional region. The setting covers every image the account owns in those regions and stays off after this module is destroyed.
+      id: manage_image_block_public_access
+      label: Allow public AMI sharing in this account
+      show_when:
+        public: true
+      type: boolean
+    - add_button_label: Add account ID
+      default: []
+      description: AWS accounts granted launch permission on every image produced.
+      id: launch_account_ids
+      label: Shared account IDs
+      patterns:
+        - message: Use a 12-digit AWS account ID.
+          pattern: ^[0-9]{12}$
+      placeholder: "123456789012"
+      show_when:
+        public: false
+      type: string_array
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: compute/image_builder
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        ami_name: << module.input.ami_name || nil >>
+        ami_tags: << module.input.ami_tags || {} >>
+        build_on_apply: << module.input.build_on_apply >>
+        components: << module.input.components || [] >>
+        description: << module.input.description || nil >>
+        distribution_regions: << module.input.distribution_regions || [] >>
+        image_tests_enabled: << module.input.image_tests_enabled >>
+        instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
+        instance_policy_json: << module.input.instance_policy_json || nil >>
+        instance_types: << module.input.instance_types >>
+        launch_account_ids: "<< module.input.public ? [] : (module.input.launch_account_ids || []) >>"
+        manage_image_block_public_access: << module.input.manage_image_block_public_access >>
+        name: << module.input.name >>
+        parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
+        parent_image_lookup: >-
+          << module.input.parent_image_source == "lookup" ?
+          {"owners": module.input.parent_image_owners, "name": module.input.parent_image_name,
+          "architecture": module.input.parent_image_architecture} : nil >>
+        public: << module.input.public >>
+        region: << module.input.aws_region >>
+        root_volume: >-
+          << module.input.root_device_name ?
+          {"device_name": module.input.root_device_name, "size_gb": module.input.root_volume_size_gb} : nil >>
+        schedule_expression: << module.input.schedule_expression || nil >>
+        schedule_start_condition: << module.input.schedule_start_condition >>
+        security_group_ids: << module.input.security_group_ids || [] >>
+        ssm_agent_uninstall_after_build: << module.input.ssm_agent_uninstall_after_build >>
+        subnet_id: << module.input.subnet_id || nil >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        terminate_instance_on_failure: << module.input.terminate_instance_on_failure >>
+        user_data: << module.input.user_data || nil >>
+  ui:
+    links: |-
+      <<
+      stack.output.pipeline_arn && stack.output.region ?
+      [{"name":"Image pipeline","href":"https://" + stack.output.region + ".console.aws.amazon.com/imagebuilder/home?region=" + stack.output.region + "#/pipelines/" + stack.output.pipeline_arn}] :
+      []
+      >>
+  readme: |
+    Creates an EC2 Image Builder pipeline that bakes an AMI and distributes it.
+
+    ## Overview
+
+    Use this module to turn a manual image build into a repeatable pipeline. A recipe starts from a parent image, runs your components in order on a temporary build instance, snapshots the result as an AMI, and copies it to every region you list.
+
+    The module creates the components, the recipe, the build infrastructure and its IAM role, the distribution settings, and the pipeline. It does not keep build instances around: each one exists only for the length of a build.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Golden images | Bake packages, agents, and hardening into an AMI so instances boot ready to work. |
+    | Release images | Bake one application release per image and roll it out by changing a launch template. |
+    | Multi-region fleets | Build once and copy the image to every region that launches it. |
+    | Distributed software | Share an image with selected accounts, or publish it for any AWS account to launch. |
+
+    ## Components and parameters
+
+    A component is an Image Builder document with build, validate, and test phases. Write it inline, or reference an AWS-managed or existing component by ARN. Components run in the order listed.
+
+    Declare the values that change between builds, such as a release version, as component parameters and set them under Parameters. Changing a parameter creates a new recipe over the same component, so the document stays stable across releases.
+
+    Image Builder recipes and components are immutable. This module names each by a hash of its content, so any change is a new recipe or component beside the old one, and the pipeline moves to it in the same deploy. There is no version to bump.
+
+    ## Building
+
+    The pipeline is manual unless you give it a schedule. Start a build from the Image pipeline link, or turn on Build on deploy to build whenever a deploy changes the recipe. A build commonly takes 20-60 minutes, and a deploy with Build on deploy waits for it.
+
+    Image Builder drives the build instance through the Systems Manager agent. On a parent image that does not ship the agent, install it in Build instance user data.
+
+    ## Sharing
+
+    Images are private by default. Share them with listed accounts, or turn on Public image to let any AWS account launch them.
+
+    New AWS accounts block public AMI sharing in every region. Public image turns that block off in the build region and every additional region; it is an account-wide setting that covers every image the account owns there. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in those regions.
+
+    AMI tags are visible only to the account that owns the image, even when the image is public.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | Account that owns the pipeline and the images. |
+    | Region | Yes | None | Region the image is built in. |
+    | Pipeline name | Yes | Project, environment, and module given IDs | Prefix of every resource created. |
+    | Build on deploy | No | Off | Build during deploys that change the recipe. |
+    | Schedule | No | Manual | Image Builder cron expression. |
+    | Parent image | Yes | None | A specific image, or the newest AMI matching an owner and name pattern. |
+    | Components | Yes | None | Inline documents or component ARNs, in run order. |
+    | Build instance user data | No | None | Replaces the Systems Manager agent install. |
+    | Root device name and size | No | Parent image's volume | The snapshot size is the smallest root volume an instance can launch with. |
+    | Instance types | Yes | `m7i.large` | Must match the parent image's architecture. |
+    | Subnet and security groups | No | Default VPC | The build needs outbound internet or VPC endpoints. |
+    | Build instance policies | No | Image Builder minimum | What the components need to reach. |
+    | Run image tests | No | On | Needs the Systems Manager agent to start on boot. |
+    | AMI name and tags | No | Pipeline name and build date | Applied in every region. |
+    | Additional regions | No | None | Regions the image is copied to. |
+    | Public image | No | Off | Any AWS account can launch the image. |
+    | Shared account IDs | No | None | Accounts granted launch permission. |
+
+    ## Design decisions
+
+    The build instance role carries only the two policies Image Builder requires. Anything the components download or call is granted explicitly, so an image build cannot reach more than it was given.
+
+    The build instance requires IMDSv2 and is terminated after a failed build unless you keep it for debugging.
+
+    Private images default to an encrypted root snapshot. Settings such as a customer-managed KMS key, volume performance, build logs in S3, organization-wide sharing, and the test timeout remain available through Advanced Terraform variables.
+
+    ## Learn more
+
+    - [EC2 Image Builder](https://docs.aws.amazon.com/imagebuilder/latest/userguide/what-is-image-builder.html)
+    - [Component documents](https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-use-documents.html)
+    - [Make an AMI public](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/sharingamis-intro.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/image_builder)
