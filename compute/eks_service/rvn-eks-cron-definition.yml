@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.1
-  description: Add AWS permissions. Turn on Create IAM role and the job gets an IAM role bound to its pods through EKS Pod Identity, with managed policy ARNs and inline policies in the same shape as the ECS task role; the AWS SDK in the pods picks up short-lived credentials for it with no keys to manage. The role ARN is a stack output for other modules to pin.
+  version: 0.4.2
+  description: Fix the plan of a workload with IAM inline policies, which failed on OpenTofu 1.11 with "Inconsistent conditional result types" before any policy was attached. No change for workloads without inline policies.
 module:
   inputs:
     - id: section_cluster
