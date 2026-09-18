@@ -568,10 +568,14 @@ module:
       with:
         min_overrides:
           id: min_instances
+          moved_from:
+            - min_capacity
           label: Minimum instances
           required: true
         max_overrides:
           id: max_instances
+          moved_from:
+            - max_capacity
           label: Maximum instances
           required: true
           default: 1

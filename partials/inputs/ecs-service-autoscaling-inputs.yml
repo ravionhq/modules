@@ -9,16 +9,22 @@
   with:
     min_overrides:
       id: min_tasks
+      moved_from:
+        - min_capacity
       label: Minimum tasks
       description: Recommend at least 2 for production.
       show_when:
         auto_scaling_enabled: true
     max_overrides:
       id: max_tasks
+      moved_from:
+        - max_capacity
       label: Maximum tasks
       show_when:
         auto_scaling_enabled: true
 - id: desired_tasks
+  moved_from:
+    - desired_count
   label: Desired tasks
   type: number
   description: Number of tasks to keep running when autoscaling is disabled.

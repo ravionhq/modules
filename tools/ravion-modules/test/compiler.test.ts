@@ -645,8 +645,35 @@ describe("compiler", () => {
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_scan_on_push_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_force_deletion_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["image_registry", "ecr"]);
-    assert.equal(findInput(inputs, "min_tasks").label, "Minimum tasks");
-    assert.equal(findInput(inputs, "max_tasks").label, "Maximum tasks");
+    const minTasks = findInput(inputs, "min_tasks");
+    const maxTasks = findInput(inputs, "max_tasks");
+    const desiredTasks = findInput(inputs, "desired_tasks");
+    assert.equal(minTasks.label, "Minimum tasks");
+    assert.equal(maxTasks.label, "Maximum tasks");
+    assert.equal(desiredTasks.label, "Desired tasks");
+    assert.deepEqual(minTasks.moved_from, ["min_capacity"]);
+    assert.deepEqual(maxTasks.moved_from, ["max_capacity"]);
+    assert.deepEqual(desiredTasks.moved_from, ["desired_count"]);
+    assert.equal(
+      getTerraformVariable(compiled.module, "desired_count"),
+      "<< module.input.auto_scaling_enabled ? module.input.min_tasks : module.input.desired_tasks >>",
+    );
+    assert.equal(
+      getTerraformVariableAt(compiled.module, "auto_scaling", "min_capacity"),
+      "<< module.input.min_tasks >>",
+    );
+    assert.equal(
+      getTerraformVariableAt(compiled.module, "auto_scaling", "max_capacity"),
+      "<< module.input.max_tasks >>",
+    );
+    assert.match(
+      assertString(getTerraformVariableAt(compiled.module, "auto_scaling", "scheduled")),
+      /"min_capacity": #\.min_tasks/,
+    );
+    assert.match(
+      assertString(getTerraformVariableAt(compiled.module, "auto_scaling", "scheduled")),
+      /"max_capacity": #\.max_tasks/,
+    );
 
     const build = getModuleBuild(compiled.module);
     assert.equal(
@@ -1147,6 +1174,14 @@ function getTerraformVariable(module: Record<string, unknown>, key: string): unk
   const input = assertRecord(defaults.input, "module.stack.pipelines.defaults.input");
   const terraformVariables = assertRecord(input.terraform_variables, "module.stack.pipelines.defaults.input.terraform_variables");
   return terraformVariables[key];
+}
+
+function getTerraformVariableAt(module: Record<string, unknown>, key: string, ...path: string[]): unknown {
+  let value = getTerraformVariable(module, key);
+  for (const segment of path) {
+    value = assertRecord(value, `terraform_variables.${key}`)[segment];
+  }
+  return value;
 }
 
 function assertString(value: unknown): string {
