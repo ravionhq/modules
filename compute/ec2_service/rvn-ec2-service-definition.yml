@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.6.0
-  description: Default new services to one instance, standardize health check and builder field names, keep build policies in advanced settings, and clarify listener-rule guidance.
+  version: 2.0.0
+  description: Rename scaling inputs to min_instances and max_instances to make clear they count EC2 instances.
 module:
   inputs:
     - id: network
@@ -566,10 +566,12 @@ module:
       type: section
     - $template: ../../partials/templates/autoscaling-capacity-inputs.yml
       with:
-        min_capacity_overrides:
+        min_overrides:
+          id: min_instances
           label: Minimum instances
           required: true
-        max_capacity_overrides:
+        max_overrides:
+          id: max_instances
           label: Maximum instances
           required: true
           default: 1
@@ -779,8 +781,8 @@ module:
         log_rotation_backup_count: << module.input.log_rotation_backup_count >>
         log_rotation_max_size_mb: << module.input.log_rotation_max_size_mb >>
         manual_start_command: '<< module.input.deploy_type == "manual" ? module.input.start_command : nil >>'
-        max_size: << module.input.max_capacity >>
-        min_size: << module.input.min_capacity >>
+        max_size: << module.input.max_instances >>
+        min_size: << module.input.min_instances >>
         name: << module.input.name >>
         region: << module.input.aws_region >>
         root_volume_size: << module.input.root_volume_size >>

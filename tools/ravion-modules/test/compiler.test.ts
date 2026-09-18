@@ -645,8 +645,8 @@ describe("compiler", () => {
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_scan_on_push_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_force_deletion_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["image_registry", "ecr"]);
-    assert.equal(findInput(inputs, "min_capacity").label, "Minimum tasks");
-    assert.equal(findInput(inputs, "max_capacity").label, "Maximum tasks");
+    assert.equal(findInput(inputs, "min_tasks").label, "Minimum tasks");
+    assert.equal(findInput(inputs, "max_tasks").label, "Maximum tasks");
 
     const build = getModuleBuild(compiled.module);
     assert.equal(
@@ -836,8 +836,8 @@ describe("compiler", () => {
       "health_check_grace_period",
       "direct_access_cidr_blocks",
       "data_volume_creation_enabled",
-      "min_capacity",
-      "max_capacity",
+      "min_instances",
+      "max_instances",
       "cpu_autoscaling_enabled",
       "ecr_scan_on_push_enabled",
     ]) {
@@ -850,10 +850,10 @@ describe("compiler", () => {
       deploy_source_repo: { not: "" },
     });
     assert.equal(inputs.some((input) => input.id === "min_size" || input.id === "max_size"), false);
-    assert.equal(findInput(inputs, "min_capacity").label, "Minimum instances");
-    assert.equal(findInput(inputs, "max_capacity").label, "Maximum instances");
-    assert.equal(getTerraformVariable(compiled.module, "min_size"), "<< module.input.min_capacity >>");
-    assert.equal(getTerraformVariable(compiled.module, "max_size"), "<< module.input.max_capacity >>");
+    assert.equal(findInput(inputs, "min_instances").label, "Minimum instances");
+    assert.equal(findInput(inputs, "max_instances").label, "Maximum instances");
+    assert.equal(getTerraformVariable(compiled.module, "min_size"), "<< module.input.min_instances >>");
+    assert.equal(getTerraformVariable(compiled.module, "max_size"), "<< module.input.max_instances >>");
 
     const imageRef = findInput(getDeployInputs(compiled.module), "image_ref");
     assert.deepEqual(imageRef.patterns, [
