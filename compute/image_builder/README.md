@@ -6,7 +6,10 @@ accounts, or publicly.
 
 The module creates the components, the recipe, the infrastructure configuration
 and its build instance role, the distribution configuration, and the pipeline.
-It can also build an image during apply.
+
+The pipeline builds on a schedule, on request from a CI step, or during an
+apply that changes the recipe. The request path is what a release pipeline
+uses: the step starts the build, waits for the image, and reads the new AMI id.
 
 ## Usage
 
@@ -46,14 +49,86 @@ module "image" {
   ami_tags             = { release = "v1.2.3" }
   distribution_regions = ["us-east-1", "eu-west-1"]
   public               = true
+
+  schedule_expression              = "cron(0 3 ? * SUN *)"
+  create_pipeline_execution_policy = true
 }
 ```
 
-Start a build:
+Start a build by hand:
 
 ```bash
 aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <pipeline_arn>
 ```
+
+## Building on a schedule
+
+`schedule_expression` runs the pipeline unattended. With the default
+`schedule_start_condition`, a scheduled run builds only when the parent image or
+a wildcard-versioned component has an update, so a weekly schedule on a
+`parent_image_lookup` recipe rebuilds when the upstream AMI moves and stays idle
+otherwise.
+
+## Building from a pipeline step
+
+`create_pipeline_execution_policy = true` creates a customer-managed policy that
+starts this pipeline and reads the images it produces, and nothing else. Its ARN
+is the `pipeline_execution_policy_arn` output. A Ravion `custom` step attaches
+that ARN under `infrastructure.permissions.attach`, starts the pipeline, polls
+`list-image-pipeline-images` until the image is `AVAILABLE`, and publishes the
+AMI id for later steps:
+
+```yaml
+- id: build_ami
+  name: Build AMI
+  type: custom
+  timeout: 7200
+  infrastructure:
+    type: ec2
+    instance_size: small
+    aws_account_id: my-aws-account
+    region: us-west-2
+    permissions:
+      attach:
+        - arn:aws:iam::123456789012:policy/app-host-start-image-pipeline
+  environment_variables:
+    AWS_REGION: us-west-2
+    PIPELINE_ARN: arn:aws:imagebuilder:us-west-2:123456789012:image-pipeline/app-host
+  outputs:
+    - ami_id
+  commands:
+    - |
+      set -euo pipefail
+
+      BUILD_ARN=$(aws imagebuilder start-image-pipeline-execution \
+        --image-pipeline-arn "$PIPELINE_ARN" \
+        --query imageBuildVersionArn --output text)
+
+      while true; do
+        STATE=$(aws imagebuilder list-image-pipeline-images \
+          --image-pipeline-arn "$PIPELINE_ARN" \
+          --query "imageSummaryList[?arn=='$BUILD_ARN'].state.status | [0]" --output text)
+        case "$STATE" in
+          AVAILABLE) break ;;
+          FAILED|CANCELLED) echo "Image build $STATE" >&2; exit 1 ;;
+        esac
+        sleep 60
+      done
+
+      AMI_ID=$(aws imagebuilder list-image-pipeline-images \
+        --image-pipeline-arn "$PIPELINE_ARN" \
+        --query "imageSummaryList[?arn=='$BUILD_ARN'].outputResources.amis[0].image | [0]" --output text)
+      echo "ami_id=$AMI_ID" >> "$RAVION_OUTPUT"
+```
+
+A later step reads the image as `<< steps.build_ami.output.ami_id >>` — to pin a
+launch template, to hand to a `terraform:apply` step, or to publish elsewhere.
+Give the step a timeout longer than a build takes; a build commonly runs 20-60
+minutes. `build_timeout_minutes` covers the same wait for `build_on_apply`.
+
+The policy grants `StartImagePipelineExecution`, `GetImagePipeline` and
+`ListImagePipelineImages` on this pipeline, and `GetImage` on the images it
+produces.
 
 ## Immutable recipes and components
 
@@ -91,12 +166,22 @@ instance from the image and reach it the same way, so set
   `manage_image_block_public_access` (the default) the module turns the block
   off in the build region and every distribution region. The setting is
   account-wide for the region, and destroying the module leaves it off.
-- A public image cannot be backed by an encrypted snapshot. `root_volume`
-  encryption defaults to off when `public` is true, and the module refuses an
-  explicit `encrypted = true`. EBS encryption by default must also be off in
-  the build region, or the snapshot is encrypted regardless.
+- A public image cannot be backed by an encrypted snapshot, and AWS refuses to
+  publish one an hour into the build. The module settles that at plan time
+  instead. `root_volume` encryption defaults to off when `public` is true, and
+  an explicit `encrypted = true` is refused. The parent image must be an AMI
+  this account can describe — an `ami-` id or a `parent_image_lookup` — whose
+  snapshots are unencrypted, because every image inherits them. EBS encryption
+  by default must be off in the build region and every distribution region,
+  since the account setting overrides the recipe and encrypts the copies too.
 - Tags are visible only to the owning account, even on a public image. Other
   accounts find the image by owner and name.
+
+## Build logs
+
+`log_bucket` sends the build logs to S3 and grants the build instance write
+access to exactly the prefix they land under. An empty `log_prefix` writes them
+at the bucket root.
 
 ## Requirements
 
@@ -128,7 +213,8 @@ instance from the image and reach it the same way, so set
 | instance_managed_policy_arns | Managed policies for the build instance role, beyond the two Image Builder needs | `list(string)` | `[]` | no |
 | instance_policy_json | Inline IAM policy for the build instance role | `string` | `null` | no |
 | log_bucket | S3 bucket for build logs | `string` | `null` | no |
-| log_prefix | Key prefix for build logs | `string` | `"image-builder"` | no |
+| log_prefix | Key prefix for build logs. Empty writes them at the bucket root | `string` | `"image-builder"` | no |
+| create_pipeline_execution_policy | Create a policy that starts this pipeline and reads its images | `bool` | `false` | no |
 | ami_name | Image name. Must contain `{{ imagebuilder:buildDate }}` or `{{ imagebuilder:buildVersion }}` | `string` | `<name>-{{ imagebuilder:buildDate }}` | no |
 | ami_description | Description stored on each image | `string` | `null` | no |
 | ami_tags | Tags written on each image, in every region | `map(string)` | `{}` | no |
@@ -144,6 +230,7 @@ instance from the image and reach it the same way, so set
 | image_tests_timeout_minutes | How long the test phase may run | `number` | `60` | no |
 | enhanced_image_metadata_enabled | Collect package and other metadata from each image | `bool` | `true` | no |
 | build_on_apply | Build an image during apply, and again whenever the recipe changes | `bool` | `false` | no |
+| build_timeout_minutes | How long an apply waits for a `build_on_apply` build | `number` | `image_tests_timeout_minutes + 60` | no |
 
 ## Outputs
 
@@ -164,6 +251,7 @@ instance from the image and reach it the same way, so set
 | instance_role_name | The name of the build instance's IAM role |
 | image_arn | The ARN of the image built during apply |
 | ami_ids | AMI ids of the image built during apply, keyed by region |
+| pipeline_execution_policy_arn | The ARN of the policy that starts this pipeline and reads its images |
 
 ## Testing
 

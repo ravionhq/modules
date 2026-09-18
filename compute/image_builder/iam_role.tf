@@ -17,7 +17,7 @@ locals {
 }
 
 resource "aws_iam_role" "instance" {
-  name        = "${var.name}-image-builder"
+  name        = local.instance_role_name
   description = "Build instance role for the ${var.name} Image Builder pipeline."
 
   assume_role_policy = jsonencode({
@@ -58,7 +58,7 @@ resource "aws_iam_role_policy" "logs" {
     Statement = [{
       Effect   = "Allow"
       Action   = "s3:PutObject"
-      Resource = "arn:${data.aws_partition.current.partition}:s3:::${var.log_bucket}/${local.log_prefix}/*"
+      Resource = "arn:${data.aws_partition.current.partition}:s3:::${var.log_bucket}/${local.log_key_prefix}*"
     }]
   })
 }

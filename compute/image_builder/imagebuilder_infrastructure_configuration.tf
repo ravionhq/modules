@@ -23,7 +23,7 @@ resource "aws_imagebuilder_infrastructure_configuration" "this" {
     content {
       s3_logs {
         s3_bucket_name = logging.value
-        s3_key_prefix  = local.log_prefix
+        s3_key_prefix  = local.log_prefix == "" ? null : local.log_prefix
       }
     }
   }

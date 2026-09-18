@@ -74,3 +74,8 @@ output "ami_ids" {
     for ami in try(tolist(aws_imagebuilder_image.this[0].output_resources[0].amis), []) : ami.region => ami.image
   }
 }
+
+output "pipeline_execution_policy_arn" {
+  description = "The ARN of the policy that starts this pipeline and reads the images it produces. Null unless create_pipeline_execution_policy is true."
+  value       = try(aws_iam_policy.pipeline_execution[0].arn, null)
+}

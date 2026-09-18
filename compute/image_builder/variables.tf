@@ -214,8 +214,14 @@ variable "log_bucket" {
 
 variable "log_prefix" {
   type        = string
-  description = "Key prefix for build logs in log_bucket."
+  description = "Key prefix for build logs in log_bucket. An empty prefix writes them at the bucket root."
   default     = "image-builder"
+}
+
+variable "create_pipeline_execution_policy" {
+  type        = bool
+  description = "Create a customer-managed IAM policy that starts this pipeline and reads the images it produces. Attach it to a deploy pipeline's role to build an image outside Terraform with `aws imagebuilder start-image-pipeline-execution`."
+  default     = false
 }
 
 ################################################################################
@@ -333,6 +339,17 @@ variable "enhanced_image_metadata_enabled" {
   type        = bool
   description = "Collect the package list and other metadata from each image built."
   default     = true
+}
+
+variable "build_timeout_minutes" {
+  type        = number
+  description = "How long an apply waits for a build_on_apply build, covering the build, the tests and the distribution. Null allows an hour on top of image_tests_timeout_minutes."
+  default     = null
+
+  validation {
+    condition     = var.build_timeout_minutes == null || try(var.build_timeout_minutes > var.image_tests_timeout_minutes, false)
+    error_message = "The build_timeout_minutes must be greater than image_tests_timeout_minutes, which the build contains."
+  }
 }
 
 variable "build_on_apply" {

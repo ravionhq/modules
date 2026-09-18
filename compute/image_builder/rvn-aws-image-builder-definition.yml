@@ -4,7 +4,7 @@ definition:
   description: Creates an EC2 Image Builder pipeline that bakes an AMI from a parent image and ordered components, then distributes it across regions, privately or publicly.
 release:
   version: 0.1.0
-  description: Build AMIs with EC2 Image Builder from inline or existing components, distribute them to additional regions, and share them with selected accounts or publicly.
+  description: Build AMIs with EC2 Image Builder from inline or existing components, distribute them to additional regions, share them with selected accounts, AWS Organizations, or publicly, and let a deploy step start a build on demand. Set the image's root volume, send build logs to S3, and control the image description, build working directory, test and build timeouts, and whether the pipeline runs.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -35,6 +35,21 @@ module:
       label: Build on deploy
       type: boolean
     - collapsible: true
+      description: How long a deploy waits for the build it starts, covering the build, the image tests, and the distribution. It must be greater than the image test timeout. Leave blank to allow an hour on top of that timeout.
+      id: build_timeout_minutes
+      label: Build timeout (minutes)
+      max: 2880
+      min: 61
+      placeholder: "120"
+      show_when:
+        build_on_apply: true
+      type: number
+    - default: false
+      description: Create an IAM policy that starts this pipeline and reads the images it produces. Attach it to the role of a deploy step that runs `aws imagebuilder start-image-pipeline-execution`.
+      id: create_pipeline_execution_policy
+      label: Allow a deploy step to start builds
+      type: boolean
+    - collapsible: true
       description: Cron expression the pipeline runs on. Leave blank to run it manually.
       id: schedule_expression
       label: Schedule
@@ -54,6 +69,18 @@ module:
           value: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
         - label: Every scheduled run
           value: EXPRESSION_MATCH_ONLY
+    - collapsible: true
+      default: true
+      description: Whether the pipeline can run. A disabled pipeline keeps its configuration and ignores its schedule.
+      id: pipeline_enabled
+      label: Pipeline enabled
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Collect the package list and other metadata from each image built, and show it in the Image Builder console.
+      id: enhanced_image_metadata_enabled
+      label: Collect image metadata
+      type: boolean
     - id: section_parent_image
       label: Parent image
       type: section
@@ -199,28 +226,110 @@ module:
       label: Build instance user data
       type: text
     - collapsible: true
+      description: Directory on the build instance the build and test workflows run in. Leave blank to keep the Image Builder default.
+      id: working_directory
+      label: Build working directory
+      patterns:
+        - message: Use an absolute path.
+          pattern: ^$|^/
+      placeholder: /tmp
+      type: string
+    - collapsible: true
       default: true
       description: Remove the Systems Manager agent from the image when Image Builder installed it for the build.
       id: ssm_agent_uninstall_after_build
       label: Remove Systems Manager agent after build
       type: boolean
-    - collapsible: true
-      description: Root device name of the parent image, for example /dev/xvda or /dev/sda1. Leave blank to keep the parent image's volume.
+    - default: false
+      description: Give the image its own root volume instead of the parent image's. The volume becomes the image's snapshot, and its size is the smallest root volume an instance can launch the image with.
+      id: root_volume_override_enabled
+      label: Custom root volume
+      type: boolean
+    - description: Root device name of the parent image, for example /dev/xvda or /dev/sda1.
       id: root_device_name
       label: Root device name
+      patterns:
+        - message: Use a device path, for example /dev/xvda.
+          pattern: ^/dev/[a-z0-9/]+$
       placeholder: /dev/xvda
+      required: true
+      show_when:
+        root_volume_override_enabled: true
       type: string
-    - collapsible: true
-      default: 30
-      description: Size of the image's root snapshot, which is the smallest root volume an instance can launch the image with.
+    - default: 30
+      description: Size of the image's root snapshot. Every instance launched from the image gets a root volume at least this large.
       id: root_volume_size_gb
       label: Root volume size (GiB)
       max: 65536
       min: 1
+      required: true
       show_when:
-        root_device_name:
-          not: ""
+        root_volume_override_enabled: true
       type: number
+    - collapsible: true
+      default: gp3
+      description: EBS volume type of the root volume.
+      id: root_volume_type
+      label: Root volume type
+      show_when:
+        root_volume_override_enabled: true
+      type: string
+      values:
+        - label: gp3
+          value: gp3
+        - label: gp2
+          value: gp2
+        - label: io1
+          value: io1
+        - label: io2
+          value: io2
+    - collapsible: true
+      description: Provisioned IOPS for the root volume. Leave blank to take the volume type's default.
+      id: root_volume_iops
+      label: Root volume IOPS
+      max: 256000
+      min: 100
+      placeholder: "3000"
+      show_when:
+        root_volume_override_enabled: true
+        root_volume_type:
+          - gp3
+          - io1
+          - io2
+      type: number
+    - collapsible: true
+      description: Throughput of the root volume in MiB/s. Leave blank to take the gp3 default of 125.
+      id: root_volume_throughput
+      label: Root volume throughput (MiB/s)
+      max: 1000
+      min: 125
+      placeholder: "125"
+      show_when:
+        root_volume_override_enabled: true
+        root_volume_type: gp3
+      type: number
+    - collapsible: true
+      default: true
+      description: Encrypt the image's root snapshot. Public images are always unencrypted.
+      id: root_volume_encrypted
+      label: Encrypt root volume
+      show_when:
+        public: false
+        root_volume_override_enabled: true
+      type: boolean
+    - collapsible: true
+      description: KMS key the root snapshot is encrypted with, as a key ID, alias, or ARN. Leave blank to use the account's default EBS key.
+      id: root_volume_kms_key_id
+      label: Root volume KMS key
+      patterns:
+        - message: Use a KMS key ID, alias, or ARN.
+          pattern: ^$|^alias/.+$|^[A-Fa-f0-9-]{36}$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:(key|alias)/.+$
+      placeholder: arn:aws:kms:us-west-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab
+      show_when:
+        public: false
+        root_volume_encrypted: true
+        root_volume_override_enabled: true
+      type: string
     - id: section_build
       label: Build infrastructure
       type: section
@@ -294,6 +403,34 @@ module:
       id: image_tests_enabled
       label: Run image tests
       type: boolean
+    - collapsible: true
+      default: 60
+      description: How long the test phase may run.
+      id: image_tests_timeout_minutes
+      label: Image test timeout (minutes)
+      max: 1440
+      min: 60
+      show_when:
+        image_tests_enabled: true
+      type: number
+    - collapsible: true
+      description: S3 bucket the build logs are written to. The build instance is granted write access under the log prefix. Leave blank to keep the logs in CloudWatch only.
+      id: log_bucket
+      label: Build log bucket
+      patterns:
+        - message: Use an S3 bucket name.
+          pattern: ^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
+      placeholder: my-build-logs
+      type: string
+    - collapsible: true
+      default: image-builder
+      description: Key prefix the build logs are written under. An empty prefix writes them at the bucket root.
+      id: log_prefix
+      label: Build log prefix
+      show_when:
+        log_bucket:
+          not: ""
+      type: string
     - id: section_distribution
       label: Distribution
       type: section
@@ -305,6 +442,14 @@ module:
         - message: Include {{ imagebuilder:buildDate }} or {{ imagebuilder:buildVersion }}.
           pattern: ^$|\{\{\s*imagebuilder:build(Date|Version)\s*\}\}
       placeholder: my-image-{{ imagebuilder:buildDate }}
+      type: string
+    - collapsible: true
+      description: Description stored on each image produced.
+      id: ami_description
+      label: AMI description
+      patterns:
+        - message: 1024 characters or fewer.
+          pattern: ^.{0,1024}$
       type: string
     - collapsible: true
       default: {}
@@ -344,6 +489,19 @@ module:
       show_when:
         public: false
       type: string_array
+    - add_button_label: Add organization ARN
+      collapsible: true
+      default: []
+      description: AWS Organizations granted launch permission on every image produced. Every account in the organization can launch the image.
+      id: launch_organization_arns
+      label: Shared organization ARNs
+      patterns:
+        - message: Use an AWS Organizations organization ARN.
+          pattern: ^arn:aws[a-z-]*:organizations::[0-9]{12}:organization/o-[a-z0-9]+$
+      placeholder: arn:aws:organizations::123456789012:organization/o-abc123def4
+      show_when:
+        public: false
+      type: string_array
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -356,17 +514,25 @@ module:
       base_path: compute/image_builder
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        ami_description: << module.input.ami_description || nil >>
         ami_name: << module.input.ami_name || nil >>
         ami_tags: << module.input.ami_tags || {} >>
         build_on_apply: << module.input.build_on_apply >>
+        build_timeout_minutes: "<< module.input.build_on_apply ? (module.input.build_timeout_minutes || nil) : nil >>"
         components: << module.input.components || [] >>
+        create_pipeline_execution_policy: << module.input.create_pipeline_execution_policy >>
         description: << module.input.description || nil >>
         distribution_regions: << module.input.distribution_regions || [] >>
+        enhanced_image_metadata_enabled: << module.input.enhanced_image_metadata_enabled >>
         image_tests_enabled: << module.input.image_tests_enabled >>
+        image_tests_timeout_minutes: << module.input.image_tests_timeout_minutes >>
         instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
         instance_policy_json: << module.input.instance_policy_json || nil >>
         instance_types: << module.input.instance_types >>
         launch_account_ids: "<< module.input.public ? [] : (module.input.launch_account_ids || []) >>"
+        launch_organization_arns: "<< module.input.public ? [] : (module.input.launch_organization_arns || []) >>"
+        log_bucket: << module.input.log_bucket || nil >>
+        log_prefix: << module.input.log_prefix >>
         manage_image_block_public_access: << module.input.manage_image_block_public_access >>
         name: << module.input.name >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
@@ -374,11 +540,18 @@ module:
           << module.input.parent_image_source == "lookup" ?
           {"owners": module.input.parent_image_owners, "name": module.input.parent_image_name,
           "architecture": module.input.parent_image_architecture} : nil >>
+        pipeline_enabled: << module.input.pipeline_enabled >>
         public: << module.input.public >>
         region: << module.input.aws_region >>
         root_volume: >-
-          << module.input.root_device_name ?
-          {"device_name": module.input.root_device_name, "size_gb": module.input.root_volume_size_gb} : nil >>
+          << module.input.root_volume_override_enabled ?
+          {"device_name": module.input.root_device_name, "size_gb": module.input.root_volume_size_gb,
+          "type": module.input.root_volume_type,
+          "iops": (module.input.root_volume_type == "gp2" ? nil : (module.input.root_volume_iops || nil)),
+          "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil),
+          "encrypted": (module.input.public ? nil : module.input.root_volume_encrypted),
+          "kms_key_id": (module.input.public || !module.input.root_volume_encrypted ?
+          nil : (module.input.root_volume_kms_key_id || nil))} : nil >>
         schedule_expression: << module.input.schedule_expression || nil >>
         schedule_start_condition: << module.input.schedule_start_condition >>
         security_group_ids: << module.input.security_group_ids || [] >>
@@ -388,6 +561,7 @@ module:
           $include: ../../partials/stack/ravion-tags.yml
         terminate_instance_on_failure: << module.input.terminate_instance_on_failure >>
         user_data: << module.input.user_data || nil >>
+        working_directory: << module.input.working_directory || nil >>
   ui:
     links: |-
       <<
@@ -403,6 +577,8 @@ module:
     Use this module to turn a manual image build into a repeatable pipeline. A recipe starts from a parent image, runs your components in order on a temporary build instance, snapshots the result as an AMI, and copies it to every region you list.
 
     The module creates the components, the recipe, the build infrastructure and its IAM role, the distribution settings, and the pipeline. It does not keep build instances around: each one exists only for the length of a build.
+
+    A pipeline builds on a schedule, on request from a pipeline step, or during a deploy that changes the recipe. The request path is what a release pipeline uses: a step starts the build, waits for the image, and hands the new AMI ID to whatever launches instances from it.
 
     ## Use cases
 
@@ -423,15 +599,73 @@ module:
 
     ## Building
 
-    The pipeline is manual unless you give it a schedule. Start a build from the Image pipeline link, or turn on Build on deploy to build whenever a deploy changes the recipe. A build commonly takes 20-60 minutes, and a deploy with Build on deploy waits for it.
+    The pipeline is manual unless you give it a schedule. A build commonly takes 20-60 minutes.
+
+    | Trigger | Turn on | When it fits |
+    | --- | --- | --- |
+    | Schedule | A cron expression under Schedule | Weekly base images, or a rebuild whenever the parent image or a wildcard-versioned component updates |
+    | Pipeline step | Allow a deploy step to start builds | A release pipeline that bakes the release into an AMI and deploys it |
+    | Deploy | Build on deploy | A recipe you edit rarely, where the deploy should produce the image it describes |
+    | Manual | Nothing | One-off builds from the Image pipeline link |
+
+    ### Building from a pipeline step
+
+    Turning on Allow a deploy step to start builds creates an IAM policy that starts this pipeline and reads the images it produces, and nothing else. Its ARN is the module's `pipeline_execution_policy_arn` output. A `custom` step attaches that ARN under `permissions`, starts the pipeline, polls until the image is available, and publishes the AMI ID for later steps:
+
+    ```yaml
+    - id: build_ami
+      name: Build AMI
+      type: custom
+      timeout: 7200
+      infrastructure:
+        type: ec2
+        instance_size: small
+        aws_account_id: my-aws-account
+        region: us-west-2
+        permissions:
+          attach:
+            - arn:aws:iam::123456789012:policy/app-host-start-image-pipeline
+      environment_variables:
+        AWS_REGION: us-west-2
+        PIPELINE_ARN: arn:aws:imagebuilder:us-west-2:123456789012:image-pipeline/app-host
+      outputs:
+        - ami_id
+      commands:
+        - |
+          set -euo pipefail
+
+          BUILD_ARN=$(aws imagebuilder start-image-pipeline-execution \
+            --image-pipeline-arn "$PIPELINE_ARN" \
+            --query imageBuildVersionArn --output text)
+
+          while true; do
+            STATE=$(aws imagebuilder list-image-pipeline-images \
+              --image-pipeline-arn "$PIPELINE_ARN" \
+              --query "imageSummaryList[?arn=='$BUILD_ARN'].state.status | [0]" --output text)
+            case "$STATE" in
+              AVAILABLE) break ;;
+              FAILED|CANCELLED) echo "Image build $STATE" >&2; exit 1 ;;
+            esac
+            sleep 60
+          done
+
+          AMI_ID=$(aws imagebuilder list-image-pipeline-images \
+            --image-pipeline-arn "$PIPELINE_ARN" \
+            --query "imageSummaryList[?arn=='$BUILD_ARN'].outputResources.amis[0].image | [0]" --output text)
+          echo "ami_id=$AMI_ID" >> "$RAVION_OUTPUT"
+    ```
+
+    Later steps read the new image as `<< steps.build_ami.output.ami_id >>`. Give the step a timeout longer than a build takes, and pass the pipeline ARN as a pipeline input to reuse the step across environments.
 
     Image Builder drives the build instance through the Systems Manager agent. On a parent image that does not ship the agent, install it in Build instance user data.
 
     ## Sharing
 
-    Images are private by default. Share them with listed accounts, or turn on Public image to let any AWS account launch them.
+    Images are private by default. Share them with listed accounts or AWS Organizations, or turn on Public image to let any AWS account launch them.
 
-    New AWS accounts block public AMI sharing in every region. Public image turns that block off in the build region and every additional region; it is an account-wide setting that covers every image the account owns there. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in those regions.
+    New AWS accounts block public AMI sharing in every region. Public image turns that block off in the build region and every additional region; it is an account-wide setting that covers every image the account owns there.
+
+    A public image cannot be backed by an encrypted snapshot, and a build that produces one fails an hour in. Public image is therefore checked during the deploy: the parent image must be an AMI this account can describe whose snapshots are unencrypted, and EBS encryption by default must be off in every region the image lands in. A deploy that fails these checks names what to change.
 
     AMI tags are visible only to the account that owns the image, even when the image is public.
 
@@ -443,19 +677,27 @@ module:
     | Region | Yes | None | Region the image is built in. |
     | Pipeline name | Yes | Project, environment, and module given IDs | Prefix of every resource created. |
     | Build on deploy | No | Off | Build during deploys that change the recipe. |
+    | Build timeout | No | Image test timeout plus an hour | How long a deploy waits for the build it starts. |
+    | Allow a deploy step to start builds | No | Off | Creates an IAM policy a deploy step's role can use to start this pipeline. |
     | Schedule | No | Manual | Image Builder cron expression. |
+    | Pipeline enabled | No | On | A disabled pipeline keeps its configuration and ignores its schedule. |
+    | Collect image metadata | No | On | Package list and other metadata from each build. |
     | Parent image | Yes | None | A specific image, or the newest AMI matching an owner and name pattern. |
     | Components | Yes | None | Inline documents or component ARNs, in run order. |
     | Build instance user data | No | None | Replaces the Systems Manager agent install. |
-    | Root device name and size | No | Parent image's volume | The snapshot size is the smallest root volume an instance can launch with. |
+    | Build working directory | No | Image Builder default | Directory the build and test workflows run in. |
+    | Custom root volume | No | Off | Gives the image its own root volume: device name, size, type, IOPS, throughput, and encryption. |
     | Instance types | Yes | `m7i.large` | Must match the parent image's architecture. |
     | Subnet and security groups | No | Default VPC | The build needs outbound internet or VPC endpoints. |
     | Build instance policies | No | Image Builder minimum | What the components need to reach. |
     | Run image tests | No | On | Needs the Systems Manager agent to start on boot. |
-    | AMI name and tags | No | Pipeline name and build date | Applied in every region. |
+    | Image test timeout | No | 60 minutes | How long the test phase may run. |
+    | Build log bucket and prefix | No | CloudWatch only | Build logs in S3, with write access scoped to the prefix. |
+    | AMI name, description, and tags | No | Pipeline name and build date | Applied in every region. |
     | Additional regions | No | None | Regions the image is copied to. |
     | Public image | No | Off | Any AWS account can launch the image. |
     | Shared account IDs | No | None | Accounts granted launch permission. |
+    | Shared organization ARNs | No | None | Organizations whose accounts can launch the image. |
 
     ## Design decisions
 
@@ -463,7 +705,9 @@ module:
 
     The build instance requires IMDSv2 and is terminated after a failed build unless you keep it for debugging.
 
-    Private images default to an encrypted root snapshot. Settings such as a customer-managed KMS key, volume performance, build logs in S3, organization-wide sharing, and the test timeout remain available through Advanced Terraform variables.
+    Private images default to an encrypted root snapshot, using the account's default EBS key unless you name a KMS key.
+
+    The root volume settings describe the image, not one instance. The size becomes the image's snapshot size, so every instance launched from the image carries at least that much root storage.
 
     ## Learn more
 

@@ -53,6 +53,6 @@ resource "aws_imagebuilder_image" "this" {
   tags = local.tags
 
   timeouts {
-    create = "120m"
+    create = "${local.build_timeout_minutes}m"
   }
 }
