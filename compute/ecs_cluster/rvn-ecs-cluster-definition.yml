@@ -80,6 +80,8 @@ module:
       type: section
     - description: Minimum number of EC2 host instances in the Auto Scaling Group (not ECS tasks). To speed up deployments and autoscaling, keep enough spare instance capacity for all ECS services on this cluster; as a starting point, size for about 2x the total desired tasks across those services.
       id: ec2_min_instances
+      moved_from:
+        - ec2_min_size
       label: Minimum EC2 instances
       min: 0
       placeholder: "0"
@@ -89,6 +91,8 @@ module:
       type: number
     - description: Maximum number of EC2 host instances in the Auto Scaling Group (not ECS tasks). Must be large enough to hold 2x the total maximum tasks across all ECS services on this cluster, otherwise deployments can fail.
       id: ec2_max_instances
+      moved_from:
+        - ec2_max_size
       label: Maximum EC2 instances
       min: 1
       placeholder: "10"
