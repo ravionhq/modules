@@ -5,7 +5,7 @@ definition:
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 1.1.3
-  description: Fix the plan of a workload with IAM inline policies, which failed on OpenTofu 1.11 with "Inconsistent conditional result types" before any policy was attached. No change for workloads without inline policies.
+  description: Replace the Public web service toggle with a Load balancer choice of public ALB, private ALB or Kubernetes service. Kubernetes service creates no target group or listener rule, so the workload is reachable only through its in-cluster Service. Add an optional target group name for a workload whose derived name is already taken in the VPC. Existing instances must set load_balancer (public or private) in place of public_alb_routing_enabled when upgrading.
 module:
   inputs:
     - id: section_cluster
