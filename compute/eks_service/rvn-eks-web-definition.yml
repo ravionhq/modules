@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.1.3
-  description: Replace the Public web service toggle with a Load balancer choice of public ALB, private ALB or Kubernetes service. Kubernetes service creates no target group or listener rule, so the workload is reachable only through its in-cluster Service. Add an optional target group name for a workload whose derived name is already taken in the VPC. Existing instances must set load_balancer (public or private) in place of public_alb_routing_enabled when upgrading.
+  version: 1.2.0
+  description: Zero-downtime deploys and disruptions by default. Pods now wait 10 seconds before SIGTERM so the load balancer stops routing to them first, count as ready only once healthy in the target group so a rolling update never retires a pod before its replacement serves traffic, are covered by a PodDisruptionBudget so node drains evict them one at a time, and spread across nodes as well as zones. The default minimum is two pods, since with one any pod stop is an outage. A configurable shutdown grace period lets services that hold long-lived connections such as WebSockets drain them. Existing instances pick up these defaults on upgrade; set the inputs explicitly to keep the previous behaviour, and note that instances left on the default pod count go from one pod to two.
 module:
   inputs:
     - id: section_cluster
@@ -202,6 +202,15 @@ module:
       show_when:
         load_balancer:
           not: kubernetes_service
+    - id: load_balancer_readiness_gate_enabled
+      label: Wait for load balancer health
+      type: boolean
+      description: Count a pod as ready only once it is healthy in the load balancer target group, so a rolling update keeps old pods serving until their replacements receive traffic. Deploys take longer by the health check's healthy-threshold time.
+      collapsible: true
+      default: true
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_deregistration_delay
       label: Deregistration delay (secs)
       type: number
@@ -298,7 +307,7 @@ module:
       min: 1
       show_when:
         autoscaling_enabled: true
-      default: 1
+      default: 2
     - id: autoscaling_max_replicas
       label: Maximum pods
       type: number
@@ -334,7 +343,39 @@ module:
       min: 0
       show_when:
         autoscaling_enabled: false
+      default: 2
+    - id: termination_grace_period_seconds
+      label: Shutdown grace period (secs)
+      type: number
+      description: Seconds a pod has to finish in-flight requests after SIGTERM before it is killed, including the pre-stop delay below. Raise this for services that move long-lived connections such as WebSockets to other pods on shutdown.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 30
+    - id: pre_stop_sleep_seconds
+      label: Pre-stop delay (secs)
+      type: number
+      description: Seconds a stopping pod keeps running before it receives SIGTERM, so the load balancer stops sending it new connections first. 0 disables the delay. Must be less than the shutdown grace period. Skipped on Kubernetes older than 1.30, which lacks the preStop sleep action.
+      collapsible: true
+      max: 3599
+      min: 0
+      default: 10
+    - id: pod_disruption_budget_enabled
+      label: Disruption budget
+      type: boolean
+      description: Limit how many pods node drains, consolidation and cluster upgrades may evict at once. Takes effect only while the minimum pod count is above Minimum available pods, since a budget that allows no evictions would block every drain.
+      collapsible: true
+      default: true
+    - id: pod_disruption_budget_min_available
+      label: Minimum available pods
+      type: number
+      description: Pods that must stay running during a node drain or other voluntary disruption.
+      collapsible: true
+      max: 1000
+      min: 1
       default: 1
+      show_when:
+        pod_disruption_budget_enabled: true
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
@@ -433,13 +474,22 @@ module:
                 targetGroupBinding:
                   targetType: ip
                   vpcId: << module.input.vpc_id >>
+                  # Hidden (nil) for a Kubernetes-service-only workload, which
+                  # renders no TargetGroupBinding and so no gate either.
+                  podReadinessGate: '<< module.input.load_balancer_readiness_gate_enabled != nil ? module.input.load_balancer_readiness_gate_enabled : true >>'
+                terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                lifecycle:
+                  preStopSleepSeconds: '<< module.input.pre_stop_sleep_seconds != nil ? module.input.pre_stop_sleep_seconds : 10 >>'
+                podDisruptionBudget:
+                  enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
+                  minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
                 replicaCount: >-
                   << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
-                  module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
-                  module.input.replica_count : 1) >>
+                  module.input.autoscaling_min_replicas : 2) : (module.input.replica_count != nil ?
+                  module.input.replica_count : 2) >>
                 autoscaling:
                   enabled: << module.input.autoscaling_enabled >>
-                  minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 1 >>'
+                  minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 2 >>'
                   maxReplicas: '<< module.input.autoscaling_max_replicas != nil ? module.input.autoscaling_max_replicas : 3 >>'
                   targetCPUUtilizationPercentage: '<< module.input.autoscaling_cpu_target != nil ? module.input.autoscaling_cpu_target : 70 >>'
                   targetMemoryUtilizationPercentage: << module.input.autoscaling_memory_target >>
@@ -671,6 +721,7 @@ module:
 
     | Traffic behavior | Default | Description |
     | ---------------- | ------- | ----------- |
+    | Wait for load balancer health | true | Pods count as ready only once healthy in the target group (see Graceful shutdown) |
     | Deregistration delay (secs) | 300 | Drain window for a pod that is shutting down |
     | Slow start duration (secs) | 0 | Ramp window for newly registered pods; 0 disables, otherwise 30-900 |
     | Sticky sessions | false | Load balancer cookie stickiness to the same pod |
@@ -761,6 +812,17 @@ module:
 
     Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with the chart's RollingUpdate strategy, which surges 25% and keeps zero pods unavailable.
 
+    ## Graceful shutdown
+
+    A pod stops during every rollout, scale-in and node drain. The defaults make that invisible to clients of an ordinary HTTP service: at least two pods, spread across zones and nodes; a 10-second pre-stop delay; a load balancer readiness gate; a disruption budget; and a 30-second grace period. Services that hold long-lived connections, such as WebSockets or streaming responses, usually need a longer grace period to hand clients over to other pods. Four inputs control how a stop happens:
+
+    - **Shutdown grace period** sets how long a pod has after SIGTERM before it is killed. Size it to the longest drain the application performs.
+    - **Pre-stop delay** keeps the container running and serving for a few seconds before SIGTERM. Removing a pod from the load balancer target group happens asynchronously; without a delay, the application can start shutting down while the load balancer still routes new connections to it. The default is 10 seconds. It uses the Kubernetes native preStop sleep action, so the image needs no shell; on Kubernetes older than 1.30, which lacks the action, no hook is rendered. The delay counts against the grace period and must be shorter than it, or the deploy fails at render time.
+    - **Wait for load balancer health** adds the AWS Load Balancer Controller's pod readiness gate, one per target group binding, so a new pod counts as ready only once the target group reports it healthy. A rolling update then keeps old pods serving until their replacements actually receive traffic. The gate is declared on the pod itself, so the namespace needs no injection label; the controller the EKS Add-ons module installs sets the condition. On by default. Deploys take longer by the health check's healthy-threshold time (10 seconds with the default health check), and a pod that never passes the load balancer health check never becomes ready, so the deploy rolls back instead of shipping a pod the load balancer considers unhealthy.
+    - **Disruption budget** renders a PodDisruptionBudget that keeps at least **Minimum available pods** running while nodes are drained, consolidated or upgraded. It is skipped while the minimum pod count (Minimum pods with autoscaling, Pods without) is not above that number, because such a budget allows no evictions and would block every drain. Pods that are not ready can always be evicted, so a crash-looping pod never holds a node. On by default. The budget does not affect rolling updates.
+
+    **Deregistration delay** still applies once the pod leaves the target group: it is how long the load balancer keeps in-flight requests to that pod open. Connections still open when the pod exits are closed regardless, so the effective drain window is the shorter of the deregistration delay and the shutdown grace period.
+
     Deployments collapse: if several are queued, only the newest runs.
 
     ## Metrics and logs
@@ -832,11 +894,15 @@ module:
     | Memory request | Yes | 256Mi | Memory reserved per pod |
     | Memory limit | Yes | 512Mi | Memory ceiling per pod |
     | Autoscaling | No | true | Scale pods with a HorizontalPodAutoscaler |
-    | Minimum pods | No | 1 | Lower bound when autoscaling |
+    | Minimum pods | No | 2 | Lower bound when autoscaling; two keeps a pod stop from being an outage |
     | Maximum pods | No | 3 | Upper bound when autoscaling |
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
-    | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
+    | Pods | No | 2 | Fixed pod count when autoscaling is disabled |
+    | Shutdown grace period (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
+    | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |
+    | Disruption budget | No | true | Render a PodDisruptionBudget limiting voluntary evictions |
+    | Minimum available pods | No | 1 | Pods kept running during a node drain when the disruption budget is on |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
     | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |

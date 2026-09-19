@@ -45,6 +45,20 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- /*
+      One readiness gate per TargetGroupBinding. The AWS Load Balancer
+      Controller sets the matching target-health condition once the pod is
+      healthy in that target group, so a rolling update does not retire an old
+      pod before its replacement is actually serving load balancer traffic. The
+      controller honours a gate declared in the pod spec directly, so this does
+      not depend on the namespace carrying the controller's injection label.
+      */}}
+      {{- if and .Values.targetGroupBinding.podReadinessGate .Values.targetGroupArns }}
+      readinessGates:
+        {{- range $index, $arn := .Values.targetGroupArns }}
+        - conditionType: {{ printf "target-health.elbv2.k8s.aws/%s" (include "rvn-eks-web.targetGroupBindingName" (list $ $index)) }}
+        {{- end }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: {{ include "rvn-eks-web.image" . }}
@@ -61,6 +75,27 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+          {{- /*
+          preStop sleep: keeps the container running, still serving, for a few
+          seconds after the pod is marked Terminating, so the load balancer
+          controller can deregister it before the application receives SIGTERM
+          and no new connections arrive while it drains. Uses the native sleep
+          action, so the image needs no shell or sleep binary. The sleep counts
+          against terminationGracePeriodSeconds.
+          */}}
+          {{- /* Skipped, not failed, before 1.30: the sleep action does not
+          exist there, and a default must never break a supported cluster. */}}
+          {{- if semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
+          {{- with .Values.lifecycle.preStopSleepSeconds }}
+          {{- if ge (int .) (int $.Values.terminationGracePeriodSeconds) }}
+          {{- fail (printf "lifecycle.preStopSleepSeconds (%d) must be less than terminationGracePeriodSeconds (%d), or the application never gets time to shut down after SIGTERM" (int .) (int $.Values.terminationGracePeriodSeconds)) }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ . }}
+          {{- end }}
+          {{- end }}
           {{- with (include "rvn-eks-web.env" . | trim) }}
           env:
             {{- . | nindent 12 }}
@@ -135,4 +170,12 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "rvn-eks-web.selectorLabels" . | nindent 14 }}
+        {{- if .Values.topologySpread.nodeSpread }}
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "rvn-eks-web.selectorLabels" . | nindent 14 }}
+        {{- end }}
       {{- end }}

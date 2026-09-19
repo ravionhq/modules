@@ -158,8 +158,8 @@ test_rvn_eks_web() {
     "ClusterIP" "$(q "${default}" '.[] | select(.kind == "Service") | .spec.type')"
   assert_eq "web: Service targets the named container port" \
     "http" "$(q "${default}" '.[] | select(.kind == "Service") | .spec.ports[0].targetPort')"
-  assert_eq "web: replicas come from replicaCount when autoscaling is off" \
-    "1" "$(q "${default}" "${dep} | .spec.replicas")"
+  assert_eq "web: two replicas by default, so one pod stopping is never an outage" \
+    "2" "$(q "${default}" "${dep} | .spec.replicas")"
 
   # --- ServiceAccount / Pod Identity ---------------------------------------
   assert_eq "web: ServiceAccount name defaults to the fullname" \
@@ -223,6 +223,9 @@ test_rvn_eks_web() {
   assert_eq "web: default zone spread selects this chart's pods" \
     "rvn-eks-web test-release" \
     "$(q "${default}" "${tsc}[0].labelSelector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  assert_eq "web: default node spread keeps replicas off a single node" \
+    "1 kubernetes.io/hostname ScheduleAnyway" \
+    "$(q "${default}" "${tsc}[1] | [.maxSkew, .topologyKey, .whenUnsatisfiable] | join(\" \")")"
   assert_eq "web: explicit topologySpreadConstraints replace the default" \
     "1 kubernetes.io/hostname" \
     "$(q "${full}" "${tsc} | [length, .[0].topologyKey] | join(\" \")")"
@@ -268,6 +271,55 @@ test_rvn_eks_web() {
     "10.0.0.0/20,10.0.16.0/20" "$(q "${full}" "${np} | [.spec.ingress[0].from[] | select(.ipBlock) | .ipBlock.cidr] | join(\",\")")"
   assert_eq "web: the allow-list opens only the container port" \
     "3000" "$(q "${full}" "${np} | .spec.ingress[0].ports[0].port")"
+
+  # --- graceful shutdown: grace period, preStop sleep, readiness gates, PDB --
+  local pdb='.[] | select(.kind == "PodDisruptionBudget")'
+  assert_eq "web: grace period defaults to 30s" \
+    "30" "$(q "${default}" "${dep} | .spec.template.spec.terminationGracePeriodSeconds")"
+  assert_eq "web: grace period comes from values" \
+    "120" "$(q "${full}" "${dep} | .spec.template.spec.terminationGracePeriodSeconds")"
+  assert_eq "web: a 10s preStop sleep by default" \
+    "10" "$(q "${default}" "${ctr} | .lifecycle.preStop.sleep.seconds")"
+  assert_eq "web: preStopSleepSeconds 0 renders no hook" \
+    "" "$(q "$(render "${chart}" no-prestop --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set lifecycle.preStopSleepSeconds=0)" "${ctr} | .lifecycle")"
+  assert_eq "web: preStopSleepSeconds renders the native preStop sleep action" \
+    "15" "$(q "${full}" "${ctr} | .lifecycle.preStop.sleep.seconds")"
+  assert_eq "web: no readiness gates without a target group" \
+    "" "$(q "${default}" "${dep} | .spec.template.spec.readinessGates")"
+  assert_eq "web: one load balancer readiness gate per TargetGroupBinding" \
+    "target-health.elbv2.k8s.aws/test-release-rvn-eks-web-0 target-health.elbv2.k8s.aws/test-release-rvn-eks-web-1" \
+    "$(q "${full}" "[${dep} | .spec.template.spec.readinessGates[].conditionType] | join(\" \")")"
+  assert_eq "web: readiness gates name the rendered TargetGroupBindings" \
+    "test-release-rvn-eks-web-0 test-release-rvn-eks-web-1" \
+    "$(q "${full}" "[.[] | select(.kind == \"TargetGroupBinding\") | .metadata.name] | join(\" \")")"
+  assert_eq "web: a PodDisruptionBudget by default" \
+    "1" "$(count "${default}" PodDisruptionBudget)"
+  assert_eq "web: PodDisruptionBudget rendered when enabled above the replica floor" \
+    "1" "$(count "${full}" PodDisruptionBudget)"
+  assert_eq "web: PodDisruptionBudget keeps minAvailable and lets unhealthy pods go" \
+    "1 AlwaysAllow" "$(q "${full}" "${pdb} | [.spec.minAvailable, .spec.unhealthyPodEvictionPolicy] | join(\" \")")"
+  assert_eq "web: PodDisruptionBudget selects this release's pods" \
+    "rvn-eks-web test-release" \
+    "$(q "${full}" "${pdb} | .spec.selector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  local single
+  single="$(render "${chart}" pdb-single --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml")"
+  assert_eq "web: PodDisruptionBudget skipped when it would block every drain" \
+    "0" "$(count "${single}" PodDisruptionBudget)"
+  assert_eq "web: a load balancer readiness gate by default when a target group is bound" \
+    "target-health.elbv2.k8s.aws/test-release-rvn-eks-web-0" \
+    "$(q "${single}" "[${dep} | .spec.template.spec.readinessGates[].conditionType] | join(\" \")")"
+  assert_eq "web: podReadinessGate false renders no gate" \
+    "" "$(q "$(render "${chart}" no-gate --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml" --set targetGroupBinding.podReadinessGate=false)" "${dep} | .spec.template.spec.readinessGates")"
+  if helm template test-release "$(chart_path "${chart}")" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" \
+    --set lifecycle.preStopSleepSeconds=30 >/dev/null 2>"${WORK_DIR}/prestop.err"; then
+    fail "web: preStop sleep >= grace period fails the render" "render error" "render succeeded"
+  else
+    assert_eq "web: preStop sleep >= grace period fails the render" \
+      "1" "$(grep -c 'must be less than terminationGracePeriodSeconds' "${WORK_DIR}/prestop.err")"
+  fi
+  assert_eq "web: preStop sleep is skipped on Kubernetes < 1.30, which lacks the sleep action" \
+    "" "$(q "$(render "${chart}" old-kube --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --kube-version 1.29.0)" "${ctr} | .lifecycle")"
 
   local deny_all
   deny_all="$(render "${chart}" deny-all --values "${CHARTS_DIR}/${chart}/ci/network-policy-deny-all-values.yaml")"
