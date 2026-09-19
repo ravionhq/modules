@@ -1,0 +1,68 @@
+################################################################################
+# Image Recipe
+################################################################################
+
+resource "aws_imagebuilder_image_recipe" "this" {
+  region            = local.region
+  name              = "${var.name}-${local.recipe_hash}"
+  description       = var.description
+  version           = var.recipe_version
+  parent_image      = local.parent_image
+  working_directory = var.working_directory
+  user_data_base64  = local.user_data == null ? null : base64encode(local.user_data)
+
+  dynamic "component" {
+    for_each = local.components
+
+    content {
+      component_arn = component.value.data != null ? aws_imagebuilder_component.this[component.value.name].arn : component.value.arn
+
+      dynamic "parameter" {
+        for_each = component.value.parameters
+
+        content {
+          name  = parameter.key
+          value = parameter.value
+        }
+      }
+    }
+  }
+
+  dynamic "block_device_mapping" {
+    for_each = var.root_volume == null ? [] : [var.root_volume]
+
+    content {
+      device_name = block_device_mapping.value.device_name
+
+      ebs {
+        delete_on_termination = true
+        volume_size           = block_device_mapping.value.size_gb
+        volume_type           = block_device_mapping.value.type
+        iops                  = block_device_mapping.value.iops
+        throughput            = block_device_mapping.value.throughput
+        encrypted             = local.root_volume_encrypted
+        kms_key_id            = block_device_mapping.value.kms_key_id
+      }
+    }
+  }
+
+  systems_manager_agent {
+    uninstall_after_build = var.ssm_agent_uninstall_after_build
+  }
+
+  tags = local.tags
+
+  lifecycle {
+    create_before_destroy = true
+
+    precondition {
+      condition     = local.parent_image != null
+      error_message = "Set parent_image or parent_image_lookup."
+    }
+
+    precondition {
+      condition     = !(var.public && coalesce(local.root_volume_encrypted, false))
+      error_message = "A public image cannot be backed by an encrypted snapshot. Leave root_volume.encrypted unset or false when public is true."
+    }
+  }
+}

@@ -24,6 +24,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `eks`             | Composite EKS stack: cluster, system node group, CoreDNS, and optional Fargate profiles; Pod Identity defaults, opt-in IRSA/VPC controller permissions and node SSM access, and pull-only node ECR access (includes `rvn-eks-cluster` module definition) | Unreleased |
 | `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with automatic image/chart selection, production-registry Ravion provider, durable executor Jobs, two-replica HA placed like Karpenter and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, shared observability, Karpenter with opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, and `rvn-eks-cron` module definitions) | Unreleased |
+| `compute/`    | `image_builder`   | EC2 Image Builder pipeline: inline or existing components, content-hashed immutable recipes, multi-region distribution, and private, account-shared, or public AMIs (includes `rvn-aws-image-builder` module definition) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions                                                   | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
@@ -63,6 +64,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.0.1 | `networking/alb/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
+| `rvn-aws-image-builder` | EC2 Image Builder | v0.1.0 | `compute/image_builder/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
 | `rvn-aws-static` | Static Hosting | v1.1.2 | `hosting/static_site/` |
