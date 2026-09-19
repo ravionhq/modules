@@ -40,9 +40,6 @@ locals {
   # Chart 0.5.0+ allows self-update alongside execution Jobs: the elected
   # coordinator updates itself and pins its executor Jobs to the image it runs.
   ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled
-  # Full management shares one mutation lane; scoped execution can use four
-  # independent namespace lanes. This bounds admission, not provisioned nodes.
-  ravion_operator_execution_max_concurrent_effective = var.ravion_operator_execution_max_concurrent != null ? var.ravion_operator_execution_max_concurrent : (var.ravion_operator_full_management_enabled ? 1 : 4)
 
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
@@ -243,12 +240,14 @@ resource "helm_release" "ravion_operator" {
           enabled    = var.ravion_operator_deploy_enabled
           namespaces = var.ravion_operator_deploy_namespaces
         }
-        executionJobs = {
+        # maxConcurrent bounds admission, not provisioned nodes. The lane scope
+        # is passed only when overridden, so the chart's default applies.
+        executionJobs = merge({
           enabled        = var.ravion_operator_execution_jobs_enabled
           image          = var.ravion_operator_execution_image
-          maxConcurrent  = local.ravion_operator_execution_max_concurrent_effective
+          maxConcurrent  = var.ravion_operator_execution_max_concurrent
           fullManagement = var.ravion_operator_full_management_enabled
-        }
+        }, var.ravion_operator_execution_lane_scope == null ? {} : { laneScope = var.ravion_operator_execution_lane_scope })
         # Placed the way Karpenter places itself (see the chart's coordinator
         # values): a fixed count on nodes Karpenter does not manage, so a
         # coordinator can never keep an autoscaled node alive.
@@ -314,8 +313,8 @@ resource "helm_release" "ravion_operator" {
       error_message = "A single HA coordinator on distinct nodes leaves no surviving replica to revert a failed self-update. Set ravion_operator_coordinator_replicas >= 2, ravion_operator_coordinator_distinct_nodes_enabled = false, or ravion_operator_self_update_enabled = false."
     }
     precondition {
-      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && local.ravion_operator_execution_max_concurrent_effective == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
-      error_message = "Full management requires executor Jobs, max concurrency 1, and empty observation/deployment namespace lists."
+      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
+      error_message = "Full management requires executor Jobs and empty observation/deployment namespace lists."
     }
   }
 }

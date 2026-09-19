@@ -874,12 +874,24 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "Installation-wide retained executor capacity (1-64), not per coordinator. Null selects 1 for full management's shared mutation lane or 4 for independent namespace lanes. Changing established capacity requires draining executions and migrating the retained capacity Lease. Full management requires 1."
+  description = "How many releases the Operator deploys at once, installation-wide (1-64). Counts executor Jobs that outlive their coordinator. Raising it applies at once; lowering it applies once running deploys fit."
+  default     = 6
+  nullable    = false
+
+  validation {
+    condition     = var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent
+    error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
+  }
+}
+
+variable "ravion_operator_execution_lane_scope" {
+  type        = string
+  description = "What the Operator serializes deploys on. Null uses the chart default, release: different releases deploy in parallel, one version of each at a time. namespace deploys one release per namespace (per cluster under full management) at a time."
   default     = null
 
   validation {
-    condition     = var.ravion_operator_execution_max_concurrent == null ? true : (var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent)
-    error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
+    condition     = var.ravion_operator_execution_lane_scope == null ? true : contains(["namespace", "release"], var.ravion_operator_execution_lane_scope)
+    error_message = "The ravion_operator_execution_lane_scope must be namespace or release."
   }
 }
 

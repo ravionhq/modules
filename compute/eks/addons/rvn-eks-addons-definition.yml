@@ -4,7 +4,7 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.3
+  version: 0.10.0
   description: >-
     Replace the load balancer name prefix with a name slug, like every other module. The slug
     names everything the add-ons create: the shared load balancers and their security groups,
@@ -104,6 +104,16 @@ module:
       moved_from:
         - beacon_enabled
       type: boolean
+    - collapsible: true
+      description: How many releases Ravion EKS Management deploys at once across the cluster. Different releases deploy in parallel; two versions of the same release never do.
+      id: ravion_operator_execution_max_concurrent
+      label: Parallel deploys
+      max: 64
+      min: 1
+      placeholder: "6"
+      show_when:
+        ravion_operator_enabled: true
+      type: number
     - description: Shared Application Load Balancers for HTTP and HTTPS workloads. EKS Web services attach through TargetGroupBinding.
       id: section_alb
       label: Application load balancers
@@ -1129,9 +1139,10 @@ module:
         # which is only the floor a fresh install starts from: the control plane
         # rolls the agent forward from there and the chart preserves the running
         # image on later applies.
-        ravion_operator_chart_version: 0.5.1
+        ravion_operator_chart_version: 0.5.6
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
+        ravion_operator_execution_max_concurrent: << module.input.ravion_operator_execution_max_concurrent || 6 >>
         ravion_operator_coordinator_enabled: true
         ravion_operator_project_id: << project.id >>
         ravion_operator_environment_id: << environment.id >>
@@ -1310,7 +1321,7 @@ module:
 
     Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Nodes still need free resources to schedule the pods. Replica count, placement and executor capacity can be overridden through **Advanced Terraform variables**.
 
-    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It uses a single retained mutation lane, so only one cluster mutation runs at a time. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` through **Advanced Terraform variables**. Scoped Jobs default to four installation-wide slots for independent namespaces; Kubernetes schedules them against available resources. Drain existing ownership before changing scope or retained capacity. Existing form-level scope, image and HA choices are replaced by these managed defaults; preserve custom settings through advanced overrides before upgrading.
+    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Different releases deploy in parallel, up to **Parallel deploys** (default 6) at once; two versions of the same release never do, and management commands wait for running deploys. To deploy one release at a time per namespace (per cluster under full management), set `ravion_operator_execution_lane_scope=namespace` through **Advanced Terraform variables**. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` the same way. Drain existing ownership before changing management scope. Existing form-level scope, image and HA choices are replaced by these managed defaults; preserve custom settings through advanced overrides before upgrading.
 
     Web, worker and cron modules keep their existing Helm deployment definitions. Ravion selects Operator by the cluster ARN; the addons module passes its stable enrollment ID to the chart as the installation identity.
 

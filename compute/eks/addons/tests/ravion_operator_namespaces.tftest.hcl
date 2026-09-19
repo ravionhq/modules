@@ -171,13 +171,13 @@ run "operator_ha_full_management" {
       !yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == var.ravion_operator_execution_image &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.fullManagement &&
-      yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 1 &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 6 &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 2 &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).coordinator), "adaptive") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
       length(helm_release.ravion_operator_namespaces) == 0
     )
-    error_message = "Full management must wire one retained lane, two fixed Karpenter-placed coordinators, and the bundled image with self-update disabled in both enrollment and Helm."
+    error_message = "Full management must wire six parallel deploys, two fixed Karpenter-placed coordinators, and the bundled image with self-update disabled in both enrollment and Helm."
   }
 }
 
@@ -231,15 +231,15 @@ run "single_replica_on_distinct_nodes_needs_an_observer" {
   expect_failures = [helm_release.ravion_operator]
 }
 
-run "jobs_use_bundled_image_and_scoped_capacity_default" {
+run "jobs_use_bundled_image_and_capacity_default" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled = true
     ravion_operator_chart_version          = "0.4.1-ci.312e8f5638dc"
   }
   assert {
-    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == "" && yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 4
-    error_message = "Published charts supply the image digest and scoped execution defaults to four retained slots."
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == "" && yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 6
+    error_message = "Published charts supply the image digest and execution defaults to six parallel deploys."
   }
 }
 
@@ -279,7 +279,7 @@ run "full_management_rejects_namespace_scope" {
   expect_failures = [helm_release.ravion_operator]
 }
 
-run "full_management_rejects_parallel_lanes" {
+run "full_management_allows_parallel_deploys" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled   = true
@@ -288,5 +288,8 @@ run "full_management_rejects_parallel_lanes" {
     ravion_operator_deploy_namespaces        = []
     ravion_operator_execution_max_concurrent = 2
   }
-  expect_failures = [helm_release.ravion_operator]
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 2
+    error_message = "Full management deploys releases in parallel up to the configured capacity."
+  }
 }
