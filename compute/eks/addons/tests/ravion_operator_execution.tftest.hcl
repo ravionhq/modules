@@ -51,33 +51,29 @@ variables {
   ravion_operator_execution_jobs_enabled = true
 }
 
-run "full_management_runs_six_releases_at_once" {
+run "scheduling_is_left_to_the_control_plane" {
   command = plan
   variables {
     ravion_operator_full_management_enabled = true
   }
   assert {
-    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 6
-    error_message = "Executor capacity defaults to six, under full management too."
-  }
-  assert {
-    condition     = !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs), "laneScope")
-    error_message = "The lane scope is left to the chart's default unless overridden."
+    condition     = length(setintersection(keys(yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs), ["maxConcurrent", "laneScope", "settingsSource"])) == 0
+    error_message = "With nothing set, the module pins nothing: the control plane decides capacity and lanes."
   }
 }
 
-run "scoped_execution_runs_six_releases_at_once" {
+run "scoped_execution_is_left_to_the_control_plane" {
   command = plan
   variables {
     ravion_operator_deploy_namespaces = ["rvn-app"]
   }
   assert {
-    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 6
-    error_message = "Executor capacity defaults to six."
+    condition     = !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs), "maxConcurrent")
+    error_message = "Scoped installs leave capacity to the control plane too."
   }
 }
 
-run "overrides_reach_the_chart" {
+run "a_set_value_pins_scheduling_locally" {
   command = plan
   variables {
     ravion_operator_full_management_enabled  = true
@@ -91,6 +87,10 @@ run "overrides_reach_the_chart" {
   assert {
     condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.laneScope == "namespace"
     error_message = "An explicit lane scope reaches the chart."
+  }
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.settingsSource == "local"
+    error_message = "An explicit value pins scheduling against control-plane changes."
   }
 }
 

@@ -874,19 +874,18 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "How many releases the Operator deploys at once, installation-wide (1-64). Counts executor Jobs that outlive their coordinator. Raising it applies at once; lowering it applies once running deploys fit."
-  default     = 6
-  nullable    = false
+  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 6). Setting this or ravion_operator_execution_lane_scope pins both against control-plane changes."
+  default     = null
 
   validation {
-    condition     = var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent
+    condition     = var.ravion_operator_execution_max_concurrent == null ? true : (var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent)
     error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
   }
 }
 
 variable "ravion_operator_execution_lane_scope" {
   type        = string
-  description = "What the Operator serializes deploys on. Null uses the chart default, release: different releases deploy in parallel, one version of each at a time. namespace deploys one release per namespace (per cluster under full management) at a time."
+  description = "Pins what the Operator serializes deploys on: release (different releases in parallel, one version of each at a time) or namespace (one release per namespace, per cluster under full management). Null lets the Ravion control plane decide (currently release)."
   default     = null
 
   validation {

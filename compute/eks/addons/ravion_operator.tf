@@ -240,14 +240,19 @@ resource "helm_release" "ravion_operator" {
           enabled    = var.ravion_operator_deploy_enabled
           namespaces = var.ravion_operator_deploy_namespaces
         }
-        # maxConcurrent bounds admission, not provisioned nodes. The lane scope
-        # is passed only when overridden, so the chart's default applies.
-        executionJobs = merge({
-          enabled        = var.ravion_operator_execution_jobs_enabled
-          image          = var.ravion_operator_execution_image
-          maxConcurrent  = var.ravion_operator_execution_max_concurrent
-          fullManagement = var.ravion_operator_full_management_enabled
-        }, var.ravion_operator_execution_lane_scope == null ? {} : { laneScope = var.ravion_operator_execution_lane_scope })
+        # Scheduling (maxConcurrent, laneScope) belongs to the control plane,
+        # which retunes it over the air. Only an explicit value is passed, and
+        # it pins scheduling locally (settingsSource = local).
+        executionJobs = merge(
+          {
+            enabled        = var.ravion_operator_execution_jobs_enabled
+            image          = var.ravion_operator_execution_image
+            fullManagement = var.ravion_operator_full_management_enabled
+          },
+          var.ravion_operator_execution_max_concurrent == null ? {} : { maxConcurrent = var.ravion_operator_execution_max_concurrent },
+          var.ravion_operator_execution_lane_scope == null ? {} : { laneScope = var.ravion_operator_execution_lane_scope },
+          var.ravion_operator_execution_max_concurrent == null && var.ravion_operator_execution_lane_scope == null ? {} : { settingsSource = "local" },
+        )
         # Placed the way Karpenter places itself (see the chart's coordinator
         # values): a fixed count on nodes Karpenter does not manage, so a
         # coordinator can never keep an autoscaled node alive.

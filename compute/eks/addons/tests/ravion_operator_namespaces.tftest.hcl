@@ -171,13 +171,13 @@ run "operator_ha_full_management" {
       !yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == var.ravion_operator_execution_image &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.fullManagement &&
-      yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 6 &&
+      !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs), "maxConcurrent") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 2 &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).coordinator), "adaptive") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
       length(helm_release.ravion_operator_namespaces) == 0
     )
-    error_message = "Full management must wire six parallel deploys, two fixed Karpenter-placed coordinators, and the bundled image with self-update disabled in both enrollment and Helm."
+    error_message = "Full management must leave capacity to the control plane, wire two fixed Karpenter-placed coordinators, and the bundled image with self-update disabled in both enrollment and Helm."
   }
 }
 
@@ -238,8 +238,8 @@ run "jobs_use_bundled_image_and_capacity_default" {
     ravion_operator_chart_version          = "0.4.1-ci.312e8f5638dc"
   }
   assert {
-    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == "" && yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.maxConcurrent == 6
-    error_message = "Published charts supply the image digest and execution defaults to six parallel deploys."
+    condition     = yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == "" && !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs), "maxConcurrent")
+    error_message = "Published charts supply the image digest, and the control plane decides capacity."
   }
 }
 

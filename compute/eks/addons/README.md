@@ -653,8 +653,8 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_deploy_namespaces | Allowed namespaces; falls back to observation scope. Both lists must be empty for full management. | `list(string)` | `[]` | no |
 | ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs. | `bool` | `false` | no |
 | ravion_operator_execution_image | Optional digest-pinned coordinator/executor image override; empty uses the published chart's bundled digest. | `string` | `""` | no |
-| ravion_operator_execution_max_concurrent | How many releases deploy at once, installation-wide, 1-64. Raising applies at once; lowering applies once running deploys fit. | `number` | `6` | no |
-| ravion_operator_execution_lane_scope | What deploys are serialized on: `release` (chart default when null) or `namespace`. | `string` | `null` | no |
+| ravion_operator_execution_max_concurrent | Pins how many releases deploy at once, 1-64. Null lets the Ravion control plane decide (currently 6). | `number` | `null` | no |
+| ravion_operator_execution_lane_scope | Pins what deploys are serialized on: `release` or `namespace`. Null lets the Ravion control plane decide (currently `release`). | `string` | `null` | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
 | ravion_operator_coordinator_replicas | Fixed coordinator count, 1-9; use 1 on a single eligible node. | `number` | `2` | no |
 | ravion_operator_coordinator_distinct_nodes_enabled | Karpenter-style placement: one per node, zone spread, never on a Karpenter-provisioned node. | `bool` | `true` | no |
