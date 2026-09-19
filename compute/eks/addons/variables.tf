@@ -775,7 +775,7 @@ variable "ravion_operator_chart_source" {
 variable "ravion_operator_chart_version" {
   type        = string
   description = "Operator Helm chart version. For executor Jobs, use the chart_version output from the same Operator publishing run as ravion_operator_execution_image. Inline mode preserves the running image unless an image tag is pinned; Job mode pins coordinators and executors to ravion_operator_execution_image. Null tracks latest and is not allowed in Job mode."
-  default     = "0.4.1"
+  default     = "0.5.6"
 
   validation {
     condition     = var.ravion_operator_chart_version == null || can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.ravion_operator_chart_version))

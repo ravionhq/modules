@@ -6,15 +6,15 @@ definition:
 release:
   version: 0.10.0
   description: >-
-    Replace the load balancer name prefix with a name slug, like every other module. The slug
-    names everything the add-ons create: the shared load balancers and their security groups,
-    the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter
-    interruption queue. It defaults to the cluster name, so existing installations are
-    unchanged; an installation that set the load balancer prefix should set the same value
-    as the name, and expects the roles, bucket, queue and log group to be renamed. Every log the
-    add-ons keep now defaults to a year: Loki and CloudWatch workload logs (previously 30 days)
-    and load balancer access log buckets (previously 90 days), matching the cluster's control
-    plane logs. Existing installations keep the value they set.
+    Different releases now deploy at the same time instead of one after another, up to six at
+    once by default; two versions of the same release still never do, and management commands
+    wait for the deploys that are running. Ravion decides how many deploy at once and what they
+    serialize on, and retunes it without a module release. Pin either for a cluster with the
+    advanced ravion_operator_execution_max_concurrent and ravion_operator_execution_lane_scope
+    variables; the previous behaviour is max concurrent 1. Ravion Operator moves to chart 0.5.6,
+    which also lets the limit change while deploys are running instead of refusing to schedule
+    until the cluster drains. Direct Terraform callers move to that chart with the module's new
+    default.
 module:
   inputs:
     - id: cluster

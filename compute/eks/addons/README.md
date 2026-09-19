@@ -456,7 +456,7 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
 executor Jobs and workload namespace bootstrap are enabled automatically;
 customization uses **Advanced Terraform variables**. The module automatically pins chart
-`0.5.1`, whose package bundles the matching verified multiarch image digest as the
+`0.5.6`, whose package bundles the matching verified multiarch image digest as the
 floor a fresh install starts from, and enables two-replica HA and full-cluster
 management with Jobs. Self-update stays on in Job mode: Ravion rolls the agent
 forward and the chart preserves the running image on later applies. Direct
@@ -469,7 +469,7 @@ ravion_operator_enabled                = true
 ravion_operator_deploy_enabled         = true
 ravion_operator_deploy_namespaces      = ["app-prod"]
 ravion_operator_execution_jobs_enabled = true
-ravion_operator_chart_version          = "0.5.1"
+ravion_operator_chart_version          = "0.5.6"
 ravion_operator_coordinator_enabled    = true
 ```
 
@@ -645,7 +645,7 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_enabled | Mint the cluster's Ravion Operator credential (via the `ravion` provider) and install the Ravion Operator. | `bool` | `false` | no |
 | ravion_operator_endpoint | WebSocket endpoint the agent dials. | `string` | `"wss://websockets.ravion.com/operator/v1/connect"` | no |
 | ravion_operator_chart_source | Public OCI reference, or a filesystem chart path for local testing. | `string` | `"oci://public.ecr.aws/a8z1i1r2/operator"` | no |
-| ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.4.1"` | no |
+| ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.5.6"` | no |
 | ravion_operator_namespace | Namespace for the agent and its credential Secret (created if missing). Shared observability components use it by default. | `string` | `"ravion-operator"` | no |
 | ravion_operator_namespaces_creation_enabled | Create missing observation and deployment namespaces before installing Operator RBAC; reuse existing namespaces and retain created namespaces on removal. | `bool` | `true` | no |
 | ravion_operator_namespace_scope | Namespaces the agent may observe. Empty is cluster-wide; non-empty renders namespaced Roles and no observation ClusterRole at all. | `list(string)` | `[]` | no |
