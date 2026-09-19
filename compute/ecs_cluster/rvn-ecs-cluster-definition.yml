@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 1.0.2
-  description: Clarify ECS cluster labels and identify additional Network Load Balancer security groups in module forms.
+  version: 2.0.0
+  description: Rename EC2 capacity inputs to ec2_min_instances and ec2_max_instances to make clear they count EC2 host instances, not ECS tasks.
 module:
   inputs:
     - id: network
@@ -78,18 +78,22 @@ module:
         ec2_instance_type:
           not: ""
       type: section
-    - description: Minimum EC2 instances in the Auto Scaling Group. To speed up deployments and autoscaling, set this high enough to keep spare capacity for all ECS services using this cluster. As a starting point, use about 2x the total desired task instances across those services.
-      id: ec2_min_size
-      label: Min instances
+    - description: Minimum number of EC2 host instances in the Auto Scaling Group (not ECS tasks). To speed up deployments and autoscaling, keep enough spare instance capacity for all ECS services on this cluster; as a starting point, size for about 2x the total desired tasks across those services.
+      id: ec2_min_instances
+      moved_from:
+        - ec2_min_size
+      label: Minimum EC2 instances
       min: 0
       placeholder: "0"
       show_when:
         ec2_instance_type:
           not: ""
       type: number
-    - description: Maximum EC2 instances in the Auto Scaling Group. Must be high enough to accommodate 2x the total max task instances across all ECS services using this cluster, otherwise deployments can fail.
-      id: ec2_max_size
-      label: Max instances
+    - description: Maximum number of EC2 host instances in the Auto Scaling Group (not ECS tasks). Must be large enough to hold 2x the total maximum tasks across all ECS services on this cluster, otherwise deployments can fail.
+      id: ec2_max_instances
+      moved_from:
+        - ec2_max_size
+      label: Maximum EC2 instances
       min: 1
       placeholder: "10"
       show_when:
@@ -606,8 +610,8 @@ module:
 
     | Field                           | Description                                             |
     | ------------------------------- | ------------------------------------------------------- |
-    | Minimum instances               | Keep enough EC2 capacity for all ECS services; start around 2x the total desired task instances |
-    | Maximum instances               | Must fit 2x the total max task instances across all ECS services, or deployments can fail       |
+    | Minimum EC2 host instances      | Keep enough spare instance capacity for all ECS services; start around 2x the total desired tasks |
+    | Maximum EC2 host instances      | Must fit 2x the total maximum tasks across all ECS services, or deployments can fail             |
     | Root volume size                | Root EBS volume size for ECS instances                  |
     | Additional security groups      | Extra security groups attached to ECS instances         |
     | Spot instances                  | Use Spot instances in the EC2 Auto Scaling Group        |
@@ -656,8 +660,8 @@ module:
         ec2_managed_scaling_enabled: << module.input.ec2_managed_scaling_enabled >>
         ec2_managed_scaling_target_capacity: << module.input.ec2_managed_scaling_target_capacity >>
         ec2_managed_termination_protection_enabled: << module.input.ec2_managed_termination_protection_enabled >>
-        ec2_max_size: << module.input.ec2_max_size >>
-        ec2_min_size: << module.input.ec2_min_size >>
+        ec2_max_instances: << module.input.ec2_max_instances >>
+        ec2_min_instances: << module.input.ec2_min_instances >>
         ec2_root_volume_size: << module.input.ec2_root_volume_size >>
         ec2_root_volume_type: << module.input.ec2_root_volume_type >>
         ec2_security_group_ids: << module.input.ec2_security_group_ids >>

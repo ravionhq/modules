@@ -68,7 +68,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-static` | Static Hosting | v1.1.2 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.1 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v1.6.0 | `compute/ec2_service/` |
-| `rvn-ecs-cluster` | ECS Cluster | v1.0.2 | `compute/ecs_cluster/` |
+| `rvn-ecs-cluster` | ECS Cluster | v2.0.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v1.5.1 | `compute/ecs_service/` |
 | `rvn-ecs-web` | ECS Web Service | v1.5.1 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v1.5.1 | `compute/ecs_service/` |
