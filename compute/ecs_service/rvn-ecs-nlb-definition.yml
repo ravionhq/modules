@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.5.1
-  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference, including services created before this fix. Pre-deploy and post-deploy tasks now follow a capacity provider strategy set in advanced Terraform variables.
+  version: 2.0.0
+  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks.
 module:
   inputs:
     - id: section_cluster
@@ -674,7 +674,7 @@ module:
     - Tasks default to private subnets even for public network services. The NLB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Health checks default to TCP because the module supports non-HTTP protocols.
     - Built images are pushed to an ECR repository created with the service stack. Managed ECR repository lets a pipeline push images to that repository without a module build config. Pull from image registry lets teams bring their own image pipeline.
-    - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
+    - The service uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 
     ## Learn more
