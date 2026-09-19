@@ -75,7 +75,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
 | `rvn-eks-addons` | EKS Add-ons | v0.9.3 | `compute/eks/addons/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.3.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.1.3 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.2.0 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v0.4.2 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v1.1.1 | `compute/lambda/` |
@@ -97,7 +97,7 @@ version independently under `rvn-eks@<version>` tags.
 
 | Chart | Workload shape | Status |
 | ----- | -------------- | ------ |
-| [`charts/rvn-eks-web`](charts/rvn-eks-web) | Long-running HTTP service; Deployment + Service + TargetGroupBinding against a Terraform-owned target group | v0.2.0 |
+| [`charts/rvn-eks-web`](charts/rvn-eks-web) | Long-running HTTP service; Deployment + Service + TargetGroupBinding against a Terraform-owned target group | v0.3.0 |
 | [`charts/rvn-eks-worker`](charts/rvn-eks-worker) | Long-running background process; Deployment with no network surface | v0.2.0 |
 | [`charts/rvn-eks-cron`](charts/rvn-eks-cron) | Scheduled job; CronJob | v0.1.0 |
 

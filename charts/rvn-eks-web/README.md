@@ -3,11 +3,11 @@
 Ravion application chart for a long-running HTTP workload on EKS.
 
 Renders a Deployment, a ClusterIP Service, a Pod Identity ServiceAccount,
-optionally a HorizontalPodAutoscaler, optionally one TargetGroupBinding per
+optionally a HorizontalPodAutoscaler, optionally a PodDisruptionBudget, optionally one TargetGroupBinding per
 supplied target group ARN, and optionally an ExternalSecret. **It never renders
 an Ingress** — see [the charts README](../README.md#load-balancing-rvn-eks-web).
 
-Chart version `0.1.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
+Chart version `0.3.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
 
 ## Usage
 
@@ -87,6 +87,7 @@ helm template my-app charts/rvn-eks-web --values charts/rvn-eks-web/ci/full-valu
 | `targetGroupArns` | list(string) | `[]` | Terraform-owned target group ARNs. One TargetGroupBinding per entry; none render when empty. |
 | `targetGroupBinding.targetType` | string | `ip` | Must match the target group's `target_type`. |
 | `targetGroupBinding.vpcId` | string | `""` | Only needed for a cross-VPC target group. |
+| `targetGroupBinding.podReadinessGate` | bool | `false` | Add one AWS Load Balancer Controller readiness gate (`target-health.elbv2.k8s.aws/<binding name>`) per TargetGroupBinding to the pod spec. A pod is Ready only once it is healthy in the target group, so a rolling update keeps old pods until their replacements serve load balancer traffic. The gate is declared directly, so the namespace needs no injection label. Rollouts take longer by the target group's healthy-threshold time. |
 
 ### Health checks
 
@@ -118,7 +119,10 @@ shape. Liveness and readiness are on by default; startup is off.
 | `strategy.maxSurge` | string/int | `25%` | |
 | `strategy.maxUnavailable` | string/int | `0` | Zero-downtime by default. |
 | `revisionHistoryLimit` | int | `10` | |
-| `terminationGracePeriodSeconds` | int | `30` | |
+| `terminationGracePeriodSeconds` | int | `30` | Seconds a pod has to shut down after SIGTERM, including any preStop sleep. Raise it for services that drain long-lived connections. |
+| `lifecycle.preStopSleepSeconds` | int | `0` | Native preStop `sleep` on the main container, run before SIGTERM so the load balancer controller can deregister the pod and no new connections arrive while it drains. `0` renders no hook. Must be less than `terminationGracePeriodSeconds`; needs Kubernetes 1.30+. Both are enforced at render time. |
+| `podDisruptionBudget.enabled` | bool | `false` | Render a `policy/v1` PodDisruptionBudget (with `unhealthyPodEvictionPolicy: AlwaysAllow`) limiting voluntary disruptions such as node drains. Skipped when the replica floor (`autoscaling.minReplicas`, or `replicaCount`) is not greater than `minAvailable`, because such a budget allows no evictions and blocks every drain. |
+| `podDisruptionBudget.minAvailable` | int | `1` | Pods that must stay available during a voluntary disruption. |
 | `resources.requests` | map | `{cpu: 100m, memory: 256Mi}` | |
 | `resources.limits` | map | `{memory: 512Mi}` | No CPU limit by default, to avoid throttling. |
 | `nodeSelector` | map | `{}` | |

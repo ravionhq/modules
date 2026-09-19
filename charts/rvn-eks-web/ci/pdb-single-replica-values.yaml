@@ -1,0 +1,13 @@
+# PodDisruptionBudget requested on a single fixed replica: the chart skips the
+# budget, because minAvailable >= replicas would block every node drain. The
+# readiness gate is left off while a target group is bound, so the pods carry
+# no gate.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
+  tag: v1.2.3
+replicaCount: 1
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+targetGroupArns:
+  - arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/demo-web-tg-1/abc123

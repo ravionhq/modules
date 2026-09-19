@@ -39,7 +39,19 @@ env: []
 # -- Number of pods when autoscaling is disabled.
 replicaCount: 1
 revisionHistoryLimit: 10
+# -- Seconds a pod has to shut down after SIGTERM before it is killed. Includes
+# any preStop sleep below. Raise it for services that drain long-lived
+# connections (WebSockets, streaming responses) on shutdown.
 terminationGracePeriodSeconds: 30
+
+lifecycle:
+  # -- Seconds the main container keeps running after the pod is marked
+  # Terminating, before it receives SIGTERM. Gives the load balancer controller
+  # time to deregister the pod so no new connections arrive while the
+  # application drains. Rendered as the native preStop sleep action (no shell
+  # needed in the image; Kubernetes 1.30+). 0 renders no hook. Must be less
+  # than terminationGracePeriodSeconds.
+  preStopSleepSeconds: 0
 
 strategy:
   type: RollingUpdate
@@ -123,6 +135,11 @@ targetGroupBinding:
   targetType: ip
   # -- Only needed when the target group lives in a different VPC than the cluster.
   vpcId: ""
+  # -- Add an AWS Load Balancer Controller readiness gate per TargetGroupBinding,
+  # so a pod is Ready only once it is healthy in the target group and a rolling
+  # update keeps old pods until their replacements serve traffic. Pods of a
+  # release with no targetGroupArns get no gate.
+  podReadinessGate: false
 
 autoscaling:
   enabled: false
@@ -131,6 +148,14 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   # -- Set to a number to add a memory metric.
   targetMemoryUtilizationPercentage: null
+
+# -- PodDisruptionBudget limiting voluntary disruptions (node drains,
+# consolidation, upgrades). Rendered only when the replica floor
+# (autoscaling.minReplicas, or replicaCount) is greater than minAvailable: a
+# budget that allows zero evictions blocks every node drain.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
 
 serviceAccount:
   create: true
