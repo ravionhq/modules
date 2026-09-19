@@ -97,6 +97,11 @@ run "basic_alb_http_only" {
     condition     = length(aws_lb_listener.https) == 0
     error_message = "HTTPS listener should not be created by default"
   }
+
+  assert {
+    condition     = var.access_logs_retention_days == 365
+    error_message = "access_logs_retention_days should default to 365"
+  }
 }
 
 # Test 2: Internal ALB
@@ -599,5 +604,110 @@ run "no_ingress_security_groups_by_default" {
       if rule.referenced_security_group_id != null
     ]) == 0
     error_message = "Should not create security group referenced ingress rules by default"
+  }
+}
+
+# Test 31: CloudWatch alarms disabled by default
+run "cloudwatch_alarms_disabled_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_response_time) == 0
+    error_message = "No CloudWatch alarms should be created by default"
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 0
+    error_message = "cloudwatch_alarm_arns output should be empty when alarms are disabled"
+  }
+}
+
+# Test 32: CloudWatch alarms enabled with defaults
+run "cloudwatch_alarms_enabled" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = true
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1
+    error_message = "All three CloudWatch alarms should be created when enabled"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].dimensions["LoadBalancer"] == "app/test-alb/1234567890123456"
+    error_message = "Alarms should use the ALB ARN suffix as the LoadBalancer dimension"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].namespace == "AWS/ApplicationELB" && aws_cloudwatch_metric_alarm.elb_5xx[0].metric_name == "HTTPCode_ELB_5XX_Count" && aws_cloudwatch_metric_alarm.elb_5xx[0].statistic == "Sum"
+    error_message = "ELB 5xx alarm should sum HTTPCode_ELB_5XX_Count in AWS/ApplicationELB"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.target_5xx[0].metric_name == "HTTPCode_Target_5XX_Count" && aws_cloudwatch_metric_alarm.target_5xx[0].statistic == "Sum"
+    error_message = "Target 5xx alarm should sum HTTPCode_Target_5XX_Count"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.target_response_time[0].metric_name == "TargetResponseTime" && aws_cloudwatch_metric_alarm.target_response_time[0].statistic == "Average"
+    error_message = "Target response time alarm should average TargetResponseTime"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].threshold == 10 && aws_cloudwatch_metric_alarm.target_5xx[0].threshold == 10 && aws_cloudwatch_metric_alarm.target_response_time[0].threshold == 1
+    error_message = "Alarms should use the default thresholds"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].evaluation_periods == 2 && aws_cloudwatch_metric_alarm.elb_5xx[0].period == 300
+    error_message = "Alarms should use the default evaluation periods and period"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].treat_missing_data == "notBreaching"
+    error_message = "Alarms should treat missing data as not breaching"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].alarm_name == "test-alb-alb-elb-5xx"
+    error_message = "ELB 5xx alarm name should be prefixed with the module name"
+  }
+}
+
+# Test 33: CloudWatch alarms with custom thresholds and actions
+run "cloudwatch_alarms_custom" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled              = true
+    cloudwatch_alarm_elb_5xx_threshold              = 50
+    cloudwatch_alarm_target_5xx_threshold           = 25
+    cloudwatch_alarm_target_response_time_threshold = 2.5
+    cloudwatch_alarm_evaluation_periods             = 3
+    cloudwatch_alarm_period                         = 60
+    cloudwatch_alarm_actions                        = ["arn:aws:sns:us-east-1:123456789012:alerts"]
+    cloudwatch_ok_actions                           = ["arn:aws:sns:us-east-1:123456789012:recovered"]
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].threshold == 50 && aws_cloudwatch_metric_alarm.target_5xx[0].threshold == 25 && aws_cloudwatch_metric_alarm.target_response_time[0].threshold == 2.5
+    error_message = "Alarms should use the custom thresholds"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.target_5xx[0].evaluation_periods == 3 && aws_cloudwatch_metric_alarm.target_5xx[0].period == 60
+    error_message = "Alarms should use the custom evaluation periods and period"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.target_response_time[0].alarm_actions) == 1 && contains(aws_cloudwatch_metric_alarm.target_response_time[0].alarm_actions, "arn:aws:sns:us-east-1:123456789012:alerts")
+    error_message = "Alarms should notify the configured alarm actions"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.target_response_time[0].ok_actions) == 1 && contains(aws_cloudwatch_metric_alarm.target_response_time[0].ok_actions, "arn:aws:sns:us-east-1:123456789012:recovered")
+    error_message = "Alarms should notify the configured OK actions"
   }
 }

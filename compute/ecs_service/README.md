@@ -306,6 +306,22 @@ module "worker_service" {
 | log_retention_days | Days to retain CloudWatch logs (0 = retain indefinitely) | `number` | `30` | no |
 | log_kms_key_id | KMS key ARN for encrypting the log group (null = default encryption) | `string` | `null` | no |
 
+### CloudWatch Alarms
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| cloudwatch_alarms_creation_enabled | Create service CPU, memory, running task, and target group health alarms | `bool` | `false` | no |
+| cloudwatch_alarm_cpu_threshold | Average CPUUtilization (%) above which the alarm fires | `number` | `80` | no |
+| cloudwatch_alarm_memory_threshold | Average MemoryUtilization (%) above which the alarm fires | `number` | `80` | no |
+| cloudwatch_alarm_running_tasks_minimum | Alarm when Container Insights RunningTaskCount drops below this | `number` | `1` | no |
+| cloudwatch_alarm_unhealthy_hosts_threshold | UnHealthyHostCount (max) above which the alarm fires; ALB and NLB attachments | `number` | `0` | no |
+| cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum) above which the alarm fires; ALB only | `number` | `10` | no |
+| cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime (seconds) above which the alarm fires; ALB only | `number` | `1` | no |
+| cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
+| cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
+| cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
+
 ### IAM
 
 | Name | Description | Type | Default | Required |
@@ -478,6 +494,12 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 | log_group_name | The name of the CloudWatch log group used by the task |
 | log_group_arn | The ARN of the CloudWatch log group used by the task |
 | log_stream_prefix | The awslogs stream prefix for the primary container |
+
+### CloudWatch Alarms
+
+| Name | Description |
+|------|-------------|
+| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `cpu_utilization`, `memory_utilization`, `running_tasks`, and, when a load balancer is attached, `<target_group>_unhealthy_hosts`, `<target_group>_target_5xx`, `<target_group>_target_response_time` per ALB target group (`production`, plus `alternate` when traffic-shift infrastructure exists) or `nlb_<listener>_unhealthy_hosts` (NLB). Empty when disabled |
 
 ## Architecture
 

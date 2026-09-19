@@ -20,6 +20,9 @@ locals {
     var.access_logs_bucket_arn != null ? regex("arn:aws:s3:::(.+)", var.access_logs_bucket_arn)[0] : null
   )
 
+  # CloudWatch alarm creation
+  create_cloudwatch_alarms = var.cloudwatch_alarms_creation_enabled
+
   # Listener configuration
   create_http_listener  = var.http_listener_enabled
   create_https_listener = var.https_listener_enabled

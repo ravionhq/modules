@@ -1,0 +1,28 @@
+# Target group alarm thresholds for ECS services behind an Application Load
+# Balancer. Include after ecs-service-compliance-inputs.yml.
+- id: cloudwatch_alarm_unhealthy_hosts_threshold
+  label: Unhealthy hosts alarm threshold
+  type: number
+  description: Alarm when more than this many targets in the service target group are unhealthy. 0 alarms on the first unhealthy target.
+  collapsible: true
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 0
+- id: cloudwatch_alarm_target_5xx_threshold
+  label: Target 5xx alarm threshold
+  type: number
+  description: Alarm when this service returns more than this many 5xx responses in one period.
+  collapsible: true
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 10
+- id: cloudwatch_alarm_target_response_time_threshold
+  label: Target response time alarm threshold (seconds)
+  type: number
+  description: Alarm when the average time this service takes to respond exceeds this many seconds. Must be greater than 0.
+  collapsible: true
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 1

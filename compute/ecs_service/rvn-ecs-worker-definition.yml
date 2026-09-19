@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.5.1
-  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference, including services created before this fix. Pre-deploy and post-deploy tasks now follow a capacity provider strategy set in advanced Terraform variables.
+  version: 1.6.0
+  description: Add a Compliance section with log retention inherited from the ECS cluster and optional CloudWatch alarms for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
 module:
   inputs:
     - id: section_cluster
@@ -47,6 +47,8 @@ module:
         field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
     - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-compliance-inputs.yml
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
   stack:
     type: opentofu
@@ -67,6 +69,7 @@ module:
           terraform_variables:
             $merge:
               - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - container_port: 3000
                 load_balancer_attachment: null
           tool: opentofu
@@ -196,6 +199,16 @@ module:
 
     Autoscaling is enabled by default with CPU and memory target tracking. Use custom metric scaling policies for queue depth, lag, backlog, or other workload-specific metrics that better represent worker demand. When autoscaling is disabled, Desired tasks controls how many worker tasks the ECS service keeps running.
 
+    ## Compliance
+
+    The Compliance section holds log retention and CloudWatch alarms.
+
+    Log retention (days) defaults to the value configured on the ECS cluster's Compliance section, so one cluster setting keeps every service consistent. Set a value here to override it for this service. Use 0 to retain logs indefinitely.
+
+    Enable Create CloudWatch alarms to add alarms for average CPU utilization, average memory utilization, and running task count. Worker services have no load balancer, so only the service-level alarms apply.
+
+    The running task alarm uses the Container Insights `RunningTaskCount` metric and stays silent when Container Insights is disabled on the cluster. Every alarm treats missing data as not breaching and must breach for the configured number of consecutive periods before it fires. Add SNS topic ARNs as Alarm actions and OK actions to be notified.
+
     ## Configuration
 
     | Field | Required | Default | Description |
@@ -216,6 +229,12 @@ module:
     | Sidecars | No | [] | Additional containers in the worker task |
     | EFS file system | No | false | Mount an EFS file system into the worker container |
     | EFS mount path | Yes* | /mnt/efs | Worker container path for the referenced file system |
+    | Log retention (days) | No | Cluster default | Overrides the CloudWatch log retention inherited from the cluster |
+    | Create CloudWatch alarms | No | false | Adds CPU, memory, running task alarms |
+    | CPU alarm threshold (%) | No | 80 | Average service CPU utilization |
+    | Memory alarm threshold (%) | No | 80 | Average service memory utilization |
+    | Minimum running tasks | No | 1 | Alarms when fewer tasks are running |
+    | Alarm actions | No | [] | ARNs notified on ALARM, such as an SNS topic |
 
     ## Design decisions
 

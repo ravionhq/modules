@@ -468,7 +468,7 @@ variable "logging_prefix" {
 variable "logging_retention_days" {
   type        = number
   description = "Days to retain CloudFront access logs — the CloudWatch log group retention when logging_destination is 'cloudwatch', or the S3 lifecycle expiry when logging_destination is 's3' with a module-created bucket."
-  default     = 90
+  default     = 365
 
   validation {
     condition     = var.logging_destination != "cloudwatch" || contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.logging_retention_days)

@@ -523,7 +523,7 @@ variable "logging_bucket_creation_enabled" {
 variable "logging_bucket_retention_days" {
   type        = number
   description = "Days to retain CloudFront access logs — the CloudWatch log group retention or the S3 lifecycle expiry on the module-created bucket, depending on logging_destination."
-  default     = 90
+  default     = 365
 
   validation {
     condition     = var.logging_bucket_retention_days >= 1

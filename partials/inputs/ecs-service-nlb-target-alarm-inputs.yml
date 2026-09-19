@@ -1,0 +1,11 @@
+# Target group alarm thresholds for ECS services behind a Network Load
+# Balancer. Include after ecs-service-compliance-inputs.yml.
+- id: cloudwatch_alarm_unhealthy_hosts_threshold
+  label: Unhealthy hosts alarm threshold
+  type: number
+  description: Alarm when more than this many targets in any of the service target groups are unhealthy. 0 alarms on the first unhealthy target.
+  collapsible: true
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 0
