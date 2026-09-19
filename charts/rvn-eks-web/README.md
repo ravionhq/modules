@@ -87,7 +87,7 @@ helm template my-app charts/rvn-eks-web --values charts/rvn-eks-web/ci/full-valu
 | `targetGroupArns` | list(string) | `[]` | Terraform-owned target group ARNs. One TargetGroupBinding per entry; none render when empty. |
 | `targetGroupBinding.targetType` | string | `ip` | Must match the target group's `target_type`. |
 | `targetGroupBinding.vpcId` | string | `""` | Only needed for a cross-VPC target group. |
-| `targetGroupBinding.podReadinessGate` | bool | `false` | Add one AWS Load Balancer Controller readiness gate (`target-health.elbv2.k8s.aws/<binding name>`) per TargetGroupBinding to the pod spec. A pod is Ready only once it is healthy in the target group, so a rolling update keeps old pods until their replacements serve load balancer traffic. The gate is declared directly, so the namespace needs no injection label. Rollouts take longer by the target group's healthy-threshold time. |
+| `targetGroupBinding.podReadinessGate` | bool | `true` | Add one AWS Load Balancer Controller readiness gate (`target-health.elbv2.k8s.aws/<binding name>`) per TargetGroupBinding to the pod spec. A pod is Ready only once it is healthy in the target group, so a rolling update keeps old pods until their replacements serve load balancer traffic. The gate is declared directly, so the namespace needs no injection label. Rollouts take longer by the target group's healthy-threshold time. |
 
 ### Health checks
 
@@ -109,9 +109,9 @@ shape. Liveness and readiness are on by default; startup is off.
 
 | Value | Type | Default | Description |
 |-------|------|---------|-------------|
-| `replicaCount` | int | `1` | Ignored when `autoscaling.enabled`. |
+| `replicaCount` | int | `2` | Ignored when `autoscaling.enabled`. Two by default: with one, any pod stop is an outage. |
 | `autoscaling.enabled` | bool | `false` | |
-| `autoscaling.minReplicas` | int | `1` | |
+| `autoscaling.minReplicas` | int | `2` | Two by default, as for `replicaCount`. |
 | `autoscaling.maxReplicas` | int | `10` | |
 | `autoscaling.targetCPUUtilizationPercentage` | int/null | `70` | Set `null` to drop the CPU metric. |
 | `autoscaling.targetMemoryUtilizationPercentage` | int/null | `null` | Set a number to add a memory metric. |
@@ -120,8 +120,8 @@ shape. Liveness and readiness are on by default; startup is off.
 | `strategy.maxUnavailable` | string/int | `0` | Zero-downtime by default. |
 | `revisionHistoryLimit` | int | `10` | |
 | `terminationGracePeriodSeconds` | int | `30` | Seconds a pod has to shut down after SIGTERM, including any preStop sleep. Raise it for services that drain long-lived connections. |
-| `lifecycle.preStopSleepSeconds` | int | `0` | Native preStop `sleep` on the main container, run before SIGTERM so the load balancer controller can deregister the pod and no new connections arrive while it drains. `0` renders no hook. Must be less than `terminationGracePeriodSeconds`; needs Kubernetes 1.30+. Both are enforced at render time. |
-| `podDisruptionBudget.enabled` | bool | `false` | Render a `policy/v1` PodDisruptionBudget (with `unhealthyPodEvictionPolicy: AlwaysAllow`) limiting voluntary disruptions such as node drains. Skipped when the replica floor (`autoscaling.minReplicas`, or `replicaCount`) is not greater than `minAvailable`, because such a budget allows no evictions and blocks every drain. |
+| `lifecycle.preStopSleepSeconds` | int | `10` | Native preStop `sleep` on the main container, run before SIGTERM so the load balancer controller can deregister the pod and no new connections arrive while it drains. `0` renders no hook. Must be less than `terminationGracePeriodSeconds` (enforced at render time). Skipped on Kubernetes older than 1.30, which lacks the sleep action. |
+| `podDisruptionBudget.enabled` | bool | `true` | Render a `policy/v1` PodDisruptionBudget (with `unhealthyPodEvictionPolicy: AlwaysAllow`) limiting voluntary disruptions such as node drains. Skipped when the replica floor (`autoscaling.minReplicas`, or `replicaCount`) is not greater than `minAvailable`, because such a budget allows no evictions and blocks every drain. |
 | `podDisruptionBudget.minAvailable` | int | `1` | Pods that must stay available during a voluntary disruption. |
 | `resources.requests` | map | `{cpu: 100m, memory: 256Mi}` | |
 | `resources.limits` | map | `{memory: 512Mi}` | No CPU limit by default, to avoid throttling. |
@@ -129,6 +129,7 @@ shape. Liveness and readiness are on by default; startup is off.
 | `tolerations` | list | `[]` | |
 | `affinity` | map | `{}` | |
 | `topologySpread.enabled` | bool | `true` | Render one zone spread constraint on this chart's pods so each zone has a local endpoint. |
+| `topologySpread.nodeSpread` | bool | `true` | Also spread across nodes (`kubernetes.io/hostname`), so one node failing or draining never takes every replica. Uses the same `maxSkew` and `whenUnsatisfiable`. |
 | `topologySpread.maxSkew` | int | `1` | |
 | `topologySpread.whenUnsatisfiable` | string | `ScheduleAnyway` | Or `DoNotSchedule` for a hard requirement. |
 | `topologySpreadConstraints` | list | `[]` | Explicit constraints. When non-empty, replaces the default zone spread. |

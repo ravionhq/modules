@@ -378,6 +378,9 @@
             "ScheduleAnyway",
             "DoNotSchedule"
           ]
+        },
+        "nodeSpread": {
+          "type": "boolean"
         }
       }
     },

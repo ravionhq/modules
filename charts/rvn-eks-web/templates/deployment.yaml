@@ -83,10 +83,10 @@ spec:
           action, so the image needs no shell or sleep binary. The sleep counts
           against terminationGracePeriodSeconds.
           */}}
+          {{- /* Skipped, not failed, before 1.30: the sleep action does not
+          exist there, and a default must never break a supported cluster. */}}
+          {{- if semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
           {{- with .Values.lifecycle.preStopSleepSeconds }}
-          {{- if semverCompare "<1.30-0" $.Capabilities.KubeVersion.Version }}
-          {{- fail "lifecycle.preStopSleepSeconds needs Kubernetes 1.30 or later (the preStop sleep action)" }}
-          {{- end }}
           {{- if ge (int .) (int $.Values.terminationGracePeriodSeconds) }}
           {{- fail (printf "lifecycle.preStopSleepSeconds (%d) must be less than terminationGracePeriodSeconds (%d), or the application never gets time to shut down after SIGTERM" (int .) (int $.Values.terminationGracePeriodSeconds)) }}
           {{- end }}
@@ -94,6 +94,7 @@ spec:
             preStop:
               sleep:
                 seconds: {{ . }}
+          {{- end }}
           {{- end }}
           {{- with (include "rvn-eks-web.env" . | trim) }}
           env:
@@ -169,4 +170,12 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "rvn-eks-web.selectorLabels" . | nindent 14 }}
+        {{- if .Values.topologySpread.nodeSpread }}
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "rvn-eks-web.selectorLabels" . | nindent 14 }}
+        {{- end }}
       {{- end }}

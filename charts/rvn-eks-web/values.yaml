@@ -36,8 +36,9 @@ args: []
 # -- Non-secret environment variables: [{name: LOG_LEVEL, value: "info"}].
 env: []
 
-# -- Number of pods when autoscaling is disabled.
-replicaCount: 1
+# -- Number of pods when autoscaling is disabled. Two by default: with one, any
+# pod stop (node drain, node failure, crash) is an outage.
+replicaCount: 2
 revisionHistoryLimit: 10
 # -- Seconds a pod has to shut down after SIGTERM before it is killed. Includes
 # any preStop sleep below. Raise it for services that drain long-lived
@@ -49,9 +50,9 @@ lifecycle:
   # Terminating, before it receives SIGTERM. Gives the load balancer controller
   # time to deregister the pod so no new connections arrive while the
   # application drains. Rendered as the native preStop sleep action (no shell
-  # needed in the image; Kubernetes 1.30+). 0 renders no hook. Must be less
-  # than terminationGracePeriodSeconds.
-  preStopSleepSeconds: 0
+  # needed in the image); skipped on Kubernetes older than 1.30, which lacks it.
+  # 0 renders no hook. Must be less than terminationGracePeriodSeconds.
+  preStopSleepSeconds: 10
 
 strategy:
   type: RollingUpdate
@@ -139,11 +140,12 @@ targetGroupBinding:
   # so a pod is Ready only once it is healthy in the target group and a rolling
   # update keeps old pods until their replacements serve traffic. Pods of a
   # release with no targetGroupArns get no gate.
-  podReadinessGate: false
+  podReadinessGate: true
 
 autoscaling:
   enabled: false
-  minReplicas: 1
+  # -- Two by default, for the same reason as replicaCount.
+  minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   # -- Set to a number to add a memory metric.
@@ -154,7 +156,7 @@ autoscaling:
 # (autoscaling.minReplicas, or replicaCount) is greater than minAvailable: a
 # budget that allows zero evictions blocks every node drain.
 podDisruptionBudget:
-  enabled: false
+  enabled: true
   minAvailable: 1
 
 serviceAccount:
@@ -179,6 +181,9 @@ affinity: {}
 # topologySpreadConstraints below is non-empty.
 topologySpread:
   enabled: true
+  # -- Also spread across nodes, so one node failing or draining never takes
+  # every replica at once. Soft (ScheduleAnyway), like the zone spread.
+  nodeSpread: true
   maxSkew: 1
   # -- ScheduleAnyway keeps pods schedulable on a small or uneven cluster;
   # DoNotSchedule makes the spread a hard requirement.
