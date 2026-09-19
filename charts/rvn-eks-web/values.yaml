@@ -181,8 +181,10 @@ affinity: {}
 # topologySpreadConstraints below is non-empty.
 topologySpread:
   enabled: true
-  # -- Also spread across nodes, so one node failing or draining never takes
-  # every replica at once. Soft (ScheduleAnyway), like the zone spread.
+  # -- Also spread across nodes (kubernetes.io/hostname). With the default
+  # ScheduleAnyway this is a preference: replicas land on separate nodes when
+  # the cluster has room, but can share one node if it is the only eligible
+  # node. Set whenUnsatisfiable to DoNotSchedule to require separate nodes.
   nodeSpread: true
   maxSkew: 1
   # -- ScheduleAnyway keeps pods schedulable on a small or uneven cluster;

@@ -129,7 +129,7 @@ shape. Liveness and readiness are on by default; startup is off.
 | `tolerations` | list | `[]` | |
 | `affinity` | map | `{}` | |
 | `topologySpread.enabled` | bool | `true` | Render one zone spread constraint on this chart's pods so each zone has a local endpoint. |
-| `topologySpread.nodeSpread` | bool | `true` | Also spread across nodes (`kubernetes.io/hostname`), so one node failing or draining never takes every replica. Uses the same `maxSkew` and `whenUnsatisfiable`. |
+| `topologySpread.nodeSpread` | bool | `true` | Also spread across nodes (`kubernetes.io/hostname`). Uses the same `maxSkew` and `whenUnsatisfiable`: with the default `ScheduleAnyway` it is a preference, and replicas can still share a node when it is the only eligible one. Set `whenUnsatisfiable: DoNotSchedule` to require separate nodes. |
 | `topologySpread.maxSkew` | int | `1` | |
 | `topologySpread.whenUnsatisfiable` | string | `ScheduleAnyway` | Or `DoNotSchedule` for a hard requirement. |
 | `topologySpreadConstraints` | list | `[]` | Explicit constraints. When non-empty, replaces the default zone spread. |
