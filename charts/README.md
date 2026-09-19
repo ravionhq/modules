@@ -6,7 +6,7 @@ is values synthesis onto these charts, not per-user chart codegen.
 
 | Chart | Workload shape | Kubernetes objects |
 |-------|----------------|--------------------|
-| [`rvn-eks-web`](rvn-eks-web) | Long-running HTTP service behind a shared load balancer | Deployment, Service, ServiceAccount, optional HPA, optional TargetGroupBinding, optional ExternalSecret |
+| [`rvn-eks-web`](rvn-eks-web) | Long-running HTTP service behind a shared load balancer | Deployment, Service, ServiceAccount, optional HPA, optional PodDisruptionBudget, optional TargetGroupBinding, optional ExternalSecret |
 | [`rvn-eks-worker`](rvn-eks-worker) | Long-running background process | Deployment, ServiceAccount, optional HPA, optional ExternalSecret |
 | [`rvn-eks-cron`](rvn-eks-cron) | Scheduled job | CronJob, ServiceAccount, optional ExternalSecret |
 
