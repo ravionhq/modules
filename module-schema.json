@@ -291,21 +291,7 @@
         },
         "type": {
           "type": "string",
-          "enum": [
-            "string",
-            "text",
-            "object",
-            "object_map",
-            "object_array",
-            "array",
-            "string_array",
-            "number",
-            "boolean",
-            "section",
-            "compound",
-            "gitrepo",
-            "keyvalue"
-          ]
+          "enum": ["string", "number", "boolean", "string_array", "object", "array"]
         },
         "label": { "type": "string" },
         "description": { "type": "string" },
