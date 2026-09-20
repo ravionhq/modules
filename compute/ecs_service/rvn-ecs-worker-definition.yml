@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.5.1
-  description: Fix services that use EC2 capacity failing to create with an empty capacity provider error when the cluster is selected by reference, including services created before this fix. Pre-deploy and post-deploy tasks now follow a capacity provider strategy set in advanced Terraform variables.
+  version: 2.0.0
+  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks.
 module:
   inputs:
     - id: section_cluster
@@ -221,7 +221,7 @@ module:
 
     - The module intentionally creates an ECS service without load balancer attachment or primary container port mappings.
     - Sidecar port mappings are allowed for task-local communication, agents, and proxies.
-    - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
+    - The service uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 
     ## Learn more
