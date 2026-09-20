@@ -30,5 +30,5 @@ spec:
   limits:
     cpu: {{ .Values.nodePool.cpuLimit }}
   disruption:
-    consolidationPolicy: WhenEmptyOrUnderutilized
-    consolidateAfter: 1m
+    consolidationPolicy: {{ .Values.nodePool.consolidationPolicy }}
+    consolidateAfter: {{ .Values.nodePool.consolidateAfter }}

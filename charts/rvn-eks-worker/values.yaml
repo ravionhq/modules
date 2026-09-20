@@ -51,6 +51,15 @@ resources:
   limits:
     memory: 512Mi
 
+# -- Limits voluntary disruptions (node drains, Karpenter consolidation,
+# cluster upgrades). Rendered only when the replica floor
+# (autoscaling.minReplicas, or replicaCount) is greater than minAvailable: a
+# budget that allows zero evictions blocks every node drain, and a
+# single-replica worker cannot be drained gradually at all.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
 autoscaling:
   enabled: false
   minReplicas: 1

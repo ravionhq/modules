@@ -391,6 +391,24 @@ test_rvn_eks_worker() {
   assert_eq "worker: no spread constraint when topologySpread is disabled" \
     "" "$(q "${zone_off}" "${tsc}")"
 
+  # A worker loses in-flight work when it is evicted, so a fleet drained all at
+  # once loses all of it. The budget is on by default wherever it can be, and
+  # skipped where it would block drains instead of pacing them.
+  local pdb='.[] | select(.kind == "PodDisruptionBudget")'
+  assert_eq "worker: no PodDisruptionBudget on the single-replica default" \
+    "0" "$(count "${default}" PodDisruptionBudget)"
+  assert_eq "worker: PodDisruptionBudget rendered above the replica floor" \
+    "1" "$(count "${full}" PodDisruptionBudget)"
+  assert_eq "worker: PodDisruptionBudget keeps minAvailable and lets unhealthy pods go" \
+    "1 AlwaysAllow" "$(q "${full}" "${pdb} | [.spec.minAvailable, .spec.unhealthyPodEvictionPolicy] | join(\" \")")"
+  assert_eq "worker: PodDisruptionBudget selects this release's pods" \
+    "rvn-eks-worker test-release" \
+    "$(q "${full}" "${pdb} | .spec.selector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  local pdb_single
+  pdb_single="$(render "${chart}" pdb-single --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml")"
+  assert_eq "worker: PodDisruptionBudget skipped when it would block every drain" \
+    "0" "$(count "${pdb_single}" PodDisruptionBudget)"
+
   test_secrets_contract "${chart}" "${full}" "${default}" Deployment
 }
 

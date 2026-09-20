@@ -709,21 +709,33 @@ variable "private_nlb_elastic_ip_allocation_ids" {
 
 variable "karpenter_default_node_pool" {
   type = object({
-    capacity_types      = optional(list(string), ["on-demand", "spot"])
-    instance_categories = optional(list(string), ["c", "m", "r"])
-    architectures       = optional(list(string), ["amd64"])
-    cpu_limit           = optional(number, 100)
-    expire_after        = optional(string, "720h")
-    root_volume_size    = optional(string, "20Gi")
-    root_volume_type    = optional(string, "gp3")
-    ebs_kms_key_arn     = optional(string)
+    capacity_types       = optional(list(string), ["on-demand", "spot"])
+    instance_categories  = optional(list(string), ["c", "m", "r"])
+    architectures        = optional(list(string), ["amd64"])
+    cpu_limit            = optional(number, 100)
+    expire_after         = optional(string, "720h")
+    consolidation_policy = optional(string, "WhenEmptyOrUnderutilized")
+    consolidate_after    = optional(string, "15m")
+    root_volume_size     = optional(string, "20Gi")
+    root_volume_type     = optional(string, "gp3")
+    ebs_kms_key_arn      = optional(string)
   })
-  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
+  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, how eagerly Karpenter consolidates, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
   default     = {}
 
   validation {
     condition     = var.karpenter_default_node_pool.ebs_kms_key_arn == null || can(regex("^arn:aws[a-zA-Z-]*:kms:", var.karpenter_default_node_pool.ebs_kms_key_arn))
     error_message = "The karpenter_default_node_pool.ebs_kms_key_arn must be a KMS key ARN when set."
+  }
+
+  validation {
+    condition     = contains(["WhenEmpty", "WhenEmptyOrUnderutilized"], var.karpenter_default_node_pool.consolidation_policy)
+    error_message = "The karpenter_default_node_pool.consolidation_policy must be WhenEmpty or WhenEmptyOrUnderutilized."
+  }
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.karpenter_default_node_pool.consolidate_after))
+    error_message = "The karpenter_default_node_pool.consolidate_after must be a duration like '30s', '15m' or '1h'."
   }
 
   validation {

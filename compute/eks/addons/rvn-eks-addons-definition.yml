@@ -14,7 +14,12 @@ release:
     variables; the previous behaviour is max concurrent 1. Ravion Operator moves to chart 0.5.6,
     which also lets the limit change while deploys are running instead of refusing to schedule
     until the cluster drains. Direct Terraform callers move to that chart with the module's new
-    default.
+    default. Karpenter also consolidates less eagerly: nodes are reclaimed after 15 minutes of
+    being empty or underused rather than 1, because a node reclaimed sooner than a rollout
+    takes can be deleted while the pods it was launched for are still being scheduled, which
+    evicts running pods and makes the work that was on them start again. Tune it per cluster
+    with karpenter_default_node_pool.consolidate_after and .consolidation_policy; the
+    previous behaviour is 1m.
 module:
   inputs:
     - id: cluster
