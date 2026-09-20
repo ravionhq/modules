@@ -7,8 +7,8 @@ auto_scaling:
   min_capacity: << module.input.min_tasks >>
   scheduled: >-
     << module.input.scheduled_scaling != nil ? map(module.input.scheduled_scaling,
-    {"name": #.name, "schedule": #.schedule, "min_capacity": #.min_tasks,
-    "max_capacity": #.max_tasks, "timezone": #.timezone, "start_time": #.start_time,
+    {"name": #.name, "schedule": #.schedule, "min_capacity": #.min_tasks != nil ? #.min_tasks : #.min_capacity,
+    "max_capacity": #.max_tasks != nil ? #.max_tasks : #.max_capacity, "timezone": #.timezone, "start_time": #.start_time,
     "end_time": #.end_time}) : [] >>
   target_tracking:
     - scale_in_enabled: << module.input.scale_in_enabled >>

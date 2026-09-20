@@ -684,11 +684,11 @@ describe("compiler", () => {
     );
     assert.match(
       assertString(getTerraformVariableAt(compiled.module, "auto_scaling", "scheduled")),
-      /"min_capacity": #\.min_tasks/,
+      /"min_capacity": #\.min_tasks != nil \? #\.min_tasks : #\.min_capacity/,
     );
     assert.match(
       assertString(getTerraformVariableAt(compiled.module, "auto_scaling", "scheduled")),
-      /"max_capacity": #\.max_tasks/,
+      /"max_capacity": #\.max_tasks != nil \? #\.max_tasks : #\.max_capacity/,
     );
 
     const build = getModuleBuild(compiled.module);
