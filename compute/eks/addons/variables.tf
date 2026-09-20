@@ -874,7 +874,7 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 6). Setting this or ravion_operator_execution_lane_scope pins both against control-plane changes."
+  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 12). Setting this or ravion_operator_execution_lane_scope pins both against control-plane changes."
   default     = null
 
   validation {
