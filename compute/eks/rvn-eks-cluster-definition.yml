@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.3.0
-  description: Lock down cluster and node defaults. The Ravion Runner role now trusts only Ravion's per-run pipeline runner roles instead of every principal in the account, and the principal that creates the cluster no longer keeps a permanent cluster-admin access entry, so people get access through explicit access entries; the plan refuses a configuration that would leave the cluster with no administrator at all. Managed nodes launch with an encrypted root volume and an IMDS hop limit of 1, so pods cannot read node credentials; a node group created by an earlier release without a launch template is replaced on upgrade, so add a second node group first or keep the old settings through advanced Terraform variables. NetworkPolicy enforcement is on in the VPC CNI, and control plane logs are kept for a year.
+  version: 0.4.0
+  description: Rename default node count inputs to system_node_min_nodes and system_node_max_nodes to make clear they count EC2 nodes.
 module:
   inputs:
     - id: network
@@ -130,15 +130,19 @@ module:
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
     - collapsible: true
       default: 2
-      description: Minimum nodes in the default managed node group. Set it high enough to run cluster components and leave spare capacity for workloads and rolling node updates.
-      id: system_node_min_size
+      description: Minimum EC2 nodes in the default managed node group. Set it high enough to run cluster components and leave spare capacity for workloads and rolling node updates.
+      id: system_node_min_nodes
+      moved_from:
+        - system_node_min_size
       label: Minimum nodes
       min: 1
       type: number
     - collapsible: true
       default: 4
-      description: Maximum nodes in the default managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
-      id: system_node_max_size
+      description: Maximum EC2 nodes in the default managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
+      id: system_node_max_nodes
+      moved_from:
+        - system_node_max_size
       label: Maximum nodes
       min: 1
       type: number
@@ -488,8 +492,8 @@ module:
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>
           capacity_type: << module.input.system_node_capacity_type >>
-          min_size: << module.input.system_node_min_size >>
-          max_size: << module.input.system_node_max_size >>
+          min_size: << module.input.system_node_min_nodes >>
+          max_size: << module.input.system_node_max_nodes >>
           disk_size: << module.input.system_node_disk_size >>
         node_groups: << module.input.node_groups || {} >>
         fargate_profiles: << module.input.fargate_profiles || {} >>

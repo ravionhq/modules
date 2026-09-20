@@ -211,21 +211,37 @@ describe("compiler", () => {
     );
     const additionalMinSize = findInput(additionalNodeGroupFields, "min_size");
     const additionalMaxSize = findInput(additionalNodeGroupFields, "max_size");
+    assert.equal(additionalNodeGroupFields.some((input) => input.id === "min_nodes" || input.id === "max_nodes"), false);
     assert.equal(additionalMinSize.label, "Minimum nodes");
     assert.equal(additionalMaxSize.label, "Maximum nodes");
     assert.match(String(additionalMinSize.description), /spare capacity/);
     assert.match(String(additionalMaxSize.description), /pods can remain pending/);
-    assert.equal(findInput(clusterInputs, "system_node_min_size").label, "Minimum nodes");
-    assert.equal(findInput(clusterInputs, "system_node_max_size").label, "Maximum nodes");
-    assert.equal(findInput(clusterInputs, "system_node_min_size").default, 2);
-    assert.equal(findInput(clusterInputs, "system_node_max_size").default, 4);
-    assert.match(String(findInput(clusterInputs, "system_node_min_size").description), /spare capacity/);
-    assert.match(String(findInput(clusterInputs, "system_node_max_size").description), /pods can remain pending/);
+    assert.equal(clusterInputs.some((input) => input.id === "system_node_min_size" || input.id === "system_node_max_size"), false);
+    const systemNodeMinNodes = findInput(clusterInputs, "system_node_min_nodes");
+    const systemNodeMaxNodes = findInput(clusterInputs, "system_node_max_nodes");
+    assert.equal(systemNodeMinNodes.label, "Minimum nodes");
+    assert.equal(systemNodeMaxNodes.label, "Maximum nodes");
+    assert.deepEqual(systemNodeMinNodes.moved_from, ["system_node_min_size"]);
+    assert.deepEqual(systemNodeMaxNodes.moved_from, ["system_node_max_size"]);
+    assert.equal(systemNodeMinNodes.default, 2);
+    assert.equal(systemNodeMaxNodes.default, 4);
+    assert.match(String(systemNodeMinNodes.description), /EC2 nodes/);
+    assert.match(String(systemNodeMaxNodes.description), /EC2 nodes/);
+    assert.match(String(systemNodeMinNodes.description), /spare capacity/);
+    assert.match(String(systemNodeMaxNodes.description), /pods can remain pending/);
+    assert.equal(
+      getTerraformVariableAt(cluster.module, "system_node_group", "min_size"),
+      "<< module.input.system_node_min_nodes >>",
+    );
+    assert.equal(
+      getTerraformVariableAt(cluster.module, "system_node_group", "max_size"),
+      "<< module.input.system_node_max_nodes >>",
+    );
     for (const inputId of [
       "system_node_capacity_type",
       "system_node_instance_types",
-      "system_node_min_size",
-      "system_node_max_size",
+      "system_node_min_nodes",
+      "system_node_max_nodes",
       "system_node_disk_size",
     ]) {
       assert.equal(findInput(clusterInputs, inputId).collapsible, true, `${inputId} should be collapsible`);
