@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.6.0
-  description: Default new services to one instance, standardize health check and builder field names, keep build policies in advanced settings, and clarify listener-rule guidance.
+  version: 1.7.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   inputs:
     - id: network

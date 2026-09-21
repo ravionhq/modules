@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.2
-  description: Fix the plan of a workload with IAM inline policies, which failed on OpenTofu 1.11 with "Inconsistent conditional result types" before any policy was attached. No change for workloads without inline policies.
+  version: 0.5.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   inputs:
     - id: section_cluster

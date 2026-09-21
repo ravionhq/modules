@@ -67,20 +67,20 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-image-builder` | EC2 Image Builder | v0.1.0 | `compute/image_builder/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
-| `rvn-aws-static` | Static Hosting | v1.1.2 | `hosting/static_site/` |
+| `rvn-aws-static` | Static Hosting | v1.2.0 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.1 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v1.6.0 | `compute/ec2_service/` |
+| `rvn-ec2-service` | EC2 Service | v1.7.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v1.0.2 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v1.5.1 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v1.5.1 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v1.5.1 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v1.6.0 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v1.6.0 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v1.6.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
 | `rvn-eks-addons` | EKS Add-ons | v0.9.3 | `compute/eks/addons/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.3.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.2.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.4.2 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.3.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.5.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v1.1.1 | `compute/lambda/` |
+| `rvn-lambda` | Lambda Function | v1.2.0 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.2.1 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.0.3 | `networking/route53/` |

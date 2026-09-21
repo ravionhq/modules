@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.1.2
-  description: Use consistent Dockerfile and builder field names and keep default build policies in advanced builder settings so routine build forms stay focused.
+  version: 1.2.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   build:
     builder: >-

@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.2.0
-  description: Zero-downtime deploys and disruptions by default. Pods now wait 10 seconds before SIGTERM so the load balancer stops routing to them first, count as ready only once healthy in the target group so a rolling update never retires a pod before its replacement serves traffic, are covered by a PodDisruptionBudget so node drains evict them one at a time, and spread across nodes as well as zones. The default minimum is two pods, since with one any pod stop is an outage. A configurable shutdown grace period lets services that hold long-lived connections such as WebSockets drain them. Existing instances pick up these defaults on upgrade; set the inputs explicitly to keep the previous behaviour, and note that instances left on the default pod count go from one pod to two.
+  version: 1.3.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   inputs:
     - id: section_cluster
