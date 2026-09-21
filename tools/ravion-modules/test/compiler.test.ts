@@ -1020,7 +1020,7 @@ describe("compiler", () => {
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
         builderType.description,
-        "Use on-demand EC2 for predictable availability or EC2 Spot for lower cost with possible capacity delays or interruption.",
+        "Use on-demand EC2 for predictable availability, EC2 Spot for lower cost with possible capacity delays or interruption, or a sandbox microVM on the execution environment's pool for the fastest start.",
         `${definition.type} should include shared builder guidance`,
       );
       const builderOptions = builderType.values;
@@ -1033,6 +1033,10 @@ describe("compiler", () => {
         [
           ["ec2", "Use on-demand capacity for predictable availability without Spot interruption."],
           ["ec2-spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
+          [
+            "sandbox",
+            "Run the build as a microVM on the execution environment's sandbox host pool. The pool keeps warm hosts, so a build starts in seconds instead of waiting for an instance to launch.",
+          ],
         ],
       );
       for (const removedInputId of [
