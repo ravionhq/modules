@@ -36,10 +36,23 @@ args: []
 # -- Non-secret environment variables: [{name: LOG_LEVEL, value: "info"}].
 env: []
 
-# -- Number of pods when autoscaling is disabled.
-replicaCount: 1
+# -- Number of pods when autoscaling is disabled. Two by default: with one, any
+# pod stop (node drain, node failure, crash) is an outage.
+replicaCount: 2
 revisionHistoryLimit: 10
+# -- Seconds a pod has to shut down after SIGTERM before it is killed. Includes
+# any preStop sleep below. Raise it for services that drain long-lived
+# connections (WebSockets, streaming responses) on shutdown.
 terminationGracePeriodSeconds: 30
+
+lifecycle:
+  # -- Seconds the main container keeps running after the pod is marked
+  # Terminating, before it receives SIGTERM. Gives the load balancer controller
+  # time to deregister the pod so no new connections arrive while the
+  # application drains. Rendered as the native preStop sleep action (no shell
+  # needed in the image); skipped on Kubernetes older than 1.30, which lacks it.
+  # 0 renders no hook. Must be less than terminationGracePeriodSeconds.
+  preStopSleepSeconds: 10
 
 strategy:
   type: RollingUpdate
@@ -123,14 +136,28 @@ targetGroupBinding:
   targetType: ip
   # -- Only needed when the target group lives in a different VPC than the cluster.
   vpcId: ""
+  # -- Add an AWS Load Balancer Controller readiness gate per TargetGroupBinding,
+  # so a pod is Ready only once it is healthy in the target group and a rolling
+  # update keeps old pods until their replacements serve traffic. Pods of a
+  # release with no targetGroupArns get no gate.
+  podReadinessGate: true
 
 autoscaling:
   enabled: false
-  minReplicas: 1
+  # -- Two by default, for the same reason as replicaCount.
+  minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   # -- Set to a number to add a memory metric.
   targetMemoryUtilizationPercentage: null
+
+# -- PodDisruptionBudget limiting voluntary disruptions (node drains,
+# consolidation, upgrades). Rendered only when the replica floor
+# (autoscaling.minReplicas, or replicaCount) is greater than minAvailable: a
+# budget that allows zero evictions blocks every node drain.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
 
 serviceAccount:
   create: true
@@ -154,6 +181,11 @@ affinity: {}
 # topologySpreadConstraints below is non-empty.
 topologySpread:
   enabled: true
+  # -- Also spread across nodes (kubernetes.io/hostname). With the default
+  # ScheduleAnyway this is a preference: replicas land on separate nodes when
+  # the cluster has room, but can share one node if it is the only eligible
+  # node. Set whenUnsatisfiable to DoNotSchedule to require separate nodes.
+  nodeSpread: true
   maxSkew: 1
   # -- ScheduleAnyway keeps pods schedulable on a small or uneven cluster;
   # DoNotSchedule makes the spread a hard requirement.

@@ -76,8 +76,13 @@ resource "aws_iam_role_policy_attachment" "pod_identity_managed" {
 
 # Policy documents arrive as objects (from YAML or HCL), never as pre-encoded
 # JSON strings, matching compute/ecs_service's task_role_inline_policies.
+#
+# The gate lives inside the for expression, not in a conditional around the
+# variable: the variable is typed any, so a populated value is an object whose
+# attributes are the policy names, and `enabled ? object : {}` fails OpenTofu
+# 1.11's conditional type check ("Inconsistent conditional result types").
 resource "aws_iam_role_policy" "pod_identity_inline" {
-  for_each = local.pod_identity_enabled ? var.pod_identity_inline_policies : {}
+  for_each = { for name, policy in var.pod_identity_inline_policies : name => policy if local.pod_identity_enabled }
 
   name   = each.key
   role   = aws_iam_role.pod_identity[0].id

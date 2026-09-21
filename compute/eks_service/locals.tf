@@ -25,8 +25,11 @@ locals {
   target_group_base_name = replace(var.name, "_", "-")
 
   # Preserve short names. Long names include a stable hash so workloads that
-  # share a prefix cannot collide within ELBv2's 32-character limit.
-  target_group_name = length(var.name) <= 29 ? "${local.target_group_base_name}-tg" : "${substr(local.target_group_base_name, 0, 20)}-${substr(sha1(var.name), 0, 8)}-tg"
+  # share a prefix cannot collide within ELBv2's 32-character limit. An explicit
+  # var.target_group_name wins over both, for a workload whose derived name is
+  # already taken in the VPC.
+  derived_target_group_name = length(var.name) <= 29 ? "${local.target_group_base_name}-tg" : "${substr(local.target_group_base_name, 0, 20)}-${substr(sha1(var.name), 0, 8)}-tg"
+  target_group_name         = coalesce(var.target_group_name, local.derived_target_group_name)
 
   # The health check speaks the same protocol as the target group unless the
   # caller overrides it, which is what ECS does via primary_health_check_protocol.
