@@ -1035,7 +1035,7 @@ describe("compiler", () => {
           ["ec2-spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
           [
             "sandbox",
-            "Run the build as a microVM on the execution environment's sandbox host pool. The pool keeps warm hosts, so a build starts in seconds instead of waiting for an instance to launch.",
+            "Run the build as a microVM on the execution environment's sandbox host pool. The pool keeps warm hosts, so a build starts in seconds.",
           ],
         ],
       );

@@ -241,7 +241,7 @@ module:
       label: Remove Systems Manager agent after build
       type: boolean
     - default: false
-      description: Give the image its own root volume instead of the parent image's. The volume becomes the image's snapshot, and its size is the smallest root volume an instance can launch the image with.
+      description: Give the image a root volume configured here. The volume becomes the image's snapshot, and its size is the smallest root volume an instance can launch the image with.
       id: root_volume_override_enabled
       label: Custom root volume
       type: boolean

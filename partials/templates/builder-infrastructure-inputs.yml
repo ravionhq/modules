@@ -17,7 +17,7 @@
       description: Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS.
       value: ec2-spot
     - label: Sandbox
-      description: Run the build as a microVM on the execution environment's sandbox host pool. The pool keeps warm hosts, so a build starts in seconds instead of waiting for an instance to launch.
+      description: Run the build as a microVM on the execution environment's sandbox host pool. The pool keeps warm hosts, so a build starts in seconds.
       value: sandbox
 - default: c7a.4xlarge
   description: EC2 instance type for builds. Start with the default value, then increase or decrease it based on the resource usage report at the end of builds.
