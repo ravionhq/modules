@@ -77,7 +77,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Machine image",
     description: "For AMIs baked from a parent image and distributed to the regions and accounts that launch them.",
     sortOrder: 95,
-    definitionTypes: ["rvn-aws-image-builder", "rvn-aws-sandbox-release"],
+    definitionTypes: ["rvn-aws-image-builder"],
   },
   {
     givenId: "network",
