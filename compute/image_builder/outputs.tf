@@ -79,3 +79,11 @@ output "pipeline_execution_policy_arn" {
   description = "The ARN of the policy that starts this pipeline and reads the images it produces. Null unless create_pipeline_execution_policy is true."
   value       = try(aws_iam_policy.pipeline_execution[0].arn, null)
 }
+
+output "notification_rule_arn" {
+  description = "The EventBridge rule that forwards finished builds, or null when notifications are off."
+  # Read off the rule itself rather than the flag that decides it: the flag is
+  # derived from the header value, and a value derived from a secret makes the
+  # whole output a secret.
+  value = one(aws_cloudwatch_event_rule.notify[*].arn)
+}

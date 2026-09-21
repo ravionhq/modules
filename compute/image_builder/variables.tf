@@ -357,3 +357,31 @@ variable "build_on_apply" {
   description = "Build an image during apply, and again whenever the recipe changes. The apply waits for the build and its distribution, which commonly takes 20-60 minutes. Destroying the image record later leaves the AMIs in place."
   default     = false
 }
+
+################################################################################
+# Build notification
+################################################################################
+
+variable "notify_url" {
+  type        = string
+  description = "HTTPS endpoint told when a build finishes and its images are distributed. Empty sends no notifications."
+  default     = ""
+
+  validation {
+    condition     = var.notify_url == "" || startswith(var.notify_url, "https://")
+    error_message = "The notify_url must be an https:// endpoint."
+  }
+}
+
+variable "notify_header_name" {
+  type        = string
+  description = "Header the notification carries so the endpoint can authenticate it."
+  default     = "X-Lambda-Secret"
+}
+
+variable "notify_header_value" {
+  type        = string
+  description = "Value of that header."
+  default     = ""
+  sensitive   = true
+}

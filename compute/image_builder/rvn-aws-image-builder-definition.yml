@@ -3,8 +3,8 @@ definition:
   name: EC2 Image Builder
   description: Creates an EC2 Image Builder pipeline that bakes an AMI from a parent image and ordered components, then distributes it across regions, privately or publicly.
 release:
-  version: 0.1.0
-  description: Build AMIs with EC2 Image Builder from inline or existing components, distribute them to additional regions, share them with selected accounts, AWS Organizations, or publicly, and let a deploy step start a build on demand. Set the image's root volume, send build logs to S3, and control the image description, build working directory, test and build timeouts, and whether the pipeline runs.
+  version: 0.2.0
+  description: Adds a build notification that tells an endpoint when an image finishes and reaches every region.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -431,6 +431,36 @@ module:
         log_bucket:
           not: ""
       type: string
+    - id: section_notification
+      label: Build notification
+      type: section
+    - collapsible: true
+      description: HTTPS endpoint told when a build finishes and its images reach every region. The notification carries the image's ARN, and the endpoint reads the rest back from Image Builder. Leave blank to send none.
+      id: notify_url
+      label: Notify endpoint
+      patterns:
+        - message: Use an https:// URL.
+          pattern: ^$|^https://.+
+      placeholder: https://api.example.com/hooks/image-built
+      type: string
+    - collapsible: true
+      default: X-Lambda-Secret
+      description: Header the notification carries so the endpoint can tell it apart from any other caller.
+      id: notify_header_name
+      label: Notify header
+      show_when:
+        notify_url:
+          not: ""
+      type: string
+    - collapsible: true
+      description: Value of that header. It is stored as a secret and never shown again.
+      id: notify_header_value
+      label: Notify header value
+      secret: true
+      show_when:
+        notify_url:
+          not: ""
+      type: string
     - id: section_distribution
       label: Distribution
       type: section
@@ -535,6 +565,9 @@ module:
         log_prefix: << module.input.log_prefix >>
         manage_image_block_public_access: << module.input.manage_image_block_public_access >>
         name: << module.input.name >>
+        notify_header_name: << module.input.notify_header_name >>
+        notify_header_value: << module.input.notify_header_value || "" >>
+        notify_url: << module.input.notify_url || "" >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
         parent_image_lookup: >-
           << module.input.parent_image_source == "lookup" ?

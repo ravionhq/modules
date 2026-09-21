@@ -72,6 +72,13 @@ locals {
 
   launch_permission_enabled = var.public || length(var.launch_account_ids) > 0 || length(var.launch_organization_arns) > 0
 
+  # A notification needs somewhere to go and something to prove it came from
+  # this account; without both it is not configured, not half-configured.
+  notify_enabled = var.notify_url != "" && var.notify_header_value != ""
+
+  notify_role_name_full = "${var.name}-image-notify"
+  notify_role_name      = length(local.notify_role_name_full) <= 64 ? local.notify_role_name_full : "${substr(local.notify_role_name_full, 0, 55)}-${substr(sha256(local.notify_role_name_full), 0, 8)}"
+
   log_prefix = trim(var.log_prefix, "/")
 
   # An empty prefix puts the logs at the bucket root rather than under an empty

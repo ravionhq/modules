@@ -36,6 +36,27 @@ mock_provider "aws" {
     }
   }
 
+  override_resource {
+    target = aws_cloudwatch_event_connection.notify
+    values = {
+      arn = "arn:aws:events:us-west-2:123456789012:connection/test-image-notify/0123"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudwatch_event_api_destination.notify
+    values = {
+      arn = "arn:aws:events:us-west-2:123456789012:api-destination/test-image-notify/0123"
+    }
+  }
+
+  override_resource {
+    target = aws_iam_role.notify
+    values = {
+      arn = "arn:aws:iam::123456789012:role/test-image-notify"
+    }
+  }
+
   override_data {
     target = data.aws_region.current
     values = {
@@ -699,4 +720,89 @@ run "the_build_wait_must_contain_the_test_phase" {
   }
 
   expect_failures = [var.build_timeout_minutes]
+}
+
+################################################################################
+# Build notification
+################################################################################
+
+# Notifications are off unless somewhere to send them AND something to prove
+# they came from this account are both given. Half a configuration is not a
+# quieter notification, it is an unauthenticated one.
+run "no_notification_without_a_url" {
+  command = plan
+
+  variables {
+    notify_header_value = "shhh"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify) == 0
+    error_message = "A secret with no endpoint must not create a rule"
+  }
+}
+
+run "no_notification_without_a_secret" {
+  command = plan
+
+  variables {
+    notify_url = "https://api.example.com/hooks/image-built"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify) == 0
+    error_message = "An endpoint with no secret must not create a rule"
+  }
+}
+
+# The rule matches this pipeline's finished images and nothing else: a build
+# still running produced no image, and another pipeline's images are somebody
+# else's business.
+run "the_rule_matches_only_this_pipelines_finished_images" {
+  command = plan
+
+  variables {
+    notify_url          = "https://api.example.com/hooks/image-built"
+    notify_header_value = "shhh"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify) == 1
+    error_message = "An endpoint and a secret must create a rule"
+  }
+
+  assert {
+    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).source == ["aws.imagebuilder"]
+    error_message = "The rule must listen to Image Builder"
+  }
+
+  assert {
+    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).detail.state.status == ["AVAILABLE"]
+    error_message = "The rule must only forward images that finished"
+  }
+
+  assert {
+    condition     = length(regexall("image/test-image-", jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix)) == 1
+    error_message = "The rule must be confined to this pipeline's images"
+  }
+}
+
+# The delivery role can invoke this one destination and nothing else.
+run "the_delivery_role_reaches_one_destination" {
+  command = plan
+
+  variables {
+    notify_url          = "https://api.example.com/hooks/image-built"
+    notify_header_value = "shhh"
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.notify[0].policy).Statement[0].Action == "events:InvokeApiDestination"
+    error_message = "The role must only invoke a destination"
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role.notify[0].assume_role_policy).Statement[0].Principal.Service == "events.amazonaws.com"
+    error_message = "Only EventBridge may assume the delivery role"
+  }
 }
