@@ -414,7 +414,6 @@ describe("compiler", () => {
       "ravion_operator_execution_image",
       "ravion_operator_chart_version",
       "ravion_operator_execution_max_concurrent",
-      "ravion_operator_execution_resources",
       "ravion_operator_warm_capacity",
       "ravion_operator_coordinator_enabled",
       "ravion_operator_coordinator_adaptive_enabled",
@@ -425,7 +424,7 @@ describe("compiler", () => {
     }
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
-      "0.5.10",
+      "0.5.11",
     );
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);

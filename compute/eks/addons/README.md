@@ -401,7 +401,7 @@ ravion_operator_endpoint = "ws://host.docker.internal:3001/operator/v1/connect"
 
 `ravion_operator_chart_version` is ignored for a filesystem chart. Note that `ravion_operator_chart_source` must stay **publicly pullable** in production: customer clusters cannot pull from Ravion's private ECR.
 
-Before publishing chart `0.5.10`, verify the cross-repository resource-policy contract against its source directory. This checks both the typed module shape and a raw Helm override in the final `RVN_OPERATOR_EXECUTION_JOBS` JSON, where chart `0.5.9` dropped the ownership source:
+Before publishing chart `0.5.11`, verify the cross-repository runtime-policy contract against its source directory. The check supplies obsolete raw Helm resource fields and confirms that the final `RVN_OPERATOR_EXECUTION_JOBS` JSON omits them while preserving the independent concurrency configuration:
 
 ```bash
 OPERATOR_CHART_PATH=/path/to/ravion/packages/operator/chart/operator \
@@ -463,10 +463,9 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
 executor Jobs and workload namespace bootstrap are enabled automatically;
 customization uses **Advanced Terraform variables**. The module targets chart
-`0.5.10`, which forwards executor resource-policy ownership to the running binary,
-and enables two-replica HA and full-cluster management with Jobs. Chart `0.5.10`
-must be published before this module version is released or applied; `0.5.9` is the
-last verified published floor, but it does not forward `executionJobs.resourcesSource`.
+`0.5.11` for execution-status watch RBAC and executor image prewarming, and enables
+two-replica HA and full-cluster management with Jobs. Chart `0.5.11` must be
+published before this module version is released or applied.
 Self-update stays on in Job mode: Ravion rolls the agent forward and the chart
 preserves the running image on later applies. Direct Terraform callers opt in with
 `ravion_operator_execution_jobs_enabled = true`.
@@ -478,7 +477,7 @@ ravion_operator_enabled                = true
 ravion_operator_deploy_enabled         = true
 ravion_operator_deploy_namespaces      = ["app-prod"]
 ravion_operator_execution_jobs_enabled = true
-ravion_operator_chart_version          = "0.5.10"
+ravion_operator_chart_version          = "0.5.11"
 ravion_operator_coordinator_enabled    = true
 ```
 
@@ -486,13 +485,13 @@ Job mode keeps self-update on (chart 0.5.0+). Only the elected coordinator patch
 
 HA requires a replica-aware gateway and runs a fixed number of coordinators, two by default, placed the way Karpenter places itself: one per node, spread across zones, tolerating a `CriticalAddonsOnly` system node group, at `system-cluster-critical` priority, and never on a node Karpenter provisioned. A coordinator therefore can never hold an autoscaled node hostage, and a replica with no eligible node stays Pending until one appears; nothing sizes the count to the cluster or adds a node. The install needs a node group Karpenter does not manage, which the `compute/eks` system node group provides with two nodes by default. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas = 1`, and with self-update on also `ravion_operator_coordinator_distinct_nodes_enabled = false` so the rollout can surge; with two replicas there the second pod is permanently Pending, the Deployment never settles and a rollout cannot complete. Disabling distinct nodes drops the placement rules and permits custom affinity through `ravion_operator_helm_values`.
 
-Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each executor requests 100m CPU/128Mi memory/1Gi ephemeral storage and limits at 2 CPU/2Gi/20Gi. Nodes still need enough free resources to schedule the pods. Use `ravion_operator_execution_resources` for a complete explicit override; it emits `executionJobs.resourcesSource: local` so runtime policy cannot replace customer sizing.
+Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU/128Mi memory/1Gi ephemeral storage and limit at 2 CPU/2Gi/20Gi. Nodes still need enough free resources to schedule the pods. The module never emits executor resources into Helm configuration, so Ravion can retune them without a chart or module release. Existing Jobs remain immutable.
 
-That ownership marker is a chart/runtime contract, not just a stored Helm value. Operator binary self-update patches the Deployment image; it does **not** rerender the chart or its `RVN_OPERATOR_EXECUTION_JOBS` environment value. Upgrade the add-ons release through chart `0.5.10` before relying on an explicit resource-policy ownership setting, so the rendered configuration carries `resourcesSource`. Chart `0.5.9` remains the verified prior floor but drops this field while constructing the runtime JSON.
+The old raw Helm fields `executionJobs.resources` and `executionJobs.resourcesSource` are accepted as inert upgrade residue but chart `0.5.11` deliberately omits both from `RVN_OPERATOR_EXECUTION_JOBS`; they cannot pin executor sizing. Concurrency remains independent: `executionJobs.maxConcurrent` and `settingsSource` continue to control whether capacity is runtime-managed or locally pinned.
 
 Optional `ravion_operator_warm_capacity` runs low-priority pause placeholders that Karpenter can schedule before a rollout. Its default eight 100m CPU/256Mi/1Gi slots are sized for six executors plus a 100% surge of the default two-pod web service. This is a schedulability guarantee only when placeholders land on nodes eligible for those executors and app pods, and those workloads have priority greater than the placeholder class's `-10`; aggregate capacity elsewhere cannot satisfy placement constraints and equal/lower-priority pods cannot preempt it. Tune slot count, requests, node selectors, tolerations and topology spread to match the workloads that must start immediately. Placeholders terminate with zero grace.
 
-To also keep the executor image cached, enable the Operator chart's `prewarm.enabled` through `ravion_operator_helm_values`. The chart creates a lightweight DaemonSet; the elected coordinator updates only its image to the exact digest it is running, including after self-update. Configure `prewarm.nodeSelector` and `prewarm.tolerations` for eligible executor nodes. This is asynchronous: newly added nodes and a newly updated digest still need their first pull. It requires coordinator mode and an image containing `operator prewarm` (introduced in 0.5.10).
+To also keep the executor image cached, enable the Operator chart's `prewarm.enabled` through `ravion_operator_helm_values`. The chart creates a lightweight DaemonSet; the elected coordinator updates only its image to the exact digest it is running, including after self-update. Configure `prewarm.nodeSelector` and `prewarm.tolerations` for eligible executor nodes. This is asynchronous: newly added nodes and a newly updated digest still need their first pull. It requires coordinator mode and an image containing `operator prewarm` (introduced in 0.5.11).
 
 ```hcl
 ravion_operator_helm_values = [yamlencode({
@@ -531,19 +530,7 @@ workload namespace bootstrap. Self-update can be disabled with
 
 The web, worker and cron modules continue to submit their existing Git-sourced Helm definitions through `aws:eks`. The control plane selects the eligible Operator enrolled for the cluster ARN and packages the chart for it. No new deployment discriminator or installation-ID field is supported in that module deploy schema. Provider-neutral prepared deployments are a separate API path, not yet a general-purpose module deployment type.
 
-Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, coordinator resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities. Prefer `ravion_operator_execution_resources` for executor sizing. A raw `ravion_operator_helm_values` override of `executionJobs.resources` must set `executionJobs.resourcesSource: local` in the same override; otherwise the runtime-managed policy owns those resources.
-
-```hcl
-ravion_operator_helm_values = [yamlencode({
-  executionJobs = {
-    resourcesSource = "local"
-    resources = {
-      requests = { cpu = "250m", memory = "384Mi", "ephemeral-storage" = "1Gi" }
-      limits   = { cpu = "2", memory = "3Gi", "ephemeral-storage" = "20Gi" }
-    }
-  }
-})]
-```
+Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, coordinator resources, tolerations and `prewarm.resources` — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities. Coordinator resources, image-prewarm pod resources and `ravion_operator_warm_capacity` placeholder resources are independent of executor Job resources and remain locally configurable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` values are ignored; executor Job sizing always comes from Ravion's runtime policy.
 
 The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, executor Jobs, namespace bootstrap, HA and full management are automatic. Execution mode, namespace bootstrap, inline self-update, image/chart, scope, HA, capacity and Helm customization are available through **Advanced Terraform variables**.
 
@@ -681,7 +668,7 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_enabled | Mint the cluster's Ravion Operator credential (via the `ravion` provider) and install the Ravion Operator. | `bool` | `false` | no |
 | ravion_operator_endpoint | WebSocket endpoint the agent dials. | `string` | `"wss://websockets.ravion.com/operator/v1/connect"` | no |
 | ravion_operator_chart_source | Public OCI reference, or a filesystem chart path for local testing. | `string` | `"oci://public.ecr.aws/a8z1i1r2/operator"` | no |
-| ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.5.10"` | no |
+| ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.5.11"` | no |
 | ravion_operator_namespace | Namespace for the agent and its credential Secret (created if missing). Shared observability components use it by default. | `string` | `"ravion-operator"` | no |
 | ravion_operator_namespaces_creation_enabled | Create missing observation and deployment namespaces before installing Operator RBAC; reuse existing namespaces and retain created namespaces on removal. | `bool` | `true` | no |
 | ravion_operator_namespace_scope | Namespaces the agent may observe. Empty is cluster-wide; non-empty renders namespaced Roles and no observation ClusterRole at all. | `list(string)` | `[]` | no |
@@ -690,7 +677,6 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs. | `bool` | `false` | no |
 | ravion_operator_execution_image | Optional digest-pinned coordinator/executor image override; empty uses the published chart's bundled digest. | `string` | `""` | no |
 | ravion_operator_execution_max_concurrent | Pins how many releases deploy at once, 1-64. Null lets the Ravion control plane decide (currently 12). | `number` | `null` | no |
-| ravion_operator_execution_resources | Optional complete executor requests and limits override; setting it pins resource policy locally. | `object` | `null` | no |
 | ravion_operator_warm_capacity | Optional low-priority capacity reservation with configurable slots, requests and placement. | `object` | disabled | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
 | ravion_operator_coordinator_replicas | Fixed coordinator count, 1-9; use 1 on a single eligible node. | `number` | `2` | no |

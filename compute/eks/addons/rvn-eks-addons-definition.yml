@@ -11,10 +11,10 @@ release:
     wait for the deploys that are running. Ravion decides how many deploy at once and retunes it
     without a module release; pin capacity with the advanced
     ravion_operator_execution_max_concurrent variable. This release targets Ravion Operator chart
-    0.5.10 for managed resource-policy ownership and smaller executor reservations; that chart
-    must be published before this module version is released. Optional low-priority warm-capacity
-    placeholders can reserve room for six executors and an application surge when their placement
-    and priority match those workloads. Karpenter
+    0.5.11 for execution-status watches and executor image prewarming; that chart must be published
+    before this module version is released. Ravion supplies executor sizing at runtime. Optional
+    low-priority warm-capacity placeholders can reserve room for six executors and an application
+    surge when their placement and priority match those workloads. Karpenter
     also consolidates less eagerly: nodes are reclaimed after 15 minutes of
     being empty or underused rather than 1, because a node reclaimed sooner than a rollout
     takes can be deleted while the pods it was launched for are still being scheduled, which
@@ -1135,7 +1135,7 @@ module:
         # which is only the floor a fresh install starts from: the control plane
         # rolls the agent forward from there and the chart preserves the running
         # image on later applies.
-        ravion_operator_chart_version: 0.5.10
+        ravion_operator_chart_version: 0.5.11
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
@@ -1310,13 +1310,13 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, HA Operator and full-cluster management.
 
-    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module targets chart `0.5.10` from `public.ecr.aws/a8z1i1r2/operator`; it must be published before this module version is released or applied. Chart `0.5.9` is the last verified published floor, but it does not forward executor resource-policy ownership to the runtime. No image digest or chart version needs to be entered after the required chart is published. Execution mode customization is available only through **Advanced Terraform variables**.
+    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module targets chart `0.5.11` from `public.ecr.aws/a8z1i1r2/operator` for execution-status watch RBAC and executor image prewarming; it must be published before this module version is released or applied. No image digest or chart version needs to be entered after the required chart is published. Execution mode customization is available only through **Advanced Terraform variables**.
 
     **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas=1` through **Advanced Terraform variables**.
 
-    Each coordinator requests 500m CPU and 1Gi memory. Each active executor requests 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. `ravion_operator_execution_resources` supplies a complete local override through **Advanced Terraform variables** and sets `executionJobs.resourcesSource=local`. A raw `ravion_operator_helm_values` override of `executionJobs.resources` must set that source in the same document. Binary self-update only patches the image and does not rerender chart configuration, so the add-ons release must upgrade through chart 0.5.10 before relying on an explicit resource-policy ownership setting.
+    Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
-    For predictable start latency, `ravion_operator_warm_capacity.enabled=true` through **Advanced Terraform variables** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`; configure slot requests, replica count and placement accordingly. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.10.
+    For predictable start latency, `ravion_operator_warm_capacity.enabled=true` through **Advanced Terraform variables** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`; configure slot requests, replica count and placement accordingly. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
 
     **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Different releases deploy in parallel, up to twelve at once by default; two versions of the same release never do, and management commands wait for running deploys. Ravion tunes capacity over the air without a module release. Pin it for this cluster with `ravion_operator_execution_max_concurrent` (1-64) through **Advanced Terraform variables**. Current Operators always serialize per release; namespace lane selection is not supported. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` the same way. Drain existing ownership before changing management scope.
 

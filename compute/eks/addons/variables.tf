@@ -787,7 +787,7 @@ variable "ravion_operator_chart_source" {
 variable "ravion_operator_chart_version" {
   type        = string
   description = "Operator Helm chart version. For executor Jobs, use the chart_version output from the same Operator publishing run as ravion_operator_execution_image. Inline mode preserves the running image unless an image tag is pinned; Job mode pins coordinators and executors to ravion_operator_execution_image. Null tracks latest and is not allowed in Job mode."
-  default     = "0.5.10"
+  default     = "0.5.11"
 
   validation {
     condition     = var.ravion_operator_chart_version == null || can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.ravion_operator_chart_version))
@@ -893,23 +893,6 @@ variable "ravion_operator_execution_max_concurrent" {
     condition     = var.ravion_operator_execution_max_concurrent == null ? true : (var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent)
     error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
   }
-}
-
-variable "ravion_operator_execution_resources" {
-  type = object({
-    requests = optional(object({
-      cpu               = optional(string, "100m")
-      memory            = optional(string, "128Mi")
-      ephemeral_storage = optional(string, "1Gi")
-    }), {})
-    limits = optional(object({
-      cpu               = optional(string, "2")
-      memory            = optional(string, "2Gi")
-      ephemeral_storage = optional(string, "20Gi")
-    }), {})
-  })
-  description = "Optional per-executor Job resources. Null uses the published chart defaults and lets Ravion adopt a centrally managed resource policy when supported. Setting this pins the complete resource policy locally."
-  default     = null
 }
 
 variable "ravion_operator_warm_capacity" {

@@ -137,7 +137,7 @@ run "operator_inline_upgrade_identity" {
     condition = (
       helm_release.ravion_operator[0].repository == "oci://public.ecr.aws/a8z1i1r2" &&
       helm_release.ravion_operator[0].chart == "operator" &&
-      helm_release.ravion_operator[0].version == "0.5.10" &&
+      helm_release.ravion_operator[0].version == "0.5.11" &&
       helm_release.ravion_operator[0].name == "ravion-operator" &&
       helm_release.ravion_operator[0].take_ownership == true &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0])), "nameOverride") &&
@@ -162,7 +162,7 @@ run "operator_ha_full_management" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled  = true
-    ravion_operator_chart_version           = "0.5.10"
+    ravion_operator_chart_version           = "0.5.11"
     ravion_operator_coordinator_enabled     = true
     ravion_operator_full_management_enabled = true
     ravion_operator_deploy_namespaces       = []
