@@ -240,9 +240,10 @@ resource "helm_release" "ravion_operator" {
           enabled    = var.ravion_operator_deploy_enabled
           namespaces = var.ravion_operator_deploy_namespaces
         }
-        # Scheduling (maxConcurrent, laneScope) belongs to the control plane,
-        # which retunes it over the air. Only an explicit value is passed, and
-        # it pins scheduling locally (settingsSource = local).
+        # Capacity belongs to the control plane, which retunes it over the air.
+        # Only an explicit value is passed, and it pins capacity locally.
+        # Resource policy is separate: an explicit resource override must stay
+        # local so a later heartbeat cannot silently replace customer sizing.
         executionJobs = merge(
           {
             enabled        = var.ravion_operator_execution_jobs_enabled
@@ -250,14 +251,32 @@ resource "helm_release" "ravion_operator" {
             fullManagement = var.ravion_operator_full_management_enabled
           },
           var.ravion_operator_execution_max_concurrent == null ? {} : { maxConcurrent = var.ravion_operator_execution_max_concurrent },
-          var.ravion_operator_execution_lane_scope == null ? {} : { laneScope = var.ravion_operator_execution_lane_scope },
-          var.ravion_operator_execution_max_concurrent == null && var.ravion_operator_execution_lane_scope == null ? {} : { settingsSource = "local" },
+          var.ravion_operator_execution_max_concurrent == null ? {} : { settingsSource = "local" },
+          var.ravion_operator_execution_resources == null ? {} : { resourcesSource = "local" },
+          var.ravion_operator_execution_resources == null ? {} : {
+            resources = {
+              requests = {
+                cpu                 = var.ravion_operator_execution_resources.requests.cpu
+                memory              = var.ravion_operator_execution_resources.requests.memory
+                "ephemeral-storage" = var.ravion_operator_execution_resources.requests.ephemeral_storage
+              }
+              limits = {
+                cpu                 = var.ravion_operator_execution_resources.limits.cpu
+                memory              = var.ravion_operator_execution_resources.limits.memory
+                "ephemeral-storage" = var.ravion_operator_execution_resources.limits.ephemeral_storage
+              }
+            }
+          },
         )
         # Placed the way Karpenter places itself (see the chart's coordinator
         # values): a fixed count on nodes Karpenter does not manage, so a
         # coordinator can never keep an autoscaled node alive.
+        # Chart 0.5.10 defaults adaptive on. This module promises a fixed count
+        # placed on the system node group, so never inherit that changing
+        # upstream default implicitly.
         coordinator = {
           enabled              = var.ravion_operator_coordinator_enabled
+          adaptive             = false
           replicas             = var.ravion_operator_coordinator_replicas
           requireDistinctNodes = var.ravion_operator_coordinator_distinct_nodes_enabled
         }

@@ -787,7 +787,7 @@ variable "ravion_operator_chart_source" {
 variable "ravion_operator_chart_version" {
   type        = string
   description = "Operator Helm chart version. For executor Jobs, use the chart_version output from the same Operator publishing run as ravion_operator_execution_image. Inline mode preserves the running image unless an image tag is pinned; Job mode pins coordinators and executors to ravion_operator_execution_image. Null tracks latest and is not allowed in Job mode."
-  default     = "0.5.6"
+  default     = "0.5.10"
 
   validation {
     condition     = var.ravion_operator_chart_version == null || can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.ravion_operator_chart_version))
@@ -886,7 +886,7 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 12). Setting this or ravion_operator_execution_lane_scope pins both against control-plane changes."
+  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 12)."
   default     = null
 
   validation {
@@ -895,14 +895,62 @@ variable "ravion_operator_execution_max_concurrent" {
   }
 }
 
-variable "ravion_operator_execution_lane_scope" {
-  type        = string
-  description = "Pins what the Operator serializes deploys on: release (different releases in parallel, one version of each at a time) or namespace (one release per namespace, per cluster under full management). Null lets the Ravion control plane decide (currently release)."
+variable "ravion_operator_execution_resources" {
+  type = object({
+    requests = optional(object({
+      cpu               = optional(string, "100m")
+      memory            = optional(string, "128Mi")
+      ephemeral_storage = optional(string, "1Gi")
+    }), {})
+    limits = optional(object({
+      cpu               = optional(string, "2")
+      memory            = optional(string, "2Gi")
+      ephemeral_storage = optional(string, "20Gi")
+    }), {})
+  })
+  description = "Optional per-executor Job resources. Null uses the published chart defaults and lets Ravion adopt a centrally managed resource policy when supported. Setting this pins the complete resource policy locally."
   default     = null
+}
+
+variable "ravion_operator_warm_capacity" {
+  type = object({
+    enabled  = optional(bool, false)
+    replicas = optional(number, 8)
+    requests = optional(object({
+      cpu               = optional(string, "100m")
+      memory            = optional(string, "256Mi")
+      ephemeral_storage = optional(string, "1Gi")
+    }), {})
+    placement = optional(object({
+      node_selector = optional(map(string), {})
+      tolerations = optional(list(object({
+        key      = string
+        operator = string
+        value    = string
+        effect   = string
+      })), [])
+      topology_spread_enabled            = optional(bool, false)
+      topology_spread_max_skew           = optional(number, 1)
+      topology_spread_key                = optional(string, "topology.kubernetes.io/zone")
+      topology_spread_when_unsatisfiable = optional(string, "ScheduleAnyway")
+    }), {})
+  })
+  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. Tune replicas, per-slot requests and placement for actual rollout requirements."
+  default     = {}
 
   validation {
-    condition     = var.ravion_operator_execution_lane_scope == null ? true : contains(["namespace", "release"], var.ravion_operator_execution_lane_scope)
-    error_message = "The ravion_operator_execution_lane_scope must be namespace or release."
+    condition     = var.ravion_operator_warm_capacity.replicas >= 1 && floor(var.ravion_operator_warm_capacity.replicas) == var.ravion_operator_warm_capacity.replicas
+    error_message = "The ravion_operator_warm_capacity.replicas must be a positive integer."
+  }
+
+  validation {
+    condition     = var.ravion_operator_warm_capacity.placement.topology_spread_max_skew >= 1 && floor(var.ravion_operator_warm_capacity.placement.topology_spread_max_skew) == var.ravion_operator_warm_capacity.placement.topology_spread_max_skew
+    error_message = "The warm-capacity topology spread max skew must be a positive integer."
+  }
+
+  validation {
+    condition     = contains(["DoNotSchedule", "ScheduleAnyway"], var.ravion_operator_warm_capacity.placement.topology_spread_when_unsatisfiable)
+    error_message = "The warm-capacity topology spread behaviour must be DoNotSchedule or ScheduleAnyway."
   }
 }
 

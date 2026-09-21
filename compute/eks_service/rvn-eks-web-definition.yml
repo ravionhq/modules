@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.2.0
-  description: Zero-downtime deploys and disruptions by default. Pods now wait 10 seconds before SIGTERM so the load balancer stops routing to them first, count as ready only once healthy in the target group so a rolling update never retires a pod before its replacement serves traffic, are covered by a PodDisruptionBudget so node drains evict them one at a time, and spread across nodes as well as zones. The default minimum is two pods, since with one any pod stop is an outage. A configurable shutdown grace period lets services that hold long-lived connections such as WebSockets drain them. Existing instances pick up these defaults on upgrade; set the inputs explicitly to keep the previous behaviour, and note that instances left on the default pod count go from one pod to two.
+  version: 1.3.0
+  description: Tune rollout speed with configurable readiness checks as frequent as every second, no initial readiness delay, and up to 100% extra pods during an update. Existing services keep the previous 10-second readiness period, 5-second initial delay, and 25% surge defaults unless changed.
 module:
   inputs:
     - id: section_cluster
@@ -142,6 +142,14 @@ module:
       max: 600
       min: 0
       default: 5
+    - id: readiness_probe_period_seconds
+      label: Readiness check interval (secs)
+      type: number
+      description: Seconds between Kubernetes readiness checks. Use 1 for the fastest local readiness signal; the load balancer readiness gate still waits for target registration when enabled.
+      collapsible: true
+      max: 300
+      min: 1
+      default: 10
     - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
@@ -205,7 +213,7 @@ module:
     - id: load_balancer_readiness_gate_enabled
       label: Wait for load balancer health
       type: boolean
-      description: Count a pod as ready only once it is healthy in the load balancer target group, so a rolling update keeps old pods serving until their replacements receive traffic. Deploys take longer by the health check's healthy-threshold time.
+      description: Count a pod as ready only once the load balancer controller reports it healthy in the target group, so a rolling update keeps old pods serving until replacements receive traffic. Registration timing depends on controller and target state; initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval.
       collapsible: true
       default: true
       show_when:
@@ -344,6 +352,14 @@ module:
       show_when:
         autoscaling_enabled: false
       default: 2
+    - id: rollout_max_surge_percent
+      label: Maximum rollout surge (%)
+      type: number
+      description: Extra pods Kubernetes may create during a rolling update, as a percentage of the desired count. Use 100 to create a full replacement set at once when the cluster has enough spare capacity. Zero-unavailable rollout protection remains enabled.
+      collapsible: true
+      max: 100
+      min: 1
+      default: 25
     - id: termination_grace_period_seconds
       label: Shutdown grace period (secs)
       type: number
@@ -456,6 +472,7 @@ module:
                     enabled: true
                     path: << module.input.health_check_path >>
                     initialDelaySeconds: '<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 5 >>'
+                    periodSeconds: '<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 10 >>'
                   startup:
                     enabled: << module.input.startup_probe_enabled >>
                     path: '<< module.input.startup_probe_path || module.input.liveness_probe_path || module.input.health_check_path >>'
@@ -480,6 +497,8 @@ module:
                 terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
                 lifecycle:
                   preStopSleepSeconds: '<< module.input.pre_stop_sleep_seconds != nil ? module.input.pre_stop_sleep_seconds : 10 >>'
+                strategy:
+                  maxSurge: '<< string(module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25) + "%" >>'
                 podDisruptionBudget:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
@@ -714,6 +733,7 @@ module:
     | Timeout (secs) | 4 | Seconds to wait for a response; must be lower than the interval |
     | Healthy threshold | 2 | Successful checks before a target is healthy |
     | Unhealthy threshold | 2 | Failed checks before a target is unhealthy |
+    | Readiness check interval (secs) | 10 | Seconds between Kubernetes readiness checks; may be set to 1 |
 
     **Startup and recovery** are optional and independent. Enable **Enforce startup timeout** to restart a container that never finishes starting; its **Maximum startup time** defaults to 150 seconds. A bad startup path or a timeout shorter than the app's real boot time causes a restart loop. Enable **Restart unresponsive containers** to restart a process that remains running but stops answering. Processes that exit are restarted automatically even when this setting is off.
 
@@ -779,7 +799,7 @@ module:
 
     Set the memory request close to steady-state usage and the limit above the worst legitimate spike. Because the CPU target is a percentage of the CPU request, a request set far above real usage keeps the autoscaler from ever scaling out.
 
-    Autoscaling is on by default with 1 minimum and 3 maximum pods, tracking 70% CPU. Add a **Memory target (%)** to scale on memory as well; the autoscaler then takes whichever metric asks for more pods. When autoscaling is off, **Pods** sets a fixed pod count.
+    Autoscaling is on by default with 2 minimum and 3 maximum pods, tracking 70% CPU. Add a **Memory target (%)** to scale on memory as well; the autoscaler then takes whichever metric asks for more pods. When autoscaling is off, **Pods** sets a fixed pod count.
 
     ### Zone-local routing
 
@@ -810,7 +830,7 @@ module:
 
     ## Deployment
 
-    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with the chart's RollingUpdate strategy, which surges 25% and keeps zero pods unavailable.
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable by default. **Maximum rollout surge (%)** controls how many replacements start together: 25% by default, or 100% for a full replacement set when enough capacity is already available.
 
     ## Graceful shutdown
 
@@ -818,7 +838,7 @@ module:
 
     - **Shutdown grace period** sets how long a pod has after SIGTERM before it is killed. Size it to the longest drain the application performs.
     - **Pre-stop delay** keeps the container running and serving for a few seconds before SIGTERM. Removing a pod from the load balancer target group happens asynchronously; without a delay, the application can start shutting down while the load balancer still routes new connections to it. The default is 10 seconds. It uses the Kubernetes native preStop sleep action, so the image needs no shell; on Kubernetes older than 1.30, which lacks the action, no hook is rendered. The delay counts against the grace period and must be shorter than it, or the deploy fails at render time.
-    - **Wait for load balancer health** adds the AWS Load Balancer Controller's pod readiness gate, one per target group binding, so a new pod counts as ready only once the target group reports it healthy. A rolling update then keeps old pods serving until their replacements actually receive traffic. The gate is declared on the pod itself, so the namespace needs no injection label; the controller the EKS Add-ons module installs sets the condition. On by default. Deploys take longer by the health check's healthy-threshold time (10 seconds with the default health check), and a pod that never passes the load balancer health check never becomes ready, so the deploy rolls back instead of shipping a pod the load balancer considers unhealthy.
+    - **Wait for load balancer health** adds the AWS Load Balancer Controller's pod readiness gate, one per target group binding, so a new pod counts as ready only once the target group reports it healthy. A rolling update then keeps old pods serving until their replacements actually receive traffic. The gate is declared on the pod itself, so the namespace needs no injection label; the controller the EKS Add-ons module installs sets the condition. On by default. Registration time depends on controller and target state, and initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval. A pod that never passes the check never becomes ready, so the deploy rolls back.
     - **Disruption budget** renders a PodDisruptionBudget that keeps at least **Minimum available pods** running while nodes are drained, consolidated or upgraded. It is skipped while the minimum pod count (Minimum pods with autoscaling, Pods without) is not above that number, because such a budget allows no evictions and would block every drain. Pods that are not ready can always be evicted, so a crash-looping pod never holds a node. On by default. The budget does not affect rolling updates.
 
     **Deregistration delay** still applies once the pod leaves the target group: it is how long the load balancer keeps in-flight requests to that pod open. Connections still open when the pod exits are closed regardless, so the effective drain window is the shorter of the deregistration delay and the shutdown grace period.
@@ -878,6 +898,7 @@ module:
     | Start command arguments | No | [] | Overrides the image default arguments |
     | Container port | Yes | 8080 | Port the application listens on |
     | Traffic health path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
+    | Readiness check interval (secs) | No | 10 | Kubernetes readiness period; 1 is the fastest supported value |
     | Success codes | Yes | 200-399 | Health check status code matcher |
     | Sticky sessions | No | false | Keep repeat requests on the same pod |
     | Enforce startup timeout | No | false | Restart an app that does not finish starting in time |
@@ -898,6 +919,7 @@ module:
     | Maximum pods | No | 3 | Upper bound when autoscaling |
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
+    | Maximum rollout surge (%) | No | 25 | Extra pods during rolling updates; up to 100% |
     | Pods | No | 2 | Fixed pod count when autoscaling is disabled |
     | Shutdown grace period (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
     | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |

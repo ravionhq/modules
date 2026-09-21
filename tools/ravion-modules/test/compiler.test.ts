@@ -173,6 +173,17 @@ describe("compiler", () => {
     const startup = assertRecord(probes.startup, "probes.startup");
 
     assert.equal(readiness.enabled, true);
+    assert.equal(
+      readiness.periodSeconds,
+      "<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 10 >>",
+    );
+    const strategy = assertRecord(values.strategy, "module.deploy.definition.values.strategy");
+    assert.equal(
+      strategy.maxSurge,
+      '<< string(module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25) + "%" >>',
+    );
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").min, 1);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").max, 100);
     assert.equal(liveness.path, "<< module.input.liveness_probe_path || module.input.health_check_path >>");
     assert.equal(
       startup.path,
@@ -403,6 +414,8 @@ describe("compiler", () => {
       "ravion_operator_execution_image",
       "ravion_operator_chart_version",
       "ravion_operator_execution_max_concurrent",
+      "ravion_operator_execution_resources",
+      "ravion_operator_warm_capacity",
       "ravion_operator_coordinator_enabled",
       "ravion_operator_coordinator_adaptive_enabled",
       "ravion_operator_coordinator_replicas",
@@ -412,7 +425,7 @@ describe("compiler", () => {
     }
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
-      "0.5.6",
+      "0.5.10",
     );
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);

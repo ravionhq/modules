@@ -137,6 +137,7 @@ run "operator_inline_upgrade_identity" {
     condition = (
       helm_release.ravion_operator[0].repository == "oci://public.ecr.aws/a8z1i1r2" &&
       helm_release.ravion_operator[0].chart == "operator" &&
+      helm_release.ravion_operator[0].version == "0.5.10" &&
       helm_release.ravion_operator[0].name == "ravion-operator" &&
       helm_release.ravion_operator[0].take_ownership == true &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0])), "nameOverride") &&
@@ -150,7 +151,8 @@ run "operator_inline_upgrade_identity" {
       yamldecode(helm_release.ravion_operator[0].values[0]).controlPlane.endpoint == "wss://websockets.ravion.com/operator/v1/connect" &&
       yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
       !yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.enabled &&
-      !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.enabled
+      !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.enabled &&
+      !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.adaptive
     )
     error_message = "Inline mode must keep its update behavior without silently enabling executor Jobs or HA."
   }
@@ -160,24 +162,24 @@ run "operator_ha_full_management" {
   command = plan
   variables {
     ravion_operator_execution_jobs_enabled  = true
-    ravion_operator_chart_version           = "0.4.1-ci.312e8f5638dc"
+    ravion_operator_chart_version           = "0.5.10"
     ravion_operator_coordinator_enabled     = true
     ravion_operator_full_management_enabled = true
     ravion_operator_deploy_namespaces       = []
   }
   assert {
     condition = (
-      !ravion_operator_credential.this[0].capabilities.self_update_allowed &&
-      !yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
+      ravion_operator_credential.this[0].capabilities.self_update_allowed &&
+      yamldecode(helm_release.ravion_operator[0].values[0]).selfUpdate.enabled &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.image == var.ravion_operator_execution_image &&
       yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs.fullManagement &&
       !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).executionJobs), "maxConcurrent") &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.replicas == 2 &&
-      !contains(keys(yamldecode(helm_release.ravion_operator[0].values[0]).coordinator), "adaptive") &&
+      !yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.adaptive &&
       yamldecode(helm_release.ravion_operator[0].values[0]).coordinator.requireDistinctNodes &&
       length(helm_release.ravion_operator_namespaces) == 0
     )
-    error_message = "Full management must leave capacity to the control plane, wire two fixed Karpenter-placed coordinators, and the bundled image with self-update disabled in both enrollment and Helm."
+    error_message = "Full management must leave capacity to the control plane, wire two fixed Karpenter-placed coordinators, use the bundled image, and keep self-update enabled in enrollment and Helm."
   }
 }
 
