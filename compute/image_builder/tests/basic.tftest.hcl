@@ -1020,9 +1020,16 @@ run "the_rule_matches_only_this_pipelines_finished_images" {
     error_message = "The rule must only forward images that finished"
   }
 
+  # Naming the recipe in full, separator and all, is what keeps a rule for
+  # "test-image" from also forwarding "test-image-prod" images.
   assert {
-    condition     = length(regexall("image/test-image-", jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix)) == 1
-    error_message = "The rule must be confined to this pipeline's images"
+    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix == "arn:aws:imagebuilder:us-west-2:123456789012:image/${lower(aws_imagebuilder_image_recipe.this.name)}/"
+    error_message = "The rule must be confined to this recipe's images, got ${jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix}"
+  }
+
+  assert {
+    condition     = !startswith("arn:aws:imagebuilder:us-west-2:123456789012:image/test-image-prod-4fd9befb/1.0.0/1", jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix)
+    error_message = "The rule must not match a pipeline whose name starts with this one"
   }
 }
 
