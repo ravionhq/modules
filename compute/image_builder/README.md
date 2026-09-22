@@ -215,6 +215,50 @@ can `systemctl disable` it as its last build step. Image tests launch a fresh
 instance from the image and reach it the same way, so set
 `image_tests_enabled = false` for an image that does not start the agent.
 
+## Build notifications
+
+`notify_url` forwards an EventBridge event to an HTTPS endpoint once an image
+has finished building and reached every region it is distributed to. It is the
+only way to learn about a build nobody started from a deploy — a schedule, or a
+rebuild triggered by a new parent image. The event carries the image's ARN; the
+endpoint reads the rest back from Image Builder.
+
+The endpoint needs something to tell the call apart from any other caller, so
+the module sends a header. `notify_secret_source` says where its value comes
+from:
+
+| `notify_secret_source` | What it reads | Set |
+| --- | --- | --- |
+| `value` (default) | The value given here | `notify_header_value` |
+| `parameter_store` | An SSM Parameter Store parameter | `notify_header_parameter` |
+| `secrets_manager` | A Secrets Manager secret | `notify_header_secret`, optionally `notify_header_secret_json_key` |
+
+Leaving `notify_secret_source` null reads whichever one is filled in.
+
+```hcl
+notify_url              = "https://api.example.com/hooks/image-built"
+notify_secret_source    = "parameter_store"
+notify_header_parameter = "/ravion/image-builder/notify-header"
+```
+
+Two things follow from EventBridge taking the value itself rather than a
+reference to it:
+
+- **The deploy reads it.** A `parameter_store` source needs `ssm:GetParameter`
+  on the parameter, and `kms:Decrypt` on its key for a `SecureString`. A
+  `secrets_manager` source needs `secretsmanager:GetSecretValue`, and
+  `kms:Decrypt` for a customer-managed key. Grant these to the role the deploy
+  runs as, not to the build instance.
+- **Rotation is not live.** The value is read on the deploy that writes the
+  connection, so rotating the parameter or the secret reaches the endpoint on
+  the next deploy, not the moment it changes. However it is sourced, the value
+  ends up in Terraform state.
+
+The rule forwards only images built from this pipeline's current recipe. The
+recipe moves whenever its content does and the rule moves with it in the same
+apply, so an image still building against the previous recipe when that happens
+finishes unannounced.
+
 ## Public images
 
 `public = true` adds the `all` launch group in every region an image lands in.
@@ -298,6 +342,13 @@ at the bucket root.
 | enhanced_image_metadata_enabled | Collect package and other metadata from each image | `bool` | `true` | no |
 | build_on_apply | Build an image during apply, and again whenever the recipe changes | `bool` | `false` | no |
 | build_timeout_minutes | How long an apply waits for a `build_on_apply` build | `number` | `image_tests_timeout_minutes + 60` | no |
+| notify_url | HTTPS endpoint told when a build finishes and its images are distributed. Empty sends none | `string` | `""` | no |
+| notify_header_name | Header the notification carries | `string` | `"X-Lambda-Secret"` | no |
+| notify_secret_source | Where the header value comes from: `value`, `parameter_store` or `secrets_manager`. Null reads whichever is filled in | `string` | `null` | no |
+| notify_header_value | The header value, given directly | `string` (sensitive) | `""` | no |
+| notify_header_parameter | Name or ARN of the SSM parameter holding the header value | `string` | `""` | no |
+| notify_header_secret | Name or ARN of the Secrets Manager secret holding the header value | `string` | `""` | no |
+| notify_header_secret_json_key | Key to read out of a JSON secret. Empty uses the whole secret string | `string` | `""` | no |
 
 ## Outputs
 
