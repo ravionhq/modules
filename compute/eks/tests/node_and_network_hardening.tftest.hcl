@@ -42,6 +42,12 @@ mock_provider "aws" {
 
 mock_provider "tls" {}
 
+mock_provider "external" {
+  mock_data "external" {
+    defaults = { result = { exists = "false", desired_size = "0" } }
+  }
+}
+
 run "nodes_launch_hardened_by_default" {
   command = plan
   module {

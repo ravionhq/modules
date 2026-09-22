@@ -1,3 +1,9 @@
+mock_provider "external" {
+  mock_data "external" {
+    defaults = { result = { exists = "false", desired_size = "0" } }
+  }
+}
+
 mock_provider "aws" {
   # Every node group now carries a launch template; the node group resource
   # validates the id's lt- prefix, which a generated mock value would fail.
@@ -345,4 +351,3 @@ run "composite_allows_dropping_the_runner_role_when_people_have_access" {
     error_message = "The runner role must be optional once an operator access entry exists."
   }
 }
-

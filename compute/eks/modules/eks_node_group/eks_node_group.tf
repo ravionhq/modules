@@ -1,9 +1,9 @@
 ################################################################################
 # Managed Node Group
 #
-# desired_size is set on create but ignored thereafter so an autoscaler
-# (Cluster Autoscaler / Karpenter) can manage capacity without conflicting
-# with terraform. Use min_size/max_size to bound autoscaler behavior.
+# Preserve the live autoscaler-owned desired size, clamping only when it falls
+# outside the requested bounds. Ignoring desired_size would send an invalid
+# scaling_config when min_size rises above it or max_size drops below it.
 ################################################################################
 
 resource "aws_eks_node_group" "this" {
@@ -22,7 +22,7 @@ resource "aws_eks_node_group" "this" {
 
   scaling_config {
     min_size     = var.min_size
-    desired_size = var.desired_size
+    desired_size = min(var.max_size, max(var.min_size, local.current_desired_size))
     max_size     = var.max_size
   }
 
@@ -58,6 +58,9 @@ resource "aws_eks_node_group" "this" {
   })
 
   lifecycle {
-    ignore_changes = [scaling_config[0].desired_size]
+    precondition {
+      condition     = var.min_size <= var.max_size
+      error_message = "min_size must not exceed max_size."
+    }
   }
 }

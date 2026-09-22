@@ -22,6 +22,29 @@ Prefer the [`compute/eks`](../..) composite. This module is nested under
 | ------------------ | ---------- |
 | opentofu/terraform | >= 1.10.0  |
 | aws                | >= 6.0     |
+| external           | >= 2.3, < 3.0 |
+| Python             | >= 3.9     |
+| AWS CLI            | v2         |
+
+## Capacity updates
+
+The module reads the existing group's desired count and preserves it while it is
+inside `min_size`/`max_size`. If a bound excludes that count, the AWS provider
+updates the bounds and the clamped desired count together. New groups use
+`desired_size`, clamped to the configured bounds. The node group keeps its existing
+Terraform resource address; upgrading does not replace it.
+
+The read-only lookup needs `eks:DescribeNodegroup` and `sts:GetCallerIdentity` via
+the AWS CLI. Its environment must have credentials for the same account as the
+Terraform AWS provider (including any assumed role); provider-only credentials or
+role assumption are not inherited by external programs. The provider's region is
+passed explicitly and the account is checked before querying EKS. Only an explicit
+EKS `ResourceNotFoundException` enables creation defaults; all other failures stop
+the plan. The lookup never writes to AWS.
+
+Like other saved Terraform plans, the selected desired count is a snapshot. Replan
+before applying if autoscaling has changed capacity since the plan was created.
+Karpenter provisions its own nodes; it does not scale this managed node group.
 
 ## Inputs
 
