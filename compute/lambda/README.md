@@ -10,6 +10,7 @@ This module creates an AWS Lambda function with broad runtime configuration supp
 - Supports standard Lambda and Lambda@Edge validation mode
 - Optional IAM role creation or use of an existing role
 - Optional CloudWatch log group creation with retention and KMS encryption
+- Configurable invocation error-rate alarms, including Lambda@Edge execution Regions
 - Optional invoke permissions (`aws_lambda_permission`)
 - Optional event source mappings (`aws_lambda_event_source_mapping`)
 - Optional aliases with weighted routing (`aws_lambda_alias`)
@@ -212,3 +213,40 @@ module "lambda_with_integrations" {
 - For `Zip` package type, provide either `filename` or (`s3_bucket` + `s3_key`).
 - For `Image` package type, provide `image_uri`, or enable `ecr_repository_creation_enabled` so the module can seed a Lambda-compatible bootstrap image in the module-owned ECR repository during apply.
 - Bootstrap image seeding uses AWS CLI and standard POSIX tools on the Terraform/OpenTofu runner. When AWS CLI is missing, the module attempts a package-manager install with sudo/root access, then falls back to installing AWS CLI v2 in a temporary directory with Python 3.
+
+## Invocation error-rate alarms
+
+Enable `cloudwatch_alarms_creation_enabled` to monitor
+`100 * SUM(Errors) / SUM(Invocations)` for the function, across all versions and
+aliases. The alarm defaults to >=1% over one 5-minute period. Zero invocations
+produce zero; missing data is non-breaching because idle functions emit no metrics.
+This monitors Lambda invocation failures, not application HTTP response codes or throttles.
+
+Ravion enables the toggle by default; direct Terraform callers opt in. Set
+`cloudwatch_alarm_actions` to a same-region SNS topic ARN list, or route CloudWatch
+alarm events using an externally managed EventBridge relay. No notification
+destination is created automatically. `cloudwatch_ok_actions` is optional.
+
+For Lambda@Edge, the module uses the `us-east-1.` function-name prefix and always
+creates an alarm in the origin Region. Set `cloudwatch_alarm_additional_regions`
+to every other execution Region to monitor real edge traffic; origin-only alarms
+do not provide global coverage. Configure `cloudwatch_alarm_actions_by_region`
+and `cloudwatch_ok_actions_by_region` for regional SNS destinations. Add regions
+as traffic expands. Existing manually created alarms should be imported into the
+matching resource address before Terraform takes ownership.
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| cloudwatch_alarms_creation_enabled | `bool` | `false` | Enable invocation error-rate alarms. |
+| cloudwatch_alarm_error_rate_threshold | `number` | `1` | Percentage threshold, >0 and <=100. |
+| cloudwatch_alarm_period | `number` | `300` | 60, 300, 900, or 3600 seconds. |
+| cloudwatch_alarm_evaluation_periods | `number` | `1` | Consecutive breaching periods, covering at most one day. |
+| cloudwatch_alarm_additional_regions | `list(string)` | `[]` | Additional Edge execution Regions. |
+| cloudwatch_alarm_actions | `list(string)` | `[]` | Default ALARM actions. |
+| cloudwatch_ok_actions | `list(string)` | `[]` | Default OK actions. |
+| cloudwatch_alarm_actions_by_region | `map(list(string))` | `{}` | Per-Region ALARM action overrides. |
+| cloudwatch_ok_actions_by_region | `map(list(string))` | `{}` | Per-Region OK action overrides. |
+
+`cloudwatch_alarm_arns` outputs a map of Region to alarm ARN.
+
+See [AWS Lambda metrics](https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics-types.html).

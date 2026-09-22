@@ -528,3 +528,86 @@ variable "region" {
   description = "AWS region. When null, the provider's configured region is used."
   default     = null
 }
+
+################################################################################
+# CloudWatch Alarms
+################################################################################
+
+variable "cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create a Lambda error-rate alarm in the function Region and any additional Edge execution Regions."
+  default     = false
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_error_rate_threshold" {
+  type        = number
+  description = "Invocation error percentage at or above which the alarm fires."
+  default     = 1
+  nullable    = false
+  validation {
+    condition     = var.cloudwatch_alarm_error_rate_threshold > 0 && var.cloudwatch_alarm_error_rate_threshold <= 100
+    error_message = "Error rate threshold must be greater than 0 and at most 100 percent."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "Metric aggregation period in seconds. Lambda publishes metrics at one-minute resolution."
+  default     = 300
+  nullable    = false
+  validation {
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "Alarm period must be 60, 300, 900, or 3600 seconds."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "Consecutive breaching periods required to alarm."
+  default     = 1
+  nullable    = false
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1 && floor(var.cloudwatch_alarm_evaluation_periods) == var.cloudwatch_alarm_evaluation_periods && var.cloudwatch_alarm_evaluation_periods * var.cloudwatch_alarm_period <= 86400
+    error_message = "Evaluation periods must be a positive integer covering at most one day."
+  }
+}
+
+variable "cloudwatch_alarm_additional_regions" {
+  type        = list(string)
+  description = "Additional Lambda@Edge execution Regions to monitor. The function Region is always included. Add Regions as traffic expands. Regional Lambdas must leave this empty."
+  default     = []
+  nullable    = false
+  validation {
+    condition     = alltrue([for region in var.cloudwatch_alarm_additional_regions : can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]+$", region))]) && (var.lambda_at_edge_enabled || length(var.cloudwatch_alarm_additional_regions) == 0)
+    error_message = "Additional alarm Regions must be valid AWS Region names and can only be used with Lambda@Edge."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "Default action ARNs for ALARM transitions. SNS topics must be in the alarm Region; use the per-Region map for Edge alarms."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "Default action ARNs for OK transitions."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_actions_by_region" {
+  type        = map(list(string))
+  description = "Per-Region ALARM action ARN overrides for Lambda@Edge. Empty entries support externally managed EventBridge notification relays."
+  default     = {}
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions_by_region" {
+  type        = map(list(string))
+  description = "Per-Region OK action ARN overrides for Lambda@Edge."
+  default     = {}
+  nullable    = false
+}
