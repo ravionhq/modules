@@ -4,9 +4,12 @@ import YAML from "yaml";
 
 export interface RemoteModuleDefinition {
   id: string;
+  organizationId?: string;
   type: string;
   name: string;
   description: string;
+  moduleCategoryIds?: string[];
+  moduleCategoryId?: string | null;
   isGlobalPublished?: boolean;
 }
 

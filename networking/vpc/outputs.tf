@@ -119,6 +119,30 @@ output "private_route_table_ids" {
 }
 
 ################################################################################
+# VPC Endpoints
+################################################################################
+
+output "vpc_endpoint_s3_id" {
+  description = "The ID of the S3 gateway VPC endpoint (if enabled)."
+  value       = var.vpc_endpoint_s3_gateway_enabled ? aws_vpc_endpoint.s3[0].id : null
+}
+
+output "vpc_endpoint_dynamodb_id" {
+  description = "The ID of the DynamoDB gateway VPC endpoint (if enabled)."
+  value       = var.vpc_endpoint_dynamodb_gateway_enabled ? aws_vpc_endpoint.dynamodb[0].id : null
+}
+
+output "vpc_endpoint_interface_ids" {
+  description = "Map of interface VPC endpoint service short names to their endpoint IDs."
+  value       = { for k, v in aws_vpc_endpoint.interface : k => v.id }
+}
+
+output "vpc_endpoints_security_group_id" {
+  description = "The ID of the shared security group for interface VPC endpoints (if any interface endpoints are created)."
+  value       = length(local.vpc_endpoint_interface_services) > 0 ? aws_security_group.vpc_endpoints[0].id : null
+}
+
+################################################################################
 # Egress-Only Internet Gateway (IPv6)
 ################################################################################
 

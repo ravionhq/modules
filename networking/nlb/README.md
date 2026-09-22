@@ -196,7 +196,7 @@ resource "aws_vpc_security_group_ingress_rule" "from_nlb" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| internal_load_balancer_enabled | If true, the NLB will be internal_load_balancer_enabled (not internet-facing) | `bool` | `false` | no |
+| internal_load_balancer_enabled | If true, the NLB will be internal (not internet-facing) | `bool` | `false` | no |
 | deletion_protection_enabled | If true, the resource cannot be deleted via the AWS API until this is set to false | `bool` | `true` | no |
 | cross_zone_load_balancing_enabled | Enable cross-zone load balancing | `bool` | `false` | no |
 | dns_record_client_routing_policy | How traffic is distributed among NLB AZs (any_availability_zone, availability_zone_affinity, partial_availability_zone_affinity) | `string` | `null` | no |
@@ -235,6 +235,7 @@ resource "aws_vpc_security_group_ingress_rule" "from_nlb" {
 
 | Name | Description |
 |------|-------------|
+| load_balancer_name | The name of the Network Load Balancer, as passed in `name` |
 | nlb_id | The ID of the Network Load Balancer |
 | nlb_arn | The ARN of the Network Load Balancer |
 | nlb_arn_suffix | The ARN suffix of the NLB for use with CloudWatch Metrics |
@@ -245,6 +246,7 @@ resource "aws_vpc_security_group_ingress_rule" "from_nlb" {
 
 | Name | Description |
 |------|-------------|
+| security_group_name | The name of the NLB security group |
 | security_group_id | The ID of the NLB security group |
 | security_group_arn | The ARN of the NLB security group |
 

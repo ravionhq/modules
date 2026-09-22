@@ -1,0 +1,119 @@
+definition:
+  type: rvn-aws-kms
+  name: AWS KMS Key
+  description: Creates a regional symmetric AWS KMS encryption key and stable alias.
+release:
+  version: 0.1.0
+  description: Create regional symmetric AWS KMS encryption keys with optional key-user access.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_key
+      label: KMS key
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Name used for the key's default alias, description, and tags.
+      id: name
+      immutable: true
+      label: Key name
+      patterns:
+        - message: 1-64 letters, numbers, slashes, underscores, or hyphens.
+          pattern: ^[A-Za-z0-9/_-]{1,64}$
+      required: true
+      type: string
+    - id: section_key_policy
+      label: Key access
+      type: section
+    - add_button_label: Add key user principal
+      default: []
+      description: IAM principals allowed to encrypt, decrypt, re-encrypt, generate data keys, and describe the key.
+      id: key_user_role_arns
+      label: Key user principal ARNs
+      patterns:
+        - message: Invalid IAM principal ARN. Use an account root, role, or user ARN with a 12-digit account ID.
+          pattern: "^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$"
+      placeholder: arn:aws:iam::123456789012:role/application
+      type: string_array
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: security/kms
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        key_user_role_arns: << module.input.key_user_role_arns || [] >>
+        name: << module.input.name >>
+        region: << module.input.aws_region >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+  ui:
+    links: |-
+      <<
+      stack.output.key_id && stack.output.region ?
+      [{"name":"KMS key","href":"https://" + stack.output.region + ".console.aws.amazon.com/kms/home?region=" + stack.output.region + "#/kms/keys/" + stack.output.key_id}] :
+      []
+      >>
+  readme: |
+    Creates a regional symmetric AWS KMS encryption key and stable alias.
+
+    ## Overview
+
+    Use this module to create one customer-managed key for application data, secrets, storage, and envelope encryption. The key uses the standard AWS KMS symmetric encryption configuration and receives a stable alias derived from the key name.
+
+    The module creates a key policy that preserves account-root IAM administration and can grant encryption access directly to selected IAM principals. The key can be created before its consumers because the key user list may be empty.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Application data encryption | Encrypt application data directly or through envelope encryption. |
+    | AWS service encryption | Supply the key ARN to services that support customer-managed KMS keys. |
+    | Secrets and credentials | Encrypt sensitive values with a key whose access policy is managed independently. |
+    | Data key generation | Allow workloads to generate data keys while keeping the root key material inside KMS. |
+
+    ## Encryption defaults
+
+    The standard form creates a regional `SYMMETRIC_DEFAULT` key with `ENCRYPT_DECRYPT` usage. Annual automatic rotation is enabled, and the deletion waiting period is 30 days. The alias defaults to `alias/<key name>`, and the generated key description also uses the key name.
+
+    Specialized settings such as asymmetric keys, signing, HMAC, key agreement, custom aliases, multi-Region keys, key administrators, signers, public key readers, rotation changes, and shorter deletion windows remain available through Advanced Terraform variables.
+
+    ## Key access
+
+    Key user principal ARNs grants the selected account roots, IAM roles, or IAM users permission to encrypt, decrypt, re-encrypt, generate data keys, and describe the key. Keep the list as narrow as possible.
+
+    The account root principal remains in the key policy with `kms:*`, following the AWS pattern that allows IAM policies in the account to delegate administration. A principal may require both a key policy grant and an IAM identity policy, depending on how access is managed in the account.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | AWS account where the KMS key is created. |
+    | Region | Yes | None | AWS Region where the key is created. |
+    | Key name | Yes | Project, environment, and module given IDs | Used for the alias, generated description, and tags. |
+    | Key user principal ARNs | No | Empty list | Principals granted encryption and data-key operations. |
+    | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
+    | Terraform execution environment | No | None | Optional runner environment override. |
+    | OpenTofu version override | No | Environment default | Optional OpenTofu version override. |
+    | Ravion Terraform workspace name | No | Generated from project, environment, module, and stack IDs | Backend workspace override. |
+    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
+
+    ## Design decisions
+
+    The standard form deliberately targets regional symmetric encryption, which covers the common customer-managed key use case without exposing uncommon cryptographic or lifecycle controls. Advanced Terraform variables remain available for exceptional requirements.
+
+    The module always creates an alias so consumers can use a stable, readable identifier. Key name, AWS account, and Region are immutable in Ravion because changing them alters key identity or deployment target.
+
+    Ravion adds standard tags for ownership and traceability. User-provided Tags are merged on top for team, cost, or environment metadata.
+
+    ## Learn more
+
+    - [AWS KMS concepts](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html)
+    - [AWS KMS key policies](https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html)
+    - [AWS KMS key rotation](https://docs.aws.amazon.com/kms/latest/developerguide/rotate-keys.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/security/kms)

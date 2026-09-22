@@ -45,11 +45,22 @@ describe("release metadata", () => {
 
     assert.throws(() => validateReleaseStatuses(statuses), (error) => error instanceof ReleaseMetadataError);
   });
+
+  it("reports disabled publication without requiring release validation", () => {
+    const statuses = getReleaseStatuses([{ ...createCompiledDefinition(), published: false, releaseDescription: " " }], {
+      inventory: { definitions: [], versionsByDefinitionId: {} },
+    });
+
+    assert.equal(statuses[0].publishState, "disabled");
+    assert.doesNotThrow(() => validateReleaseStatuses(statuses));
+  });
 });
 
 function createCompiledDefinition(): CompiledDefinition {
   return {
     filePath: join("/repo", "networking", "vpc", "ravion-aws-vpc-definition.yml"),
+    published: true,
+    global: true,
     type: "ravion-aws-vpc",
     name: "AWS VPC",
     description: "AWS VPC and subnets.",

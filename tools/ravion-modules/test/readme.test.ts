@@ -9,19 +9,23 @@ const repoRoot = resolve("../..");
 
 test("renders one sorted row per definition with its release version", async () => {
   const compiled = await compileAllDefinitions(repoRoot);
-  const table = renderModuleDefinitionsTable(compiled, repoRoot);
+  const unpublished = { ...compiled[0], published: false, type: "ravion-disabled-example" };
+  const table = renderModuleDefinitionsTable([...compiled, unpublished], repoRoot);
   const rows = table.split("\n").slice(2);
+  const published = compiled.filter((definition) => definition.published);
 
-  assert.equal(rows.length, compiled.length);
+  assert.equal(rows.length, published.length);
   const types = rows.map((row) => row.split("|")[1].trim().replaceAll("`", ""));
   assert.deepEqual(types, [...types].sort((left, right) => left.localeCompare(right)));
 
-  for (const definition of compiled) {
+  for (const definition of published) {
     assert.ok(
       rows.some((row) => row.includes(`\`${definition.type}\``) && row.includes(`v${definition.version}`)),
       `expected a row for ${definition.type}@${definition.version}`,
     );
   }
+  assert.doesNotMatch(table, /`rvn-eks-cron`/);
+  assert.doesNotMatch(table, /`ravion-disabled-example`/);
 });
 
 test("replaces only the content between the generated markers", () => {

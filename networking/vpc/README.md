@@ -8,6 +8,7 @@ This module creates a production-ready AWS VPC with public and private subnets, 
 - Public and private subnets across up to 3 availability zones by default, capped by the AZs available to the selected account and region
 - Automatic or custom subnet CIDR allocation using cidrsubnet function
 - Optional NAT Gateway (single or per-AZ for high availability)
+- Optional VPC endpoints: free S3/DynamoDB gateway endpoints and interface endpoints (PrivateLink) with a shared security group
 - Optional IPv6 support with Amazon-provided CIDR and Egress-Only Internet Gateway
 - Optional VPC Flow Logs to CloudWatch or S3 with configurable retention
 - Optional VPC peering with one or more existing VPCs (same- or cross-account/region)
@@ -84,6 +85,32 @@ module "vpc" {
 ```
 
 The list length must equal `1` when `nat_gateway_high_availability_enabled = false`, or the resolved subnet count when `nat_gateway_high_availability_enabled = true`. EIP allocations are consumed in order, so `allocation_ids[i]` is attached to the NAT Gateway in `availability_zones[i]`.
+
+### With VPC Endpoints
+
+```hcl
+module "vpc" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=v1.0.0"
+
+  name     = "my-vpc"
+  vpc_cidr = "10.0.0.0/16"
+
+  # Free gateway endpoints — keep S3/DynamoDB traffic off the NAT gateway
+  vpc_endpoint_s3_gateway_enabled       = true
+  vpc_endpoint_dynamodb_gateway_enabled = true
+
+  # Interface endpoints (PrivateLink) — private access to AWS services,
+  # billed per hour per AZ plus per GB processed
+  vpc_endpoint_interface_services = [
+    "ecr.api",
+    "ecr.dkr",
+    "logs",
+    "secretsmanager",
+  ]
+}
+```
+
+Gateway endpoints add routes to all of this VPC's route tables and are free. Interface endpoints are placed in every private subnet with private DNS enabled and share a module-managed security group allowing HTTPS (443) from the VPC CIDR. Pulling ECR images privately requires `ecr.api`, `ecr.dkr`, and the S3 gateway endpoint together.
 
 ### With IPv6 Support
 
@@ -314,6 +341,14 @@ module "vpc" {
 | single_nat_gateway | **DEPRECATED** — use `nat_gateway_high_availability_enabled` (inverted). When set non-null, takes precedence | `bool` | `null` | no |
 | nat_gateway_eip_allocation_ids | Pre-allocated EIP allocation IDs to attach to the NAT Gateway(s). When null, the module allocates new EIPs internally. Length must equal 1 when `nat_gateway_high_availability_enabled = false`, or the resolved subnet count when `true` | `list(string)` | `null` | no |
 
+### VPC Endpoints
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| vpc_endpoint_s3_gateway_enabled | Create a free S3 gateway VPC endpoint attached to all route tables | `bool` | `false` | no |
+| vpc_endpoint_dynamodb_gateway_enabled | Create a free DynamoDB gateway VPC endpoint attached to all route tables | `bool` | `false` | no |
+| vpc_endpoint_interface_services | AWS service short names to create interface VPC endpoints for (e.g. `["ecr.api", "ecr.dkr", "logs"]`). Placed in every private subnet with private DNS enabled and a shared security group allowing HTTPS from the VPC CIDR | `list(string)` | `[]` | no |
+
 ### IPv6
 
 | Name | Description | Type | Default | Required |
@@ -401,6 +436,15 @@ Each entry in `vpc_peering_connections` accepts the following attributes:
 |------|-------------|
 | public_route_table_id | The ID of the public route table |
 | private_route_table_ids | List of IDs of private route tables |
+
+### VPC Endpoints
+
+| Name | Description |
+|------|-------------|
+| vpc_endpoint_s3_id | The ID of the S3 gateway VPC endpoint (if enabled) |
+| vpc_endpoint_dynamodb_id | The ID of the DynamoDB gateway VPC endpoint (if enabled) |
+| vpc_endpoint_interface_ids | Map of interface VPC endpoint service short names to their endpoint IDs |
+| vpc_endpoints_security_group_id | The ID of the shared security group for interface VPC endpoints (if any interface endpoints are created) |
 
 ### Egress-Only Internet Gateway (IPv6)
 

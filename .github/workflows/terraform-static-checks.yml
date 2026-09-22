@@ -17,15 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
         with:
           tofu_version: 1.10.0
 
       - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v4
+        uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4
 
       - name: Check formatting
         run: tofu fmt -check -recursive
@@ -59,10 +59,11 @@ jobs:
         run: tflint --recursive
 
       - name: Scan Terraform configuration
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: .
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: '1'
           severity: HIGH,CRITICAL

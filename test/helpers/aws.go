@@ -17,6 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
@@ -3374,4 +3376,366 @@ func GetAuroraClusterServerlessV2ScalingConfig(t *testing.T, clusterIdentifier s
 		return minCap, maxCap, true
 	}
 	return 0, 0, false
+}
+
+// describeTargetGroup returns the target group with the given ARN, failing the test if it is missing.
+func describeTargetGroup(t *testing.T, targetGroupArn string, region string) elbv2types.TargetGroup {
+	client := getELBv2Client(t, region)
+
+	input := &elbv2.DescribeTargetGroupsInput{
+		TargetGroupArns: []string{targetGroupArn},
+	}
+
+	result, err := client.DescribeTargetGroups(context.TODO(), input)
+	require.NoError(t, err, "Failed to describe target group %s", targetGroupArn)
+	require.Len(t, result.TargetGroups, 1, "Expected exactly one target group with ARN %s", targetGroupArn)
+
+	return result.TargetGroups[0]
+}
+
+// TargetGroupExistsByName checks if a target group with the given name exists.
+// Unlike TargetGroupExists this does not need an ARN, so it can assert that a
+// target group was never created.
+func TargetGroupExistsByName(t *testing.T, targetGroupName string, region string) bool {
+	client := getELBv2Client(t, region)
+
+	input := &elbv2.DescribeTargetGroupsInput{
+		Names: []string{targetGroupName},
+	}
+
+	result, err := client.DescribeTargetGroups(context.TODO(), input)
+	if err != nil {
+		return false
+	}
+
+	return len(result.TargetGroups) > 0
+}
+
+// GetTargetGroupName returns the name of a target group.
+func GetTargetGroupName(t *testing.T, targetGroupArn string, region string) string {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.TargetGroupName != nil {
+		return *targetGroup.TargetGroupName
+	}
+	return ""
+}
+
+// GetTargetGroupVpcId returns the ID of the VPC a target group was created in.
+func GetTargetGroupVpcId(t *testing.T, targetGroupArn string, region string) string {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.VpcId != nil {
+		return *targetGroup.VpcId
+	}
+	return ""
+}
+
+// GetTargetGroupHealthCheckEnabled returns whether health checks are enabled on a target group.
+func GetTargetGroupHealthCheckEnabled(t *testing.T, targetGroupArn string, region string) bool {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.HealthCheckEnabled != nil {
+		return *targetGroup.HealthCheckEnabled
+	}
+	return false
+}
+
+// GetTargetGroupHealthCheckPath returns the health check path of a target group.
+func GetTargetGroupHealthCheckPath(t *testing.T, targetGroupArn string, region string) string {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.HealthCheckPath != nil {
+		return *targetGroup.HealthCheckPath
+	}
+	return ""
+}
+
+// GetTargetGroupHealthCheckPort returns the health check port of a target group.
+func GetTargetGroupHealthCheckPort(t *testing.T, targetGroupArn string, region string) string {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.HealthCheckPort != nil {
+		return *targetGroup.HealthCheckPort
+	}
+	return ""
+}
+
+// GetTargetGroupHealthCheckProtocol returns the protocol used for a target group's health checks.
+func GetTargetGroupHealthCheckProtocol(t *testing.T, targetGroupArn string, region string) elbv2types.ProtocolEnum {
+	return describeTargetGroup(t, targetGroupArn, region).HealthCheckProtocol
+}
+
+// GetTargetGroupHealthCheckMatcher returns the HTTP status code matcher of a target group's health check.
+func GetTargetGroupHealthCheckMatcher(t *testing.T, targetGroupArn string, region string) string {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.Matcher != nil && targetGroup.Matcher.HttpCode != nil {
+		return *targetGroup.Matcher.HttpCode
+	}
+	return ""
+}
+
+// GetTargetGroupHealthCheckInterval returns the health check interval, in seconds.
+func GetTargetGroupHealthCheckInterval(t *testing.T, targetGroupArn string, region string) int32 {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.HealthCheckIntervalSeconds != nil {
+		return *targetGroup.HealthCheckIntervalSeconds
+	}
+	return 0
+}
+
+// GetTargetGroupHealthCheckTimeout returns the health check timeout, in seconds.
+func GetTargetGroupHealthCheckTimeout(t *testing.T, targetGroupArn string, region string) int32 {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.HealthCheckTimeoutSeconds != nil {
+		return *targetGroup.HealthCheckTimeoutSeconds
+	}
+	return 0
+}
+
+// GetTargetGroupHealthyThreshold returns the number of consecutive successful health checks
+// required before a target is considered healthy.
+func GetTargetGroupHealthyThreshold(t *testing.T, targetGroupArn string, region string) int32 {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.HealthyThresholdCount != nil {
+		return *targetGroup.HealthyThresholdCount
+	}
+	return 0
+}
+
+// GetTargetGroupUnhealthyThreshold returns the number of consecutive failed health checks
+// required before a target is considered unhealthy.
+func GetTargetGroupUnhealthyThreshold(t *testing.T, targetGroupArn string, region string) int32 {
+	targetGroup := describeTargetGroup(t, targetGroupArn, region)
+
+	if targetGroup.UnhealthyThresholdCount != nil {
+		return *targetGroup.UnhealthyThresholdCount
+	}
+	return 0
+}
+
+// GetTargetGroupAttributes returns all target group attributes as a map, e.g.
+// "deregistration_delay.timeout_seconds", "slow_start.duration_seconds", "stickiness.enabled".
+func GetTargetGroupAttributes(t *testing.T, targetGroupArn string, region string) map[string]string {
+	client := getELBv2Client(t, region)
+
+	input := &elbv2.DescribeTargetGroupAttributesInput{
+		TargetGroupArn: &targetGroupArn,
+	}
+
+	result, err := client.DescribeTargetGroupAttributes(context.TODO(), input)
+	require.NoError(t, err, "Failed to describe attributes for target group %s", targetGroupArn)
+
+	attributes := make(map[string]string)
+	for _, attribute := range result.Attributes {
+		if attribute.Key != nil && attribute.Value != nil {
+			attributes[*attribute.Key] = *attribute.Value
+		}
+	}
+
+	return attributes
+}
+
+// GetTargetGroupAttribute returns a single target group attribute value, or "" if it is not set.
+func GetTargetGroupAttribute(t *testing.T, targetGroupArn string, attributeKey string, region string) string {
+	return GetTargetGroupAttributes(t, targetGroupArn, region)[attributeKey]
+}
+
+// describeListenerRule returns the listener rule with the given ARN, failing the test if it is missing.
+func describeListenerRule(t *testing.T, ruleArn string, region string) elbv2types.Rule {
+	client := getELBv2Client(t, region)
+
+	input := &elbv2.DescribeRulesInput{
+		RuleArns: []string{ruleArn},
+	}
+
+	result, err := client.DescribeRules(context.TODO(), input)
+	require.NoError(t, err, "Failed to describe listener rule %s", ruleArn)
+	require.Len(t, result.Rules, 1, "Expected exactly one listener rule with ARN %s", ruleArn)
+
+	return result.Rules[0]
+}
+
+// ListenerRuleExists checks if a listener rule with the given ARN exists.
+func ListenerRuleExists(t *testing.T, ruleArn string, region string) bool {
+	client := getELBv2Client(t, region)
+
+	input := &elbv2.DescribeRulesInput{
+		RuleArns: []string{ruleArn},
+	}
+
+	result, err := client.DescribeRules(context.TODO(), input)
+	if err != nil {
+		return false
+	}
+
+	return len(result.Rules) > 0
+}
+
+// GetListenerRulePriority returns the priority of a listener rule. AWS reports
+// priorities as strings ("default" for the listener's default rule).
+func GetListenerRulePriority(t *testing.T, ruleArn string, region string) string {
+	rule := describeListenerRule(t, ruleArn, region)
+
+	if rule.Priority != nil {
+		return *rule.Priority
+	}
+	return ""
+}
+
+// GetListenerRuleTargetGroupArn returns the ARN of the target group a listener rule forwards to.
+func GetListenerRuleTargetGroupArn(t *testing.T, ruleArn string, region string) string {
+	rule := describeListenerRule(t, ruleArn, region)
+
+	for _, action := range rule.Actions {
+		if action.TargetGroupArn != nil {
+			return *action.TargetGroupArn
+		}
+		if action.ForwardConfig != nil {
+			for _, targetGroup := range action.ForwardConfig.TargetGroups {
+				if targetGroup.TargetGroupArn != nil {
+					return *targetGroup.TargetGroupArn
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// GetListenerRulePathPatterns returns the path patterns a listener rule matches on.
+func GetListenerRulePathPatterns(t *testing.T, ruleArn string, region string) []string {
+	rule := describeListenerRule(t, ruleArn, region)
+
+	var patterns []string
+	for _, condition := range rule.Conditions {
+		if condition.Field == nil || *condition.Field != "path-pattern" {
+			continue
+		}
+		if condition.PathPatternConfig != nil {
+			patterns = append(patterns, condition.PathPatternConfig.Values...)
+			continue
+		}
+		patterns = append(patterns, condition.Values...)
+	}
+
+	return patterns
+}
+
+// GetListenerRuleArnsForListener returns the ARNs of every non-default rule on a listener.
+func GetListenerRuleArnsForListener(t *testing.T, listenerArn string, region string) []string {
+	client := getELBv2Client(t, region)
+
+	input := &elbv2.DescribeRulesInput{
+		ListenerArn: &listenerArn,
+	}
+
+	result, err := client.DescribeRules(context.TODO(), input)
+	require.NoError(t, err, "Failed to describe rules for listener %s", listenerArn)
+
+	var ruleArns []string
+	for _, rule := range result.Rules {
+		if rule.IsDefault != nil && *rule.IsDefault {
+			continue
+		}
+		if rule.RuleArn != nil {
+			ruleArns = append(ruleArns, *rule.RuleArn)
+		}
+	}
+
+	return ruleArns
+}
+
+// getECRClient creates an ECR client for the specified region.
+func getECRClient(t *testing.T, region string) *ecr.Client {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+	require.NoError(t, err, "Failed to load AWS config")
+	return ecr.NewFromConfig(cfg)
+}
+
+// describeEcrRepository returns the ECR repository with the given name, failing the test if it is missing.
+func describeEcrRepository(t *testing.T, repositoryName string, region string) ecrtypes.Repository {
+	client := getECRClient(t, region)
+
+	input := &ecr.DescribeRepositoriesInput{
+		RepositoryNames: []string{repositoryName},
+	}
+
+	result, err := client.DescribeRepositories(context.TODO(), input)
+	require.NoError(t, err, "Failed to describe ECR repository %s", repositoryName)
+	require.Len(t, result.Repositories, 1, "Expected exactly one ECR repository named %s", repositoryName)
+
+	return result.Repositories[0]
+}
+
+// EcrRepositoryExists checks if an ECR repository with the given name exists.
+func EcrRepositoryExists(t *testing.T, repositoryName string, region string) bool {
+	client := getECRClient(t, region)
+
+	input := &ecr.DescribeRepositoriesInput{
+		RepositoryNames: []string{repositoryName},
+	}
+
+	result, err := client.DescribeRepositories(context.TODO(), input)
+	if err != nil {
+		return false
+	}
+
+	return len(result.Repositories) > 0
+}
+
+// GetEcrRepositoryArn returns the ARN of an ECR repository.
+func GetEcrRepositoryArn(t *testing.T, repositoryName string, region string) string {
+	repository := describeEcrRepository(t, repositoryName, region)
+
+	if repository.RepositoryArn != nil {
+		return *repository.RepositoryArn
+	}
+	return ""
+}
+
+// GetEcrRepositoryUri returns the URI of an ECR repository.
+func GetEcrRepositoryUri(t *testing.T, repositoryName string, region string) string {
+	repository := describeEcrRepository(t, repositoryName, region)
+
+	if repository.RepositoryUri != nil {
+		return *repository.RepositoryUri
+	}
+	return ""
+}
+
+// GetEcrRepositoryImageTagMutability returns the tag mutability setting (MUTABLE or IMMUTABLE)
+// of an ECR repository.
+func GetEcrRepositoryImageTagMutability(t *testing.T, repositoryName string, region string) ecrtypes.ImageTagMutability {
+	return describeEcrRepository(t, repositoryName, region).ImageTagMutability
+}
+
+// GetEcrRepositoryScanOnPushEnabled returns whether an ECR repository scans images on push.
+func GetEcrRepositoryScanOnPushEnabled(t *testing.T, repositoryName string, region string) bool {
+	repository := describeEcrRepository(t, repositoryName, region)
+
+	if repository.ImageScanningConfiguration != nil {
+		return repository.ImageScanningConfiguration.ScanOnPush
+	}
+	return false
+}
+
+// EcrRepositoryHasLifecyclePolicy checks if an ECR repository has a lifecycle policy applied.
+func EcrRepositoryHasLifecyclePolicy(t *testing.T, repositoryName string, region string) bool {
+	client := getECRClient(t, region)
+
+	input := &ecr.GetLifecyclePolicyInput{
+		RepositoryName: &repositoryName,
+	}
+
+	result, err := client.GetLifecyclePolicy(context.TODO(), input)
+	if err != nil {
+		return false
+	}
+
+	return result.LifecyclePolicyText != nil && *result.LifecyclePolicyText != ""
 }

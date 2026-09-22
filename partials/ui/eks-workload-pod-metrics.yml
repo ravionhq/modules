@@ -1,0 +1,285 @@
+# Golden-signal pod metrics shared by rvn-eks-web, rvn-eks-worker, and
+# rvn-eks-cron, following the metrics providers selected on the workload's
+# EKS Add-ons reference.
+#
+# Each signal appears once per rendering provider under the SAME chart id, in
+# the fallback order the add-ons module publishes - Amazon Managed Prometheus,
+# then an in-cluster Prometheus, then CloudWatch Container Insights. Charts
+# sharing an id are one chain: the dashboard queries the first, falls back to
+# the next when that store cannot answer, and names the store it used. Only
+# the entries whose provider is selected survive resolution.
+#
+# `metrics_rendering_providers` is mapped off the add-ons reference, and unset
+# is not the same as empty. Unset means the add-ons module is older than 0.8.0
+# and publishes no such output at all; a workload attached to one must keep the
+# charts it has today, so the guard falls back to AMP. An empty list is a
+# deliberate answer from a module that does know about providers - Metrics are
+# turned off for this cluster - and every chart drops.
+#
+# Pod matching, Prometheus: the deploy pins fullnameOverride to
+# `module.input.name`, so a Deployment's pods are `<name>-<rs-hash>-<suffix>`
+# and a CronJob's are `<name>-<job-id>-<suffix>`. The two-segment tail -
+# neither segment may contain a hyphen - keeps a sibling service whose name
+# merely starts with this one (`api` vs `api-worker`) out of the selection.
+# Every metric name is on the add-ons module's curated allow-list; anything
+# added must be too, or the chart will render empty.
+#
+# Pod matching, CloudWatch: Container Insights aggregates pods under a
+# `PodName` dimension that is the controlling object's name with the generated
+# suffix stripped - the ReplicaSet hash for a Deployment, the schedule stamp
+# for a CronJob's Job - so `PodName` is exactly `module.input.name` for all
+# three workload kinds. There is no prefix or wildcard matching in a
+# CloudWatch dimension, which is why this identity is what makes the
+# CloudWatch chain link possible at all.
+#
+# Two deliberate differences in the CloudWatch entries:
+#
+#   - The statistic is Average, never Sum. The agent emits one datapoint per
+#     pod per interval against the same dimensions, so Sum would add the pods
+#     together AND add up every interval inside whatever period the dashboard
+#     picks for the selected time range - a chart that changes shape when you
+#     zoom. Average is stable across periods and reads as "per pod", where the
+#     PromQL entries read as "across pods".
+#   - `pod_cpu_usage_total` and `pod_memory_working_set` are published only by
+#     Container Insights with enhanced observability, which the add-ons module
+#     turns on with CloudWatch by default. They are used in preference to
+#     `pod_cpu_utilization` / `pod_memory_utilization` because those two are
+#     percentages of the whole node, which would make the CloudWatch link in
+#     the chain plot a different quantity than the Prometheus links.
+- id: cpu
+  name: CPU usage
+  type: line
+  enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+  source:
+    type: amp
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.amp_workspace_region >>
+    workspace_id: << module.input.amp_workspace_id >>
+    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    unit: cores
+- id: cpu
+  name: CPU usage
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  source:
+    type: eks_prometheus
+    cluster_arn: << module.input.cluster_arn >>
+    endpoint: << module.input.prometheus_endpoint >>
+    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    unit: cores
+- id: cpu
+  name: CPU usage
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_cpu_usage_total
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>
+- id: memory
+  name: Memory working set
+  type: line
+  enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+  source:
+    type: amp
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.amp_workspace_region >>
+    workspace_id: << module.input.amp_workspace_id >>
+    query: 'sum(container_memory_working_set_bytes{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"})'
+    unit: B
+- id: memory
+  name: Memory working set
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  source:
+    type: eks_prometheus
+    cluster_arn: << module.input.cluster_arn >>
+    endpoint: << module.input.prometheus_endpoint >>
+    query: 'sum(container_memory_working_set_bytes{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"})'
+    unit: B
+- id: memory
+  name: Memory working set
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_memory_working_set
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>
+- id: restarts
+  name: Container restarts
+  type: line
+  enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+  source:
+    type: amp
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.amp_workspace_region >>
+    workspace_id: << module.input.amp_workspace_id >>
+    query: 'sum(increase(kube_pod_container_status_restarts_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+- id: restarts
+  name: Container restarts
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  source:
+    type: eks_prometheus
+    cluster_arn: << module.input.cluster_arn >>
+    endpoint: << module.input.prometheus_endpoint >>
+    query: 'sum(increase(kube_pod_container_status_restarts_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+# `pod_number_of_container_restarts` is the running total for a pod, not the
+# count inside the period, so the closest period-stable reading is Maximum.
+# The Prometheus entries above plot restarts per interval; this one plots how
+# many times the worst pod has restarted since it started.
+- id: restarts
+  name: Container restarts
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_number_of_container_restarts
+    statistic: Maximum
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>
+- id: network_rx
+  name: Network in
+  type: line
+  enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+  source:
+    type: amp
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.amp_workspace_region >>
+    workspace_id: << module.input.amp_workspace_id >>
+    query: 'sum(rate(container_network_receive_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    unit: B/s
+- id: network_rx
+  name: Network in
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  source:
+    type: eks_prometheus
+    cluster_arn: << module.input.cluster_arn >>
+    endpoint: << module.input.prometheus_endpoint >>
+    query: 'sum(rate(container_network_receive_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    unit: B/s
+- id: network_rx
+  name: Network in
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_network_rx_bytes
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>
+- id: network_tx
+  name: Network out
+  type: line
+  enabled: << module.input.metrics_rendering_providers == nil || "amp" in module.input.metrics_rendering_providers >>
+  source:
+    type: amp
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.amp_workspace_region >>
+    workspace_id: << module.input.amp_workspace_id >>
+    query: 'sum(rate(container_network_transmit_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    unit: B/s
+- id: network_tx
+  name: Network out
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  source:
+    type: eks_prometheus
+    cluster_arn: << module.input.cluster_arn >>
+    endpoint: << module.input.prometheus_endpoint >>
+    query: 'sum(rate(container_network_transmit_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    unit: B/s
+- id: network_tx
+  name: Network out
+  type: line
+  enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_network_tx_bytes
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>
+# "Open in <vendor>" actions, one per metrics provider that ships to a vendor
+# instead of rendering in Ravion. Same construction as the Logs tab; see
+# partials/ui/eks-workload-logs.yml for the reasoning. These are actions, not
+# chain links, so each takes its own id rather than joining a chart chain.
+- id: link_datadog
+  name: Open in Datadog
+  type: link
+  enabled: >-
+    << module.input.metrics_external_links != nil
+    && len(filter(module.input.metrics_external_links, #.provider == "datadog")) > 0 >>
+  source:
+    type: link
+    provider: datadog
+    href: >-
+      << module.input.metrics_external_links == nil ? "" :
+      reduce(filter(module.input.metrics_external_links, #.provider == "datadog"), #acc + #.href_prefix, "")
+      + "kube_namespace%3A" + module.input.namespace + "%20pod_name%3A" + module.input.name + "-%2A" >>
+- id: link_grafana_cloud
+  name: Open in Grafana Cloud
+  type: link
+  enabled: >-
+    << module.input.metrics_external_links != nil
+    && len(filter(module.input.metrics_external_links, #.provider == "grafana_cloud")) > 0 >>
+  source:
+    type: link
+    provider: grafana_cloud
+    href: >-
+      << module.input.metrics_external_links == nil ? "" :
+      reduce(filter(module.input.metrics_external_links, #.provider == "grafana_cloud"), #acc + #.href_prefix, "")
+      + "%7Bnamespace%3D%22" + module.input.namespace + "%22%2Cpod%3D~%22" + module.input.name + "-.%2A%22%7D" >>
+- id: link_new_relic
+  name: Open in New Relic
+  type: link
+  enabled: >-
+    << module.input.metrics_external_links != nil
+    && len(filter(module.input.metrics_external_links, #.provider == "new_relic")) > 0 >>
+  source:
+    type: link
+    provider: new_relic
+    href: >-
+      << module.input.metrics_external_links == nil ? "" :
+      reduce(filter(module.input.metrics_external_links, #.provider == "new_relic"), #acc + #.href_prefix, "")
+      + "k8s.namespaceName%3A%27" + module.input.namespace + "%27%20AND%20k8s.podName%3A%27" + module.input.name + "-%2A%27" >>
+- id: link_otlp
+  name: Open in the OTLP destination
+  type: link
+  enabled: >-
+    << module.input.metrics_external_links != nil
+    && len(filter(module.input.metrics_external_links, #.provider == "otlp")) > 0 >>
+  source:
+    type: link
+    provider: otlp
+    href: >-
+      << module.input.metrics_external_links == nil ? "" :
+      reduce(filter(module.input.metrics_external_links, #.provider == "otlp"), #acc + #.href_prefix, "") >>

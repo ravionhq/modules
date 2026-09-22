@@ -293,17 +293,6 @@ variable "default_cache_behavior" {
   }
 }
 
-variable "accept_header_cache_key_creation_enabled" {
-  type        = bool
-  description = "Whether to create and use a module-managed cache policy and viewer-request function that preserve the UseOriginCacheControlHeaders-QueryStrings cache key and add normalized Markdown negotiation."
-  default     = false
-
-  validation {
-    condition     = !var.accept_header_cache_key_creation_enabled || var.default_cache_behavior.cache_policy_id == null
-    error_message = "The accept_header_cache_key_creation_enabled option cannot be used with an explicit default_cache_behavior.cache_policy_id."
-  }
-}
-
 ################################################################################
 # Ordered Cache Behaviors
 ################################################################################
@@ -534,7 +523,7 @@ variable "logging_bucket_creation_enabled" {
 variable "logging_bucket_retention_days" {
   type        = number
   description = "Days to retain CloudFront access logs — the CloudWatch log group retention or the S3 lifecycle expiry on the module-created bucket, depending on logging_destination."
-  default     = 90
+  default     = 365
 
   validation {
     condition     = var.logging_bucket_retention_days >= 1

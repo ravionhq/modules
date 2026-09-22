@@ -1,0 +1,33 @@
+# Helm values common to rvn-eks-web, rvn-eks-worker, and rvn-eks-cron.
+#
+# Only keys present in all three charts' values.schema.json belong here. Those
+# schemas set additionalProperties: false, so an unknown key is a hard Helm
+# error rather than an ignored setting.
+fullnameOverride: << module.input.name >>
+image:
+  # On the image_registry path the repository is whatever the module was
+  # configured with. For Dockerfile and Railpack builds it is the ECR
+  # repository the stack created, which is also where the build pushed to.
+  repository: '<< module.input.build_source == "image_registry" ? module.input.image_repository : stack.output.ecr_repository_url >>'
+  # image_ref is one field carrying either shape: the chart prefers digest over
+  # tag, and each branch blanks the other so exactly one is ever set.
+  tag: '<< deploy.input.image_ref contains "sha256:" ? "" : deploy.input.image_ref >>'
+  digest: '<< deploy.input.image_ref contains "sha256:" ? deploy.input.image_ref : "" >>'
+imagePullSecrets: >-
+  << module.input.image_pull_secret_names != nil ? map(module.input.image_pull_secret_names, ({"name": #})) : [] >>
+command: '<< module.input.start_command != nil ? module.input.start_command : [] >>'
+args: '<< module.input.start_command_args != nil ? module.input.start_command_args : [] >>'
+env: '<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>'
+resources:
+  requests:
+    cpu: << module.input.cpu_request >>
+    memory: << module.input.memory_request >>
+  limits: >-
+    << module.input.cpu_limit ? {"cpu": module.input.cpu_limit, "memory": module.input.memory_limit} :
+    {"memory": module.input.memory_limit} >>
+podLabels: >-
+  << module.input.compute_target == "fargate" ? {"eks.amazonaws.com/fargate-profile": module.input.name + "-fargate"} : {} >>
+podAnnotations: >-
+  << module.input.compute_target == "on_demand" || module.input.compute_target == "spot" ? {"eks.amazonaws.com/compute-type": "ec2"} : {} >>
+affinity: >-
+  << module.input.compute_target == "on_demand" || module.input.compute_target == "spot" ? {"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"eks.amazonaws.com/capacityType","operator":"In","values":[module.input.compute_target == "spot" ? "SPOT" : "ON_DEMAND"]}]},{"matchExpressions":[{"key":"karpenter.sh/capacity-type","operator":"In","values":[module.input.compute_target == "spot" ? "spot" : "on-demand"]}]}]}}} : {} >>

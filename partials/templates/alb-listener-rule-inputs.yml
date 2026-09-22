@@ -2,7 +2,6 @@
   id: section_routing
   label: HTTP listener rules
   type: section
-  description: Add at least one domain host rule or path rule.
 - $merge: $with.field_overrides
   id: host_header_values
   label: Domain host rules

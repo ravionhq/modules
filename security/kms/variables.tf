@@ -101,9 +101,8 @@ variable "deletion_window_in_days" {
 # consuming role does not yet exist.
 #
 # IMPORTANT: principals are typed loosely as list(string) so callers can pass
-# IAM role ARNs, IAM user ARNs, account roots ('arn:aws:iam::<account>:root'),
-# or AWS service principals where appropriate. Validation enforces the
-# 'arn:aws...' shape and catches obvious typos.
+# IAM role ARNs, IAM user ARNs, or account roots
+# ('arn:aws:iam::<account>:root').
 ################################################################################
 
 variable "key_administrator_role_arns" {
@@ -112,8 +111,8 @@ variable "key_administrator_role_arns" {
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.key_administrator_role_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::", arn))])
-    error_message = "Every entry in key_administrator_role_arns must be an IAM ARN (arn:aws:iam::<account>:...)."
+    condition     = alltrue([for arn in var.key_administrator_role_arns : can(regex("^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$", arn))])
+    error_message = "Every entry in key_administrator_role_arns must be an account root, role, or user ARN with a 12-digit account ID."
   }
 }
 
@@ -123,8 +122,8 @@ variable "key_user_role_arns" {
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.key_user_role_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::", arn))])
-    error_message = "Every entry in key_user_role_arns must be an IAM ARN (arn:aws:iam::<account>:...)."
+    condition     = alltrue([for arn in var.key_user_role_arns : can(regex("^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$", arn))])
+    error_message = "Every entry in key_user_role_arns must be an account root, role, or user ARN with a 12-digit account ID."
   }
 }
 
@@ -134,8 +133,8 @@ variable "signer_role_arns" {
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.signer_role_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::", arn))])
-    error_message = "Every entry in signer_role_arns must be an IAM ARN (arn:aws:iam::<account>:...)."
+    condition     = alltrue([for arn in var.signer_role_arns : can(regex("^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$", arn))])
+    error_message = "Every entry in signer_role_arns must be an account root, role, or user ARN with a 12-digit account ID."
   }
 }
 
@@ -145,8 +144,8 @@ variable "public_key_reader_role_arns" {
   default     = []
 
   validation {
-    condition     = alltrue([for arn in var.public_key_reader_role_arns : can(regex("^arn:aws[a-zA-Z-]*:iam::", arn))])
-    error_message = "Every entry in public_key_reader_role_arns must be an IAM ARN (arn:aws:iam::<account>:...)."
+    condition     = alltrue([for arn in var.public_key_reader_role_arns : can(regex("^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$", arn))])
+    error_message = "Every entry in public_key_reader_role_arns must be an account root, role, or user ARN with a 12-digit account ID."
   }
 }
 

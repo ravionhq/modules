@@ -167,6 +167,9 @@ resource "aws_ecs_service" "this" {
   # lifecycle hooks on every deploy, and native traffic-shift deploys
   # alternate the service between the production and alternate target
   # groups), so Terraform must not fight them on subsequent applies.
+  # Rolling early-success criteria are owned by the deploy manager too: it
+  # always sends them, defaulting to 100% healthy / DEFERRED cleanup. The
+  # provider does not yet expose those fields for create-time configuration.
   lifecycle {
     ignore_changes = [
       desired_count,

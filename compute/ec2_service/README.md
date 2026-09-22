@@ -40,7 +40,36 @@ New instances launched by the Auto Scaling Group boot from the launch template b
 
 Supervisord rotates the on-instance app log rather than letting a crash-looping process fill the root volume: `log_rotation_max_size_mb` (default 20) and `log_rotation_backup_count` (default 5) bound on-instance usage to `(backups + 1) * max size` per deployment log. The module writes the supervisord program config on every deploy, after any deploy commands run, so these settings cannot be overridden from a deploy command; change them through the module inputs instead. Replacement instances get the same configuration from the launch template.
 
+## Choosing an instance type
+
+Pick the family that fits the workload, then the newest generation of that family the target region actually offers.
+
+| Family | Memory per vCPU | Use for |
+|--------|-----------------|---------|
+| `t` burstable | 0.5-4 GB | Small or spiky services, development and staging environments, low-volume workers |
+| `m` general purpose | 4 GB | Web services and workers with no strong CPU or memory bias |
+| `c` compute optimized | 2 GB | CPU-bound work such as request-heavy APIs, transcoding, or compilation |
+| `r` memory optimized | 8 GB | Memory-bound work such as large heaps, in-process caches, or a local database |
+
+In `m8g.large`, the digit is the generation and the letters after it identify the processor: `g` is AWS Graviton (`arm64`), `i` is Intel, `a` is AMD, and older families such as `m5` or `t3` carry no processor letter. A `-flex` variant such as `m8i-flex` costs less for workloads that do not sustain high CPU.
+
+**Always use the highest generation number available for the chosen family.** Each generation is faster and cheaper per unit of work than the one below it, so `m8g` beats `m7g`, which beats `m6i`. Do not copy an instance type from an example (including the ones below), an older project, or an AI assistant's memory — those are typically one or two generations behind current, which pays more for less performance. Query the region instead:
+
+```sh
+ravion values aws/ec2/instances --aws-account-id <account-id> --region us-east-1
+```
+
+That lists exactly what the account and region support, from the same source as the Instance type list in the Ravion config form. Newest generations reach the largest regions first, so a region can top out a generation behind, and that list is region-level: a type offered in the region may still be missing from one Availability Zone, so if capacity fails in one subnet, place the group across more AZs. Burstable is the exception to the generation rule: `t4g`, `t3`, and `t3a` are still the newest burstable families, because AWS has not released a newer one.
+
+Prefer Graviton whenever the workload can run on it: best price and performance in every family that offers it, and with `ami_id` left null the module reads `supported_architectures` from the selected instance type and resolves the matching `arm64` Amazon Linux 2023 AMI, so no other input changes. A custom `ami_id` is used as given, so it must already match the instance type's architecture. The container image (`container` runtime) or host-installed dependencies (`manual` runtime) must build for `arm64`. Use an Intel or AMD type when something in the stack is `x86_64`-only.
+
+Then right-size from measurement: start with the smallest size in the family that holds the working set, watch the instances' CPU and memory utilization, and move up a size or set `cpu_autoscaling_enabled` from there.
+
+Changing `instance_type` produces a new launch template version that applies to instances launched afterwards. Running instances keep their current type until recycled, and a Graviton/x86 switch changes the AMI for new instances only, so the group can briefly run both architectures mid-recycle. Either keep multi-architecture images during that window or recycle every instance promptly.
+
 ## Usage
+
+The instance types in these examples are illustrative, not recommendations — select yours as described above.
 
 ### Web service running a container
 
@@ -53,7 +82,7 @@ module "web" {
   subnet_ids = ["subnet-aaa", "subnet-bbb"]
 
   runtime       = "container"
-  instance_type = "t3.small"
+  instance_type = "m8g.large"
   min_size      = 2
   max_size      = 4
 
@@ -100,7 +129,7 @@ module "worker" {
   subnet_ids = ["subnet-aaa", "subnet-bbb"]
 
   runtime       = "manual"
-  instance_type = "t3.small"
+  instance_type = "m8g.large"
 
   manual_start_command = "cd /srv/app && ./bin/worker"
 
@@ -157,7 +186,7 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | secrets | Secret env vars fetched on-instance from Secrets Manager / SSM Parameter Store (`{name, value_from}`) | `list(object)` | `[]` | no |
 | deploy_health_check_path | Local HTTP path gating deploy success | `string` | `null` | no |
 | deploy_timeout_seconds | Per-instance deploy script timeout | `number` | `1200` | no |
-| instance_type | EC2 instance type | `string` | n/a | yes |
+| instance_type | EC2 instance type; use the newest generation the region offers (see "Choosing an instance type") | `string` | n/a | yes |
 | ami_id | Custom AMI (null = latest AL2023) | `string` | `null` | no |
 | key_name | SSH key pair name | `string` | `null` | no |
 | root_volume_size | Root EBS volume size (GB) | `number` | `30` | no |
@@ -168,7 +197,7 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | data_volume_mount_path | Host mount path for the data volume | `string` | `"/data"` | no |
 | additional_user_data | Extra shell script appended to bootstrap | `string` | `""` | no |
 | min_size | Minimum instances | `number` | `1` | no |
-| max_size | Maximum instances | `number` | `3` | no |
+| max_size | Maximum instances | `number` | `1` | no |
 | desired_capacity | Desired instances (null = group-managed) | `number` | `null` | no |
 | health_check_type | ASG health check: `EC2` or `ELB` | `string` | `"EC2"` | no |
 | health_check_grace_period | Seconds before ASG health checks apply | `number` | `300` | no |

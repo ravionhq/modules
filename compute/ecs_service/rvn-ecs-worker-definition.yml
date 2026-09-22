@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.1.1
-  description: Add Builder IAM policies inputs and derive per-input apply-action metadata in the compiled module definition.
+  version: 1.6.1
+  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance. Add Builder IAM policies inputs and derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: section_cluster
@@ -12,7 +12,7 @@ module:
       type: section
     - id: cluster
       immutable: true
-      label: ECS cluster
+      label: Cluster
       type: $ref:rvn-ecs-cluster
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
@@ -42,8 +42,13 @@ module:
       with:
         environment_variables_description: Runtime environment variables passed to the worker container.
     - $include: ../../partials/inputs/ecs-service-deploy-command-inputs.yml
+    - $template: ../../partials/templates/ecs-service-early-success-inputs.yml
+      with:
+        field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
     - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-compliance-inputs.yml
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
   stack:
     type: opentofu
@@ -64,6 +69,7 @@ module:
           terraform_variables:
             $merge:
               - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - container_port: 3000
                 load_balancer_attachment: null
           tool: opentofu
@@ -74,10 +80,14 @@ module:
       destroy:
         pipeline_id: << defaults.destroy_pipeline_id >>
   build:
-    $include: ../../partials/build/ecs-service-image-build.yml
+    $merge:
+      - ../../partials/build/ecs-service-image-build.yml
+    soci_enabled: << module.input.capacity_provider == "fargate" || module.input.capacity_provider == "fargate_spot" >>
   deploy:
     $merge:
       - ../../partials/deploy/ecs-service-deploy-common.yml
+    strategy:
+      $include: ../../partials/deploy/ecs-service-rolling-strategy.yml
     task_definition:
       $merge:
         - ../../partials/deploy/ecs-service-task-definition-common.yml
@@ -146,6 +156,10 @@ module:
     metrics:
       - $include: ../../partials/ui/ecs-service-common-metrics.yml
   readme: |
+    ## Rolling deployment success
+
+    Rolling deploys always use AWS early success: by default, 100% of desired new tasks must be healthy and old tasks drain in the background. **Wait for old tasks to drain** selects blocking cleanup. Alarm bake time still applies. The success percentage must be at least **Minimum healthy percent**; lower the availability floor explicitly before choosing a lower threshold. Remaining tasks scale in the background and deployment rollback monitoring ends at ECS success.
+
     Background worker ECS service for running private container workloads without exposed ports.
 
     ## Overview
@@ -171,7 +185,9 @@ module:
 
     ## Build and deployment
 
-    Workers support Dockerfile, Railpack, and Pull from image registry deployments. Deployments update the ECS service task definition with the selected image, generated container definition, logs, runtime environment variables, secrets, IAM roles, volumes, sidecars, and selected capacity provider settings. For Railpack builds, you can optionally pin the Railpack version and override install, build, and start commands. For Fargate and Fargate Spot, App ephemeral storage uses the AWS default of 20 GiB unless you increase it to 21-200 GiB. For image registry deployments, use Start command to override the image default CMD when the worker process uses a different command.
+    Workers support Dockerfile, Railpack, Managed ECR repository, and Pull from image registry deployments. Deployments update the ECS service task definition with the selected image, generated container definition, logs, runtime environment variables, secrets, IAM roles, volumes, sidecars, and selected capacity provider settings. For Railpack builds, you can optionally pin the Railpack version and override install, build, and start commands. For Fargate and Fargate Spot, App ephemeral storage uses the AWS default of 20 GiB unless you increase it to 21-200 GiB. For image registry deployments, use Start command to override the image default CMD when the worker process uses a different command.
+
+    For Managed ECR repository, Ravion creates and manages the service ECR repository. Push the image from a pipeline `build:image` step, then provide its tag or digest at deploy time.
 
     ## Persistent storage
 
@@ -183,14 +199,24 @@ module:
 
     Autoscaling is enabled by default with CPU and memory target tracking. Use custom metric scaling policies for queue depth, lag, backlog, or other workload-specific metrics that better represent worker demand. When autoscaling is disabled, Desired tasks controls how many worker tasks the ECS service keeps running.
 
+    ## Compliance
+
+    The Compliance section holds log retention and CloudWatch alarms.
+
+    Log retention (days) defaults to the value configured on the ECS cluster's Compliance section, so one cluster setting keeps every service consistent. Set a value here to override it for this service. Use 0 to retain logs indefinitely.
+
+    CloudWatch alarms are enabled by default for average CPU utilization, average memory utilization, and running task count. Worker services have no load balancer, so only the service-level alarms apply.
+
+    The running task alarm uses the Container Insights `RunningTaskCount` metric and stays silent when Container Insights is disabled on the cluster. Every alarm treats missing data as not breaching and must breach for the configured number of consecutive periods before it fires. Add SNS topic ARNs as Alarm actions and OK actions to be notified.
+
     ## Configuration
 
     | Field | Required | Default | Description |
     | ----- | -------- | ------- | ----------- |
-    | ECS cluster | Yes | - | Existing rvn-ecs-cluster module instance |
+    | Cluster | Yes | - | Existing rvn-ecs-cluster module instance |
     | Service name | Yes | {project}-{env}-{module} | Name for the ECS service and related resources |
     | Run in private subnets | No | true | Run tasks in private subnets without public IPs |
-    | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |
+    | Build source | Yes | dockerfile | Dockerfile, Railpack, Managed ECR repository, or Pull from image registry |
     | Start command | No | [] | Command arguments that override an image default CMD |
     | Capacity provider | Yes | fargate | Primary service capacity provider |
     | App size | No | 2 vCPU, 4 GB | Fargate task CPU and memory |
@@ -203,6 +229,12 @@ module:
     | Sidecars | No | [] | Additional containers in the worker task |
     | EFS file system | No | false | Mount an EFS file system into the worker container |
     | EFS mount path | Yes* | /mnt/efs | Worker container path for the referenced file system |
+    | Log retention (days) | No | Cluster default | Overrides the CloudWatch log retention inherited from the cluster |
+    | Create CloudWatch alarms | No | true | Adds CPU, memory, running task alarms |
+    | CPU alarm threshold (%) | No | 80 | Average service CPU utilization |
+    | Memory alarm threshold (%) | No | 80 | Average service memory utilization |
+    | Minimum running tasks | No | 1 | Alarms when fewer tasks are running |
+    | Alarm actions | No | [] | ARNs notified on ALARM, such as an SNS topic |
 
     ## Design decisions
 

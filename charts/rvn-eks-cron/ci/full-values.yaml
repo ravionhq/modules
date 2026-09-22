@@ -1,0 +1,27 @@
+# Every cron knob set, plus both secret providers.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-cron
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+schedule: "*/15 * * * *"
+timeZone: America/New_York
+concurrencyPolicy: Forbid
+suspend: false
+successfulJobsHistoryLimit: 1
+failedJobsHistoryLimit: 5
+startingDeadlineSeconds: 120
+job:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  restartPolicy: Never
+serviceAccount:
+  name: demo-cron
+ravion:
+  secrets:
+    - name: DB_PASSWORD
+      provider: secretsManager
+      key: arn:aws:secretsmanager:us-east-1:123456789012:secret:db-AbCdEf
+      property: password
+    - name: FEATURE_FLAGS
+      provider: parameterStore
+      key: arn:aws:ssm:us-east-1:123456789012:parameter/demo/feature-flags

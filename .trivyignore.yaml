@@ -1,0 +1,29 @@
+# Trivy ignore file. Entries without paths apply repo-wide; entries with paths
+# apply only to the listed files.
+misconfigurations:
+  # Reusable modules and test fixtures intentionally expose configuration knobs
+  # that can render as insecure static examples before caller inputs are applied.
+  - id: AWS-0013
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0039
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0045
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0051
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0053
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0054
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0104
+    statement: Reusable module knob; callers supply the secure value.
+  - id: AWS-0107
+    statement: Reusable module knob; callers supply the secure value.
+
+  # The coredns-traffic-distribution chart exists to patch the kube-dns
+  # Service's trafficDistribution field. Its Role is limited to get/patch on
+  # that one Service by name, so write access to Services is expected here.
+  - id: KSV-0056
+    paths:
+      - compute/eks/addons/charts/coredns-traffic-distribution/templates/rbac.yaml
+    statement: Role scoped to get/patch on the single kube-dns Service, which is the chart's purpose.

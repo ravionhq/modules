@@ -155,7 +155,6 @@ function expandDestination(destination, fallbackHost, captures) {
 function handler(event) {
     var request = event.request;
     var headers = request.headers || {};
-${accept_header_normalization_code}
     var host = headers.host ? headers.host.value.toLowerCase() : '';
     var uri = request.uri || '/';
     var method = request.method || 'GET';

@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.0.2
-  description: Derive per-input apply-action metadata in the compiled module definition.
+  version: 1.1.1
+  description: Add VPC endpoints, a free S3 gateway endpoint enabled by default for new VPCs, an optional DynamoDB gateway endpoint, and selectable interface endpoints for private access to AWS services. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -70,6 +70,57 @@ module:
       label: NAT gateway Elastic IP allocation IDs
       required: false
       type: string_array
+    - id: section_vpc_endpoints
+      label: VPC endpoints
+      type: section
+    - default: true
+      collapsible: true
+      description: Route S3 traffic through a free gateway VPC endpoint instead of the NAT gateway. Avoids NAT data processing charges (including ECR image layer pulls) and keeps S3 traffic inside AWS.
+      id: vpc_endpoint_s3_gateway_enabled
+      label: S3 gateway endpoint
+      type: boolean
+    - collapsible: true
+      default: false
+      description: Route DynamoDB traffic through a free gateway VPC endpoint instead of the NAT gateway.
+      id: vpc_endpoint_dynamodb_gateway_enabled
+      label: DynamoDB gateway endpoint
+      type: boolean
+    - collapsible: true
+      description: |-
+        Create interface VPC endpoints (AWS PrivateLink) in the private subnets for private access to AWS services without a NAT gateway.
+
+        Each endpoint costs about $8/month per AZ plus data processing charges, so a multi-service set can cost more than a NAT gateway. Pulling ECR images privately requires ECR API, ECR Docker registry, and the S3 gateway endpoint together.
+      id: vpc_endpoint_interface_services
+      label: Interface endpoints
+      required: false
+      type: string_array
+      values:
+        - label: ECR API
+          value: ecr.api
+        - label: ECR Docker registry
+          value: ecr.dkr
+        - label: CloudWatch Logs
+          value: logs
+        - label: CloudWatch metrics
+          value: monitoring
+        - label: Secrets Manager
+          value: secretsmanager
+        - label: Systems Manager
+          value: ssm
+        - label: Systems Manager Session Manager
+          value: ssmmessages
+        - label: EC2 messages
+          value: ec2messages
+        - label: KMS
+          value: kms
+        - label: STS
+          value: sts
+        - label: SQS
+          value: sqs
+        - label: SNS
+          value: sns
+        - label: EventBridge
+          value: events
     - id: section_soc2
       label: SOC 2
       type: section
@@ -157,6 +208,7 @@ module:
 
     - **Public and private subnets** across multiple availability zones for high availability
     - **NAT Gateway** options for outbound internet access from private subnets
+    - **VPC endpoints** for private access to S3, DynamoDB, and other AWS services
     - **VPC Flow Logs** for network traffic monitoring and SOC 2 compliance
     - **VPC Peering** to connect with existing VPCs across accounts or regions
 
@@ -172,6 +224,7 @@ module:
     | SOC 2 compliance             | Enabling flow logs for network traffic auditing            |
     | Multi-region architecture    | Peering VPCs across regions for low-latency communication  |
     | Partner IP allowlisting      | Using stable NAT Gateway IPs with pre-allocated EIPs       |
+    | Reducing NAT data charges    | Routing S3/DynamoDB traffic through free gateway endpoints |
 
     ## Subnet types
 
@@ -211,6 +264,28 @@ module:
 
     To keep the same IP permanently, create your Elastic IPs separately and pass in the allocation IDs. This way, even if you destroy and recreate the entire VPC, your NAT Gateway will use the same public IP — no need to update partner allowlists or firewall rules.
 
+    ## VPC endpoints
+
+    VPC endpoints let resources in the VPC reach AWS services without traversing the internet or the NAT gateway.
+
+    ### Gateway endpoints (free)
+
+    Gateway endpoints for **S3** and **DynamoDB** are free and simply add routes to the VPC's route tables. The S3 gateway endpoint is enabled by default for new VPCs: it keeps S3 traffic — including ECR image layer downloads — off the NAT gateway, cutting NAT data processing charges.
+
+    One caveat: S3 traffic no longer exits through the NAT gateway's public IP, so S3 bucket policies that allowlist your NAT IP need to be updated (for example to match the endpoint via `aws:SourceVpce`).
+
+    ### Interface endpoints (PrivateLink)
+
+    Interface endpoints provide private connectivity to most other AWS services (ECR, CloudWatch Logs, Secrets Manager, Systems Manager, and more). The module places each endpoint in every private subnet with private DNS enabled and a shared security group allowing HTTPS from within the VPC, so AWS SDKs work without configuration changes.
+
+    | Consideration   | Detail                                                                |
+    | --------------- | --------------------------------------------------------------------- |
+    | Cost            | ~$8/month per endpoint per AZ, plus $0.01/GB processed                |
+    | ECR without NAT | Requires ECR API + ECR Docker registry + the S3 gateway endpoint      |
+    | Region scope    | Endpoints connect to services in the VPC's own region only            |
+
+    A typical ECS bundle (ECR API, ECR Docker registry, CloudWatch Logs, Secrets Manager) across 3 AZs runs ~$96/month — more than a single NAT gateway (~$32/month). Choose interface endpoints for private networking and compliance requirements rather than cost savings.
+
     ## Configuration
 
     | Field                          | Required | Default              | Description                                                            |
@@ -223,6 +298,9 @@ module:
     | NAT Gateway                    | No       | `true`               | Enable outbound internet from private subnets                          |
     | NAT Gateway High Availability  | No       | `false`              | Deploy one NAT per AZ instead of a single shared NAT                   |
     | NAT Gateway EIP Allocation IDs | No       | —                    | Pre-allocated EIPs for stable NAT public IPs                           |
+    | S3 gateway endpoint            | No       | `true`               | Free gateway endpoint keeping S3 traffic off the NAT gateway           |
+    | DynamoDB gateway endpoint      | No       | `false`              | Free gateway endpoint keeping DynamoDB traffic off the NAT gateway     |
+    | Interface endpoints            | No       | —                    | Interface VPC endpoints (PrivateLink) for private AWS service access   |
     | Flow Logs                      | No       | `false`              | Enable VPC Flow Logs (required for SOC 2)                              |
     | Tags                           | No       | Environment, Project | Custom tags applied to all resources                                   |
 
@@ -292,6 +370,9 @@ module:
         tags:
           $include: ../stack/ravion-tags.yml
         vpc_cidr: << module.input.vpc_cidr >>
+        vpc_endpoint_dynamodb_gateway_enabled: << module.input.vpc_endpoint_dynamodb_gateway_enabled >>
+        vpc_endpoint_interface_services: << module.input.vpc_endpoint_interface_services >>
+        vpc_endpoint_s3_gateway_enabled: << module.input.vpc_endpoint_s3_gateway_enabled >>
         vpc_peering_connections: << module.input.vpc_peering_connections >>
   ui:
     logs: |-

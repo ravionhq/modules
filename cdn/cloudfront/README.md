@@ -110,10 +110,12 @@ module "cdn" {
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD"]
     cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
-    trusted_key_groups     = ["K123456789EXAMPLE"]
+    trusted_key_groups     = ["e0d28d26-1487-4059-9792-38defebe52ba"] # key group ID (UUID), not the public key ID
   }
 }
 ```
+
+`trusted_key_groups` takes CloudFront key group IDs, which are UUIDs (CloudFront > Key management > Key groups). Public key IDs such as `K2J0B1MDMN3M4W` are not accepted; put the public key in a key group and reference the key group ID.
 
 For private S3 origins, the bucket policy must allow the CloudFront service principal to read objects, scoped to the distribution ARN. If the bucket is managed by `storage/s3`, use the `cloudfront_oac_read` policy template with `cloudfront_distribution_arns = [module.cdn.distribution_arn]`.
 
@@ -511,7 +513,6 @@ The same-host example redirects `/old/guide` to `/docs/guide`. To redirect only 
 | default_cache_behavior.function_associations | CloudFront Function associations. | `list(object({event_type, function_arn}))` | `[]` | no |
 | default_cache_behavior.lambda_function_associations | Lambda@Edge associations. | `list(object({event_type, lambda_arn, body_inclusion_enabled}))` | `[]` | no |
 | default_cache_behavior.realtime_log_config_arn | Real-time log configuration ARN. | `string` | `null` | no |
-| accept_header_cache_key_creation_enabled | Whether to create and use a module-managed cache policy and viewer-request function that preserve the `UseOriginCacheControlHeaders-QueryStrings` cache key and add normalized Markdown negotiation. The policy includes the viewer `Host`, `Origin`, method-override headers, cookies, and query strings so load balancer routing and cache isolation continue to work. The origin request policy must forward `Accept`. Cannot be combined with `default_cache_behavior.cache_policy_id`. | `bool` | `false` | no |
 
 ### Ordered Cache Behaviors
 
@@ -584,7 +585,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | logging_prefix | Base S3 key prefix for log files. Each distribution logs under `<prefix><key>/`. Only applies when `logging_destination = "s3"`. | `string` | `""` | no |
 | logging_cookies_enabled | Include cookies in access logs. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
 | logging_bucket_creation_enabled | Create a new S3 bucket for logging. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
-| logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `90` | no |
+| logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `365` | no |
 
 ### Origin Access Control
 
@@ -599,7 +600,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 
 | Name | Description |
 |------|-------------|
-| cache_policy_id | The ID of the cache policy attached to the default behavior, including the module-managed normalized Markdown cache-key policy when enabled. |
+| cache_policy_id | The configured ID of the cache policy attached to the default behavior. |
 | distribution_ids | A map of distribution key to CloudFront distribution ID. |
 | distribution_arns | A map of distribution key to CloudFront distribution ARN. |
 | distribution_domain_names | A map of distribution key to CloudFront distribution domain name. |

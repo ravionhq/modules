@@ -4,6 +4,10 @@ import {
   type RemoteModuleInventory,
   type RemoteModuleVersion,
 } from "./generate-definitions.js";
+import {
+  getModuleCategoriesForDefinitionType,
+  type ModuleCategorySpec,
+} from "./module-categories.js";
 import { getReleaseStatuses, type ReleaseStatus, validateReleaseStatuses } from "./release.js";
 import YAML from "yaml";
 
@@ -26,8 +30,17 @@ export interface PublishPlanItem {
 
 export interface PublishResult {
   dryRun: boolean;
+  categoryItems?: ModuleCategoryPublishPlanItem[];
   items: PublishPlanItem[];
   errors?: PublishPlanErrorItem[];
+}
+
+export interface ModuleCategoryPublishPlanItem {
+  givenId: string;
+  action: "create-category" | "patch-category";
+  dryRun: boolean;
+  message: string;
+  diff?: string;
 }
 
 export interface PublishPlanErrorItem {
@@ -42,12 +55,42 @@ export interface ModuleDefinitionInput {
   type: string;
   name: string;
   description: string;
+  moduleCategoryIds?: string[];
 }
 
 export interface ModuleDefinitionPatchInput {
   id: string;
   name?: string;
   description?: string;
+  moduleCategoryIds?: string[];
+  isGlobalPublished?: boolean;
+}
+
+export interface RemoteModuleCategory {
+  id: string;
+  organizationId?: string;
+  givenId: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  sortOrder: number;
+}
+
+export interface ModuleCategoryInput {
+  givenId: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  sortOrder: number;
+}
+
+export interface ModuleCategoryPatchInput {
+  id: string;
+  givenId?: string;
+  name?: string;
+  description?: string | null;
+  icon?: string | null;
+  sortOrder?: number;
   isGlobalPublished?: boolean;
 }
 
@@ -97,6 +140,9 @@ export interface ModuleVersionDryRunOptions {
 const DEFAULT_RAVION_API_URL = "https://api.ravion.com";
 
 export interface RavionModuleApiClient {
+  listModuleCategories(): Promise<RemoteModuleCategory[]>;
+  createModuleCategory(input: ModuleCategoryInput): Promise<RemoteModuleCategory>;
+  patchModuleCategory(input: ModuleCategoryPatchInput): Promise<RemoteModuleCategory>;
   listModuleDefinitions(): Promise<RemoteModuleDefinition[]>;
   createModuleDefinition(input: ModuleDefinitionInput): Promise<RemoteModuleDefinition>;
   patchModuleDefinition(input: ModuleDefinitionPatchInput): Promise<RemoteModuleDefinition>;
@@ -128,13 +174,17 @@ export async function publishDefinitions(
   options: PublishOptions = {},
 ): Promise<PublishResult> {
   const dryRun = options.dryRun ?? true;
+  const publishedDefinitions = compiledDefinitions.filter((definition) => definition.published);
+  if (publishedDefinitions.length === 0) {
+    return { dryRun, categoryItems: [], items: [] };
+  }
   const inventory = await loadRemoteInventory(client, { logger: options.logger });
   options.logger?.(`Loaded ${inventory.definitions.length} remote module definitions.`);
   const definitionsToPublish = options.localDev
-    ? applyLocalDevVersions(compiledDefinitions, inventory, options.localDevSourceRef ?? "main", {
+    ? applyLocalDevVersions(publishedDefinitions, inventory, options.localDevSourceRef ?? "main", {
         force: options.localDevForce,
       })
-    : compiledDefinitions;
+    : publishedDefinitions;
   const statuses = getReleaseStatuses(definitionsToPublish, { inventory });
   const errors = createPublishPlanErrors(statuses, definitionsToPublish, inventory);
   if (errors.length > 0) {
@@ -146,6 +196,8 @@ export async function publishDefinitions(
   }
   validateReleaseStatuses(statuses);
 
+  const categoryResult = await publishModuleCategories(definitionsToPublish, client, dryRun, options.logger);
+
   const definitionsByType = new Map(
     inventory.definitions.map((definition) => [definition.type, definition]),
   );
@@ -155,9 +207,19 @@ export async function publishDefinitions(
     left.type.localeCompare(right.type),
   )) {
     let remoteDefinition = definitionsByType.get(definition.type);
-    const shouldPlanGlobalPublication = remoteDefinition?.isGlobalPublished === false;
-    const shouldPublishDefinitionAfterVersion =
-      !remoteDefinition || remoteDefinition.isGlobalPublished === false;
+    const isInitialPublication =
+      !remoteDefinition || (inventory.versionsByDefinitionId[remoteDefinition.id] ?? []).length === 0;
+    const categories = categoryResult.byDefinitionType.get(definition.type) ?? [];
+    const categoryIds = categories.flatMap((category) => category.id ? [category.id] : []);
+    const remoteCategoryIds = remoteDefinition ? getRemoteModuleCategoryIds(remoteDefinition) : [];
+    const remoteCategoryGivenIds = remoteCategoryIds.map(
+      (categoryId) => categoryResult.byId.get(categoryId)?.givenId ?? categoryId,
+    );
+    const categoryChanged = categories.length > 0 &&
+      (categoryIds.length !== categories.length || !haveSameValues(remoteCategoryIds, categoryIds));
+    const shouldPublishDefinitionGlobally =
+      (isInitialPublication && definition.global !== false) ||
+      (!isInitialPublication && definition.global === true && remoteDefinition?.isGlobalPublished !== true);
     if (!remoteDefinition) {
       items.push(
         createItem(
@@ -170,6 +232,9 @@ export async function publishDefinitions(
             type: definition.type,
             name: definition.name,
             description: definition.description,
+            ...(categories.length > 0
+              ? { moduleCategories: categories.map((category) => category.spec.givenId) }
+              : {}),
           }),
         ),
       );
@@ -178,13 +243,15 @@ export async function publishDefinitions(
           type: definition.type,
           name: definition.name,
           description: definition.description,
+          ...(categoryIds.length > 0 ? { moduleCategoryIds: categoryIds } : {}),
         });
         definitionsByType.set(remoteDefinition.type, remoteDefinition);
         inventory.versionsByDefinitionId[remoteDefinition.id] = [];
       }
     } else if (
       remoteDefinition.name !== definition.name ||
-      remoteDefinition.description !== definition.description
+      remoteDefinition.description !== definition.description ||
+      categoryChanged
     ) {
       items.push(
         createItem(
@@ -198,8 +265,20 @@ export async function publishDefinitions(
               type: remoteDefinition.type,
               name: remoteDefinition.name,
               description: remoteDefinition.description,
+              ...(remoteCategoryGivenIds.length > 0
+                ? { moduleCategories: remoteCategoryGivenIds }
+                : {}),
             },
-            { type: definition.type, name: definition.name, description: definition.description },
+            {
+              type: definition.type,
+              name: definition.name,
+              description: definition.description,
+              ...(categories.length > 0
+                ? { moduleCategories: categories.map((category) => category.spec.givenId) }
+                : remoteCategoryGivenIds.length > 0
+                  ? { moduleCategories: remoteCategoryGivenIds }
+                  : {}),
+            },
           ),
         ),
       );
@@ -208,6 +287,7 @@ export async function publishDefinitions(
           ...remoteDefinition,
           name: definition.name,
           description: definition.description,
+          ...(categoryIds.length > 0 ? { moduleCategoryIds: categoryIds } : {}),
         });
         definitionsByType.set(remoteDefinition.type, remoteDefinition);
       }
@@ -216,7 +296,7 @@ export async function publishDefinitions(
     const latestRemoteVersion = remoteDefinition
       ? selectLatestVersion(inventory.versionsByDefinitionId[remoteDefinition.id] ?? [])
       : undefined;
-    const globalPublicationItem = shouldPlanGlobalPublication
+    const globalPublicationItem = shouldPublishDefinitionGlobally
       ? createItem(
           definition,
           "patch-definition",
@@ -251,7 +331,7 @@ export async function publishDefinitions(
       if (globalPublicationItem) {
         items.push(globalPublicationItem);
       }
-      if (!dryRun && shouldPublishDefinitionAfterVersion) {
+      if (!dryRun && shouldPublishDefinitionGlobally) {
         remoteDefinition = await client.patchModuleDefinition({
           id: remoteDefinition.id,
           isGlobalPublished: true,
@@ -281,7 +361,7 @@ export async function publishDefinitions(
           `Cannot create ${definition.type}@${definition.version}; module definition was not created.`,
         );
       }
-      if (shouldPublishDefinitionAfterVersion) {
+      if (isInitialPublication) {
         await client.dryRunModuleVersion({
           moduleDefinitionId: remoteDefinition.id,
           version: definition.version,
@@ -290,7 +370,7 @@ export async function publishDefinitions(
         });
       }
       await createVersionOrConfirmDuplicate(client, remoteDefinition.id, definition);
-      if (shouldPublishDefinitionAfterVersion) {
+      if (shouldPublishDefinitionGlobally) {
         remoteDefinition = await client.patchModuleDefinition({
           id: remoteDefinition.id,
           isGlobalPublished: true,
@@ -300,7 +380,143 @@ export async function publishDefinitions(
     }
   }
 
-  return { dryRun, items };
+  return { dryRun, categoryItems: categoryResult.items, items };
+}
+
+interface ResolvedModuleCategory {
+  spec: ModuleCategorySpec;
+  id?: string;
+}
+
+interface ModuleCategoryPublishResult {
+  items: ModuleCategoryPublishPlanItem[];
+  byDefinitionType: Map<string, ResolvedModuleCategory[]>;
+  byId: Map<string, RemoteModuleCategory>;
+}
+
+async function publishModuleCategories(
+  definitions: CompiledDefinition[],
+  client: RavionModuleApiClient,
+  dryRun: boolean,
+  logger?: (message: string) => void,
+): Promise<ModuleCategoryPublishResult> {
+  const specsByGivenId = new Map<string, ModuleCategorySpec>();
+  for (const definition of definitions) {
+    for (const spec of getModuleCategoriesForDefinitionType(definition.type)) {
+      specsByGivenId.set(spec.givenId, spec);
+    }
+  }
+
+  if (specsByGivenId.size === 0) {
+    return { items: [], byDefinitionType: new Map(), byId: new Map() };
+  }
+
+  logger?.("Loading remote module categories from Ravion API.");
+  const remoteCategories = await wrapApiStep("list remote module categories", () =>
+    client.listModuleCategories(),
+  );
+  const byId = new Map(remoteCategories.map((category) => [category.id, category]));
+  const byDefinitionType = new Map<string, ResolvedModuleCategory[]>();
+  const items: ModuleCategoryPublishPlanItem[] = [];
+
+  for (const spec of [...specsByGivenId.values()].sort(
+    (left, right) => left.sortOrder - right.sortOrder,
+  )) {
+    const matchingCategories = remoteCategories.filter(
+      (category) =>
+        category.givenId === spec.givenId || spec.previousGivenIds?.includes(category.givenId),
+    );
+    let category = matchingCategories.find((candidate) => candidate.organizationId === undefined) ??
+      matchingCategories[0];
+    const desiredMetadata = moduleCategoryMetadata(spec);
+
+    if (!category) {
+      items.push({
+        givenId: spec.givenId,
+        action: "create-category",
+        dryRun,
+        message: `Create and globally publish module category ${spec.givenId}.`,
+        diff: createDiff(undefined, { ...desiredMetadata, scope: "global" }),
+      });
+      if (!dryRun) {
+        const createdCategory = await wrapApiStep(`create module category ${spec.givenId}`, () =>
+          client.createModuleCategory(desiredMetadata),
+        );
+        category = await wrapApiStep(`publish module category ${spec.givenId} globally`, () =>
+          client.patchModuleCategory({ id: createdCategory.id, isGlobalPublished: true }),
+        );
+      }
+    } else {
+      const metadataChanged = category.givenId !== spec.givenId ||
+        category.name !== spec.name ||
+        category.description !== spec.description ||
+        category.sortOrder !== spec.sortOrder;
+      const requiresGlobalPublication = category.organizationId !== undefined;
+      if (metadataChanged || requiresGlobalPublication) {
+        items.push({
+          givenId: spec.givenId,
+          action: "patch-category",
+          dryRun,
+          message: `Update module category ${spec.givenId}${requiresGlobalPublication ? " and publish it globally" : ""}.`,
+          diff: createDiff(
+            {
+              givenId: category.givenId,
+              name: category.name,
+              description: category.description,
+              sortOrder: category.sortOrder,
+              scope: category.organizationId === undefined ? "global" : "organization",
+            },
+            { ...desiredMetadata, scope: "global" },
+          ),
+        });
+        if (!dryRun) {
+          const categoryId = category.id;
+          category = await wrapApiStep(`update module category ${spec.givenId}`, () =>
+            client.patchModuleCategory({
+              id: categoryId,
+              ...desiredMetadata,
+              ...(requiresGlobalPublication ? { isGlobalPublished: true } : {}),
+            }),
+          );
+        }
+      }
+    }
+
+    if (category) {
+      byId.set(category.id, category);
+    }
+    for (const definitionType of spec.definitionTypes) {
+      const categories = byDefinitionType.get(definitionType) ?? [];
+      categories.push({ spec, id: category?.id });
+      byDefinitionType.set(definitionType, categories);
+    }
+  }
+
+  return { items, byDefinitionType, byId };
+}
+
+function moduleCategoryMetadata(spec: ModuleCategorySpec): ModuleCategoryInput {
+  return {
+    givenId: spec.givenId,
+    name: spec.name,
+    description: spec.description,
+    sortOrder: spec.sortOrder,
+  };
+}
+
+function getRemoteModuleCategoryIds(definition: RemoteModuleDefinition): string[] {
+  if (definition.moduleCategoryIds) {
+    return definition.moduleCategoryIds;
+  }
+  return definition.moduleCategoryId ? [definition.moduleCategoryId] : [];
+}
+
+function haveSameValues(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const sortedRight = [...right].sort();
+  return [...left].sort().every((value, index) => value === sortedRight[index]);
 }
 
 export async function dryRunModuleVersions(
@@ -308,12 +524,16 @@ export async function dryRunModuleVersions(
   client: RavionModuleApiClient,
   options: ModuleVersionDryRunOptions = {},
 ): Promise<ModuleVersionDryRunResult[]> {
+  const publishedDefinitions = compiledDefinitions.filter((definition) => definition.published);
+  if (publishedDefinitions.length === 0) {
+    return [];
+  }
   const inventory = await loadRemoteInventory(client, { logger: options.logger });
   const definitionsToValidate = options.localDev
-    ? applyLocalDevVersions(compiledDefinitions, inventory, options.localDevSourceRef ?? "main", {
+    ? applyLocalDevVersions(publishedDefinitions, inventory, options.localDevSourceRef ?? "main", {
         force: options.localDevForce,
       })
-    : compiledDefinitions;
+    : publishedDefinitions;
   const statuses = getReleaseStatuses(definitionsToValidate, { inventory });
   const results = await Promise.all(
     statuses.map(async (status) => {
@@ -415,6 +635,7 @@ export function applyLocalDevVersions(
 
 export function formatPublishPlanMarkdown(result: PublishResult): string {
   const plannedChanges = result.items.filter((item) => item.action !== "skip-version");
+  const categoryChanges = result.categoryItems ?? [];
   const lines = [
     "<!-- ravion-module-publish-plan -->",
     "## Ravion Module Publish Plan",
@@ -465,7 +686,7 @@ export function formatPublishPlanMarkdown(result: PublishResult): string {
     return lines.join("\n");
   }
 
-  if (plannedChanges.length === 0) {
+  if (plannedChanges.length === 0 && categoryChanges.length === 0) {
     lines.push(
       "No publish changes are required. All versions already exist with identical config.",
       "",
@@ -473,21 +694,49 @@ export function formatPublishPlanMarkdown(result: PublishResult): string {
     return lines.join("\n");
   }
 
-  lines.push(
-    "| Module | Current Version | New Version | Description |",
-    "| --- | --- | --- | --- |",
-  );
-  const byModule = (left: PublishPlanItem, right: PublishPlanItem) =>
-    left.type.localeCompare(right.type) || left.version.localeCompare(right.version);
-  for (const item of summarizePublishPlanTableItems(plannedChanges).sort(byModule)) {
+  if (categoryChanges.length > 0) {
     lines.push(
-      `| \`${escapeMarkdownTableCell(item.type)}\` | ${formatVersionCell(item.currentVersion)} | \`${escapeMarkdownTableCell(item.version)}\` | ${escapeMarkdownTableCell(item.description || item.message)} |`,
+      "### Module Categories",
+      "",
+      "| Category | Action | Description |",
+      "| --- | --- | --- |",
     );
+    for (const item of [...categoryChanges].sort((left, right) => left.givenId.localeCompare(right.givenId))) {
+      lines.push(
+        `| \`${escapeMarkdownTableCell(item.givenId)}\` | \`${item.action}\` | ${escapeMarkdownTableCell(item.message)} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (plannedChanges.length > 0) {
+    lines.push(
+      "| Module | Current Version | New Version | Description |",
+      "| --- | --- | --- | --- |",
+    );
+    const byModule = (left: PublishPlanItem, right: PublishPlanItem) =>
+      left.type.localeCompare(right.type) || left.version.localeCompare(right.version);
+    for (const item of summarizePublishPlanTableItems(plannedChanges).sort(byModule)) {
+      lines.push(
+        `| \`${escapeMarkdownTableCell(item.type)}\` | ${formatVersionCell(item.currentVersion)} | \`${escapeMarkdownTableCell(item.version)}\` | ${escapeMarkdownTableCell(item.description || item.message)} |`,
+      );
+    }
   }
 
   const itemsWithDiffs = plannedChanges.filter((item) => item.diff);
-  if (itemsWithDiffs.length > 0) {
+  const categoryItemsWithDiffs = categoryChanges.filter((item) => item.diff);
+  if (itemsWithDiffs.length > 0 || categoryItemsWithDiffs.length > 0) {
     lines.push("", "### Diffs", "");
+    for (const item of categoryItemsWithDiffs) {
+      lines.push(
+        `#### Category ${item.givenId}`,
+        "",
+        "```diff",
+        truncateDiff(item.diff ?? ""),
+        "```",
+        "",
+      );
+    }
     for (const item of itemsWithDiffs) {
       lines.push(
         `#### ${item.type} ${item.currentVersion ?? "n/a"} -> ${item.version}`,
@@ -877,6 +1126,31 @@ class HttpRavionModuleApiClient implements RavionModuleApiClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  async listModuleCategories(): Promise<RemoteModuleCategory[]> {
+    return this.list<RemoteModuleCategory>("/module-categories");
+  }
+
+  async createModuleCategory(input: ModuleCategoryInput): Promise<RemoteModuleCategory> {
+    return this.call<RemoteModuleCategory>("POST", "/module-categories", { data: input });
+  }
+
+  async patchModuleCategory(input: ModuleCategoryPatchInput): Promise<RemoteModuleCategory> {
+    return this.call<RemoteModuleCategory>(
+      "PATCH",
+      `/module-categories/${encodeURIComponent(input.id)}`,
+      {
+        data: {
+          givenId: input.givenId,
+          name: input.name,
+          description: input.description,
+          icon: input.icon,
+          sortOrder: input.sortOrder,
+          isGlobalPublished: input.isGlobalPublished,
+        },
+      },
+    );
+  }
+
   async listModuleDefinitions(): Promise<RemoteModuleDefinition[]> {
     return this.list<RemoteModuleDefinition>("/module-definitions");
   }
@@ -889,7 +1163,14 @@ class HttpRavionModuleApiClient implements RavionModuleApiClient {
     return this.call<RemoteModuleDefinition>(
       "PATCH",
       `/module-definitions/${encodeURIComponent(input.id)}`,
-      { data: { name: input.name, description: input.description, isGlobalPublished: input.isGlobalPublished } },
+      {
+        data: {
+          name: input.name,
+          description: input.description,
+          moduleCategoryIds: input.moduleCategoryIds,
+          isGlobalPublished: input.isGlobalPublished,
+        },
+      },
     );
   }
 

@@ -519,6 +519,35 @@ run "non_iam_arn_signer_rejected" {
   ]
 }
 
+run "incomplete_iam_principal_arns_rejected" {
+  command = plan
+
+  variables {
+    key_administrator_role_arns = ["arn:aws:iam::"]
+    key_user_role_arns          = ["arn:aws:iam::123456789012:"]
+    signer_role_arns            = ["arn:aws:iam::123456789012:role/"]
+    public_key_reader_role_arns = ["arn:aws:iam::12345678901:root"]
+  }
+
+  expect_failures = [
+    var.key_administrator_role_arns,
+    var.key_user_role_arns,
+    var.signer_role_arns,
+    var.public_key_reader_role_arns,
+  ]
+}
+
+run "valid_iam_principal_arns_accepted" {
+  command = plan
+
+  variables {
+    key_administrator_role_arns = ["arn:aws:iam::123456789012:root"]
+    key_user_role_arns          = ["arn:aws:iam::123456789012:role/application/data-reader"]
+    signer_role_arns            = ["arn:aws-us-gov:iam::123456789012:role/signer"]
+    public_key_reader_role_arns = ["arn:aws-cn:iam::123456789012:user/public-key-reader"]
+  }
+}
+
 run "name_too_long_rejected" {
   command = plan
 

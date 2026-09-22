@@ -2,7 +2,7 @@ import { dirname, relative } from "node:path";
 import { type CompiledDefinition } from "./compiler.js";
 import { type RemoteModuleInventory } from "./generate-definitions.js";
 
-export type ReleasePublishState = "unknown" | "unpublished" | "published" | "conflict";
+export type ReleasePublishState = "disabled" | "unknown" | "unpublished" | "published" | "conflict";
 
 export interface ReleaseStatus {
   type: string;
@@ -52,6 +52,10 @@ function getReleaseStatus(definition: CompiledDefinition, options: { inventory?:
     filePath: definition.filePath,
     modulePath,
   };
+
+  if (!definition.published) {
+    return { ...baseStatus, publishState: "disabled", message: "Publication is disabled in the authoring definition." };
+  }
 
   if (!options.inventory) {
     return { ...baseStatus, publishState: "unknown", message: "No remote inventory was provided." };

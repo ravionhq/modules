@@ -175,6 +175,49 @@ variable "nat_gateway_eip_allocation_ids" {
 }
 
 ################################################################################
+# VPC Endpoints
+################################################################################
+
+variable "vpc_endpoint_s3_gateway_enabled" {
+  type        = bool
+  description = "Create a free S3 gateway VPC endpoint and attach it to all route tables. S3 traffic stays inside AWS instead of routing through the NAT gateway, avoiding NAT data processing charges (including ECR image layer pulls)."
+  default     = false
+}
+
+variable "vpc_endpoint_dynamodb_gateway_enabled" {
+  type        = bool
+  description = "Create a free DynamoDB gateway VPC endpoint and attach it to all route tables. DynamoDB traffic stays inside AWS instead of routing through the NAT gateway."
+  default     = false
+}
+
+variable "vpc_endpoint_interface_services" {
+  type        = list(string)
+  description = <<-EOT
+    A list of AWS service short names to create interface VPC endpoints
+    (PrivateLink) for, e.g. ["ecr.api", "ecr.dkr", "logs", "secretsmanager"].
+    Each service name is appended to "com.amazonaws.<region>." to form the full
+    endpoint service name.
+
+    Endpoints are placed in every private subnet with private DNS enabled and
+    share a module-managed security group allowing HTTPS (443) from the VPC
+    CIDR. Requires dns_support_enabled and dns_hostnames_enabled.
+
+    Note: pulling ECR images privately requires "ecr.api", "ecr.dkr", and the
+    S3 gateway endpoint together. Interface endpoints are billed per hour per
+    AZ plus per GB processed.
+  EOT
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for service in coalesce(var.vpc_endpoint_interface_services, []) :
+      can(regex("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", service))
+    ])
+    error_message = "Each vpc_endpoint_interface_services entry must be a lowercase AWS service short name (e.g. ecr.api, logs, secretsmanager)."
+  }
+}
+
+################################################################################
 # IPv6
 ################################################################################
 

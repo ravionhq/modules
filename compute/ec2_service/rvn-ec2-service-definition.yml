@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.3.1
-  description: Add Builder IAM policies inputs and derive per-input apply-action metadata in the compiled module definition.
+  version: 1.6.2
+  description: Document that image scanning on push is enabled by default for SOC 2 compliance. Add Builder IAM policies inputs and derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network
@@ -39,6 +39,7 @@ module:
     - id: instance_type
       label: Instance type
       type: string
+      description: Pick the family that matches the workload (`t` burstable, `m` general purpose, `c` CPU-bound, `r` memory-bound), then the highest generation number this list offers for it, such as `m8g` rather than `m7g` or `m6i`. Graviton (`g`) types give the best price and performance and need an `arm64` image. Never copy an instance type from an example or from memory; see the README for the full selection guide.
       required: true
       no_options_message: Select a VPC Network, or enter an AWS account and region, to load available EC2 instance types.
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
@@ -87,7 +88,7 @@ module:
     - id: build_source
       label: Build source
       type: string
-      description: Build a container image from source with Dockerfile or Railpack, or deploy an existing image from a configured registry repository.
+      description: Build a container image from source with Dockerfile or Railpack, use a Ravion-managed ECR repository populated by a pipeline, or deploy an existing image from a configured registry repository.
       required: true
       show_when:
         deploy_type: container
@@ -102,6 +103,9 @@ module:
         - description: Deploy an image from a registry configured on this module. Provide only the tag or digest at deploy time.
           label: Pull from image registry
           value: image_registry
+        - description: Ravion manages an ECR repository that a pipeline build step pushes to. Provide only the tag or digest at deploy time.
+          label: Managed ECR repository
+          value: ecr
     - $template: ../../partials/inputs/build-git-source.yml
       with:
         show_when:
@@ -395,7 +399,7 @@ module:
       show_when:
         http_traffic_enabled: true
       default: 5
-    - id: healthy_threshold
+    - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
       description: Consecutive successful ALB checks required before an instance is healthy.
@@ -405,7 +409,7 @@ module:
       show_when:
         http_traffic_enabled: true
       default: 2
-    - id: unhealthy_threshold
+    - id: health_check_unhealthy_threshold
       label: Unhealthy threshold
       type: number
       description: Consecutive failed ALB checks required before an instance is unhealthy.
@@ -568,6 +572,7 @@ module:
         max_capacity_overrides:
           label: Maximum instances
           required: true
+          default: 1
     - id: cpu_autoscaling_enabled
       label: CPU autoscaling
       type: boolean
@@ -647,17 +652,19 @@ module:
         build_source:
           - dockerfile
           - railpack
+          - ecr
       type: section
     - id: ecr_scan_on_push_enabled
       label: Scan images on push
       type: boolean
-      description: Scan images for vulnerabilities after they are pushed to the Ravion-created ECR repository.
+      description: Scan images for vulnerabilities after they are pushed to the Ravion-created ECR repository. Enabled by default to satisfy SOC 2 vulnerability-scanning requirements.
       collapsible: true
       show_when:
         deploy_type: container
         build_source:
           - dockerfile
           - railpack
+          - ecr
       default: true
     - id: ecr_force_deletion_enabled
       label: Force delete image repository
@@ -669,6 +676,7 @@ module:
         build_source:
           - dockerfile
           - railpack
+          - ecr
       default: false
     - id: section_logging
       label: Logging
@@ -702,7 +710,7 @@ module:
         deploy_timeout_seconds: << module.input.deploy_timeout_seconds >>
         desired_capacity: "<< module.input.cpu_autoscaling_enabled ? nil : (module.input.desired_capacity || nil) >>"
         ecr_force_deletion_enabled: << module.input.ecr_force_deletion_enabled >>
-        ecr_repository_creation_enabled: '<< module.input.deploy_type == "container" && (module.input.build_source == "dockerfile" || module.input.build_source == "railpack") >>'
+        ecr_repository_creation_enabled: '<< module.input.deploy_type == "container" && (module.input.build_source == "dockerfile" || module.input.build_source == "railpack" || module.input.build_source == "ecr") >>'
         ecr_scan_on_push_enabled: << module.input.ecr_scan_on_push_enabled >>
         efs_access_point_id: "<< module.input.efs_enabled ? (module.input.efs_access_point_id || nil) : nil >>"
         efs_client_security_group_id: "<< module.input.efs_enabled ? module.input.efs_client_security_group_id : nil >>"
@@ -737,8 +745,8 @@ module:
                 matcher: << module.input.health_check_matcher >>
                 interval: << module.input.health_check_interval >>
                 timeout: << module.input.health_check_timeout >>
-                healthy_threshold: << module.input.healthy_threshold >>
-                unhealthy_threshold: << module.input.unhealthy_threshold >>
+                healthy_threshold: << module.input.health_check_healthy_threshold >>
+                unhealthy_threshold: << module.input.health_check_unhealthy_threshold >>
               stickiness: >-
                 << module.input.target_group_stickiness_enabled ? {
                   "enabled": true,
@@ -768,7 +776,7 @@ module:
         vpc_id: << module.input.vpc_id >>
   build:
     $merge: ../../partials/build/ecs-service-image-build.yml
-    type: '<< module.input.deploy_type == "manual" || module.input.build_source == "image_registry" ? "disabled" : "image" >>'
+    type: '<< module.input.deploy_type == "manual" || module.input.build_source == "image_registry" || module.input.build_source == "ecr" ? "disabled" : "image" >>'
   deploy:
     $deploy_reexecutes_stack_terraform_variables:
       - environment_variables
@@ -918,11 +926,38 @@ module:
 
     Selecting EC2 capacity for an ECS service does not make it equivalent to this module. ECS on EC2 still deploys replaceable tasks through the ECS scheduler. This module deploys directly to stable hosts and gives the application the whole instance.
 
+    ## Choosing an instance type
+
+    Instance type is the sizing decision this module cannot make for you. Make it in two steps: pick the family that fits the workload, then pick the newest generation of that family that the selected account and region actually offer.
+
+    | Family | Memory per vCPU | Use for |
+    | --- | --- | --- |
+    | `t` burstable | 0.5-4 GB | Small or spiky services, development and staging environments, low-volume workers |
+    | `m` general purpose | 4 GB | Web services and workers with no strong CPU or memory bias |
+    | `c` compute optimized | 2 GB | CPU-bound work such as request-heavy APIs, transcoding, or compilation |
+    | `r` memory optimized | 8 GB | Memory-bound work such as large heaps, in-process caches, or a local database |
+
+    In a name like `m8g.large`, the digit is the generation and the letters after it identify the processor: `g` is AWS Graviton (`arm64`), `i` is Intel, `a` is AMD, and older families such as `m5` or `t3` carry no processor letter. A `-flex` variant such as `m8i-flex` costs less for workloads that do not sustain high CPU.
+
+    **Always take the highest generation number available for the family you chose.** Each generation is faster and cheaper per unit of work than the one below it, so `m8g` beats `m7g`, which beats `m6i`. This is the most common configuration mistake: an instance type copied from an example, an older project, or an AI assistant's memory is usually one or two generations behind, which pays more for less performance. Read the current generation off the Instance type list rather than assuming it. The one exception is burstable: `t4g`, `t3`, and `t3a` are still the newest burstable families, because AWS has not released a newer one.
+
+    The Instance type list shows only what the selected account and region support, which is the authoritative answer for that region. Newest generations reach the largest regions first, so a region may top out a generation behind. The list is region-level, so a type offered in the region can still be missing from an individual Availability Zone; if capacity fails in one subnet, spread the group across more AZs. To check from the command line before configuring the module:
+
+    ```sh
+    ravion values aws/ec2/instances --aws-account-id <account-id> --region us-east-1
+    ```
+
+    Prefer Graviton whenever the workload can run on it: it is the best price and performance in every family that offers it, and Ravion resolves the matching `arm64` Amazon Linux 2023 AMI from the instance type automatically, so nothing else needs configuring. A Custom AMI ID is used exactly as given, so set one only when it already matches the instance type's architecture. The requirement is that your container image (Container mode) or host-installed dependencies (Manual mode) build for `arm64`. Choose an Intel or AMD type when something in the stack is `x86_64`-only.
+
+    Then right-size from measurement rather than guessing: start with the smallest size in the chosen family that holds the working set, watch the service's CPU and memory charts, and move up a size or enable CPU autoscaling from there.
+
+    Changing Instance type later applies to instances launched after the change. Running instances keep their current type until you recycle them, and a Graviton/x86 switch changes the AMI for new instances only, so a group can briefly run both architectures mid-recycle. Container images must work on both architectures during that window, or recycle every instance promptly after the change.
+
     ## Deploy types
 
     | Deploy type | Build behavior | On each instance |
     | --- | --- | --- |
-    | Container | Dockerfile, Railpack, or image registry | Pull the selected image, replace the app container, and run it under supervisord |
+    | Container | Dockerfile, Railpack, Managed ECR repository, or image registry | Pull the selected image, replace the app container, and run it under supervisord |
     | Manual | Build disabled | Run Deploy commands as root on every host, then run Start command under supervisord |
 
     Instances are prepared for both modes at launch. Supervisord owns the long-running process and restarts it after an unexpected exit. In Container mode, Start command override replaces the image CMD but preserves its ENTRYPOINT. In Manual mode, the start command must remain in the foreground and should explicitly drop root privileges when the app should run as another user.
@@ -936,8 +971,9 @@ module:
     | Dockerfile | Build from the selected Git repository and push to the service ECR repository | Image tag or digest |
     | Railpack | Detect and build the app from the selected Git repository, then push to service ECR | Image tag or digest |
     | Pull from image registry | Skip the build and use Image repository from the module | Tag or digest within that repository |
+    | Managed ECR repository | Skip the module build and use the ECR repository managed by Ravion | Tag or digest within that repository |
 
-    Build settings apply only to Container mode. Manual mode disables the build pipeline and does not create an ECR repository. Built-image repositories scan images on push by default. Registry username/password credentials are not supported. Public images work directly; same-region private ECR requires repository permissions for the generated `<service-name>-instance` role.
+    Build settings apply only to Container mode. Manual mode disables the build pipeline and does not create an ECR repository. Managed ECR repository lets a pipeline push images to the Ravion-managed repository without a module build config. Built-image repositories scan images on push by default. Registry username/password credentials are not supported. Public images work directly; same-region private ECR requires repository permissions for the generated `<service-name>-instance` role.
 
     ## Worked examples
 
@@ -959,7 +995,7 @@ module:
 
     ### Container that needs host customization
 
-    Choose Container mode with a custom AMI or Additional user data when the app is containerized but also needs host software that ECS does not model for the service. A typical web configuration uses at least two instances, App port `3000`, Health check path `/health`, and host or path rules on a shared ALB. Use Dockerfile or Railpack for Ravion builds, or Pull from image registry when an external pipeline already publishes the image.
+    Choose Container mode with a custom AMI or Additional user data when the app is containerized but also needs host software that ECS does not model for the service. A typical web configuration uses at least two instances, App port `3000`, Health check path `/health`, and host or path rules on a shared ALB. Use Dockerfile or Railpack for Ravion builds, Managed ECR repository when an external pipeline should publish to a Ravion-managed repository, or Pull from image registry when an external pipeline already publishes elsewhere.
 
     If the requirement is only "run my container," use ECS instead. The EC2 choice should come from a real host dependency, stable-host requirement, or manual operational constraint. Access to the Docker socket, a local database on disk with local-disk latency, or shelling into a long-lived host with SSM Session Manager all qualify. In Container mode, only the data volume and EFS mount path are bind-mounted into the app container, so a workload that needs the host's Docker socket or other host paths belongs in Manual mode.
 
@@ -1064,7 +1100,7 @@ module:
     | Per-instance deploy timeout (secs) | No | 1200 | SSM script timeout for either deploy mode |
     | Run in private subnets | No | true | Use private subnets without public IPs; outbound access is still required |
     | Instance type | Yes | - | EC2 type used for every instance; architecture must match the app |
-    | Minimum instances / Maximum instances | Yes | 1 / 3 | Auto Scaling Group capacity bounds |
+    | Minimum instances / Maximum instances | Yes | 1 / 1 | Auto Scaling Group capacity bounds |
     | CPU autoscaling | No | false | Target-tracking scaling on average EC2 CPU utilization |
     | CPU target (%) | No | 70 | CPU target used when autoscaling is enabled |
     | Desired instances | No | - | Initial target when CPU autoscaling is off; blank starts at the minimum |
@@ -1078,7 +1114,7 @@ module:
 
     | Field | Required | Default | Description |
     | --- | --- | --- | --- |
-    | Build source | Yes* | dockerfile | Dockerfile, Railpack, or Pull from image registry in Container mode |
+    | Build source | Yes* | dockerfile | Dockerfile, Railpack, Managed ECR repository, or Pull from image registry in Container mode |
     | Git repository | Yes* | - | Source repository for Dockerfile and Railpack builds |
     | Source base path | No | . | Repository-relative application and build root |
     | Dockerfile path / build context | No | Dockerfile / . | Dockerfile build locations relative to the source root |

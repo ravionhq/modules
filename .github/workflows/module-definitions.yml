@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -51,39 +51,82 @@ jobs:
     name: Publish Dry-Run Plan
     runs-on: ubuntu-latest
     needs: validate
-    if: github.event_name == 'pull_request'
+    # Fork PRs receive no repository or organization secrets; skip the plan.
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.fork == false
+      }}
     permissions:
       contents: read
       issues: write
       pull-requests: write
-    env:
-      RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: tools/ravion-modules/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
         working-directory: tools/ravion-modules
 
       - name: Build tools
         run: npm test
         working-directory: tools/ravion-modules
 
+      - name: Check out trusted module tooling
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          path: trusted-tools
+          sparse-checkout: tools/ravion-modules
+          sparse-checkout-cone-mode: true
+
+      - name: Install trusted tool dependencies
+        run: npm ci --ignore-scripts
+        working-directory: trusted-tools/tools/ravion-modules
+
+      - name: Build trusted tools
+        run: npm run typecheck && ./node_modules/.bin/tsc
+        working-directory: trusted-tools/tools/ravion-modules
+
+      - name: Use trusted tools for API calls
+        run: |
+          rm -rf tools/ravion-modules/dist tools/ravion-modules/node_modules
+          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/dist" tools/ravion-modules/dist
+          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/node_modules" tools/ravion-modules/node_modules
+
       - name: Generate publish dry-run plan
         id: publish_plan
         continue-on-error: true
         run: node tools/ravion-modules/dist/src/cli.js publish --format markdown --output publish-plan.md 2> publish-plan.err
+        env:
+          RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
+
+      - name: Generate module category source diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$BASE_SHA" HEAD -- tools/ravion-modules/src/module-categories.ts; then
+            exit 0
+          fi
+          {
+            printf '### Module Category Changes\n\n'
+            printf '```diff\n'
+            git diff --no-ext-diff --unified=3 "$BASE_SHA" HEAD -- tools/ravion-modules/src/module-categories.ts
+            printf '```\n'
+          } > category-diff.md
 
       - name: Comment publish dry-run plan
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         if: always()
         with:
           script: |
@@ -91,9 +134,12 @@ jobs:
             const marker = '<!-- ravion-module-publish-plan -->';
             const planPath = 'publish-plan.md';
             const errorPath = 'publish-plan.err';
+            const categoryDiffPath = 'category-diff.md';
             const plan = fs.existsSync(planPath) ? fs.readFileSync(planPath, 'utf8') : '';
-            const error = fs.existsSync(errorPath) ? fs.readFileSync(errorPath, 'utf8').trim() : '';
-            const body = plan || `${marker}\n## Ravion Module Publish Plan\n\nPublish dry run failed before a plan could be generated.\n\n\`\`\`text\n${error || 'No error output was captured.'}\n\`\`\``;
+            const error = fs.existsSync(errorPath) ? fs.readFileSync(errorPath, 'utf8').trim().slice(-2000) : '';
+            const categoryDiff = fs.existsSync(categoryDiffPath) ? fs.readFileSync(categoryDiffPath, 'utf8').trim() : '';
+            const publishBody = plan || `${marker}\n## Ravion Module Publish Plan\n\nPublish dry run failed before a plan could be generated.\n\n\`\`\`text\n${error || 'No error output was captured.'}\n\`\`\``;
+            const body = `${publishBody.trimEnd()}${categoryDiff ? `\n\n${categoryDiff}` : ''}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
@@ -110,6 +156,8 @@ jobs:
 
       - name: Validate pending module versions
         run: node tools/ravion-modules/dist/src/cli.js version-dry-run
+        env:
+          RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
 
   publish:
     name: Publish Module Definitions
@@ -118,23 +166,21 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
-    env:
-      RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: tools/ravion-modules/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
         working-directory: tools/ravion-modules
 
       - name: Build and test tools
@@ -143,6 +189,8 @@ jobs:
 
       - name: Dry-run publish plan
         run: node tools/ravion-modules/dist/src/cli.js publish
+        env:
+          RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
 
       - name: Configure Git tag author
         run: |
@@ -151,12 +199,16 @@ jobs:
 
       - name: Create release tags
         run: node tools/ravion-modules/dist/src/cli.js tags --api --create --overwrite > release-tags.json
+        env:
+          RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
 
       - name: Push release tags
         run: node tools/ravion-modules/dist/src/cli.js push-tags --plan release-tags.json
 
       - name: Publish module versions
         run: node tools/ravion-modules/dist/src/cli.js publish --apply
+        env:
+          RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
 
       - name: Update README module definitions table
         run: node tools/ravion-modules/dist/src/cli.js readme

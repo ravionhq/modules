@@ -6,6 +6,8 @@ import { validateUniqueDefinitionTypes } from "./guardrails.js";
 
 export interface CompiledDefinition {
   filePath: string;
+  published: boolean;
+  global?: boolean;
   type: string;
   name: string;
   description: string;
@@ -67,6 +69,8 @@ export async function compileDefinitionFile(filePath: string): Promise<CompiledD
 
   return {
     filePath: absoluteFilePath,
+    published: definition.published,
+    global: definition.global,
     type: definition.definition.type,
     name: definition.definition.name,
     description: definition.definition.description,

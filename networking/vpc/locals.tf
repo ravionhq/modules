@@ -53,6 +53,11 @@ locals {
   create_nat_eips                             = var.nat_gateway_enabled && local.supplied_nat_eip_allocation_ids == null
   nat_gateway_eip_allocation_ids              = local.supplied_nat_eip_allocation_ids != null && local.supplied_nat_eip_allocation_ids_match_count ? local.supplied_nat_eip_allocation_ids : aws_eip.nat[*].allocation_id
 
+  # VPC Endpoints
+  # Callers that template tfvars often can't omit the key, so treat null the
+  # same as an empty list (no interface endpoints).
+  vpc_endpoint_interface_services = var.vpc_endpoint_interface_services != null ? var.vpc_endpoint_interface_services : []
+
   # Flow Logs
   create_flow_log_cloudwatch = var.flow_logs_enabled && var.flow_logs_destination == "cloudwatch"
   create_flow_log_s3         = var.flow_logs_enabled && var.flow_logs_destination == "s3"

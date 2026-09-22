@@ -468,7 +468,7 @@ variable "logging_prefix" {
 variable "logging_retention_days" {
   type        = number
   description = "Days to retain CloudFront access logs — the CloudWatch log group retention when logging_destination is 'cloudwatch', or the S3 lifecycle expiry when logging_destination is 's3' with a module-created bucket."
-  default     = 90
+  default     = 365
 
   validation {
     condition     = var.logging_destination != "cloudwatch" || contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.logging_retention_days)
@@ -507,4 +507,59 @@ variable "region" {
   type        = string
   description = "AWS region. When null, the provider's configured region is used."
   default     = null
+}
+
+# CloudWatch error-rate monitoring
+variable "cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create a CloudFront 5xx error-rate alarm for every distribution in us-east-1."
+  default     = true
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_error_rate_threshold" {
+  type        = number
+  description = "CloudFront 5xx response percentage at or above which the alarm fires."
+  default     = 1
+  nullable    = false
+  validation {
+    condition     = var.cloudwatch_alarm_error_rate_threshold > 0 && var.cloudwatch_alarm_error_rate_threshold <= 100
+    error_message = "Error rate threshold must be greater than 0 and at most 100 percent."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "Metric aggregation period in seconds. CloudFront publishes metrics at one-minute resolution."
+  default     = 300
+  nullable    = false
+  validation {
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "Alarm period must be 60, 300, 900, or 3600 seconds."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "Consecutive breaching periods required to alarm."
+  default     = 1
+  nullable    = false
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1 && floor(var.cloudwatch_alarm_evaluation_periods) == var.cloudwatch_alarm_evaluation_periods && var.cloudwatch_alarm_evaluation_periods * var.cloudwatch_alarm_period <= 86400
+    error_message = "Evaluation periods must be a positive integer covering at most one day."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "Action ARNs for ALARM transitions. SNS topics must be in us-east-1."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "Action ARNs for OK transitions. SNS topics must be in us-east-1."
+  default     = []
+  nullable    = false
 }

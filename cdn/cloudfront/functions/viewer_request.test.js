@@ -5,19 +5,11 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const template = fs.readFileSync(path.join(__dirname, 'viewer_request.js'), 'utf8');
-const normalization = fs.readFileSync(
-    path.join(__dirname, 'accept_header_normalization.js'),
-    'utf8',
-);
 
-function makeHandler(rules, normalizeAccept = false) {
+function makeHandler(rules) {
     const context = {};
     const code = template
-        .replace('${redirect_rules_json}', JSON.stringify(rules))
-        .replace(
-            '${accept_header_normalization_code}',
-            normalizeAccept ? normalization : '',
-        );
+        .replace('${redirect_rules_json}', JSON.stringify(rules));
     vm.runInNewContext(code, context);
     return context.handler;
 }
@@ -43,45 +35,6 @@ function request(host, uri, querystring = {}) {
         },
     };
 }
-
-function requestWithAccept(accept, xMd) {
-    const event = request('www.example.com', '/');
-    event.request.headers.accept = {value: accept};
-    if (xMd !== undefined) {
-        event.request.headers['x-md'] = {value: xMd};
-    }
-    return event;
-}
-
-test('normalizes Accept into a Markdown cache-key header', () => {
-    const cases = [
-        ['text/markdown', '1'],
-        ['text/markdown,text/html;q=0.9', '1'],
-        ['text/markdown;q=0.1,text/markdown;q=0.9,text/html;q=0.5', '1'],
-        ['text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', '0'],
-        ['*/*', '0'],
-        ['text/*;q=0.5, text/html;q=0.1', '1'],
-        ['text/markdown;q=0, text/html;q=0.1', '0'],
-        ['text/markdown;q=0.5, text/html;q=0.5', '0'],
-        ['', '0'],
-        ['not a media type', '0'],
-    ];
-
-    for (const [accept, expected] of cases) {
-        const event = requestWithAccept(accept);
-        makeHandler([], true)(event);
-        assert.equal(event.request.headers['x-md'].value, expected, accept);
-    }
-});
-
-test('overwrites a client-supplied x-md header', () => {
-    const event = requestWithAccept(
-        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        '1',
-    );
-    makeHandler([], true)(event);
-    assert.equal(event.request.headers['x-md'].value, '0');
-});
 
 test('redirects the source root to the destination prefix', () => {
     const result = makeHandler([rule()])(request('docs.example.com', '/'));

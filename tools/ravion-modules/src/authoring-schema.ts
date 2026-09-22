@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import YAML from "yaml";
 
 export interface AuthoringDefinition {
+  published: boolean;
+  global?: boolean;
   definition: {
     type: string;
     name: string;
@@ -31,7 +33,7 @@ export class AuthoringSchemaError extends Error {
 
 const MODULE_TYPE_PATTERN = /^[a-z][a-z0-9-]*$/;
 const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-const ROOT_KEYS = new Set(["definition", "release", "module"]);
+const ROOT_KEYS = new Set(["published", "global", "definition", "release", "module"]);
 
 export async function parseAuthoringDefinitionFile(filePath: string): Promise<AuthoringDefinition> {
   const content = await readFile(filePath, "utf8");
@@ -49,8 +51,16 @@ export function validateAuthoringDefinition(value: unknown, filePath = "*-defini
 
   for (const key of Object.keys(value)) {
     if (!ROOT_KEYS.has(key)) {
-      issues.push({ path: key, message: "Only definition, release, and module are allowed at the root." });
+      issues.push({ path: key, message: "Only published, global, definition, release, and module are allowed at the root." });
     }
+  }
+
+  if (value.published !== undefined && typeof value.published !== "boolean") {
+    issues.push({ path: "published", message: "Field must be a boolean when provided." });
+  }
+
+  if (value.global !== undefined && typeof value.global !== "boolean") {
+    issues.push({ path: "global", message: "Field must be a boolean when provided." });
   }
 
   const definition = requireRecord(value.definition, "definition", issues);
@@ -85,6 +95,8 @@ export function validateAuthoringDefinition(value: unknown, filePath = "*-defini
   }
 
   return {
+    published: value.published !== false,
+    global: value.global as boolean | undefined,
     definition: value.definition as AuthoringDefinition["definition"],
     release: value.release as AuthoringDefinition["release"],
     module: value.module as AuthoringDefinition["module"],

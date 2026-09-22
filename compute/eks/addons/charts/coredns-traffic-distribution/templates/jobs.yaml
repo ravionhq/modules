@@ -1,0 +1,5 @@
+{{- $apply := dict "spec" (dict "trafficDistribution" .Values.trafficDistribution) -}}
+{{- $revert := dict "spec" (dict "trafficDistribution" nil) -}}
+{{ include "coredns-traffic-distribution.job" (list . "apply" "post-install,post-upgrade" $apply) }}
+---
+{{ include "coredns-traffic-distribution.job" (list . "revert" "pre-delete" $revert) }}
