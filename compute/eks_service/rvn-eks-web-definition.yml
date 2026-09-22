@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.1.1
-  description: Add AWS permissions. Turn on Create IAM role and the service gets an IAM role bound to its pods through EKS Pod Identity, with managed policy ARNs and inline policies in the same shape as the ECS task role; the AWS SDK in the pods picks up short-lived credentials for it with no keys to manage. The role ARN is a stack output for other modules to pin.
+  version: 1.3.0
+  description: Tune rollout speed with configurable readiness checks as frequent as every second, no initial readiness delay, and up to 100% extra pods during an update. Existing services keep the previous 10-second readiness period, 5-second initial delay, and 25% surge defaults unless changed.
 module:
   inputs:
     - id: section_cluster
@@ -64,11 +64,32 @@ module:
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
         name_description: Name for the Helm release, Kubernetes objects, target group, and listener rule.
-    - id: public_alb_routing_enabled
-      label: Public web service
-      type: boolean
-      description: Route this service through the shared public ALB. Turn off to use the shared private ALB.
-      default: true
+    - id: load_balancer
+      label: Load balancer
+      type: string
+      description: How traffic reaches the service. Public and private use the shared ALBs the EKS Add-ons module owns. Kubernetes service creates no target group or listener rule, so the service is reachable only from inside the cluster through its Service name.
+      required: true
+      default: public
+      values:
+        - label: Public ALB
+          value: public
+        - label: Private ALB
+          value: private
+        - label: Kubernetes service (no load balancer)
+          value: kubernetes_service
+    - id: target_group_name
+      label: Target group name
+      type: string
+      description: Name for the load balancer target group. Leave blank to derive it from the service name. Set it when another service in the VPC already owns that name, since target group names are unique per region.
+      placeholder: my-service-eks-tg
+      collapsible: true
+      required: false
+      patterns:
+        - message: Use 1-32 letters, numbers, or hyphens, starting and ending with a letter or number.
+          pattern: ^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
     - id: section_health
@@ -121,6 +142,14 @@ module:
       max: 600
       min: 0
       default: 5
+    - id: readiness_probe_period_seconds
+      label: Readiness check interval (secs)
+      type: number
+      description: Seconds between Kubernetes readiness checks. Use 1 for the fastest local readiness signal; the load balancer readiness gate still waits for target registration when enabled.
+      collapsible: true
+      max: 300
+      min: 1
+      default: 10
     - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
@@ -178,6 +207,18 @@ module:
     - id: section_traffic_behavior
       label: Traffic behavior
       type: section
+      show_when:
+        load_balancer:
+          not: kubernetes_service
+    - id: load_balancer_readiness_gate_enabled
+      label: Wait for load balancer health
+      type: boolean
+      description: Count a pod as ready only once the load balancer controller reports it healthy in the target group, so a rolling update keeps old pods serving until replacements receive traffic. Registration timing depends on controller and target state; initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval.
+      collapsible: true
+      default: true
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_deregistration_delay
       label: Deregistration delay (secs)
       type: number
@@ -186,6 +227,9 @@ module:
       max: 3600
       min: 0
       default: 300
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_slow_start
       label: Slow start duration (secs)
       type: number
@@ -194,17 +238,25 @@ module:
       max: 900
       min: 0
       default: 0
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_stickiness_enabled
       label: Sticky sessions
       type: boolean
       description: Enable load balancer cookie stickiness so repeat requests are routed to the same pod when possible.
       collapsible: true
       default: false
+      show_when:
+        load_balancer:
+          not: kubernetes_service
     - id: target_group_stickiness_type
       label: Stickiness type
       type: string
       collapsible: true
       show_when:
+        load_balancer:
+          not: kubernetes_service
         target_group_stickiness_enabled: true
       default: lb_cookie
       values:
@@ -219,6 +271,8 @@ module:
       max: 604800
       min: 1
       show_when:
+        load_balancer:
+          not: kubernetes_service
         target_group_stickiness_enabled: true
       default: 86400
     - id: target_group_stickiness_cookie_name
@@ -227,10 +281,15 @@ module:
       required: false
       collapsible: true
       show_when:
+        load_balancer:
+          not: kubernetes_service
         target_group_stickiness_type: app_cookie
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
-        field_overrides: {}
+        field_overrides:
+          show_when:
+            load_balancer:
+              not: kubernetes_service
     - id: ingress_allowed_workloads
       label: Ingress allow-list
       type: string_array
@@ -256,7 +315,7 @@ module:
       min: 1
       show_when:
         autoscaling_enabled: true
-      default: 1
+      default: 2
     - id: autoscaling_max_replicas
       label: Maximum pods
       type: number
@@ -292,7 +351,47 @@ module:
       min: 0
       show_when:
         autoscaling_enabled: false
+      default: 2
+    - id: rollout_max_surge_percent
+      label: Maximum rollout surge (%)
+      type: number
+      description: Extra pods Kubernetes may create during a rolling update, as a percentage of the desired count. Use 100 to create a full replacement set at once when the cluster has enough spare capacity. Zero-unavailable rollout protection remains enabled.
+      collapsible: true
+      max: 100
+      min: 1
+      default: 25
+    - id: termination_grace_period_seconds
+      label: Shutdown grace period (secs)
+      type: number
+      description: Seconds a pod has to finish in-flight requests after SIGTERM before it is killed, including the pre-stop delay below. Raise this for services that move long-lived connections such as WebSockets to other pods on shutdown.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 30
+    - id: pre_stop_sleep_seconds
+      label: Pre-stop delay (secs)
+      type: number
+      description: Seconds a stopping pod keeps running before it receives SIGTERM, so the load balancer stops sending it new connections first. 0 disables the delay. Must be less than the shutdown grace period. Skipped on Kubernetes older than 1.30, which lacks the preStop sleep action.
+      collapsible: true
+      max: 3599
+      min: 0
+      default: 10
+    - id: pod_disruption_budget_enabled
+      label: Disruption budget
+      type: boolean
+      description: Limit how many pods node drains, consolidation and cluster upgrades may evict at once. Takes effect only while the minimum pod count is above Minimum available pods, since a budget that allows no evictions would block every drain.
+      collapsible: true
+      default: true
+    - id: pod_disruption_budget_min_available
+      label: Minimum available pods
+      type: number
+      description: Pods that must stay running during a node drain or other voluntary disruption.
+      collapsible: true
+      max: 1000
+      min: 1
       default: 1
+      show_when:
+        pod_disruption_budget_enabled: true
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
@@ -314,10 +413,11 @@ module:
           - kubernetes_service_enabled: true
             container_port: << module.input.container_port >>
             listener_arn: >-
-              << module.input.public_alb_routing_enabled ? (module.input.public_alb_https_listener_arn ||
-              module.input.public_alb_http_listener_arn) : (module.input.private_alb_https_listener_arn ||
-              module.input.private_alb_http_listener_arn) >>
+              << module.input.load_balancer == "public" ? (module.input.public_alb_https_listener_arn ||
+              module.input.public_alb_http_listener_arn) : (module.input.load_balancer == "private" ?
+              (module.input.private_alb_https_listener_arn || module.input.private_alb_http_listener_arn) : nil) >>
             listener_rule_priority: << module.input.listener_rule_priority >>
+            target_group_name: << module.input.target_group_name >>
             listener_rule_conditions: >-
               << (module.input.host_header_values != nil && module.input.host_header_values != [] ?
               [{type: "host-header", values: module.input.host_header_values}] : []) |
@@ -372,6 +472,7 @@ module:
                     enabled: true
                     path: << module.input.health_check_path >>
                     initialDelaySeconds: '<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 5 >>'
+                    periodSeconds: '<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 10 >>'
                   startup:
                     enabled: << module.input.startup_probe_enabled >>
                     path: '<< module.input.startup_probe_path || module.input.liveness_probe_path || module.input.health_check_path >>'
@@ -390,13 +491,24 @@ module:
                 targetGroupBinding:
                   targetType: ip
                   vpcId: << module.input.vpc_id >>
+                  # Hidden (nil) for a Kubernetes-service-only workload, which
+                  # renders no TargetGroupBinding and so no gate either.
+                  podReadinessGate: '<< module.input.load_balancer_readiness_gate_enabled != nil ? module.input.load_balancer_readiness_gate_enabled : true >>'
+                terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                lifecycle:
+                  preStopSleepSeconds: '<< module.input.pre_stop_sleep_seconds != nil ? module.input.pre_stop_sleep_seconds : 10 >>'
+                strategy:
+                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25 >>%'
+                podDisruptionBudget:
+                  enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
+                  minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
                 replicaCount: >-
                   << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
-                  module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
-                  module.input.replica_count : 1) >>
+                  module.input.autoscaling_min_replicas : 2) : (module.input.replica_count != nil ?
+                  module.input.replica_count : 2) >>
                 autoscaling:
                   enabled: << module.input.autoscaling_enabled >>
-                  minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 1 >>'
+                  minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 2 >>'
                   maxReplicas: '<< module.input.autoscaling_max_replicas != nil ? module.input.autoscaling_max_replicas : 3 >>'
                   targetCPUUtilizationPercentage: '<< module.input.autoscaling_cpu_target != nil ? module.input.autoscaling_cpu_target : 70 >>'
                   targetMemoryUtilizationPercentage: << module.input.autoscaling_memory_target >>
@@ -476,10 +588,12 @@ module:
           endpoint: << module.input.prometheus_endpoint >>
           query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
       # The load balancer charts below read the ALB the Terraform stack owns,
-      # not the cluster's observability stack, so no provider guard applies.
+      # not the cluster's observability stack, so no provider guard applies;
+      # they are off when the service has no load balancer at all.
       - id: request_count
         name: Request count
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -492,6 +606,7 @@ module:
       - id: target_5xx_errors
         name: 5xx errors
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -504,6 +619,7 @@ module:
       - id: target_4xx_errors
         name: 4xx errors
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -516,6 +632,7 @@ module:
       - id: target_response_time
         name: Target response time
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -528,6 +645,7 @@ module:
       - id: healthy_hosts
         name: Healthy pods
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -540,6 +658,7 @@ module:
       - id: unhealthy_hosts
         name: Unhealthy pods
         type: line
+        enabled: << module.input.load_balancer != "kubernetes_service" >>
         source:
           type: cloudwatch
           aws_account_id: << module.input.aws_account_id >>
@@ -597,7 +716,7 @@ module:
 
     The EKS cluster reference supplies the AWS account, region, VPC, cluster ARN, cluster endpoint, certificate authority data, and the Ravion Runner role the deploy assumes to reach the Kubernetes API. The EKS add-ons reference supplies the shared ALB listeners.
 
-    Use **Public web service** when the service should be reachable from the internet through the shared public ALB. Turn it off for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP.
+    Set **Load balancer** to **Public ALB** when the service should be reachable from the internet, or **Private ALB** for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP. Choose **Kubernetes service** for a service that should not sit behind any load balancer: no target group or listener rule is created and other workloads reach it only through its in-cluster Service name.
 
     ## Routing, readiness, and recovery
 
@@ -614,6 +733,7 @@ module:
     | Timeout (secs) | 4 | Seconds to wait for a response; must be lower than the interval |
     | Healthy threshold | 2 | Successful checks before a target is healthy |
     | Unhealthy threshold | 2 | Failed checks before a target is unhealthy |
+    | Readiness check interval (secs) | 10 | Seconds between Kubernetes readiness checks; may be set to 1 |
 
     **Startup and recovery** are optional and independent. Enable **Enforce startup timeout** to restart a container that never finishes starting; its **Maximum startup time** defaults to 150 seconds. A bad startup path or a timeout shorter than the app's real boot time causes a restart loop. Enable **Restart unresponsive containers** to restart a process that remains running but stops answering. Processes that exit are restarted automatically even when this setting is off.
 
@@ -621,6 +741,7 @@ module:
 
     | Traffic behavior | Default | Description |
     | ---------------- | ------- | ----------- |
+    | Wait for load balancer health | true | Pods count as ready only once healthy in the target group (see Graceful shutdown) |
     | Deregistration delay (secs) | 300 | Drain window for a pod that is shutting down |
     | Slow start duration (secs) | 0 | Ramp window for newly registered pods; 0 disables, otherwise 30-900 |
     | Sticky sessions | false | Load balancer cookie stickiness to the same pod |
@@ -678,7 +799,7 @@ module:
 
     Set the memory request close to steady-state usage and the limit above the worst legitimate spike. Because the CPU target is a percentage of the CPU request, a request set far above real usage keeps the autoscaler from ever scaling out.
 
-    Autoscaling is on by default with 1 minimum and 3 maximum pods, tracking 70% CPU. Add a **Memory target (%)** to scale on memory as well; the autoscaler then takes whichever metric asks for more pods. When autoscaling is off, **Pods** sets a fixed pod count.
+    Autoscaling is on by default with 2 minimum and 3 maximum pods, tracking 70% CPU. Add a **Memory target (%)** to scale on memory as well; the autoscaler then takes whichever metric asks for more pods. When autoscaling is off, **Pods** sets a fixed pod count.
 
     ### Zone-local routing
 
@@ -709,7 +830,18 @@ module:
 
     ## Deployment
 
-    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with the chart's RollingUpdate strategy, which surges 25% and keeps zero pods unavailable.
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable by default. **Maximum rollout surge (%)** controls how many replacements start together: 25% by default, or 100% for a full replacement set when enough capacity is already available.
+
+    ## Graceful shutdown
+
+    A pod stops during every rollout, scale-in and node drain. The defaults make that invisible to clients of an ordinary HTTP service: at least two pods, spread across zones and nodes; a 10-second pre-stop delay; a load balancer readiness gate; a disruption budget; and a 30-second grace period. Services that hold long-lived connections, such as WebSockets or streaming responses, usually need a longer grace period to hand clients over to other pods. Four inputs control how a stop happens:
+
+    - **Shutdown grace period** sets how long a pod has after SIGTERM before it is killed. Size it to the longest drain the application performs.
+    - **Pre-stop delay** keeps the container running and serving for a few seconds before SIGTERM. Removing a pod from the load balancer target group happens asynchronously; without a delay, the application can start shutting down while the load balancer still routes new connections to it. The default is 10 seconds. It uses the Kubernetes native preStop sleep action, so the image needs no shell; on Kubernetes older than 1.30, which lacks the action, no hook is rendered. The delay counts against the grace period and must be shorter than it, or the deploy fails at render time.
+    - **Wait for load balancer health** adds the AWS Load Balancer Controller's pod readiness gate, one per target group binding, so a new pod counts as ready only once the target group reports it healthy. A rolling update then keeps old pods serving until their replacements actually receive traffic. The gate is declared on the pod itself, so the namespace needs no injection label; the controller the EKS Add-ons module installs sets the condition. On by default. Registration time depends on controller and target state, and initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval. A pod that never passes the check never becomes ready, so the deploy rolls back.
+    - **Disruption budget** renders a PodDisruptionBudget that keeps at least **Minimum available pods** running while nodes are drained, consolidated or upgraded. It is skipped while the minimum pod count (Minimum pods with autoscaling, Pods without) is not above that number, because such a budget allows no evictions and would block every drain. Pods that are not ready can always be evicted, so a crash-looping pod never holds a node. On by default. The budget does not affect rolling updates.
+
+    **Deregistration delay** still applies once the pod leaves the target group: it is how long the load balancer keeps in-flight requests to that pod open. Connections still open when the pod exits are closed regardless, so the effective drain window is the shorter of the deregistration delay and the shutdown grace period.
 
     Deployments collapse: if several are queued, only the newest runs.
 
@@ -748,7 +880,7 @@ module:
     | Service name | Yes | {project}-{env}-{module} | Helm release name and name of the Kubernetes and load balancer objects |
     | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
     | Create namespace | No | true | Create the namespace if it does not exist |
-    | Public web service | No | true | Use the shared public ALB; turn off for the private ALB |
+    | Load balancer | Yes | public | `public` or `private` for the shared ALBs, `kubernetes_service` for no load balancer |
     | Build source | Yes | dockerfile | Dockerfile, Railpack, or Pull from image registry |
     | Git repository | Yes* | - | Required for Dockerfile and Railpack builds |
     | Source base path | No | . | Repository-relative source and build root |
@@ -766,6 +898,7 @@ module:
     | Start command arguments | No | [] | Overrides the image default arguments |
     | Container port | Yes | 8080 | Port the application listens on |
     | Traffic health path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
+    | Readiness check interval (secs) | No | 10 | Kubernetes readiness period; 1 is the fastest supported value |
     | Success codes | Yes | 200-399 | Health check status code matcher |
     | Sticky sessions | No | false | Keep repeat requests on the same pod |
     | Enforce startup timeout | No | false | Restart an app that does not finish starting in time |
@@ -782,11 +915,16 @@ module:
     | Memory request | Yes | 256Mi | Memory reserved per pod |
     | Memory limit | Yes | 512Mi | Memory ceiling per pod |
     | Autoscaling | No | true | Scale pods with a HorizontalPodAutoscaler |
-    | Minimum pods | No | 1 | Lower bound when autoscaling |
+    | Minimum pods | No | 2 | Lower bound when autoscaling; two keeps a pod stop from being an outage |
     | Maximum pods | No | 3 | Upper bound when autoscaling |
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
-    | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
+    | Maximum rollout surge (%) | No | 25 | Extra pods during rolling updates; up to 100% |
+    | Pods | No | 2 | Fixed pod count when autoscaling is disabled |
+    | Shutdown grace period (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
+    | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |
+    | Disruption budget | No | true | Render a PodDisruptionBudget limiting voluntary evictions |
+    | Minimum available pods | No | 1 | Pods kept running during a node drain when the disruption budget is on |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
     | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |

@@ -22,7 +22,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
 | `compute/`    | `ecs_service`     | AWS ECS services with task definitions, task IAM policies, load balancing, auto scaling, and alarms enabled by default | v1.0.0  |
 | `compute/`    | `eks`             | Composite EKS stack: cluster, system node group, CoreDNS, and optional Fargate profiles; Pod Identity defaults, opt-in IRSA/VPC controller permissions and node SSM access, and pull-only node ECR access (includes `rvn-eks-cluster` module definition) | Unreleased |
-| `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with automatic image/chart selection, production-registry Ravion provider, durable executor Jobs, two-replica HA placed like Karpenter and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, shared observability, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI (includes `rvn-eks-addons` module definition) | Unreleased |
+| `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, shared observability, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, and `rvn-eks-cron` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions with regional and Lambda@Edge error-rate alarms   | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
@@ -62,7 +62,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.3.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
-| `rvn-aws-compliance` | AWS compliance | v0.1.0 | `security/compliance/` |
+| `rvn-aws-compliance` | AWS Compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
@@ -75,10 +75,10 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v1.6.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v1.6.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.10.0 | `compute/eks/addons/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.11.0 | `compute/eks/addons/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.3.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.1.1 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.4.1 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.3.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.5.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.3.0 | `database/rds/` |
@@ -99,7 +99,7 @@ version independently under `rvn-eks@<version>` tags.
 
 | Chart | Workload shape | Status |
 | ----- | -------------- | ------ |
-| [`charts/rvn-eks-web`](charts/rvn-eks-web) | Long-running HTTP service; Deployment + Service + TargetGroupBinding against a Terraform-owned target group | v0.2.0 |
+| [`charts/rvn-eks-web`](charts/rvn-eks-web) | Long-running HTTP service; Deployment + Service + TargetGroupBinding against a Terraform-owned target group | v0.3.0 |
 | [`charts/rvn-eks-worker`](charts/rvn-eks-worker) | Long-running background process; Deployment with no network surface | v0.2.0 |
 | [`charts/rvn-eks-cron`](charts/rvn-eks-cron) | Scheduled job; CronJob | v0.1.0 |
 

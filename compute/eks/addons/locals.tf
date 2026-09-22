@@ -10,6 +10,14 @@ locals {
 
   tags = merge(local.default_tags, var.tags)
 
+  # Name slug for every resource this stack creates. Defaults to the cluster
+  # name, but can move off it: names such as <name>-pub, <name>-priv and the
+  # Pod Identity role names are unique per account, and an ECS cluster module
+  # with the same name derives the very same ones. cluster_name stays what it
+  # is for addressing the cluster (EKS API calls, kubernetes.io/cluster tags,
+  # get-token, Container Insights log groups).
+  name = coalesce(var.name, var.cluster_name)
+
   # Shared trust policy for EKS Pod Identity roles: the role is bound to a
   # service account at runtime via the Pod Identity Agent.
   pod_identity_trust_policy = jsonencode({

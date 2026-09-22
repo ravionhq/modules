@@ -212,6 +212,24 @@ run "byo_bucket_suppresses_creation" {
 # Retention — the compactor is the authority, the bucket is the backstop.
 ################################################################################
 
+run "logs_are_kept_for_a_year_by_default" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+  }
+
+  assert {
+    condition     = output.log_retention_days == 365 && yamldecode(helm_release.loki[0].values[0]).loki.limits_config.retention_period == "8760h"
+    error_message = "Workload logs must default to a year, like the cluster's control plane logs"
+  }
+
+  assert {
+    condition     = local.loki_bucket_expiration_days == 372
+    error_message = "The bucket backstop must sit a week past the one-year default"
+  }
+}
+
 run "retention_is_enforced_in_both_places" {
   command = plan
 

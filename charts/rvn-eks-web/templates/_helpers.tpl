@@ -90,3 +90,26 @@ silently starting the container with the variable unset.
       key: {{ .name }}
 {{- end }}
 {{- end -}}
+
+{{/*
+TargetGroupBinding name for the target group at a given index of
+targetGroupArns. Shared by the binding itself and the pod readiness gate that
+waits on it, which must name the binding exactly.
+Usage: include "rvn-eks-web.targetGroupBindingName" (list $ $index)
+*/}}
+{{- define "rvn-eks-web.targetGroupBindingName" -}}
+{{- $root := index . 0 -}}
+{{- printf "%s-%d" (include "rvn-eks-web.fullname" $root) (index . 1) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+Lowest replica count the chart can run at: the HPA floor when autoscaling,
+otherwise the fixed replica count.
+*/}}
+{{- define "rvn-eks-web.replicaFloor" -}}
+{{- if .Values.autoscaling.enabled -}}
+{{- .Values.autoscaling.minReplicas -}}
+{{- else -}}
+{{- .Values.replicaCount -}}
+{{- end -}}
+{{- end -}}

@@ -88,8 +88,8 @@ locals {
   }
 
   cloudwatch_logs_config = {
-    retention_days = var.logs_cloudwatch.retention_days != null ? var.logs_cloudwatch.retention_days : 30
-    log_group_name = var.logs_cloudwatch.log_group_name != null ? var.logs_cloudwatch.log_group_name : "/ravion/eks/${var.cluster_name}"
+    retention_days = var.logs_cloudwatch.retention_days != null ? var.logs_cloudwatch.retention_days : 365
+    log_group_name = var.logs_cloudwatch.log_group_name != null ? var.logs_cloudwatch.log_group_name : "/ravion/eks/${local.name}"
   }
 
   cloudwatch_metrics_config = {

@@ -12,6 +12,17 @@ variable "name" {
   }
 }
 
+variable "target_group_name" {
+  type        = string
+  description = "Explicit target group name. When null, the name is derived from var.name. Set it when another workload in the VPC already owns the derived name, since ELBv2 target group names are unique per region."
+  default     = null
+
+  validation {
+    condition     = var.target_group_name == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,30}[A-Za-z0-9]$", var.target_group_name)) || can(regex("^[A-Za-z0-9]$", var.target_group_name))
+    error_message = "The target_group_name must be 1-32 alphanumerics or hyphens, and cannot start or end with a hyphen."
+  }
+}
+
 variable "region" {
   type        = string
   description = "AWS region. When null, the provider's configured region is used."

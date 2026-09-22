@@ -2,14 +2,25 @@
 # General
 ################################################################################
 
-variable "load_balancer_name_prefix" {
+variable "name" {
   type        = string
-  description = "Prefix for the names of the shared load balancers and their security groups (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb). Defaults to the cluster name. Set it when another stack in the account already uses those names, for example an ECS cluster with the same name whose ALB is called <cluster>-pub."
+  description = "Name slug for everything this stack creates: the shared load balancers and their security groups (<name>-pub, <name>-priv, <name>-pub-nlb, <name>-priv-nlb), the Pod Identity roles (<name>-external-secrets, <name>-karpenter, <name>-karpenter-node, ...), the Loki bucket, the log group, the AMP alias and the Karpenter interruption queue. Defaults to the cluster name. Set it when another stack in the account already uses those names, for example an ECS cluster with the same name whose ALB is called <cluster>-pub. The cluster itself is always addressed by cluster_name."
   default     = null
 
   validation {
-    condition     = var.load_balancer_name_prefix == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.load_balancer_name_prefix))
-    error_message = "The load_balancer_name_prefix must be 1-23 characters of letters, digits and hyphens, starting with a letter or digit, so that <prefix>-priv-nlb fits the 32-character load balancer name limit."
+    condition     = var.name == null || can(regex("^[A-Za-z0-9][A-Za-z0-9-]{0,22}$", var.name))
+    error_message = "The name must be 1-23 characters of letters, digits and hyphens, starting with a letter or digit, so that <name>-priv-nlb fits the 32-character load balancer name limit."
+  }
+}
+
+variable "load_balancer_access_logs_retention_days" {
+  type        = number
+  description = "Days the buckets created for load balancer access logs keep their objects. Applies to every shared ALB and NLB whose access logs are enabled without an existing bucket. Defaults to a year, like every other log the EKS modules keep."
+  default     = 365
+
+  validation {
+    condition     = var.load_balancer_access_logs_retention_days >= 1 && var.load_balancer_access_logs_retention_days <= 3650
+    error_message = "The load_balancer_access_logs_retention_days must be between 1 and 3650."
   }
 }
 
@@ -698,21 +709,33 @@ variable "private_nlb_elastic_ip_allocation_ids" {
 
 variable "karpenter_default_node_pool" {
   type = object({
-    capacity_types      = optional(list(string), ["on-demand", "spot"])
-    instance_categories = optional(list(string), ["c", "m", "r"])
-    architectures       = optional(list(string), ["amd64"])
-    cpu_limit           = optional(number, 100)
-    expire_after        = optional(string, "720h")
-    root_volume_size    = optional(string, "20Gi")
-    root_volume_type    = optional(string, "gp3")
-    ebs_kms_key_arn     = optional(string)
+    capacity_types       = optional(list(string), ["on-demand", "spot"])
+    instance_categories  = optional(list(string), ["c", "m", "r"])
+    architectures        = optional(list(string), ["amd64"])
+    cpu_limit            = optional(number, 100)
+    expire_after         = optional(string, "720h")
+    consolidation_policy = optional(string, "WhenEmptyOrUnderutilized")
+    consolidate_after    = optional(string, "15m")
+    root_volume_size     = optional(string, "20Gi")
+    root_volume_type     = optional(string, "gp3")
+    ebs_kms_key_arn      = optional(string)
   })
-  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
+  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, how eagerly Karpenter consolidates, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
   default     = {}
 
   validation {
     condition     = var.karpenter_default_node_pool.ebs_kms_key_arn == null || can(regex("^arn:aws[a-zA-Z-]*:kms:", var.karpenter_default_node_pool.ebs_kms_key_arn))
     error_message = "The karpenter_default_node_pool.ebs_kms_key_arn must be a KMS key ARN when set."
+  }
+
+  validation {
+    condition     = contains(["WhenEmpty", "WhenEmptyOrUnderutilized"], var.karpenter_default_node_pool.consolidation_policy)
+    error_message = "The karpenter_default_node_pool.consolidation_policy must be WhenEmpty or WhenEmptyOrUnderutilized."
+  }
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.karpenter_default_node_pool.consolidate_after))
+    error_message = "The karpenter_default_node_pool.consolidate_after must be a duration like '30s', '15m' or '1h'."
   }
 
   validation {
@@ -764,7 +787,7 @@ variable "ravion_operator_chart_source" {
 variable "ravion_operator_chart_version" {
   type        = string
   description = "Operator Helm chart version. For executor Jobs, use the chart_version output from the same Operator publishing run as ravion_operator_execution_image. Inline mode preserves the running image unless an image tag is pinned; Job mode pins coordinators and executors to ravion_operator_execution_image. Null tracks latest and is not allowed in Job mode."
-  default     = "0.4.1"
+  default     = "0.5.11"
 
   validation {
     condition     = var.ravion_operator_chart_version == null || can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.ravion_operator_chart_version))
@@ -863,12 +886,54 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "Installation-wide retained executor capacity (1-64), not per coordinator. Null selects 1 for full management's shared mutation lane or 4 for independent namespace lanes. Changing established capacity requires draining executions and migrating the retained capacity Lease. Full management requires 1."
+  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 12)."
   default     = null
 
   validation {
     condition     = var.ravion_operator_execution_max_concurrent == null ? true : (var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent)
     error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
+  }
+}
+
+variable "ravion_operator_warm_capacity" {
+  type = object({
+    enabled  = optional(bool, false)
+    replicas = optional(number, 8)
+    requests = optional(object({
+      cpu               = optional(string, "100m")
+      memory            = optional(string, "256Mi")
+      ephemeral_storage = optional(string, "1Gi")
+    }), {})
+    placement = optional(object({
+      node_selector = optional(map(string), {})
+      tolerations = optional(list(object({
+        key      = string
+        operator = string
+        value    = string
+        effect   = string
+      })), [])
+      topology_spread_enabled            = optional(bool, false)
+      topology_spread_max_skew           = optional(number, 1)
+      topology_spread_key                = optional(string, "topology.kubernetes.io/zone")
+      topology_spread_when_unsatisfiable = optional(string, "ScheduleAnyway")
+    }), {})
+  })
+  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. Tune replicas, per-slot requests and placement for actual rollout requirements."
+  default     = {}
+
+  validation {
+    condition     = var.ravion_operator_warm_capacity.replicas >= 1 && floor(var.ravion_operator_warm_capacity.replicas) == var.ravion_operator_warm_capacity.replicas
+    error_message = "The ravion_operator_warm_capacity.replicas must be a positive integer."
+  }
+
+  validation {
+    condition     = var.ravion_operator_warm_capacity.placement.topology_spread_max_skew >= 1 && floor(var.ravion_operator_warm_capacity.placement.topology_spread_max_skew) == var.ravion_operator_warm_capacity.placement.topology_spread_max_skew
+    error_message = "The warm-capacity topology spread max skew must be a positive integer."
+  }
+
+  validation {
+    condition     = contains(["DoNotSchedule", "ScheduleAnyway"], var.ravion_operator_warm_capacity.placement.topology_spread_when_unsatisfiable)
+    error_message = "The warm-capacity topology spread behaviour must be DoNotSchedule or ScheduleAnyway."
   }
 }
 
@@ -1103,8 +1168,8 @@ variable "loki_s3_bucket_name" {
 
 variable "log_retention_days" {
   type        = number
-  description = "How long logs are queryable. Enforced by Loki's compactor, which deletes chunks whose retention has expired; the created bucket additionally carries a lifecycle expiration a week later as a backstop for anything the compactor orphans."
-  default     = 30
+  description = "How long logs are queryable. Enforced by Loki's compactor, which deletes chunks whose retention has expired; the created bucket additionally carries a lifecycle expiration a week later as a backstop for anything the compactor orphans. Defaults to a year, like every other log the EKS modules keep."
+  default     = 365
   nullable    = false
 
   validation {

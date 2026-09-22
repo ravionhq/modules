@@ -115,6 +115,18 @@
       "type": "integer",
       "minimum": 0
     },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preStopSleepSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600,
+          "description": "Seconds the main container sleeps in a preStop hook before it receives SIGTERM, so the load balancer controller can deregister the pod first. 0 renders no hook. Must be less than terminationGracePeriodSeconds (enforced at render time). Needs Kubernetes 1.30+."
+        }
+      }
+    },
     "strategy": {
       "type": "object",
       "additionalProperties": false,
@@ -242,6 +254,10 @@
         },
         "vpcId": {
           "type": "string"
+        },
+        "podReadinessGate": {
+          "type": "boolean",
+          "description": "Add one AWS Load Balancer Controller readiness gate per TargetGroupBinding to the pods, so a pod counts as ready only once it is healthy in the target group."
         }
       }
     },
@@ -273,6 +289,21 @@
             "null"
           ],
           "minimum": 1
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render a PodDisruptionBudget. Skipped when the replica floor (autoscaling.minReplicas or replicaCount) is not greater than minAvailable, since such a budget would block node drains."
+        },
+        "minAvailable": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pods that must stay available during a voluntary disruption."
         }
       }
     },
@@ -347,6 +378,9 @@
             "ScheduleAnyway",
             "DoNotSchedule"
           ]
+        },
+        "nodeSpread": {
+          "type": "boolean"
         }
       }
     },

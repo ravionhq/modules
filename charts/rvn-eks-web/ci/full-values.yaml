@@ -1,6 +1,7 @@
 # Every optional surface switched on at once: digest pinning, dual target
-# groups, autoscaling, a startup probe, an ingress allow-list, and both secret
-# providers.
+# groups with pod readiness gates, autoscaling, a PodDisruptionBudget, a
+# graceful-shutdown preStop sleep, a startup probe, an ingress allow-list, and
+# both secret providers.
 image:
   repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
   digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -27,6 +28,14 @@ autoscaling:
   maxReplicas: 20
   targetCPUUtilizationPercentage: 60
   targetMemoryUtilizationPercentage: 80
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+terminationGracePeriodSeconds: 120
+lifecycle:
+  preStopSleepSeconds: 15
+targetGroupBinding:
+  podReadinessGate: true
 # Explicit constraints replace the chart's default zone spread.
 topologySpreadConstraints:
   - maxSkew: 2

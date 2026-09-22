@@ -40,9 +40,6 @@ locals {
   # Chart 0.5.0+ allows self-update alongside execution Jobs: the elected
   # coordinator updates itself and pins its executor Jobs to the image it runs.
   ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled
-  # Full management shares one mutation lane; scoped execution can use four
-  # independent namespace lanes. This bounds admission, not provisioned nodes.
-  ravion_operator_execution_max_concurrent_effective = var.ravion_operator_execution_max_concurrent != null ? var.ravion_operator_execution_max_concurrent : (var.ravion_operator_full_management_enabled ? 1 : 4)
 
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
@@ -51,7 +48,7 @@ locals {
   ravion_operator_client_secret_key = "clientSecret"
 
   # Deterministic so an operator can find the mirror without consulting state.
-  ravion_operator_credential_secret_name = "ravion/operator/${var.cluster_name}/credential"
+  ravion_operator_credential_secret_name = "ravion/operator/${local.name}/credential"
 
   # The provider's namespace_scope is a set, and an absent one means cluster-wide
   # observation. An empty list is therefore sent as null rather than as an empty
@@ -243,17 +240,28 @@ resource "helm_release" "ravion_operator" {
           enabled    = var.ravion_operator_deploy_enabled
           namespaces = var.ravion_operator_deploy_namespaces
         }
-        executionJobs = {
-          enabled        = var.ravion_operator_execution_jobs_enabled
-          image          = var.ravion_operator_execution_image
-          maxConcurrent  = local.ravion_operator_execution_max_concurrent_effective
-          fullManagement = var.ravion_operator_full_management_enabled
-        }
+        # Capacity belongs to the control plane, which retunes it over the air.
+        # Only an explicit value is passed, and it pins capacity locally.
+        # Executor resources always come from runtime policy and are never
+        # included in Helm configuration.
+        executionJobs = merge(
+          {
+            enabled        = var.ravion_operator_execution_jobs_enabled
+            image          = var.ravion_operator_execution_image
+            fullManagement = var.ravion_operator_full_management_enabled
+          },
+          var.ravion_operator_execution_max_concurrent == null ? {} : { maxConcurrent = var.ravion_operator_execution_max_concurrent },
+          var.ravion_operator_execution_max_concurrent == null ? {} : { settingsSource = "local" },
+        )
         # Placed the way Karpenter places itself (see the chart's coordinator
         # values): a fixed count on nodes Karpenter does not manage, so a
         # coordinator can never keep an autoscaled node alive.
+        # Chart 0.5.11 defaults adaptive on. This module promises a fixed count
+        # placed on the system node group, so never inherit that changing
+        # upstream default implicitly.
         coordinator = {
           enabled              = var.ravion_operator_coordinator_enabled
+          adaptive             = false
           replicas             = var.ravion_operator_coordinator_replicas
           requireDistinctNodes = var.ravion_operator_coordinator_distinct_nodes_enabled
         }
@@ -314,8 +322,8 @@ resource "helm_release" "ravion_operator" {
       error_message = "A single HA coordinator on distinct nodes leaves no surviving replica to revert a failed self-update. Set ravion_operator_coordinator_replicas >= 2, ravion_operator_coordinator_distinct_nodes_enabled = false, or ravion_operator_self_update_enabled = false."
     }
     precondition {
-      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && local.ravion_operator_execution_max_concurrent_effective == 1 && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
-      error_message = "Full management requires executor Jobs, max concurrency 1, and empty observation/deployment namespace lists."
+      condition     = !var.ravion_operator_full_management_enabled || (var.ravion_operator_execution_jobs_enabled && length(var.ravion_operator_namespace_scope) == 0 && length(var.ravion_operator_deploy_namespaces) == 0)
+      error_message = "Full management requires executor Jobs and empty observation/deployment namespace lists."
     }
   }
 }

@@ -27,7 +27,7 @@ locals {
 
   # data.aws_region.current is never null, so this always resolves.
   amp_region = coalesce(local.amp_config.region, var.region, data.aws_region.current.region)
-  amp_alias  = coalesce(local.amp_config.alias, "ravion-${var.cluster_name}")
+  amp_alias  = coalesce(local.amp_config.alias, "ravion-${local.name}")
 
   amp_workspace_id = local.amp_enabled ? (
     local.amp_create ? aws_prometheus_workspace.this[0].id : local.amp_config.workspace_id
@@ -82,7 +82,7 @@ module "amp_remote_write_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-amp-remote-write"
+  name        = "${local.name}-amp-remote-write"
   description = "AMP remote-write Pod Identity role for the metrics collector on ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy

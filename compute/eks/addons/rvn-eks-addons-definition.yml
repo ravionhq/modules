@@ -4,7 +4,7 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.10.0
+  version: 0.11.0
   description: Enable Karpenter interruption queue message-age monitoring by default, with configurable thresholds and notification destinations.
 module:
   inputs:
@@ -100,9 +100,9 @@ module:
       label: Application load balancers
       type: section
     - collapsible: true
-      description: Prefix for the shared load balancer names (<prefix>-pub, <prefix>-priv, <prefix>-pub-nlb, <prefix>-priv-nlb) and their security groups. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
-      id: load_balancer_name_prefix
-      label: Load balancer name prefix
+      description: Name used for everything the add-ons create - the shared load balancers and their security groups (<name>-pub, <name>-priv, <name>-pub-nlb, <name>-priv-nlb), the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter queue. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
+      id: name
+      label: Name slug
       placeholder: my-cluster-eks
       type: string
     - default: true
@@ -163,7 +163,7 @@ module:
         public_alb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: public_alb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -248,7 +248,7 @@ module:
         private_alb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: private_alb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -309,7 +309,7 @@ module:
         public_nlb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: public_nlb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -366,7 +366,7 @@ module:
         private_nlb_creation_enabled: true
       type: boolean
     - collapsible: true
-      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket with 90-day retention.
+      description: Existing S3 bucket ARN for access logs. Leave blank to create a private bucket that keeps logs for a year.
       id: private_nlb_access_logs_bucket_arn
       label: Access logs bucket ARN
       placeholder: arn:aws:s3:::my-bucket
@@ -595,7 +595,7 @@ module:
           label: Custom OTLP endpoint
           value: otlp
     - collapsible: true
-      default: 30
+      default: 365
       description: Number of days logs remain searchable before deletion. Enter 1-3650.
       id: loki_retention_days
       label: Retention (days)
@@ -614,7 +614,7 @@ module:
         logs_enabled: true
         logs_providers: loki
       type: string
-    - default: 30
+    - default: 365
       description: Retention for the module-managed CloudWatch log groups, in days.
       id: cloudwatch_logs_retention_days
       label: CloudWatch retention (days)
@@ -1093,10 +1093,10 @@ module:
         metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
-          retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 30 >>'
+          retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
           s3_bucket_name: << module.input.loki_s3_bucket_name >>
         logs_cloudwatch:
-          retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 30 >>'
+          retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 365 >>'
         logs_grafana_cloud:
           url: << module.input.grafana_cloud_logs_url >>
           user: << module.input.grafana_cloud_logs_user >>
@@ -1162,7 +1162,7 @@ module:
         # which is only the floor a fresh install starts from: the control plane
         # rolls the agent forward from there and the chart preserves the running
         # image on later applies.
-        ravion_operator_chart_version: 0.5.1
+        ravion_operator_chart_version: 0.5.11
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
@@ -1171,7 +1171,7 @@ module:
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
-        load_balancer_name_prefix: << module.input.load_balancer_name_prefix >>
+        name: << module.input.name >>
         public_alb_creation_enabled: << module.input.public_alb_creation_enabled >>
         public_alb_https_enabled: << module.input.public_alb_https_enabled >>
         public_alb_certificate_arns: >-
@@ -1339,13 +1339,15 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, HA Operator and full-cluster management.
 
-    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module pins chart `0.5.1` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest as the floor a fresh install starts from. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
+    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module targets chart `0.5.11` from `public.ecr.aws/a8z1i1r2/operator` for execution-status watch RBAC and executor image prewarming; it must be published before this module version is released or applied. No image digest or chart version needs to be entered after the required chart is published. Execution mode customization is available only through **Advanced Terraform variables**.
 
     **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas=1` through **Advanced Terraform variables**.
 
-    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Nodes still need free resources to schedule the pods. Replica count, placement and executor capacity can be overridden through **Advanced Terraform variables**.
+    Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
-    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It uses a single retained mutation lane, so only one cluster mutation runs at a time. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` through **Advanced Terraform variables**. Scoped Jobs default to four installation-wide slots for independent namespaces; Kubernetes schedules them against available resources. Drain existing ownership before changing scope or retained capacity. Existing form-level scope, image and HA choices are replaced by these managed defaults; preserve custom settings through advanced overrides before upgrading.
+    For predictable start latency, `ravion_operator_warm_capacity.enabled=true` through **Advanced Terraform variables** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`; configure slot requests, replica count and placement accordingly. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
+
+    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Different releases deploy in parallel, up to twelve at once by default; two versions of the same release never do, and management commands wait for running deploys. Ravion tunes capacity over the air without a module release. Pin it for this cluster with `ravion_operator_execution_max_concurrent` (1-64) through **Advanced Terraform variables**. Current Operators always serialize per release; namespace lane selection is not supported. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` the same way. Drain existing ownership before changing management scope.
 
     Web, worker and cron modules keep their existing Helm deployment definitions. Ravion selects Operator by the cluster ARN; the addons module passes its stable enrollment ID to the chart as the installation identity.
 

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -39,7 +39,7 @@ done
 # module carries its own charts and they are tested from here too.
 chart_path() {
   case "$1" in
-    karpenter-resources) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    karpenter-resources | warm-capacity) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -139,6 +139,11 @@ test_rvn_eks_web() {
   assert_eq "web: probe timings come from values" \
     "10 10 5 3" \
     "$(q "${default}" "${ctr} | .livenessProbe | [.initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold] | join(\" \")")"
+  local fast_rollout
+  fast_rollout="$(render "${chart}" fast-rollout --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.readiness.initialDelaySeconds=0 --set probes.readiness.periodSeconds=1 --set-string strategy.maxSurge=100%)"
+  assert_eq "web: fast rollout readiness and surge settings render exactly" \
+    "0 1 100%" \
+    "$(q "${fast_rollout}" "${ctr} | .readinessProbe.initialDelaySeconds") $(q "${fast_rollout}" "${ctr} | .readinessProbe.periodSeconds") $(q "${fast_rollout}" "${dep} | .spec.strategy.rollingUpdate.maxSurge")"
   assert_eq "web: startup probe is off by default" \
     "" "$(q "${default}" "${ctr} | .startupProbe")"
   assert_eq "web: startup probe renders when enabled" \
@@ -158,8 +163,8 @@ test_rvn_eks_web() {
     "ClusterIP" "$(q "${default}" '.[] | select(.kind == "Service") | .spec.type')"
   assert_eq "web: Service targets the named container port" \
     "http" "$(q "${default}" '.[] | select(.kind == "Service") | .spec.ports[0].targetPort')"
-  assert_eq "web: replicas come from replicaCount when autoscaling is off" \
-    "1" "$(q "${default}" "${dep} | .spec.replicas")"
+  assert_eq "web: two replicas by default, so one pod stopping is never an outage" \
+    "2" "$(q "${default}" "${dep} | .spec.replicas")"
 
   # --- ServiceAccount / Pod Identity ---------------------------------------
   assert_eq "web: ServiceAccount name defaults to the fullname" \
@@ -223,6 +228,9 @@ test_rvn_eks_web() {
   assert_eq "web: default zone spread selects this chart's pods" \
     "rvn-eks-web test-release" \
     "$(q "${default}" "${tsc}[0].labelSelector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  assert_eq "web: default node spread keeps replicas off a single node" \
+    "1 kubernetes.io/hostname ScheduleAnyway" \
+    "$(q "${default}" "${tsc}[1] | [.maxSkew, .topologyKey, .whenUnsatisfiable] | join(\" \")")"
   assert_eq "web: explicit topologySpreadConstraints replace the default" \
     "1 kubernetes.io/hostname" \
     "$(q "${full}" "${tsc} | [length, .[0].topologyKey] | join(\" \")")"
@@ -268,6 +276,55 @@ test_rvn_eks_web() {
     "10.0.0.0/20,10.0.16.0/20" "$(q "${full}" "${np} | [.spec.ingress[0].from[] | select(.ipBlock) | .ipBlock.cidr] | join(\",\")")"
   assert_eq "web: the allow-list opens only the container port" \
     "3000" "$(q "${full}" "${np} | .spec.ingress[0].ports[0].port")"
+
+  # --- graceful shutdown: grace period, preStop sleep, readiness gates, PDB --
+  local pdb='.[] | select(.kind == "PodDisruptionBudget")'
+  assert_eq "web: grace period defaults to 30s" \
+    "30" "$(q "${default}" "${dep} | .spec.template.spec.terminationGracePeriodSeconds")"
+  assert_eq "web: grace period comes from values" \
+    "120" "$(q "${full}" "${dep} | .spec.template.spec.terminationGracePeriodSeconds")"
+  assert_eq "web: a 10s preStop sleep by default" \
+    "10" "$(q "${default}" "${ctr} | .lifecycle.preStop.sleep.seconds")"
+  assert_eq "web: preStopSleepSeconds 0 renders no hook" \
+    "" "$(q "$(render "${chart}" no-prestop --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set lifecycle.preStopSleepSeconds=0)" "${ctr} | .lifecycle")"
+  assert_eq "web: preStopSleepSeconds renders the native preStop sleep action" \
+    "15" "$(q "${full}" "${ctr} | .lifecycle.preStop.sleep.seconds")"
+  assert_eq "web: no readiness gates without a target group" \
+    "" "$(q "${default}" "${dep} | .spec.template.spec.readinessGates")"
+  assert_eq "web: one load balancer readiness gate per TargetGroupBinding" \
+    "target-health.elbv2.k8s.aws/test-release-rvn-eks-web-0 target-health.elbv2.k8s.aws/test-release-rvn-eks-web-1" \
+    "$(q "${full}" "[${dep} | .spec.template.spec.readinessGates[].conditionType] | join(\" \")")"
+  assert_eq "web: readiness gates name the rendered TargetGroupBindings" \
+    "test-release-rvn-eks-web-0 test-release-rvn-eks-web-1" \
+    "$(q "${full}" "[.[] | select(.kind == \"TargetGroupBinding\") | .metadata.name] | join(\" \")")"
+  assert_eq "web: a PodDisruptionBudget by default" \
+    "1" "$(count "${default}" PodDisruptionBudget)"
+  assert_eq "web: PodDisruptionBudget rendered when enabled above the replica floor" \
+    "1" "$(count "${full}" PodDisruptionBudget)"
+  assert_eq "web: PodDisruptionBudget keeps minAvailable and lets unhealthy pods go" \
+    "1 AlwaysAllow" "$(q "${full}" "${pdb} | [.spec.minAvailable, .spec.unhealthyPodEvictionPolicy] | join(\" \")")"
+  assert_eq "web: PodDisruptionBudget selects this release's pods" \
+    "rvn-eks-web test-release" \
+    "$(q "${full}" "${pdb} | .spec.selector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  local single
+  single="$(render "${chart}" pdb-single --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml")"
+  assert_eq "web: PodDisruptionBudget skipped when it would block every drain" \
+    "0" "$(count "${single}" PodDisruptionBudget)"
+  assert_eq "web: a load balancer readiness gate by default when a target group is bound" \
+    "target-health.elbv2.k8s.aws/test-release-rvn-eks-web-0" \
+    "$(q "${single}" "[${dep} | .spec.template.spec.readinessGates[].conditionType] | join(\" \")")"
+  assert_eq "web: podReadinessGate false renders no gate" \
+    "" "$(q "$(render "${chart}" no-gate --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml" --set targetGroupBinding.podReadinessGate=false)" "${dep} | .spec.template.spec.readinessGates")"
+  if helm template test-release "$(chart_path "${chart}")" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" \
+    --set lifecycle.preStopSleepSeconds=30 >/dev/null 2>"${WORK_DIR}/prestop.err"; then
+    fail "web: preStop sleep >= grace period fails the render" "render error" "render succeeded"
+  else
+    assert_eq "web: preStop sleep >= grace period fails the render" \
+      "1" "$(grep -c 'must be less than terminationGracePeriodSeconds' "${WORK_DIR}/prestop.err")"
+  fi
+  assert_eq "web: preStop sleep is skipped on Kubernetes < 1.30, which lacks the sleep action" \
+    "" "$(q "$(render "${chart}" old-kube --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --kube-version 1.29.0)" "${ctr} | .lifecycle")"
 
   local deny_all
   deny_all="$(render "${chart}" deny-all --values "${CHARTS_DIR}/${chart}/ci/network-policy-deny-all-values.yaml")"
@@ -338,6 +395,24 @@ test_rvn_eks_worker() {
   zone_off="$(render "${chart}" zone-off --values "${CHARTS_DIR}/${chart}/ci/zone-routing-off-values.yaml")"
   assert_eq "worker: no spread constraint when topologySpread is disabled" \
     "" "$(q "${zone_off}" "${tsc}")"
+
+  # A worker loses in-flight work when it is evicted, so a fleet drained all at
+  # once loses all of it. The budget is on by default wherever it can be, and
+  # skipped where it would block drains instead of pacing them.
+  local pdb='.[] | select(.kind == "PodDisruptionBudget")'
+  assert_eq "worker: no PodDisruptionBudget on the single-replica default" \
+    "0" "$(count "${default}" PodDisruptionBudget)"
+  assert_eq "worker: PodDisruptionBudget rendered above the replica floor" \
+    "1" "$(count "${full}" PodDisruptionBudget)"
+  assert_eq "worker: PodDisruptionBudget keeps minAvailable and lets unhealthy pods go" \
+    "1 AlwaysAllow" "$(q "${full}" "${pdb} | [.spec.minAvailable, .spec.unhealthyPodEvictionPolicy] | join(\" \")")"
+  assert_eq "worker: PodDisruptionBudget selects this release's pods" \
+    "rvn-eks-worker test-release" \
+    "$(q "${full}" "${pdb} | .spec.selector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  local pdb_single
+  pdb_single="$(render "${chart}" pdb-single --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml")"
+  assert_eq "worker: PodDisruptionBudget skipped when it would block every drain" \
+    "0" "$(count "${pdb_single}" PodDisruptionBudget)"
 
   test_secrets_contract "${chart}" "${full}" "${default}" Deployment
 }
@@ -513,6 +588,42 @@ test_karpenter_resources() {
 }
 
 ################################################################################
+# warm-capacity (compute/eks/addons)
+################################################################################
+
+test_warm_capacity() {
+  local chart="warm-capacity"
+  local default default_enabled full dep pod ctr
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  default_enabled="$(render "${chart}" default-enabled --set enabled=true)"
+  full="$(render "${chart}" full --values "$(chart_path "${chart}")/ci/full-values.yaml")"
+  dep='.[] | select(.kind == "Deployment")'
+  pod="${dep} | .spec.template.spec"
+  ctr="${pod} | .containers[0]"
+
+  assert_eq "${chart}: disabled values render no reservation objects" \
+    "0 0" "$(count "${default}" Deployment) $(count "${default}" PriorityClass)"
+  assert_eq "${chart}: enabled values render reservation and low priority class" \
+    "1 1 -10 Never" \
+    "$(count "${full}" Deployment) $(count "${full}" PriorityClass) $(q "${full}" '.[] | select(.kind == "PriorityClass") | .value') $(q "${full}" '.[] | select(.kind == "PriorityClass") | .preemptionPolicy')"
+  assert_eq "${chart}: defaults reserve six executor slots plus a two-pod app surge" \
+    "8 100m 256Mi 1Gi" \
+    "$(q "${default_enabled}" "${dep} | .spec.replicas") $(q "${default_enabled}" "${ctr} | .resources.requests.cpu") $(q "${default_enabled}" "${ctr} | .resources.requests.memory") $(q "${default_enabled}" "${ctr} | .resources.requests.\"ephemeral-storage\"")"
+  assert_eq "${chart}: reservation replicas and requests reach the pod" \
+    "9 250m 512Mi 2Gi" \
+    "$(q "${full}" "${dep} | .spec.replicas") $(q "${full}" "${ctr} | .resources.requests.cpu") $(q "${full}" "${ctr} | .resources.requests.memory") $(q "${full}" "${ctr} | .resources.requests.\"ephemeral-storage\"")"
+  assert_eq "${chart}: placeholders terminate immediately and carry no API token" \
+    "0 false" \
+    "$(q "${full}" "${pod} | .terminationGracePeriodSeconds") $(q "${full}" "${pod} | .automountServiceAccountToken")"
+  assert_eq "${chart}: node selection and tolerations are configurable" \
+    "default dedicated apps NoSchedule" \
+    "$(q "${full}" "${pod} | .nodeSelector.\"karpenter.sh/nodepool\"") $(q "${full}" "${pod} | .tolerations[0] | [.key, .value, .effect] | join(\" \" )")"
+  assert_eq "${chart}: optional topology spread reaches the manifest" \
+    "1 kubernetes.io/hostname DoNotSchedule" \
+    "$(q "${full}" "${pod} | .topologySpreadConstraints[0] | [.maxSkew, .topologyKey, .whenUnsatisfiable] | join(\" \" )")"
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -522,6 +633,7 @@ for chart in "${CHARTS[@]}"; do
     rvn-eks-worker) test_rvn_eks_worker ;;
     rvn-eks-cron) test_rvn_eks_cron ;;
     karpenter-resources) test_karpenter_resources ;;
+    warm-capacity) test_warm_capacity ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

@@ -4,8 +4,15 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.1
-  description: Add AWS permissions. Turn on Create IAM role and the worker gets an IAM role bound to its pods through EKS Pod Identity, with managed policy ARNs and inline policies in the same shape as the ECS task role; the AWS SDK in the pods picks up short-lived credentials for it with no keys to manage. The role ARN is a stack output for other modules to pin.
+  version: 0.5.0
+  description: >-
+    A worker running more than one pod now gets a PodDisruptionBudget, so node drains,
+    autoscaler consolidation and cluster upgrades move its pods one at a time instead of
+    all at once. Workers lose in-flight work when they are evicted, and a fleet drained
+    together loses all of it, so this is on by default. A single-pod worker is unchanged:
+    there is no way to drain one pod gradually, and a budget that allows no evictions
+    would block node drains entirely. Set pod_disruption_budget_enabled to false to opt
+    out.
 module:
   inputs:
     - id: section_cluster
@@ -94,6 +101,22 @@ module:
       max: 3600
       min: 0
       default: 30
+    - id: pod_disruption_budget_enabled
+      label: Disruption budget
+      type: boolean
+      description: Limit how many pods node drains, consolidation and cluster upgrades may evict at once. A worker loses its in-flight work when it is evicted, so draining a fleet all at once loses all of it. Takes effect only while the minimum pod count is above Minimum available pods, since a budget that allows no evictions would block every drain.
+      collapsible: true
+      default: true
+    - id: pod_disruption_budget_min_available
+      label: Minimum available pods
+      type: number
+      description: Pods that must stay running during a node drain or other voluntary disruption.
+      collapsible: true
+      max: 1000
+      min: 1
+      default: 1
+      show_when:
+        pod_disruption_budget_enabled: true
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
@@ -134,6 +157,9 @@ module:
             $merge:
               - ../../partials/deploy/eks-workload-helm-values-common.yml
               - terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                podDisruptionBudget:
+                  enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
+                  minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
                 replicaCount: >-
                   << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
                   module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?

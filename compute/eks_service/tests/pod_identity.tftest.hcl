@@ -157,6 +157,54 @@ run "attaches_managed_and_inline_policies" {
   }
 }
 
+run "attaches_inline_policies_of_different_shapes" {
+  command = plan
+
+  # Two documents whose statements differ in shape (string vs list Resource,
+  # with and without Condition, one vs two statements). Such a value cannot
+  # be unified into a map, so a conditional around it fails OpenTofu 1.11's
+  # type check; the for_each must gate inside the for expression instead.
+  variables {
+    pod_identity_role_creation_enabled = true
+    pod_identity_inline_policies = {
+      ReadBucket = {
+        Version = "2012-10-17"
+        Statement = [{
+          Sid      = "ReadBucket"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["arn:aws:s3:::my-bucket/*"]
+        }]
+      }
+      ListPrefix = {
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Sid      = "Describe"
+            Effect   = "Allow"
+            Action   = ["ec2:DescribeRegions"]
+            Resource = "*"
+          },
+          {
+            Sid    = "ListPrefix"
+            Effect = "Allow"
+            Action = "s3:ListBucket"
+            Condition = {
+              StringLike = { "s3:prefix" = "team/*" }
+            }
+            Resource = "arn:aws:s3:::my-bucket"
+          },
+        ]
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.pod_identity_inline) == 2 && jsondecode(aws_iam_role_policy.pod_identity_inline["ListPrefix"].policy).Statement[1].Condition.StringLike["s3:prefix"] == "team/*"
+    error_message = "Every inline policy must be attached whatever shape its statements take."
+  }
+}
+
 run "honours_explicit_role_and_service_account_names" {
   command = plan
 

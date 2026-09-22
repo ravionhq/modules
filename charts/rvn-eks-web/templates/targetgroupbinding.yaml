@@ -19,7 +19,7 @@ be assumed present exactly when an ARN is supplied.
 apiVersion: elbv2.k8s.aws/v1beta1
 kind: TargetGroupBinding
 metadata:
-  name: {{ printf "%s-%d" (include "rvn-eks-web.fullname" $) $index | trunc 63 | trimSuffix "-" }}
+  name: {{ include "rvn-eks-web.targetGroupBindingName" (list $ $index) }}
   labels:
     {{- include "rvn-eks-web.labels" $ | nindent 4 }}
 spec:

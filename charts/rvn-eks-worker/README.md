@@ -74,6 +74,8 @@ env:
 | `strategy.type` | string | `RollingUpdate` | Or `Recreate`. |
 | `strategy.maxSurge` | string/int | `25%` | |
 | `strategy.maxUnavailable` | string/int | `0` | |
+| `podDisruptionBudget.enabled` | bool | `true` | Render a `policy/v1` PodDisruptionBudget (with `unhealthyPodEvictionPolicy: AlwaysAllow`) limiting voluntary disruptions such as node drains and autoscaler consolidation. A worker loses its in-flight work when it is evicted, so a fleet drained at once loses all of it. Skipped when the replica floor (`autoscaling.minReplicas`, or `replicaCount`) is not greater than `minAvailable`, because such a budget allows no evictions and blocks every drain. |
+| `podDisruptionBudget.minAvailable` | int | `1` | Pods that must stay available during a voluntary disruption. |
 | `revisionHistoryLimit` | int | `10` | |
 | `terminationGracePeriodSeconds` | int | `30` | Time to drain in-flight work before SIGKILL. |
 | `resources.requests` | map | `{cpu: 100m, memory: 256Mi}` | |

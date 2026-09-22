@@ -81,7 +81,7 @@ module "grafana_role" {
 
   source = "../../../security/iam"
 
-  name        = "${var.cluster_name}-grafana-read"
+  name        = "${local.name}-grafana-read"
   description = "Grafana read access to the AMP workspace and Container Insights log groups for ${var.cluster_name}"
 
   trusted_services = ["grafana.amazonaws.com"]
