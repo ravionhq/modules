@@ -364,6 +364,245 @@ run "changed_parameter_is_a_new_recipe_over_the_same_component" {
 }
 
 ################################################################################
+# Components written from steps
+################################################################################
+
+run "steps_become_a_component_document" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name        = "provision"
+        source      = "steps"
+        description = "Installs the runtime"
+        parameter_definitions = [
+          {
+            name        = "Version"
+            type        = "string"
+            default     = "v1.0.0"
+            description = "Release to install"
+          },
+        ]
+        build_steps = [
+          {
+            name     = "Install"
+            commands = ["set -euo pipefail", "echo installing"]
+          },
+        ]
+        validate_steps = [
+          {
+            name       = "Check"
+            commands   = ["test -x /usr/local/bin/runner"]
+            on_failure = "Continue"
+          },
+        ]
+      },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).name == "provision"
+    error_message = "The document must be named after the component"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).schemaVersion == "1.0"
+    error_message = "The document must name the schema version Image Builder expects"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).description == "Installs the runtime"
+    error_message = "A description must reach the document"
+  }
+
+  assert {
+    condition     = [for phase in yamldecode(aws_imagebuilder_component.this["provision"].data).phases : phase.name] == ["build", "validate"]
+    error_message = "A phase with no steps must be left out"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[0].action == "ExecuteBash"
+    error_message = "A step must run its action"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[0].inputs.commands == ["set -euo pipefail", "echo installing"]
+    error_message = "A shell step must carry its commands"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[1].steps[0].onFailure == "Continue"
+    error_message = "A step must carry the failure behaviour it was given"
+  }
+
+  assert {
+    condition     = !can(yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[0].onFailure)
+    error_message = "A step must leave out what it was not given"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).parameters[0].Version.default == "v1.0.0"
+    error_message = "A parameter must reach the document with its default"
+  }
+
+  assert {
+    condition     = !can(yamldecode(aws_imagebuilder_component.this["provision"].data).parameters[0].Version.value)
+    error_message = "A parameter's value belongs to the recipe, not the document"
+  }
+}
+
+run "a_parameter_without_a_value_is_left_to_its_default" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name   = "provision"
+        source = "steps"
+        parameter_definitions = [
+          { name = "Version", default = "v1.0.0" },
+        ]
+        build_steps = [{ name = "Install", commands = ["echo installing"] }]
+      },
+    ]
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_image_recipe.this.component[0].parameter) == 0
+    error_message = "A parameter left without a value must not be passed by the recipe"
+  }
+
+  # Pinned so the next run can prove a value leaves this component alone.
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-89e1f3f7"
+    error_message = "A steps component must be named by a stable content hash, got ${aws_imagebuilder_component.this["provision"].name}"
+  }
+}
+
+run "a_parameter_value_reaches_the_recipe_over_the_same_component" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name   = "provision"
+        source = "steps"
+        parameter_definitions = [
+          { name = "Version", default = "v1.0.0", value = "v1.2.3" },
+        ]
+        build_steps = [{ name = "Install", commands = ["echo installing"] }]
+      },
+    ]
+  }
+
+  assert {
+    condition     = one(aws_imagebuilder_image_recipe.this.component[0].parameter).value == "v1.2.3"
+    error_message = "A parameter value must be passed by the recipe"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-89e1f3f7"
+    error_message = "A parameter value must not change the component the recipe points at"
+  }
+}
+
+run "a_step_that_is_not_a_shell_carries_its_own_inputs" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name   = "provision"
+        source = "steps"
+        build_steps = [
+          {
+            name        = "Fetch"
+            action      = "S3Download"
+            inputs_json = jsonencode([{ source = "s3://releases/runner", destination = "/tmp/runner" }])
+          },
+          {
+            name            = "Install"
+            commands        = ["install -m 0755 /tmp/runner /usr/local/bin/runner"]
+            timeout_seconds = 600
+            max_attempts    = 2
+          },
+        ]
+      },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[0].inputs[0].source == "s3://releases/runner"
+    error_message = "A non-shell step must carry the inputs its action documents"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[1].timeoutSeconds == 600
+    error_message = "A step must carry its timeout"
+  }
+
+  assert {
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[1].maxAttempts == 2
+    error_message = "A step must carry its attempt count"
+  }
+}
+
+run "a_changed_step_is_a_new_component" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name        = "provision"
+        source      = "steps"
+        build_steps = [{ name = "Install", commands = ["echo installing something else"] }]
+      },
+    ]
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-26a95f58"
+    error_message = "A changed step must produce a differently named component"
+  }
+}
+
+run "a_shell_step_needs_commands" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name        = "provision"
+        source      = "steps"
+        build_steps = [{ name = "Install" }]
+      },
+    ]
+  }
+
+  expect_failures = [var.components]
+}
+
+run "steps_must_be_named_apart_within_a_phase" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name   = "provision"
+        source = "steps"
+        build_steps = [
+          { name = "Install", commands = ["echo one"] },
+          { name = "Install", commands = ["echo two"] },
+        ]
+      },
+    ]
+  }
+
+  expect_failures = [var.components]
+}
+
+################################################################################
 # Referenced components, schedule, logs, build on apply
 ################################################################################
 
