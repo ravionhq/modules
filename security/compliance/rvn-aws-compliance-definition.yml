@@ -1,6 +1,6 @@
 definition:
   type: rvn-aws-compliance
-  name: AWS compliance
+  name: AWS Compliance
   description: Manages an AWS compliance baseline with GuardDuty threat detection and registry-wide ECR image scanning across selected Regions.
 release:
   version: 0.1.0
