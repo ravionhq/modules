@@ -498,7 +498,7 @@ module:
                 lifecycle:
                   preStopSleepSeconds: '<< module.input.pre_stop_sleep_seconds != nil ? module.input.pre_stop_sleep_seconds : 10 >>'
                 strategy:
-                  maxSurge: '<< string(module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25) + "%" >>'
+                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25 >>%'
                 podDisruptionBudget:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'

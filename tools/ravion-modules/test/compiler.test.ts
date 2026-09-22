@@ -180,7 +180,7 @@ describe("compiler", () => {
     const strategy = assertRecord(values.strategy, "module.deploy.definition.values.strategy");
     assert.equal(
       strategy.maxSurge,
-      '<< string(module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25) + "%" >>',
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25 >>%",
     );
     assert.equal(findInput(inputs, "readiness_probe_period_seconds").min, 1);
     assert.equal(findInput(inputs, "rollout_max_surge_percent").max, 100);
