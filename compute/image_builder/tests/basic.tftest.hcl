@@ -191,9 +191,10 @@ run "public_multi_region" {
   command = plan
 
   variables {
-    public               = true
-    distribution_regions = ["us-east-1", "eu-west-1"]
-    ami_tags             = { release = "v1.2.3" }
+    public                           = true
+    manage_image_block_public_access = true
+    distribution_regions             = ["us-east-1", "eu-west-1"]
+    ami_tags                         = { release = "v1.2.3" }
     root_volume = {
       device_name = "/dev/xvda"
       size_gb     = 30
@@ -243,6 +244,22 @@ run "public_without_managing_the_block" {
   assert {
     condition     = length(aws_ec2_image_block_public_access.this) == 0
     error_message = "The account setting must be left alone when it is managed elsewhere"
+  }
+}
+
+# The account-wide block protects every image the account owns, and turning it
+# off outlives this module, so a public image alone must not be enough to do it.
+run "a_public_image_alone_leaves_the_account_block_on" {
+  command = plan
+
+  variables {
+    public               = true
+    distribution_regions = ["us-east-1"]
+  }
+
+  assert {
+    condition     = length(aws_ec2_image_block_public_access.this) == 0
+    error_message = "Unblocking public sharing account-wide must be asked for, not assumed from a public image"
   }
 }
 

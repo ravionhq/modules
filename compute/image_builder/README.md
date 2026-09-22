@@ -219,10 +219,20 @@ instance from the image and reach it the same way, so set
 
 `public = true` adds the `all` launch group in every region an image lands in.
 
-- New accounts block public AMI sharing per region. With
-  `manage_image_block_public_access` (the default) the module turns the block
-  off in the build region and every distribution region. The setting is
-  account-wide for the region, and destroying the module leaves it off.
+- New accounts block public AMI sharing per region, and `public = true` alone
+  does not change that: a build that would publish an image fails in a region
+  that still blocks sharing. Set `manage_image_block_public_access = true` to
+  have the module turn the block off in the build region and every
+  distribution region. That is a deliberate account-level change, not a
+  per-image one — it covers every AMI the account owns in those regions, so
+  anyone who can edit another image's launch permissions can make that image
+  public too. Destroying the module leaves the block off; restore it per
+  region with:
+
+  ```bash
+  aws ec2 enable-image-block-public-access \
+    --image-block-public-access block-new-sharing --region <region>
+  ```
 - A public image cannot be backed by an encrypted snapshot, and AWS refuses to
   publish one an hour into the build. The module settles that at plan time
   instead. `root_volume` encryption defaults to off when `public` is true, and
@@ -277,7 +287,7 @@ at the bucket root.
 | ami_tags | Tags written on each image, in every region | `map(string)` | `{}` | no |
 | distribution_regions | Regions the image is copied to, beyond the build region | `list(string)` | `[]` | no |
 | public | Make every image launchable by any AWS account | `bool` | `false` | no |
-| manage_image_block_public_access | When public, unblock public AMI sharing in every region an image lands in | `bool` | `true` | no |
+| manage_image_block_public_access | When public, unblock public AMI sharing account-wide in every region an image lands in. Persists after destroy | `bool` | `false` | no |
 | launch_account_ids | Accounts granted launch permission | `list(string)` | `[]` | no |
 | launch_organization_arns | Organizations granted launch permission | `list(string)` | `[]` | no |
 | pipeline_enabled | Whether the pipeline can run | `bool` | `true` | no |

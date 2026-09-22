@@ -347,8 +347,8 @@ variable "public" {
 
 variable "manage_image_block_public_access" {
   type        = bool
-  description = "When public is true, turn off the account-wide block on public AMI sharing in the build region and every distribution region. The setting covers every image the account owns in those regions, and destroying this module does not turn it back on. Set false when the account manages it elsewhere."
-  default     = true
+  description = "When public is true, turn off the account-wide block on public AMI sharing in the build region and every distribution region. The setting covers every image the account owns in those regions, not only the images this module builds, and destroying this module does not turn it back on: re-block it with `aws ec2 enable-image-block-public-access --image-block-public-access block-new-sharing --region <region>`. Left false, a public build fails in any region that still blocks sharing, and the account keeps the block."
+  default     = false
 }
 
 variable "launch_account_ids" {

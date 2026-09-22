@@ -1025,9 +1025,8 @@ module:
       id: public
       label: Public image
       type: boolean
-    - collapsible: true
-      default: true
-      description: Turn off the account-wide block on public AMI sharing in the build region and every additional region. The setting covers every image the account owns in those regions and stays off after this module is destroyed.
+    - default: false
+      description: Turn off the account-wide block on public AMI sharing in the build region and every additional region. The setting covers every image the account owns in those regions, not only the images built here, and stays off after this module is destroyed. Leave it off unless you mean to change the account, and a build that would publish a public image fails in any region that still blocks sharing.
       id: manage_image_block_public_access
       label: Allow public AMI sharing in this account
       show_when:
@@ -1230,7 +1229,7 @@ module:
 
     Images are private by default. Share them with listed accounts or AWS Organizations, or turn on Public image to let any AWS account launch them.
 
-    New AWS accounts block public AMI sharing in every region. Public image turns that block off in the build region and every additional region; it is an account-wide setting that covers every image the account owns there.
+    New AWS accounts block public AMI sharing in every region, and Public image on its own does not change that: a build that would publish an image fails in a region that still blocks sharing. Turning on Allow public AMI sharing in this account clears the block in the build region and every additional region. That is a change to the account rather than to this image: it covers every image the account owns in those regions, and it stays cleared after this module is destroyed. Restore it per region with `aws ec2 enable-image-block-public-access --image-block-public-access block-new-sharing --region <region>`.
 
     A public image cannot be backed by an encrypted snapshot, and a build that produces one fails an hour in. Public image is therefore checked during the deploy: the parent image must be an AMI this account can describe whose snapshots are unencrypted, and EBS encryption by default must be off in every region the image lands in. A deploy that fails these checks names what to change.
 
@@ -1263,6 +1262,7 @@ module:
     | AMI name, description, and tags | No | Pipeline name and build date | Applied in every region. |
     | Additional regions | No | None | Regions the image is copied to. |
     | Public image | No | Off | Any AWS account can launch the image. |
+    | Allow public AMI sharing in this account | No | Off | Clears the account-wide block in every region an image lands in. Stays cleared after this module is destroyed. |
     | Shared account IDs | No | None | Accounts granted launch permission. |
     | Shared organization ARNs | No | None | Organizations whose accounts can launch the image. |
 
