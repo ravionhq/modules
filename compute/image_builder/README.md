@@ -26,9 +26,26 @@ module "image" {
 
   components = [
     {
-      name       = "provision"
-      data       = file("${path.module}/provision.yml")
-      parameters = { ReleaseVersion = "v1.2.3" }
+      name = "provision"
+
+      parameter_definitions = [
+        { name = "ReleaseVersion", default = "v1.2.3", value = "v1.2.3" },
+      ]
+
+      build_steps = [
+        {
+          name = "InstallRelease"
+          commands = [
+            "set -euo pipefail",
+            "aws s3 cp s3://example-releases/{{ ReleaseVersion }}/app /usr/local/bin/app",
+            "chmod 0755 /usr/local/bin/app",
+          ]
+        },
+      ]
+
+      validate_steps = [
+        { name = "AppRuns", commands = ["/usr/local/bin/app --version"] },
+      ]
     },
   ]
 
@@ -60,6 +77,44 @@ Start a build by hand:
 ```bash
 aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <pipeline_arn>
 ```
+
+## Components
+
+Components run in the order listed. Each one names where its document comes
+from in `source`:
+
+| `source` | What the component sets | When it fits |
+| --- | --- | --- |
+| `steps` | `build_steps`, `validate_steps`, `test_steps` and `parameter_definitions` | Most components. The module writes the document. |
+| `document` | `data` | A document you already have, or an action the step fields do not cover |
+| `arn` | `arn` | An AWS-managed component, or one that already exists in the account |
+
+A caller that leaves `source` out is read by what it filled in.
+
+A step names an action and what that action needs. `ExecuteBash` and
+`ExecutePowerShell` take `commands`, run in order; the phase stops at the first
+one that exits non-zero. Every other action takes `inputs_json`, the JSON its
+AWS documentation describes, and an action that needs none leaves it out:
+
+```hcl
+build_steps = [
+  {
+    name        = "Fetch"
+    action      = "S3Download"
+    inputs_json = jsonencode([{ source = "s3://releases/runner", destination = "/tmp/runner" }])
+  },
+  {
+    name            = "Install"
+    commands        = ["install -m 0755 /tmp/runner /usr/local/bin/runner"]
+    timeout_seconds = 600
+    max_attempts    = 2
+  },
+  { name = "Restart", action = "Reboot" },
+]
+```
+
+A phase with no steps is left out of the document, and so is a step field left
+blank.
 
 ## Building on a schedule
 
@@ -139,8 +194,10 @@ pipeline moves to it in the same apply. The old ones are deleted once nothing
 references them. `recipe_version` never has to change for an apply to succeed.
 
 Put the values that change between builds — a release version, a checksum — in
-component `parameters`. A changed parameter is a new recipe over the same
-component.
+`parameter_definitions`, which a step reads as `{{ ParameterName }}`. A
+parameter's `value` is passed by the recipe rather than written into the
+document, so a changed value is a new recipe over the same component. A
+`document` or `arn` component passes the same values through `parameters`.
 
 With `parent_image_lookup`, the parent image id is resolved at plan time. An
 apply after the owner publishes a newer image produces a new recipe.
@@ -195,7 +252,7 @@ at the bucket root.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name of the pipeline, and the prefix of every other resource this module creates | `string` | n/a | yes |
-| components | Components the recipe runs, in order. Each sets `data` (inline document) or `arn` (existing component); `source` (`inline` or `arn`) picks one when both are present. Optional `description`, `platform`, `parameters` | `list(object)` | n/a | yes |
+| components | Components the recipe runs, in order. Each sets `source` (`steps`, `document` or `arn`) and the fields it names: `build_steps`/`validate_steps`/`test_steps` and `parameter_definitions`, `data`, or `arn`. Optional `description`, `platform`, `parameters` | `list(object)` | n/a | yes |
 | description | Description stored on the pipeline, the recipe and the configurations | `string` | `null` | no |
 | region | Region the image is built in | `string` | provider region | no |
 | tags | A map of tags to assign to resources | `map(string)` | `{}` | no |
