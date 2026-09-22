@@ -216,13 +216,13 @@ module "lambda_with_integrations" {
 
 ## Invocation error-rate alarms
 
-Enable `cloudwatch_alarms_creation_enabled` to monitor
+`cloudwatch_alarms_creation_enabled` defaults to true to monitor
 `100 * SUM(Errors) / SUM(Invocations)` for the function, across all versions and
 aliases. The alarm defaults to >=1% over one 5-minute period. Zero invocations
 produce zero; missing data is non-breaching because idle functions emit no metrics.
 This monitors Lambda invocation failures, not application HTTP response codes or throttles.
 
-Ravion enables the toggle by default; direct Terraform callers opt in. Set
+Both Ravion and direct Terraform callers get alarms by default; set the toggle to false to opt out. Set
 `cloudwatch_alarm_actions` to a same-region SNS topic ARN list, or route CloudWatch
 alarm events using an externally managed EventBridge relay. No notification
 destination is created automatically. `cloudwatch_ok_actions` is optional.
@@ -237,7 +237,7 @@ matching resource address before Terraform takes ownership.
 
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
-| cloudwatch_alarms_creation_enabled | `bool` | `false` | Enable invocation error-rate alarms. |
+| cloudwatch_alarms_creation_enabled | `bool` | `true` | Enable invocation error-rate alarms. |
 | cloudwatch_alarm_error_rate_threshold | `number` | `1` | Percentage threshold, >0 and <=100. |
 | cloudwatch_alarm_period | `number` | `300` | 60, 300, 900, or 3600 seconds. |
 | cloudwatch_alarm_evaluation_periods | `number` | `1` | Consecutive breaching periods, covering at most one day. |

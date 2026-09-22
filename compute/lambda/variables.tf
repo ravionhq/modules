@@ -536,7 +536,7 @@ variable "region" {
 variable "cloudwatch_alarms_creation_enabled" {
   type        = bool
   description = "Create a Lambda error-rate alarm in the function Region and any additional Edge execution Regions."
-  default     = false
+  default     = true
   nullable    = false
 }
 

@@ -12,11 +12,11 @@ variables {
   role_arn              = "arn:aws:iam::123456789012:role/existing-lambda-role"
 }
 
-run "disabled_by_default" {
+run "enabled_by_default" {
   command = plan
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.error_rate) == 0 && length(output.cloudwatch_alarm_arns) == 0
-    error_message = "Direct Terraform callers must opt into alarms."
+    condition     = length(aws_cloudwatch_metric_alarm.error_rate) == 1 && length(output.cloudwatch_alarm_arns) == 1
+    error_message = "Both Terraform and Ravion callers should receive alarms by default."
   }
 }
 
@@ -140,4 +140,15 @@ run "reject_regional_cross_region_metrics" {
     cloudwatch_alarm_additional_regions = ["us-west-2"]
   }
   expect_failures = [var.cloudwatch_alarm_additional_regions]
+}
+
+run "explicit_opt_out" {
+  command = plan
+  variables {
+    cloudwatch_alarms_creation_enabled = false
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.error_rate) == 0 && length(output.cloudwatch_alarm_arns) == 0
+    error_message = "An explicit opt-out must remove all alarms."
+  }
 }
