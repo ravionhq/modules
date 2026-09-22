@@ -142,7 +142,7 @@ module:
       label: Recipe
       type: section
     - default: []
-      description: Components the recipe runs, in order. Write a component document inline, or reference an AWS-managed or existing component by ARN.
+      description: Components the recipe runs, in order. Describe what a component does as ordered steps, write its document yourself, or reference an AWS-managed or existing component by ARN.
       id: components
       item_inputs:
         - description: Short name for this component. Used in the created component's name.
@@ -154,16 +154,32 @@ module:
           placeholder: provision
           required: true
           type: string
-        - default: inline
+        - default: steps
+          description: Where this component's document comes from.
           id: source
           label: Source
           required: true
           type: string
           values:
-            - label: Inline document
-              value: inline
-            - label: Existing component ARN
+            - description: Describe the work as ordered steps and this module writes the document.
+              label: Steps
+              value: steps
+            - description: Write the Image Builder component document yourself.
+              label: Component document
+              value: document
+            - description: Use an AWS-managed component or one that already exists in this account.
+              label: Existing component ARN
               value: arn
+        - collapsible: true
+          description: What this component does. Shown on the component in the Image Builder console.
+          id: description
+          label: Description
+          placeholder: Installs the sandbox runtime
+          show_when:
+            source:
+              - steps
+              - document
+          type: string
         - description: Image Builder component document in YAML. Changing it creates a new component and a new recipe.
           id: data
           label: Component document
@@ -180,7 +196,7 @@ module:
                         - echo hello
           required: true
           show_when:
-            source: inline
+            source: document
           type: text
         - description: ARN of an AWS-managed component or one that already exists in this account. Use x.x.x for the latest version.
           id: arn
@@ -194,11 +210,517 @@ module:
             source: arn
           type: string
         - collapsible: true
-          default: Linux
+          default: []
+          description: Values the steps read as {{ ParameterName }}. A value is passed by the recipe, so changing one creates a new recipe over the same component; changing a name or a default creates a new component.
+          id: parameter_definitions
+          item_inputs:
+            - description: Name the steps refer to.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter.
+                  pattern: ^[A-Za-z][A-Za-z0-9_-]{0,127}$
+              placeholder: RunnerVersion
+              required: true
+              type: string
+            - default: string
+              id: type
+              label: Type
+              required: true
+              type: string
+              values:
+                - label: String
+                  value: string
+                - label: Integer
+                  value: integer
+                - label: Boolean
+                  value: boolean
+                - label: List of strings
+                  value: stringList
+            - description: Value this recipe passes. Leave blank to use the default.
+              id: value
+              label: Value
+              placeholder: v1.1.37
+              type: string
+            - collapsible: true
+              description: Value used when the recipe passes none.
+              id: default
+              label: Default
+              type: string
+            - collapsible: true
+              description: What this parameter controls.
+              id: description
+              label: Description
+              type: string
+          item_label: Parameter
+          item_title:
+            fallback: Parameter
+            template: "{name}"
+          label: Parameters
+          show_when:
+            source: steps
+          type: object_array
+        - default: []
+          description: Steps that build the image, in order.
+          id: build_steps
+          item_inputs:
+            - description: Name of this step, unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - default: ExecuteBash
+              description: What this step does. The shell actions run the commands below; every other action takes the inputs its AWS documentation describes.
+              id: action
+              label: Action
+              required: true
+              type: string
+              values:
+                - group_label: Run
+                  label: Run bash commands
+                  value: ExecuteBash
+                - group_label: Run
+                  label: Run PowerShell commands
+                  value: ExecutePowerShell
+                - group_label: Run
+                  label: Run a binary
+                  value: ExecuteBinary
+                - group_label: Run
+                  label: Run another component document
+                  value: ExecuteDocument
+                - group_label: Transfer
+                  label: Download from S3
+                  value: S3Download
+                - group_label: Transfer
+                  label: Upload to S3
+                  value: S3Upload
+                - group_label: Transfer
+                  label: Download from a URL
+                  value: WebDownload
+                - group_label: Files
+                  label: Create a file
+                  value: CreateFile
+                - group_label: Files
+                  label: Copy a file
+                  value: CopyFile
+                - group_label: Files
+                  label: Move a file
+                  value: MoveFile
+                - group_label: Files
+                  label: Delete a file
+                  value: DeleteFile
+                - group_label: Files
+                  label: Append to a file
+                  value: AppendFile
+                - group_label: Files
+                  label: Read a file
+                  value: ReadFile
+                - group_label: Files
+                  label: List files
+                  value: ListFiles
+                - group_label: Folders
+                  label: Create a folder
+                  value: CreateFolder
+                - group_label: Folders
+                  label: Copy a folder
+                  value: CopyFolder
+                - group_label: Folders
+                  label: Move a folder
+                  value: MoveFolder
+                - group_label: Folders
+                  label: Delete a folder
+                  value: DeleteFolder
+                - group_label: System
+                  label: Reboot
+                  value: Reboot
+                - group_label: System
+                  label: Update the operating system
+                  value: UpdateOS
+                - group_label: System
+                  label: Assert a condition
+                  value: Assert
+                - group_label: Windows
+                  label: Install an MSI
+                  value: InstallMSI
+                - group_label: Windows
+                  label: Uninstall an MSI
+                  value: UninstallMSI
+                - group_label: Windows
+                  label: Set a registry value
+                  value: SetRegistry
+            - add_button_label: Add command
+              default: []
+              description: Commands run in order. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: set -euo pipefail
+              required: true
+              show_when:
+                action:
+                  - ExecuteBash
+                  - ExecutePowerShell
+              type: string_array
+            - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
+              id: inputs_json
+              label: Inputs
+              placeholder: '[{"source": "s3://releases/runner", "destination": "/tmp/runner"}]'
+              show_when:
+                action:
+                  not:
+                    - ExecuteBash
+                    - ExecutePowerShell
+              type: text
+            - collapsible: true
+              default: Abort
+              description: What happens when this step fails.
+              id: on_failure
+              label: On failure
+              type: string
+              values:
+                - description: Stop the build.
+                  label: Abort
+                  value: Abort
+                - description: Run the rest of the phase, then fail it.
+                  label: Continue
+                  value: Continue
+                - description: Carry on as if the step had passed.
+                  label: Ignore
+                  value: Ignore
+            - collapsible: true
+              description: Seconds this step may run before it is stopped. Leave blank for the Image Builder default.
+              id: timeout_seconds
+              label: Timeout
+              min: 1
+              type: number
+            - collapsible: true
+              description: Times this step is retried before the phase fails.
+              id: max_attempts
+              label: Max attempts
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Build steps
+          required: true
+          show_when:
+            source: steps
+          type: object_array
+        - collapsible: true
+          default: []
+          description: Steps that check the build instance before the image is created. Run in order after the build phase.
+          id: validate_steps
+          item_inputs:
+            - description: Name of this step, unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - default: ExecuteBash
+              description: What this step does. The shell actions run the commands below; every other action takes the inputs its AWS documentation describes.
+              id: action
+              label: Action
+              required: true
+              type: string
+              values:
+                - group_label: Run
+                  label: Run bash commands
+                  value: ExecuteBash
+                - group_label: Run
+                  label: Run PowerShell commands
+                  value: ExecutePowerShell
+                - group_label: Run
+                  label: Run a binary
+                  value: ExecuteBinary
+                - group_label: Run
+                  label: Run another component document
+                  value: ExecuteDocument
+                - group_label: Transfer
+                  label: Download from S3
+                  value: S3Download
+                - group_label: Transfer
+                  label: Upload to S3
+                  value: S3Upload
+                - group_label: Transfer
+                  label: Download from a URL
+                  value: WebDownload
+                - group_label: Files
+                  label: Create a file
+                  value: CreateFile
+                - group_label: Files
+                  label: Copy a file
+                  value: CopyFile
+                - group_label: Files
+                  label: Move a file
+                  value: MoveFile
+                - group_label: Files
+                  label: Delete a file
+                  value: DeleteFile
+                - group_label: Files
+                  label: Append to a file
+                  value: AppendFile
+                - group_label: Files
+                  label: Read a file
+                  value: ReadFile
+                - group_label: Files
+                  label: List files
+                  value: ListFiles
+                - group_label: Folders
+                  label: Create a folder
+                  value: CreateFolder
+                - group_label: Folders
+                  label: Copy a folder
+                  value: CopyFolder
+                - group_label: Folders
+                  label: Move a folder
+                  value: MoveFolder
+                - group_label: Folders
+                  label: Delete a folder
+                  value: DeleteFolder
+                - group_label: System
+                  label: Reboot
+                  value: Reboot
+                - group_label: System
+                  label: Update the operating system
+                  value: UpdateOS
+                - group_label: System
+                  label: Assert a condition
+                  value: Assert
+                - group_label: Windows
+                  label: Install an MSI
+                  value: InstallMSI
+                - group_label: Windows
+                  label: Uninstall an MSI
+                  value: UninstallMSI
+                - group_label: Windows
+                  label: Set a registry value
+                  value: SetRegistry
+            - add_button_label: Add command
+              default: []
+              description: Commands run in order. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: set -euo pipefail
+              required: true
+              show_when:
+                action:
+                  - ExecuteBash
+                  - ExecutePowerShell
+              type: string_array
+            - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
+              id: inputs_json
+              label: Inputs
+              placeholder: '[{"source": "s3://releases/runner", "destination": "/tmp/runner"}]'
+              show_when:
+                action:
+                  not:
+                    - ExecuteBash
+                    - ExecutePowerShell
+              type: text
+            - collapsible: true
+              default: Abort
+              description: What happens when this step fails.
+              id: on_failure
+              label: On failure
+              type: string
+              values:
+                - description: Stop the build.
+                  label: Abort
+                  value: Abort
+                - description: Run the rest of the phase, then fail it.
+                  label: Continue
+                  value: Continue
+                - description: Carry on as if the step had passed.
+                  label: Ignore
+                  value: Ignore
+            - collapsible: true
+              description: Seconds this step may run before it is stopped. Leave blank for the Image Builder default.
+              id: timeout_seconds
+              label: Timeout
+              min: 1
+              type: number
+            - collapsible: true
+              description: Times this step is retried before the phase fails.
+              id: max_attempts
+              label: Max attempts
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Validate steps
+          show_when:
+            source: steps
+          type: object_array
+        - collapsible: true
+          default: []
+          description: Steps that check an instance launched from the finished image. Run only when image tests are on.
+          id: test_steps
+          item_inputs:
+            - description: Name of this step, unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - default: ExecuteBash
+              description: What this step does. The shell actions run the commands below; every other action takes the inputs its AWS documentation describes.
+              id: action
+              label: Action
+              required: true
+              type: string
+              values:
+                - group_label: Run
+                  label: Run bash commands
+                  value: ExecuteBash
+                - group_label: Run
+                  label: Run PowerShell commands
+                  value: ExecutePowerShell
+                - group_label: Run
+                  label: Run a binary
+                  value: ExecuteBinary
+                - group_label: Run
+                  label: Run another component document
+                  value: ExecuteDocument
+                - group_label: Transfer
+                  label: Download from S3
+                  value: S3Download
+                - group_label: Transfer
+                  label: Upload to S3
+                  value: S3Upload
+                - group_label: Transfer
+                  label: Download from a URL
+                  value: WebDownload
+                - group_label: Files
+                  label: Create a file
+                  value: CreateFile
+                - group_label: Files
+                  label: Copy a file
+                  value: CopyFile
+                - group_label: Files
+                  label: Move a file
+                  value: MoveFile
+                - group_label: Files
+                  label: Delete a file
+                  value: DeleteFile
+                - group_label: Files
+                  label: Append to a file
+                  value: AppendFile
+                - group_label: Files
+                  label: Read a file
+                  value: ReadFile
+                - group_label: Files
+                  label: List files
+                  value: ListFiles
+                - group_label: Folders
+                  label: Create a folder
+                  value: CreateFolder
+                - group_label: Folders
+                  label: Copy a folder
+                  value: CopyFolder
+                - group_label: Folders
+                  label: Move a folder
+                  value: MoveFolder
+                - group_label: Folders
+                  label: Delete a folder
+                  value: DeleteFolder
+                - group_label: System
+                  label: Reboot
+                  value: Reboot
+                - group_label: System
+                  label: Update the operating system
+                  value: UpdateOS
+                - group_label: System
+                  label: Assert a condition
+                  value: Assert
+                - group_label: Windows
+                  label: Install an MSI
+                  value: InstallMSI
+                - group_label: Windows
+                  label: Uninstall an MSI
+                  value: UninstallMSI
+                - group_label: Windows
+                  label: Set a registry value
+                  value: SetRegistry
+            - add_button_label: Add command
+              default: []
+              description: Commands run in order. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: set -euo pipefail
+              required: true
+              show_when:
+                action:
+                  - ExecuteBash
+                  - ExecutePowerShell
+              type: string_array
+            - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
+              id: inputs_json
+              label: Inputs
+              placeholder: '[{"source": "s3://releases/runner", "destination": "/tmp/runner"}]'
+              show_when:
+                action:
+                  not:
+                    - ExecuteBash
+                    - ExecutePowerShell
+              type: text
+            - collapsible: true
+              default: Abort
+              description: What happens when this step fails.
+              id: on_failure
+              label: On failure
+              type: string
+              values:
+                - description: Stop the build.
+                  label: Abort
+                  value: Abort
+                - description: Run the rest of the phase, then fail it.
+                  label: Continue
+                  value: Continue
+                - description: Carry on as if the step had passed.
+                  label: Ignore
+                  value: Ignore
+            - collapsible: true
+              description: Seconds this step may run before it is stopped. Leave blank for the Image Builder default.
+              id: timeout_seconds
+              label: Timeout
+              min: 1
+              type: number
+            - collapsible: true
+              description: Times this step is retried before the phase fails.
+              id: max_attempts
+              label: Max attempts
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Test steps
+          show_when:
+            source: steps
+          type: object_array
+        - collapsible: true
+          description: Operating system the component runs on.
           id: platform
           label: Platform
           show_when:
-            source: inline
+            source:
+              - steps
+              - document
           type: string
           values:
             - label: Linux
@@ -209,9 +731,13 @@ module:
               value: macOS
         - collapsible: true
           default: {}
-          description: Values for the parameters the component document declares. Changing a value creates a new recipe over the same component.
+          description: Values for the parameters the component declares. Changing a value creates a new recipe over the same component.
           id: parameters
           label: Parameters
+          show_when:
+            source:
+              - document
+              - arn
           type: keyvalue
       item_label: Component
       item_title:
@@ -453,10 +979,9 @@ module:
           not: ""
       type: string
     - collapsible: true
-      description: Value of that header. It is stored as a secret and never shown again.
+      description: Value of that header, which the endpoint checks before it trusts the call.
       id: notify_header_value
       label: Notify header value
-      secret: true
       show_when:
         notify_url:
           not: ""
@@ -625,9 +1150,17 @@ module:
 
     ## Components and parameters
 
-    A component is an Image Builder document with build, validate, and test phases. Write it inline, or reference an AWS-managed or existing component by ARN. Components run in the order listed.
+    A component is an Image Builder document with build, validate, and test phases. Components run in the order listed, and each one names where its document comes from.
 
-    Declare the values that change between builds, such as a release version, as component parameters and set them under Parameters. Changing a parameter creates a new recipe over the same component, so the document stays stable across releases.
+    | Source | What you fill in | When it fits |
+    | --- | --- | --- |
+    | Steps | Named steps under Build steps, Validate steps, and Test steps | Most components. The module writes the document. |
+    | Component document | The YAML document itself | A document you already have, or an action this form does not offer |
+    | Existing component ARN | The ARN | An AWS-managed component, or one another module created |
+
+    A step names an action and what that action needs. Run bash commands and Run PowerShell commands take a list of commands, run in order, and the phase stops at the first one that exits non-zero. Every other action takes Inputs, the JSON its AWS documentation describes.
+
+    Declare the values that change between builds, such as a release version, under Parameters. A step reads one as `{{ ParameterName }}`. A parameter's value is passed by the recipe rather than written into the document, so changing a value creates a new recipe over the same component and the document stays stable across releases.
 
     Image Builder recipes and components are immutable. This module names each by a hash of its content, so any change is a new recipe or component beside the old one, and the pipeline moves to it in the same deploy. There is no version to bump.
 
@@ -717,7 +1250,7 @@ module:
     | Pipeline enabled | No | On | A disabled pipeline keeps its configuration and ignores its schedule. |
     | Collect image metadata | No | On | Package list and other metadata from each build. |
     | Parent image | Yes | None | A specific image, or the newest AMI matching an owner and name pattern. |
-    | Components | Yes | None | Inline documents or component ARNs, in run order. |
+    | Components | Yes | None | Steps, documents, or component ARNs, in run order. |
     | Build instance user data | No | None | Replaces the Systems Manager agent install. |
     | Build working directory | No | Image Builder default | Directory the build and test workflows run in. |
     | Custom root volume | No | Off | Gives the image its own root volume: device name, size, type, IOPS, throughput, and encryption. |
