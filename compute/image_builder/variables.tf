@@ -80,8 +80,42 @@ variable "components" {
     description = optional(string)
     platform    = optional(string, "Linux")
     parameters  = optional(map(string), {})
+    parameter_definitions = optional(list(object({
+      name        = string
+      type        = optional(string, "string")
+      default     = optional(string)
+      description = optional(string)
+      value       = optional(string)
+    })), [])
+    build_steps = optional(list(object({
+      name            = string
+      action          = optional(string, "ExecuteBash")
+      commands        = optional(list(string), [])
+      inputs_json     = optional(string)
+      on_failure      = optional(string)
+      timeout_seconds = optional(number)
+      max_attempts    = optional(number)
+    })), [])
+    validate_steps = optional(list(object({
+      name            = string
+      action          = optional(string, "ExecuteBash")
+      commands        = optional(list(string), [])
+      inputs_json     = optional(string)
+      on_failure      = optional(string)
+      timeout_seconds = optional(number)
+      max_attempts    = optional(number)
+    })), [])
+    test_steps = optional(list(object({
+      name            = string
+      action          = optional(string, "ExecuteBash")
+      commands        = optional(list(string), [])
+      inputs_json     = optional(string)
+      on_failure      = optional(string)
+      timeout_seconds = optional(number)
+      max_attempts    = optional(number)
+    })), [])
   }))
-  description = "Components the recipe runs, in order. Each is either created here from an inline component document (data) or referenced by ARN (arn) — an AWS-managed component or one that already exists. Parameters are passed to the component by the recipe, so a value can change without changing the document. When both data and arn are present, source (inline or arn) says which one counts."
+  description = "Components the recipe runs, in order. Each is created here from the steps it describes (source steps), created here from a component document given verbatim (source document), or referenced by ARN (source arn) — an AWS-managed component or one that already exists. A steps component names its parameters in parameter_definitions and its work in build_steps, validate_steps and test_steps; the module writes the document. Parameters are passed to the component by the recipe, so a value can change without changing the document. A caller that leaves source out is read by whether it filled in arn, data, or steps."
 
   validation {
     condition     = length(var.components) > 0
@@ -91,16 +125,59 @@ variable "components" {
   validation {
     condition = alltrue([
       for c in var.components :
-      c.source == "inline" ? try(trimspace(c.data), "") != "" :
+      c.source == "steps" ? length(c.build_steps) + length(c.validate_steps) + length(c.test_steps) > 0 :
+      c.source == "document" ? try(trimspace(c.data), "") != "" :
       c.source == "arn" ? try(trimspace(c.arn), "") != "" :
       (try(trimspace(c.data), "") == "") != (try(trimspace(c.arn), "") == "")
     ])
-    error_message = "Each component must set exactly one of data or arn, or name the one that counts with source."
+    error_message = "Each component must describe steps, set data, or set arn, matching the source it names."
   }
 
   validation {
-    condition     = alltrue([for c in var.components : c.source == null || contains(["inline", "arn"], coalesce(c.source, "inline"))])
-    error_message = "Each component source must be inline or arn."
+    condition     = alltrue([for c in var.components : c.source == null || contains(["steps", "document", "arn"], coalesce(c.source, "steps"))])
+    error_message = "Each component source must be steps, document or arn."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for c in var.components : [
+        for step in concat(c.build_steps, c.validate_steps, c.test_steps) :
+        contains(["ExecuteBash", "ExecutePowerShell"], step.action) ? length(step.commands) > 0 : (
+          try(trimspace(step.inputs_json), "") == "" || can(jsondecode(step.inputs_json))
+        )
+      ]
+    ]))
+    error_message = "Each ExecuteBash or ExecutePowerShell step must list commands, and every other step must leave inputs_json blank or set it to valid JSON."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for c in var.components : [
+        for step in concat(c.build_steps, c.validate_steps, c.test_steps) :
+        step.on_failure == null || contains(["Abort", "Continue", "Ignore"], coalesce(step.on_failure, "Abort"))
+      ]
+    ]))
+    error_message = "Each step on_failure must be Abort, Continue or Ignore."
+  }
+
+  validation {
+    condition = alltrue([
+      for c in var.components : alltrue([
+        for phase in [c.build_steps, c.validate_steps, c.test_steps] :
+        length(distinct([for step in phase : step.name])) == length(phase)
+      ])
+    ])
+    error_message = "Step names must be unique within a phase."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for c in var.components : [
+        for parameter in c.parameter_definitions :
+        contains(["string", "integer", "boolean", "stringList"], parameter.type)
+      ]
+    ]))
+    error_message = "Each component parameter type must be string, integer, boolean or stringList."
   }
 
   validation {

@@ -12,6 +12,10 @@ locals {
 
   tags = merge(local.default_tags, var.tags)
 
+  # The two actions that run a list of commands. Every other action is given
+  # the inputs its own documentation describes.
+  shell_component_actions = ["ExecuteBash", "ExecutePowerShell"]
+
   # A form leaves an unused field blank rather than null, so a blank string is
   # read as unset everywhere a caller may leave one.
   parent_image_input          = try(trimspace(var.parent_image), "") == "" ? null : trimspace(var.parent_image)
@@ -22,10 +26,85 @@ locals {
   # Image Builder ARN or an SSM parameter is resolved by the build service.
   parent_image_id = try(regex("^ami-[0-9a-f]+$", coalesce(local.parent_image, "-")), null)
 
+  # A component says where its document comes from: assembled here from the
+  # steps and parameters a caller described, taken verbatim from data, or
+  # already in the account under arn. A caller that leaves source out is read
+  # by what it filled in.
+  component_sources = {
+    for c in var.components : c.name => (
+      c.source != null ? c.source :
+      try(trimspace(c.arn), "") != "" ? "arn" :
+      try(trimspace(c.data), "") != "" ? "document" :
+      "steps"
+    )
+  }
+
+  # Steps become an Image Builder component document. A shell action carries
+  # its commands; every other action carries the inputs it was given. A phase
+  # with no steps is left out, and so is an optional step field left blank.
+  component_documents = {
+    for c in var.components : c.name => yamlencode(merge(
+      {
+        name          = c.name
+        schemaVersion = "1.0"
+        phases = [
+          for phase in [
+            { name = "build", steps = c.build_steps },
+            { name = "validate", steps = c.validate_steps },
+            { name = "test", steps = c.test_steps },
+            ] : {
+            name = phase.name
+            steps = [
+              for step in phase.steps : merge(
+                {
+                  name   = step.name
+                  action = step.action
+                },
+                # Every branch is JSON text so the conditional has one type;
+                # decoding turns it back into what the document carries. An
+                # action that takes no inputs, such as Reboot, contributes
+                # nothing.
+                jsondecode(
+                  contains(local.shell_component_actions, step.action) ? jsonencode({ inputs = { commands = step.commands } }) :
+                  try(trimspace(step.inputs_json), "") == "" ? "{}" :
+                  jsonencode({ inputs = jsondecode(step.inputs_json) })
+                ),
+                step.on_failure == null ? {} : { onFailure = step.on_failure },
+                step.timeout_seconds == null ? {} : { timeoutSeconds = step.timeout_seconds },
+                step.max_attempts == null ? {} : { maxAttempts = step.max_attempts },
+              )
+            ]
+          } if length(phase.steps) > 0
+        ]
+      },
+      try(trimspace(c.description), "") == "" ? {} : { description = trimspace(c.description) },
+      length(c.parameter_definitions) == 0 ? {} : {
+        parameters = [
+          for parameter in c.parameter_definitions : {
+            (parameter.name) = merge(
+              { type = parameter.type },
+              parameter.default == null ? {} : { default = parameter.default },
+              try(trimspace(parameter.description), "") == "" ? {} : { description = trimspace(parameter.description) },
+            )
+          }
+        ]
+      },
+    )) if local.component_sources[c.name] == "steps"
+  }
+
   components = [
     for c in var.components : merge(c, {
-      data = c.source == "arn" || try(trimspace(c.data), "") == "" ? null : c.data
-      arn  = c.source == "inline" || try(trimspace(c.arn), "") == "" ? null : trimspace(c.arn)
+      source = local.component_sources[c.name]
+      # A parameter's value is passed by the recipe rather than written into
+      # the document, so changing one leaves the component it configures alone.
+      parameters = merge(c.parameters, {
+        for parameter in c.parameter_definitions : parameter.name => parameter.value
+        if try(trimspace(parameter.value), "") != ""
+      })
+      data = local.component_sources[c.name] == "steps" ? local.component_documents[c.name] : (
+        local.component_sources[c.name] == "document" ? c.data : null
+      )
+      arn = local.component_sources[c.name] == "arn" ? trimspace(c.arn) : null
     })
   ]
 
