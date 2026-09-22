@@ -549,7 +549,7 @@ module:
         private_nlb_enabled: true
         private_nlb_access_logs_enabled: true
       type: string
-    - description: CloudWatch alarms for the public and private Application Load Balancers. Thresholds, evaluation periods, and notification actions are configured once and apply to both.
+    - description: Settings apply to both public and private ALBs.
       id: section_compliance
       label: Compliance
       type: section

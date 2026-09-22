@@ -608,6 +608,7 @@ module:
       description: Keep enabled to detect invocation failures. Disable if monitored elsewhere. Configure SNS actions or an EventBridge relay for notifications.
     - id: cloudwatch_alarm_error_rate_threshold
       label: Error rate threshold (%)
+      description: Failed invocations as a percentage of all invocations; triggers at or above this value.
       type: number
       default: 1
       min: 1
@@ -673,7 +674,7 @@ module:
       type: object
       default: {}
       collapsible: true
-      description: Map regions to local SNS topic ARNs. Leave empty when using EventBridge for notifications.
+      description: Overrides shared destinations by region. Set a region to [] to suppress direct actions there.
       show_when:
         cloudwatch_alarms_creation_enabled: true
         lambda_type: edge
@@ -682,7 +683,7 @@ module:
       type: object
       default: {}
       collapsible: true
-      description: Map regions to local SNS topic ARNs. Leave empty when using EventBridge for notifications.
+      description: Overrides shared destinations by region. Set a region to [] to suppress direct actions there.
       show_when:
         cloudwatch_alarms_creation_enabled: true
         lambda_type: edge

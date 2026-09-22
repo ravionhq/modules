@@ -3,7 +3,7 @@
 - id: cloudwatch_alarm_unhealthy_hosts_threshold
   label: Unhealthy hosts alarm threshold
   type: number
-  description: Maximum unhealthy targets per target group. Set to 0 to detect the first unhealthy target.
+  description: Evaluated per target group using the period maximum. Set to 0 to detect the first unhealthy target.
   collapsible: true
   min: 0
   show_when:

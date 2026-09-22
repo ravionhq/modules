@@ -835,7 +835,7 @@ module:
       type: number
     - collapsible: true
       default: 5
-      description: Minimum available storage.
+      description: Triggers when the primary instance's period average falls below this value.
       id: cloudwatch_alarm_storage_threshold_gib
       label: Free storage alarm threshold (GiB)
       min: 0
@@ -844,7 +844,7 @@ module:
       type: number
     - collapsible: true
       default: 1000
-      description: Operations per second. Tune to the workload and database capacity.
+      description: Average for the primary instance, in operations per second. Tune to workload capacity.
       id: cloudwatch_alarm_read_iops_threshold
       label: Read IOPS alarm threshold
       min: 1
@@ -853,7 +853,7 @@ module:
       type: number
     - collapsible: true
       default: 1000
-      description: Operations per second. Tune to the workload and database capacity.
+      description: Average for the primary instance, in operations per second. Tune to workload capacity.
       id: cloudwatch_alarm_write_iops_threshold
       label: Write IOPS alarm threshold
       min: 1
@@ -879,6 +879,7 @@ module:
     - collapsible: true
       default: 300
       id: cloudwatch_alarm_period
+      description: I/O uses at least one minute; other metrics use this value.
       label: Alarm period seconds
       show_when:
         cloudwatch_alarms_creation_enabled: true

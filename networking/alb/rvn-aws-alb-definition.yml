@@ -160,7 +160,6 @@ module:
     - id: section_cloudwatch_alarms
       label: CloudWatch alarms
       type: section
-      description: Alarm on load balancer errors and latency. Add SNS topic ARNs as alarm actions to be notified.
     - id: cloudwatch_alarms_creation_enabled
       label: Create CloudWatch alarms
       type: boolean

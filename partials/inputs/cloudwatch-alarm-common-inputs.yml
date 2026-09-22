@@ -29,7 +29,7 @@
 - id: cloudwatch_alarm_actions
   label: Alarm actions
   type: string_array
-  description: SNS topic ARNs to notify when a threshold is breached.
+  description: Invoked when entering the alerting state, for example an SNS topic ARN.
   add_button_label: Add alarm action ARN
   collapsible: true
   placeholder: arn:aws:sns:us-east-1:123456789012:alerts
@@ -39,7 +39,7 @@
 - id: cloudwatch_ok_actions
   label: OK actions
   type: string_array
-  description: SNS topic ARNs to notify on recovery.
+  description: Invoked when returning to the healthy state, for example an SNS topic ARN.
   add_button_label: Add OK action ARN
   collapsible: true
   placeholder: arn:aws:sns:us-east-1:123456789012:alerts

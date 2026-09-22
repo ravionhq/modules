@@ -68,7 +68,7 @@
 - id: cloudwatch_alarm_cpu_threshold
   label: CPU alarm threshold (%)
   type: number
-  description: Maximum average CPU usage per period.
+  description: Triggers when the period average exceeds this value.
   collapsible: true
   max: 100
   min: 0
@@ -78,7 +78,7 @@
 - id: cloudwatch_alarm_memory_threshold
   label: Memory alarm threshold (%)
   type: number
-  description: Maximum average memory usage per period.
+  description: Triggers when the period average exceeds this value.
   collapsible: true
   max: 100
   min: 0
@@ -88,7 +88,7 @@
 - id: cloudwatch_alarm_running_tasks_minimum
   label: Minimum running tasks
   type: number
-  description: Requires Container Insights on the cluster.
+  description: Triggers when the period minimum falls below this value. Requires Container Insights on the cluster.
   collapsible: true
   min: 1
   show_when:
