@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon Aurora cluster. Supports Aurora PostgreSQL and Aurora MySQL with provisioned or Serverless v2 capacity.
 
 release:
-  version: 1.2.1
-  description: Prevent selecting an older major engine version when updating a database.
+  version: 1.3.0
+  description: Add storage capacity and read/write IOPS alarms for Aurora, including Serverless v2.
 module:
   inputs:
     - id: network
@@ -878,6 +878,44 @@ module:
       type: number
     - collapsible: true
       default: 100
+      description: Minimum remaining cluster volume space, including Serverless v2.
+      id: cloudwatch_alarm_storage_threshold_gib
+      label: Remaining storage alarm threshold (GiB)
+      min: 1
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+        engine: aurora-mysql
+      type: number
+    - collapsible: true
+      default: 115
+      description: Maximum cluster volume usage, including Serverless v2. Tune below the storage limit supported by your engine version.
+      id: cloudwatch_alarm_volume_bytes_used_threshold_tib
+      label: Used storage alarm threshold (TiB)
+      min: 1
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+        engine: aurora-postgresql
+      type: number
+    - collapsible: true
+      default: 1000
+      description: Operations per second. Tune to the workload and database capacity.
+      id: cloudwatch_alarm_read_iops_threshold
+      label: Read IOPS alarm threshold
+      min: 1
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 1000
+      description: Operations per second. Tune to the workload and database capacity.
+      id: cloudwatch_alarm_write_iops_threshold
+      label: Write IOPS alarm threshold
+      min: 1
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 100
       id: cloudwatch_alarm_connections_threshold
       label: Connections alarm threshold
       min: 1
@@ -1080,7 +1118,11 @@ module:
         cloudwatch_alarm_cpu_threshold: << module.input.cloudwatch_alarm_cpu_threshold >>
         cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
         cloudwatch_alarm_memory_threshold: '<< module.input.cloudwatch_alarm_memory_threshold_mib != null ? int(module.input.cloudwatch_alarm_memory_threshold_mib * 1048576) : 268435456 >>'
+        cloudwatch_alarm_storage_threshold: '<< module.input.cloudwatch_alarm_storage_threshold_gib != null ? int(module.input.cloudwatch_alarm_storage_threshold_gib * 1073741824) : 107374182400 >>'
+        cloudwatch_alarm_volume_bytes_used_threshold: '<< module.input.cloudwatch_alarm_volume_bytes_used_threshold_tib != null ? int(module.input.cloudwatch_alarm_volume_bytes_used_threshold_tib * 1099511627776) : 126443837194240 >>'
         cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+        cloudwatch_alarm_read_iops_threshold: '<< module.input.cloudwatch_alarm_read_iops_threshold != null ? module.input.cloudwatch_alarm_read_iops_threshold : 1000 >>'
+        cloudwatch_alarm_write_iops_threshold: '<< module.input.cloudwatch_alarm_write_iops_threshold != null ? module.input.cloudwatch_alarm_write_iops_threshold : 1000 >>'
         cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
         cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions >>
         cluster_parameter_group_creation_enabled: << module.input.cluster_parameter_group_creation_enabled >>
@@ -1406,7 +1448,7 @@ module:
 
     Performance Insights is enabled by default with 7 days of retention. Enhanced monitoring can be enabled by setting a monitoring interval.
 
-    CloudWatch alarms can monitor CPU utilization, freeable memory, and database connections. The freeable memory alarm threshold is entered in MiB in Ravion and converted to bytes for Terraform.
+    CloudWatch alarms monitor CPU utilization, freeable memory, database connections, cluster storage capacity, and read/write IOPS. Aurora MySQL uses remaining volume space (default 100 GiB); PostgreSQL uses volume bytes used (default 115 TiB, configurable for the engine storage limit). Both storage alarms support Serverless v2. IOPS alarms use the cluster maximum to cover writers and readers, including autoscaled readers. Tune the default 1000 IOPS thresholds to the workload. Storage periods are at least 5 minutes, and IOPS periods at least 1 minute, matching metric resolution. Supply alarm action ARNs to receive notifications. The freeable memory alarm threshold is entered in MiB in Ravion and converted to bytes for Terraform.
 
     CloudWatch log exports offer engine-specific log types: postgresql for Aurora PostgreSQL, or audit, error, general, and slowquery for Aurora MySQL. Each enabled log type is shown on the module Logs tab.
 
@@ -1440,7 +1482,7 @@ module:
     | Backup retention days | No | 7 | Aurora requires at least 1 day. |
     | Deletion protection | No | true | Helps prevent accidental deletion. |
     | Performance insights | No | true | Enables AWS Performance Insights. |
-    | CloudWatch alarms | No | true | Adds CPU, memory, and connection alarms. |
+    | CloudWatch alarms | No | true | Adds CPU, memory, connection, storage capacity, and read/write IOPS alarms. |
     | RDS Proxy | No | false | Creates an RDS Proxy connection pool in front of the cluster. |
     | Global database | No | false | Create or join an Aurora global database. |
     | Activity stream | No | false | Enables Database Activity Streams with a required KMS key. |

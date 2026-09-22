@@ -25,9 +25,9 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with automatic image/chart selection, production-registry Ravion provider, durable executor Jobs, two-replica HA placed like Karpenter and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, shared observability, Karpenter with opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, and `rvn-eks-cron` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions                                                   | v1.0.0  |
-| `database/`   | `aurora`          | AWS Aurora clusters (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
+| `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
-| `database/`   | `rds`             | AWS RDS instances                                                      | v1.1.0  |
+| `database/`   | `rds`             | AWS RDS instances with free storage and read/write IOPS alarms          | v1.1.0  |
 | `database/`   | `rds-proxy`       | AWS RDS Proxy for connection pooling in front of RDS instances or Aurora clusters (standalone or via the `rds`/`aurora` modules) (includes `rvn-rds-proxy` module definition) | v1.0.0  |
 | `hosting/`    | `static_site`     | Composite static site hosting (S3 + CloudFront + OAC, optional CloudFront Function / Lambda@Edge) | v1.0.0  |
 | `messaging/`  | `sns`             | AWS SNS topics and subscriptions                                       | Planned |
@@ -60,7 +60,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | Definition | Name | Version | Module path |
 | ---------- | ---- | ------- | ----------- |
 | `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
-| `rvn-aurora` | Aurora Database | v1.2.1 | `database/aurora/` |
+| `rvn-aurora` | Aurora Database | v1.3.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
 | `rvn-aws-compliance` | AWS compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
@@ -81,7 +81,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-worker` | EKS Worker | v0.4.1 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
-| `rvn-rds` | RDS Database | v1.2.1 | `database/rds/` |
+| `rvn-rds` | RDS Database | v1.3.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.0.3 | `networking/route53/` |
 | `rvn-s3` | S3 Bucket | v1.0.1 | `storage/s3/` |

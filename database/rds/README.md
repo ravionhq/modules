@@ -370,6 +370,8 @@ module "mysql" {
 | cloudwatch_alarms_creation_enabled | Create CloudWatch alarms. | `bool` | `false` | no |
 | cloudwatch_alarm_cpu_threshold | CPU utilization threshold (%). | `number` | `80` | no |
 | cloudwatch_alarm_storage_threshold | Free storage threshold (bytes). | `number` | `5368709120` | no |
+| cloudwatch_alarm_read_iops_threshold | Read IOPS threshold; tune to workload capacity. | `number` | `1000` | no |
+| cloudwatch_alarm_write_iops_threshold | Write IOPS threshold; tune to workload capacity. | `number` | `1000` | no |
 | cloudwatch_alarm_connections_threshold | Database connections threshold. | `number` | `100` | no |
 | cloudwatch_alarm_actions | ARNs to notify on ALARM. | `list(string)` | `[]` | no |
 | cloudwatch_ok_actions | ARNs to notify on OK. | `list(string)` | `[]` | no |
@@ -743,4 +745,18 @@ Valid log export types depend on the database engine:
 | `aws_db_option_group` | 0 or 1 | Engine options (if `option_group_creation_enabled = true`) |
 | `aws_iam_role` | 0 or 1 | Enhanced Monitoring role (if `monitoring_role_creation_enabled = true`) |
 | `aws_iam_role_policy_attachment` | 0 or 1 | Monitoring role policy attachment |
-| `aws_cloudwatch_metric_alarm` | 0 or 3 | CPU, storage, connections alarms (if `cloudwatch_alarms_creation_enabled = true`) |
+| `aws_cloudwatch_metric_alarm` | 0 or 5 | CPU, storage, connections, read/write IOPS alarms (if `cloudwatch_alarms_creation_enabled = true`) |
+
+## Storage and I/O alarms
+
+Enable `cloudwatch_alarms_creation_enabled` and provide `cloudwatch_alarm_actions`
+(e.g. an SNS topic ARN) to receive notifications. Ravion defaults alarm creation to
+true; direct Terraform usage defaults to false. Read and write IOPS each default
+to 1000 operations/second; tune these thresholds to the workload and capacity.
+New alarms use `missing` for missing data so unavailable metrics remain visible
+as INSUFFICIENT_DATA. IOPS periods are clamped to at least 60 seconds.
+
+The existing `FreeStorageSpace` alarm remains enabled alongside the new
+`ReadIOPS` and `WriteIOPS` alarms. These alarms target the primary instance;
+read replicas need their own alarms. `cloudwatch_alarm_arns` adds `read_iops` and
+`write_iops` while retaining existing keys.
