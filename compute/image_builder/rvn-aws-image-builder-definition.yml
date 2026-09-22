@@ -492,8 +492,9 @@ module:
       description: Regions the finished image is copied to, beyond the build region.
       id: distribution_regions
       label: Additional regions
-      placeholder: us-east-1
+      placeholder: Select a region
       type: string_array
+      values: $values:aws/regions
     - default: false
       description: Make every image produced launchable by any AWS account. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in every region the image lands in.
       id: public
