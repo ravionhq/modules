@@ -26,3 +26,5 @@ nodePool:
   architectures: ["amd64"]
   cpuLimit: 100
   expireAfter: 720h
+  consolidationPolicy: WhenEmptyOrUnderutilized
+  consolidateAfter: 15m

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -39,7 +39,7 @@ done
 # module carries its own charts and they are tested from here too.
 chart_path() {
   case "$1" in
-    karpenter-resources) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    karpenter-resources | warm-capacity) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -139,6 +139,11 @@ test_rvn_eks_web() {
   assert_eq "web: probe timings come from values" \
     "10 10 5 3" \
     "$(q "${default}" "${ctr} | .livenessProbe | [.initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold] | join(\" \")")"
+  local fast_rollout
+  fast_rollout="$(render "${chart}" fast-rollout --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.readiness.initialDelaySeconds=0 --set probes.readiness.periodSeconds=1 --set-string strategy.maxSurge=100%)"
+  assert_eq "web: fast rollout readiness and surge settings render exactly" \
+    "0 1 100%" \
+    "$(q "${fast_rollout}" "${ctr} | .readinessProbe.initialDelaySeconds") $(q "${fast_rollout}" "${ctr} | .readinessProbe.periodSeconds") $(q "${fast_rollout}" "${dep} | .spec.strategy.rollingUpdate.maxSurge")"
   assert_eq "web: startup probe is off by default" \
     "" "$(q "${default}" "${ctr} | .startupProbe")"
   assert_eq "web: startup probe renders when enabled" \
@@ -391,6 +396,24 @@ test_rvn_eks_worker() {
   assert_eq "worker: no spread constraint when topologySpread is disabled" \
     "" "$(q "${zone_off}" "${tsc}")"
 
+  # A worker loses in-flight work when it is evicted, so a fleet drained all at
+  # once loses all of it. The budget is on by default wherever it can be, and
+  # skipped where it would block drains instead of pacing them.
+  local pdb='.[] | select(.kind == "PodDisruptionBudget")'
+  assert_eq "worker: no PodDisruptionBudget on the single-replica default" \
+    "0" "$(count "${default}" PodDisruptionBudget)"
+  assert_eq "worker: PodDisruptionBudget rendered above the replica floor" \
+    "1" "$(count "${full}" PodDisruptionBudget)"
+  assert_eq "worker: PodDisruptionBudget keeps minAvailable and lets unhealthy pods go" \
+    "1 AlwaysAllow" "$(q "${full}" "${pdb} | [.spec.minAvailable, .spec.unhealthyPodEvictionPolicy] | join(\" \")")"
+  assert_eq "worker: PodDisruptionBudget selects this release's pods" \
+    "rvn-eks-worker test-release" \
+    "$(q "${full}" "${pdb} | .spec.selector.matchLabels | [.\"app.kubernetes.io/name\", .\"app.kubernetes.io/instance\"] | join(\" \")")"
+  local pdb_single
+  pdb_single="$(render "${chart}" pdb-single --values "${CHARTS_DIR}/${chart}/ci/pdb-single-replica-values.yaml")"
+  assert_eq "worker: PodDisruptionBudget skipped when it would block every drain" \
+    "0" "$(count "${pdb_single}" PodDisruptionBudget)"
+
   test_secrets_contract "${chart}" "${full}" "${default}" Deployment
 }
 
@@ -565,6 +588,42 @@ test_karpenter_resources() {
 }
 
 ################################################################################
+# warm-capacity (compute/eks/addons)
+################################################################################
+
+test_warm_capacity() {
+  local chart="warm-capacity"
+  local default default_enabled full dep pod ctr
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  default_enabled="$(render "${chart}" default-enabled --set enabled=true)"
+  full="$(render "${chart}" full --values "$(chart_path "${chart}")/ci/full-values.yaml")"
+  dep='.[] | select(.kind == "Deployment")'
+  pod="${dep} | .spec.template.spec"
+  ctr="${pod} | .containers[0]"
+
+  assert_eq "${chart}: disabled values render no reservation objects" \
+    "0 0" "$(count "${default}" Deployment) $(count "${default}" PriorityClass)"
+  assert_eq "${chart}: enabled values render reservation and low priority class" \
+    "1 1 -10 Never" \
+    "$(count "${full}" Deployment) $(count "${full}" PriorityClass) $(q "${full}" '.[] | select(.kind == "PriorityClass") | .value') $(q "${full}" '.[] | select(.kind == "PriorityClass") | .preemptionPolicy')"
+  assert_eq "${chart}: defaults reserve six executor slots plus a two-pod app surge" \
+    "8 100m 256Mi 1Gi" \
+    "$(q "${default_enabled}" "${dep} | .spec.replicas") $(q "${default_enabled}" "${ctr} | .resources.requests.cpu") $(q "${default_enabled}" "${ctr} | .resources.requests.memory") $(q "${default_enabled}" "${ctr} | .resources.requests.\"ephemeral-storage\"")"
+  assert_eq "${chart}: reservation replicas and requests reach the pod" \
+    "9 250m 512Mi 2Gi" \
+    "$(q "${full}" "${dep} | .spec.replicas") $(q "${full}" "${ctr} | .resources.requests.cpu") $(q "${full}" "${ctr} | .resources.requests.memory") $(q "${full}" "${ctr} | .resources.requests.\"ephemeral-storage\"")"
+  assert_eq "${chart}: placeholders terminate immediately and carry no API token" \
+    "0 false" \
+    "$(q "${full}" "${pod} | .terminationGracePeriodSeconds") $(q "${full}" "${pod} | .automountServiceAccountToken")"
+  assert_eq "${chart}: node selection and tolerations are configurable" \
+    "default dedicated apps NoSchedule" \
+    "$(q "${full}" "${pod} | .nodeSelector.\"karpenter.sh/nodepool\"") $(q "${full}" "${pod} | .tolerations[0] | [.key, .value, .effect] | join(\" \" )")"
+  assert_eq "${chart}: optional topology spread reaches the manifest" \
+    "1 kubernetes.io/hostname DoNotSchedule" \
+    "$(q "${full}" "${pod} | .topologySpreadConstraints[0] | [.maxSkew, .topologyKey, .whenUnsatisfiable] | join(\" \" )")"
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -574,6 +633,7 @@ for chart in "${CHARTS[@]}"; do
     rvn-eks-worker) test_rvn_eks_worker ;;
     rvn-eks-cron) test_rvn_eks_cron ;;
     karpenter-resources) test_karpenter_resources ;;
+    warm-capacity) test_warm_capacity ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

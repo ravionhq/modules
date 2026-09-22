@@ -1,0 +1,12 @@
+{{- if .Values.enabled }}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Values.priorityClass.name }}
+  labels:
+    {{- include "warm-capacity.labels" . | nindent 4 }}
+value: {{ .Values.priorityClass.value }}
+globalDefault: false
+preemptionPolicy: Never
+description: Preemptible placeholders that reserve capacity for Ravion executors and app rollouts.
+{{- end }}

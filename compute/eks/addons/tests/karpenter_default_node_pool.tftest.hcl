@@ -108,3 +108,62 @@ run "rejects_a_non_kms_key_arn" {
   }
   expect_failures = [var.karpenter_default_node_pool]
 }
+
+# Consolidation reclaims nodes that are empty or underused. How SOON it does so
+# decides whether a cluster is efficient or unstable: a node is only worth
+# launching if it outlives the scheduling decision that asked for it, and a
+# consolidation window shorter than a rollout takes will delete nodes that were
+# just created for pods that have not landed on them yet, evicting running pods
+# on the way. The default is therefore minutes, not seconds, and both halves
+# are tunable for clusters that want to trade one for the other.
+run "consolidation_defaults_are_not_eager" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).nodePool.consolidateAfter == "15m"
+    error_message = "A node must outlive the scheduling decision that created it; the default consolidation window is 15m."
+  }
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).nodePool.consolidationPolicy == "WhenEmptyOrUnderutilized"
+    error_message = "The default policy must still reclaim underused nodes, only less eagerly."
+  }
+}
+
+run "consolidation_is_tunable" {
+  command = plan
+  variables {
+    karpenter_default_node_pool = {
+      consolidation_policy = "WhenEmpty"
+      consolidate_after    = "1h"
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).nodePool.consolidationPolicy == "WhenEmpty"
+    error_message = "A cluster that only wants empty nodes reclaimed must be able to say so."
+  }
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).nodePool.consolidateAfter == "1h"
+    error_message = "The consolidation window must be tunable."
+  }
+}
+
+run "rejects_an_unknown_consolidation_policy" {
+  command = plan
+  variables {
+    karpenter_default_node_pool = {
+      consolidation_policy = "Never"
+    }
+  }
+  expect_failures = [var.karpenter_default_node_pool]
+}
+
+run "rejects_a_malformed_consolidation_window" {
+  command = plan
+  variables {
+    karpenter_default_node_pool = {
+      consolidate_after = "15 minutes"
+    }
+  }
+  expect_failures = [var.karpenter_default_node_pool]
+}
