@@ -23,7 +23,7 @@ resource "aws_cloudwatch_event_connection" "notify" {
   auth_parameters {
     api_key {
       key   = var.notify_header_name
-      value = var.notify_header_value
+      value = local.notify_header_value
     }
   }
 }

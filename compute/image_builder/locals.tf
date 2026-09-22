@@ -151,9 +151,38 @@ locals {
 
   launch_permission_enabled = var.public || length(var.launch_account_ids) > 0 || length(var.launch_organization_arns) > 0
 
+  # The header value is given here, or kept in Parameter Store or Secrets
+  # Manager and read on deploy. A caller that names no source is read by
+  # whichever one it filled in.
+  notify_secret_source = (
+    var.notify_secret_source != null ? var.notify_secret_source :
+    try(trimspace(var.notify_header_parameter), "") != "" ? "parameter_store" :
+    try(trimspace(var.notify_header_secret), "") != "" ? "secrets_manager" :
+    "value"
+  )
+
+  # Whether the source names something, rather than what it holds. The value
+  # behind a parameter or a secret is unknown until the data source is read,
+  # and a count that waited for it could not be planned.
+  notify_secret_given = (
+    local.notify_secret_source == "parameter_store" ? try(trimspace(var.notify_header_parameter), "") != "" :
+    local.notify_secret_source == "secrets_manager" ? try(trimspace(var.notify_header_secret), "") != "" :
+    try(trimspace(var.notify_header_value), "") != ""
+  )
+
   # A notification needs somewhere to go and something to prove it came from
   # this account; without both it is not configured, not half-configured.
-  notify_enabled = var.notify_url != "" && var.notify_header_value != ""
+  notify_enabled = try(trimspace(var.notify_url), "") != "" && local.notify_secret_given
+
+  notify_header_value = (
+    local.notify_secret_source == "parameter_store" ? data.aws_ssm_parameter.notify_header[0].value :
+    local.notify_secret_source == "secrets_manager" ? (
+      try(trimspace(var.notify_header_secret_json_key), "") == "" ?
+      data.aws_secretsmanager_secret_version.notify_header[0].secret_string :
+      jsondecode(data.aws_secretsmanager_secret_version.notify_header[0].secret_string)[var.notify_header_secret_json_key]
+    ) :
+    var.notify_header_value
+  )
 
   # EventBridge and IAM both cap a name at 64 characters, and name may use all
   # 64 on its own. A name too long for its suffix keeps its readable head, and

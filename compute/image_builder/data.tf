@@ -47,6 +47,24 @@ data "aws_ami" "parent_snapshot" {
   }
 }
 
+# The header value an endpoint checks, when it is kept somewhere rather than
+# given here. EventBridge takes the value itself, not a reference to it, so it
+# is read on the deploy that writes the connection: rotating the parameter or
+# the secret afterwards reaches the endpoint on the next deploy, not before.
+data "aws_ssm_parameter" "notify_header" {
+  count = local.notify_enabled && local.notify_secret_source == "parameter_store" ? 1 : 0
+
+  region = local.region
+  name   = var.notify_header_parameter
+}
+
+data "aws_secretsmanager_secret_version" "notify_header" {
+  count = local.notify_enabled && local.notify_secret_source == "secrets_manager" ? 1 : 0
+
+  region    = local.region
+  secret_id = var.notify_header_secret
+}
+
 # The account setting encrypts every new EBS volume in a region, including the
 # copies distribution makes, and no recipe can opt out of it.
 data "aws_ebs_encryption_by_default" "current" {

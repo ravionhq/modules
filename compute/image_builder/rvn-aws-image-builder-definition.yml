@@ -978,11 +978,61 @@ module:
         notify_url:
           not: ""
       type: string
-    - collapsible: true
-      description: Value of that header, which the endpoint checks before it trusts the call.
+    - default: value
+      description: Where the header value comes from. A parameter or a secret is read on each deploy, so rotating it reaches the endpoint on the next deploy rather than the moment it changes.
+      id: notify_secret_source
+      label: Header value source
+      required: true
+      show_when:
+        notify_url:
+          not: ""
+      type: string
+      values:
+        - description: Enter the value here.
+          label: Value
+          value: value
+        - description: Read it from an SSM parameter.
+          label: Parameter Store
+          value: parameter_store
+        - description: Read it from a Secrets Manager secret.
+          label: Secrets Manager
+          value: secrets_manager
+    - description: Value of that header, which the endpoint checks before it trusts the call.
       id: notify_header_value
       label: Notify header value
+      required: true
       show_when:
+        notify_secret_source: value
+        notify_url:
+          not: ""
+      type: string
+    - description: Name or ARN of the parameter holding the header value. A SecureString is decrypted on read, so the deploy needs to be allowed ssm:GetParameter on it and kms:Decrypt on its key.
+      id: notify_header_parameter
+      label: Parameter
+      placeholder: /ravion/image-builder/notify-header
+      required: true
+      show_when:
+        notify_secret_source: parameter_store
+        notify_url:
+          not: ""
+      type: string
+    - description: Name or ARN of the secret holding the header value. The deploy needs to be allowed secretsmanager:GetSecretValue on it, and kms:Decrypt on its key when the secret uses a customer-managed one.
+      id: notify_header_secret
+      label: Secret
+      placeholder: ravion/image-builder/notify-header
+      required: true
+      show_when:
+        notify_secret_source: secrets_manager
+        notify_url:
+          not: ""
+      type: string
+    - collapsible: true
+      description: Key to read out of a secret that stores JSON. Leave blank to use the whole secret.
+      id: notify_header_secret_json_key
+      label: Secret JSON key
+      placeholder: header
+      show_when:
+        notify_secret_source: secrets_manager
         notify_url:
           not: ""
       type: string
@@ -1091,7 +1141,11 @@ module:
         manage_image_block_public_access: << module.input.manage_image_block_public_access >>
         name: << module.input.name >>
         notify_header_name: << module.input.notify_header_name >>
+        notify_header_parameter: << module.input.notify_header_parameter || "" >>
+        notify_header_secret: << module.input.notify_header_secret || "" >>
+        notify_header_secret_json_key: << module.input.notify_header_secret_json_key || "" >>
         notify_header_value: << module.input.notify_header_value || "" >>
+        notify_secret_source: << module.input.notify_secret_source || nil >>
         notify_url: << module.input.notify_url || "" >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
         parent_image_lookup: >-
@@ -1225,6 +1279,22 @@ module:
 
     Image Builder drives the build instance through the Systems Manager agent. On a parent image that does not ship the agent, install it in Build instance user data.
 
+    ## Build notifications
+
+    Notify endpoint forwards an event to an HTTPS endpoint once an image has finished building and reached every region it is distributed to. It is the only way to learn about a build nobody started from a deploy: a schedule, or a rebuild triggered by a new parent image. The notification carries the image's ARN, and the endpoint reads the rest back from Image Builder.
+
+    The endpoint needs something to tell the call apart from any other caller, so the notification carries a header. Header value source says where its value comes from.
+
+    | Source | What it reads |
+    | --- | --- |
+    | Value | The value entered here. |
+    | Parameter Store | An SSM parameter, by name or ARN. |
+    | Secrets Manager | A Secrets Manager secret, by name or ARN. Name a Secret JSON key to read one field out of a secret that stores JSON. |
+
+    EventBridge is given the value itself rather than a reference to it, and two things follow. The deploy reads the parameter or the secret, so the role it runs as has to be allowed `ssm:GetParameter` or `secretsmanager:GetSecretValue` on it, and `kms:Decrypt` on the key behind a SecureString or a customer-managed secret. And rotation is not live: the value is read on the deploy that writes the connection, so a rotated parameter or secret reaches the endpoint on the next deploy rather than the moment it changes.
+
+    Only images built from this pipeline's current recipe are forwarded. The recipe moves whenever its content does and the rule moves with it in the same deploy, so an image still building against the previous recipe when that happens finishes unannounced.
+
     ## Sharing
 
     Images are private by default. Share them with listed accounts or AWS Organizations, or turn on Public image to let any AWS account launch them.
@@ -1265,6 +1335,8 @@ module:
     | Allow public AMI sharing in this account | No | Off | Clears the account-wide block in every region an image lands in. Stays cleared after this module is destroyed. |
     | Shared account IDs | No | None | Accounts granted launch permission. |
     | Shared organization ARNs | No | None | Organizations whose accounts can launch the image. |
+    | Notify endpoint | No | None | Where a finished build is announced. |
+    | Header value source | No | Value | Whether the notification header value is entered here or read from Parameter Store or Secrets Manager on each deploy. |
 
     ## Design decisions
 

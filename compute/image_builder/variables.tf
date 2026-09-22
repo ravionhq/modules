@@ -456,9 +456,50 @@ variable "notify_header_name" {
   default     = "X-Lambda-Secret"
 }
 
+variable "notify_secret_source" {
+  type        = string
+  description = "Where the header value comes from: value for notify_header_value, parameter_store for notify_header_parameter, secrets_manager for notify_header_secret. Null is read from whichever one is filled in."
+  default     = null
+
+  validation {
+    condition     = var.notify_secret_source == null || contains(["value", "parameter_store", "secrets_manager"], coalesce(var.notify_secret_source, "value"))
+    error_message = "The notify_secret_source must be value, parameter_store or secrets_manager."
+  }
+
+  # A named source that holds nothing would leave the endpoint unprotected
+  # rather than unnotified, so it is refused here instead of read as "off".
+  validation {
+    condition = (
+      var.notify_secret_source == null ||
+      var.notify_secret_source == "value" ||
+      (var.notify_secret_source == "parameter_store" && try(trimspace(var.notify_header_parameter), "") != "") ||
+      (var.notify_secret_source == "secrets_manager" && try(trimspace(var.notify_header_secret), "") != "")
+    )
+    error_message = "A notify_secret_source of parameter_store needs notify_header_parameter, and one of secrets_manager needs notify_header_secret."
+  }
+}
+
 variable "notify_header_value" {
   type        = string
-  description = "Value of that header."
+  description = "Value of that header, given here."
   default     = ""
   sensitive   = true
+}
+
+variable "notify_header_parameter" {
+  type        = string
+  description = "Name or ARN of the SSM Parameter Store parameter holding the header value. A SecureString is decrypted on read, so the deploy needs kms:Decrypt on its key as well as ssm:GetParameter."
+  default     = ""
+}
+
+variable "notify_header_secret" {
+  type        = string
+  description = "Name or ARN of the Secrets Manager secret holding the header value. The deploy needs secretsmanager:GetSecretValue on it, and kms:Decrypt on its key when the secret uses a customer-managed one."
+  default     = ""
+}
+
+variable "notify_header_secret_json_key" {
+  type        = string
+  description = "Key to read out of a Secrets Manager secret that stores JSON. Empty uses the whole secret string."
+  default     = ""
 }

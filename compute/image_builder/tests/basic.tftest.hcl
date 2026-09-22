@@ -101,6 +101,20 @@ mock_provider "aws" {
       enabled = false
     }
   }
+
+  override_data {
+    target = data.aws_ssm_parameter.notify_header
+    values = {
+      value = "from-parameter-store"
+    }
+  }
+
+  override_data {
+    target = data.aws_secretsmanager_secret_version.notify_header
+    values = {
+      secret_string = "{\"header\":\"from-secrets-manager\"}"
+    }
+  }
 }
 
 variables {
@@ -1008,6 +1022,92 @@ run "no_notification_without_a_secret" {
   assert {
     condition     = length(aws_cloudwatch_event_rule.notify) == 0
     error_message = "An endpoint with no secret must not create a rule"
+  }
+}
+
+# The header value can be kept in Parameter Store or Secrets Manager instead of
+# given here. EventBridge takes the value itself, so the module reads it.
+run "the_header_value_can_come_from_parameter_store" {
+  command = plan
+
+  variables {
+    notify_url              = "https://api.example.com/hooks/image-built"
+    notify_secret_source    = "parameter_store"
+    notify_header_parameter = "/ravion/image-builder/notify-header"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify) == 1
+    error_message = "A parameter must be enough to notify"
+  }
+
+  assert {
+    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "from-parameter-store"
+    error_message = "The connection must carry the value the parameter holds"
+  }
+}
+
+run "the_header_value_can_come_from_secrets_manager" {
+  command = plan
+
+  variables {
+    notify_url           = "https://api.example.com/hooks/image-built"
+    notify_secret_source = "secrets_manager"
+    notify_header_secret = "ravion/image-builder/notify-header"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify) == 1
+    error_message = "A secret must be enough to notify"
+  }
+
+  assert {
+    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "{\"header\":\"from-secrets-manager\"}"
+    error_message = "A secret with no key named must be used whole"
+  }
+}
+
+run "a_json_secret_can_name_the_key_to_read" {
+  command = plan
+
+  variables {
+    notify_url                    = "https://api.example.com/hooks/image-built"
+    notify_secret_source          = "secrets_manager"
+    notify_header_secret          = "ravion/image-builder/notify-header"
+    notify_header_secret_json_key = "header"
+  }
+
+  assert {
+    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "from-secrets-manager"
+    error_message = "A named key must be read out of the secret"
+  }
+}
+
+# A source that names nothing would leave the endpoint unprotected rather than
+# unnotified.
+run "a_named_secret_source_must_name_something" {
+  command = plan
+
+  variables {
+    notify_url           = "https://api.example.com/hooks/image-built"
+    notify_secret_source = "secrets_manager"
+  }
+
+  expect_failures = [var.notify_secret_source]
+}
+
+# Nothing names a source, so the one that was filled in is the one that counts.
+run "the_secret_source_is_read_from_what_was_filled_in" {
+  command = plan
+
+  variables {
+    notify_url              = "https://api.example.com/hooks/image-built"
+    notify_header_parameter = "/ravion/image-builder/notify-header"
+  }
+
+  assert {
+    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "from-parameter-store"
+    error_message = "A parameter on its own must be read as the source"
   }
 }
 
