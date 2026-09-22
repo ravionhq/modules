@@ -139,6 +139,12 @@ Use `show_when` for build-type, EC2-only, load-balancer-only, autoscaling-only, 
 
 Descriptions should add information the label does not convey. Omit section descriptions that only list the fields below them. For toggles, explain why to keep the feature enabled and when disabling it makes sense; mention material costs or prerequisites. For thresholds, state the direction, scope, units, or evaluation window only where the label leaves them unclear. Avoid repeating "alarm" or internal conversion details in every description.
 
+Verify help text against executable config and Terraform resources, not existing prose. Check comparison operators (`>` versus `>=`, and lower bounds), statistics, units, resource dimensions, minimum evaluation periods, and prerequisites. Describe notification state transitions accurately and avoid implying that every threshold breach sends a notification or that SNS is the only supported destination.
+
+Distinguish omitted inputs, empty maps, explicit empty lists, `0`, and `false`. For example, an omitted regional override can inherit shared destinations while a region explicitly mapped to `[]` disables direct actions there; do not describe both as "leave empty."
+
+Audit the full affected input sections across every consuming definition after expanding shared partials. Read each label and description together, including section descriptions and recovery actions. Remove redundant help text, preserve useful behavioral details, and verify that wording-only edits leave compiled configuration unchanged apart from descriptions.
+
 Use `values` for numeric inputs with a finite supported set, such as CloudWatch retention periods. Include every supported value, and preserve optional inheritance separately from explicit choices such as `0` for indefinite retention.
 
 ## Input Immutability
