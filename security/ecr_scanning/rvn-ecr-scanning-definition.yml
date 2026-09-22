@@ -1,0 +1,58 @@
+definition:
+  type: rvn-ecr-scanning
+  name: AWS ECR scanning
+  description: Enables Basic scan-on-push for all private ECR repositories across the selected AWS Regions.
+release:
+  version: 0.1.0
+  description: Enable registry-wide ECR image scanning on push across selected AWS Regions.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $merge:
+        - ../../partials/inputs/aws-region.yml
+      description: Region where the Terraform runner executes. ECR scanning is configured in the Regions selected below.
+    - id: section_scanning
+      label: Image scanning
+      type: section
+    - id: regions
+      label: Regions
+      description: Enable Basic scan-on-push for every existing and future private ECR repository in these Regions. Replaces existing registry scanning settings, including Enhanced scanning. Use one owner per account and Region.
+      type: string_array
+      required: true
+      add_button_label: Add Region
+      values: $values:aws/regions
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: security/ecr_scanning
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        regions: << module.input.regions >>
+  readme: |
+    Enables Basic image scanning on push for all private ECR repositories in the selected AWS Regions.
+
+    ## Configuration
+
+    Select an AWS account, the Region where the Terraform runner executes, and every Region whose ECR registry should scan images on push. All selected Regions must already be enabled for the account.
+
+    The module writes a registry-level rule matching `*`, covering existing and future repositories, including images for ECS, EKS, EC2, and Lambda. This declares the registry configuration used by compliance checks such as OneLeet's image-scanning monitor.
+
+    Basic scanning checks operating-system vulnerabilities when new images are pushed. It does not enable continuous scanning or scan all existing images retroactively.
+
+    ## Registry ownership
+
+    Deploy once per account with all required Regions, or use instances with non-overlapping Regions. Each registry has one scanning configuration, so individual service modules must not also manage it.
+
+    Applying replaces any existing Enhanced scanning or custom filters with Basic scan-on-push for all repositories. Review existing settings before adopting this module. Manually configured registries can be managed by applying the module.
+
+    Removing a Region or destroying the module resets that registry to Basic scanning without rules. Repositories and images are retained.
+
+    ## Learn more
+
+    - [ECR scanning filters](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-filters.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/security/ecr_scanning)
