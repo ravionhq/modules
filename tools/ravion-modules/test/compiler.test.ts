@@ -180,10 +180,12 @@ describe("compiler", () => {
     const strategy = assertRecord(values.strategy, "module.deploy.definition.values.strategy");
     assert.equal(
       strategy.maxSurge,
-      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25 >>%",
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%",
     );
     assert.equal(findInput(inputs, "readiness_probe_period_seconds").min, 1);
     assert.equal(findInput(inputs, "rollout_max_surge_percent").max, 100);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").default, 100);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").collapsible, true);
     assert.equal(liveness.path, "<< module.input.liveness_probe_path || module.input.health_check_path >>");
     assert.equal(
       startup.path,
@@ -201,6 +203,23 @@ describe("compiler", () => {
     assert.equal(inputs.some((input) => input.id === "public_web_service_enabled"), false);
     assert.equal(inputs.some((input) => input.id === "healthy_threshold"), false);
     assert.equal(inputs.some((input) => input.id === "unhealthy_threshold"), false);
+  });
+
+  it("compiles EKS worker rollout surge into Helm values with a collapsible full-surge default", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-worker-definition.yml"));
+    const input = findInput(getModuleInputs(compiled.module), "rollout_max_surge_percent");
+    assert.equal(input.default, 100);
+    assert.equal(input.collapsible, true);
+    assert.equal(input.min, 1);
+    assert.equal(input.max, 100);
+    const deploy = assertRecord(compiled.module.deploy, "module.deploy");
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+    const strategy = assertRecord(values.strategy, "values.strategy");
+    assert.equal(
+      strategy.maxSurge,
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%",
+    );
   });
 
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {

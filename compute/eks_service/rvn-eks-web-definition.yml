@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.3.0
-  description: Tune rollout speed with configurable readiness checks as frequent as every second, no initial readiness delay, and up to 100% extra pods during an update. Existing services keep the previous 10-second readiness period, 5-second initial delay, and 25% surge defaults unless changed.
+  version: 1.3.1
+  description: Default rolling updates to 100% surge so a full replacement set can start together when spare capacity is available. Zero-unavailable protection remains enabled, and the advanced surge setting can still be lowered.
 module:
   inputs:
     - id: section_cluster
@@ -359,7 +359,7 @@ module:
       collapsible: true
       max: 100
       min: 1
-      default: 25
+      default: 100
     - id: termination_grace_period_seconds
       label: Shutdown grace period (secs)
       type: number
@@ -498,7 +498,7 @@ module:
                 lifecycle:
                   preStopSleepSeconds: '<< module.input.pre_stop_sleep_seconds != nil ? module.input.pre_stop_sleep_seconds : 10 >>'
                 strategy:
-                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25 >>%'
+                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%'
                 podDisruptionBudget:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
@@ -830,7 +830,7 @@ module:
 
     ## Deployment
 
-    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable by default. **Maximum rollout surge (%)** controls how many replacements start together: 25% by default, or 100% for a full replacement set when enough capacity is already available.
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable. **Maximum rollout surge (%)** defaults to 100%, allowing a full replacement set to start together when enough matching capacity is already available. Lower this advanced setting to limit temporary capacity. Existing explicitly configured surge values are retained.
 
     ## Graceful shutdown
 
@@ -919,7 +919,7 @@ module:
     | Maximum pods | No | 3 | Upper bound when autoscaling |
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
-    | Maximum rollout surge (%) | No | 25 | Extra pods during rolling updates; up to 100% |
+    | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
     | Pods | No | 2 | Fixed pod count when autoscaling is disabled |
     | Shutdown grace period (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
     | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |

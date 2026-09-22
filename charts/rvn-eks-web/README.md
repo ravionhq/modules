@@ -116,7 +116,7 @@ shape. Liveness and readiness are on by default; startup is off.
 | `autoscaling.targetCPUUtilizationPercentage` | int/null | `70` | Set `null` to drop the CPU metric. |
 | `autoscaling.targetMemoryUtilizationPercentage` | int/null | `null` | Set a number to add a memory metric. |
 | `strategy.type` | string | `RollingUpdate` | Or `Recreate`. |
-| `strategy.maxSurge` | string/int | `25%` | |
+| `strategy.maxSurge` | string/int | `100%` | Full replacement set; lower to limit temporary capacity. |
 | `strategy.maxUnavailable` | string/int | `0` | Zero-downtime by default. |
 | `revisionHistoryLimit` | int | `10` | |
 | `terminationGracePeriodSeconds` | int | `30` | Seconds a pod has to shut down after SIGTERM, including any preStop sleep. Raise it for services that drain long-lived connections. |

@@ -15,6 +15,13 @@ This mirrors `compute/ecs_service`, where one root module serves web, worker, an
 
 The workload itself is not created here. Pods are deployed by Helm (the `rvn-eks-web`, `rvn-eks-worker`, and `rvn-eks-cron` charts), and the AWS Load Balancer Controller registers the Service's pod IPs into the target group through a `TargetGroupBinding` that the web chart renders from the `target_group_arn` output. Terraform owns the AWS objects; Helm owns the workload. This is the same split `compute/ecs_service` uses, with ECS's `RegisterTargets` replaced by the controller.
 
+Web and worker module inputs support the collapsible advanced setting
+`rollout_max_surge_percent` (default `100`, range `1`–`100`). This starts a full
+replacement set concurrently when enough matching node capacity is ready. Lower it
+to limit temporary capacity; existing explicitly configured values are retained.
+Helm retains `maxUnavailable: 0`; node-drain disruption budgets and graceful
+shutdown settings remain independent.
+
 ## Usage
 
 A web workload with a built image, a load balancer attachment, and an ECR repository:
