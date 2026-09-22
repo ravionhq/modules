@@ -164,7 +164,10 @@ output "cloudwatch_alarm_arns" {
   value = local.create_cloudwatch_alarms ? {
     cpu_utilization      = aws_cloudwatch_metric_alarm.cpu_utilization[0].arn
     freeable_memory      = aws_cloudwatch_metric_alarm.freeable_memory[0].arn
+    cluster_storage      = aws_cloudwatch_metric_alarm.cluster_storage[0].arn
     database_connections = aws_cloudwatch_metric_alarm.database_connections[0].arn
+    read_iops            = aws_cloudwatch_metric_alarm.read_iops[0].arn
+    write_iops           = aws_cloudwatch_metric_alarm.write_iops[0].arn
   } : {}
 }
 

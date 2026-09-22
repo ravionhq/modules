@@ -18,7 +18,7 @@
 - id: ecr_scan_on_push_enabled
   label: Scan images on push
   type: boolean
-  description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy.
+  description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy. Enabled by default to satisfy SOC 2 vulnerability-scanning requirements.
   collapsible: true
   show_when:
     build_source:

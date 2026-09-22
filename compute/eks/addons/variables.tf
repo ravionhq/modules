@@ -1627,3 +1627,46 @@ variable "prometheus_helm_values" {
   default     = []
   nullable    = false
 }
+
+variable "karpenter_interruption_queue_alarm_creation_enabled" {
+  type        = bool
+  description = "Create a CloudWatch message-age alarm for the Karpenter interruption queue."
+  default     = true
+  nullable    = false
+}
+
+variable "karpenter_interruption_queue_alarm_age_threshold_seconds" {
+  type        = number
+  description = "Maximum oldest-message age in seconds before entering ALARM; evaluated over one 60-second period."
+  default     = 60
+  nullable    = false
+
+  validation {
+    condition     = var.karpenter_interruption_queue_alarm_age_threshold_seconds > 0 && floor(var.karpenter_interruption_queue_alarm_age_threshold_seconds) == var.karpenter_interruption_queue_alarm_age_threshold_seconds
+    error_message = "The threshold must be a positive whole number of seconds."
+  }
+}
+
+variable "karpenter_interruption_queue_alarm_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when the interruption queue enters ALARM. Empty disables direct actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.karpenter_interruption_queue_alarm_actions) <= 5 && alltrue([for arn in var.karpenter_interruption_queue_alarm_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
+variable "karpenter_interruption_queue_alarm_ok_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when the interruption queue returns to OK. Empty disables direct recovery actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.karpenter_interruption_queue_alarm_ok_actions) <= 5 && alltrue([for arn in var.karpenter_interruption_queue_alarm_ok_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}

@@ -98,7 +98,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Security",
     description: "For identity, permissions, encryption keys, and least-privilege access.",
     sortOrder: 130,
-    definitionTypes: ["rvn-aws-iam-policy", "rvn-aws-iam-role", "rvn-aws-kms"],
+    definitionTypes: ["rvn-aws-compliance", "rvn-aws-iam-policy", "rvn-aws-iam-role", "rvn-aws-kms"],
   },
   {
     givenId: "iac",

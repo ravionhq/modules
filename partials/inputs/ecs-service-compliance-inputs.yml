@@ -1,0 +1,96 @@
+# Compliance section shared by every ECS service definition: log retention
+# and service-level CloudWatch alarms. Follow with the load-balancer-specific
+# alarm inputs (ALB or NLB) when the service has one, then
+# cloudwatch-alarm-common-inputs.yml.
+- id: section_compliance
+  label: Compliance
+  type: section
+- id: log_retention_days
+  label: Log retention (days)
+  type: number
+  description: Leave blank to inherit the cluster setting. Never expire keeps logs indefinitely.
+  collapsible: true
+  placeholder: Inherited from the ECS cluster
+  values:
+    - label: Never expire
+      value: 0
+    - label: 1 day
+      value: 1
+    - label: 3 days
+      value: 3
+    - label: 5 days
+      value: 5
+    - label: 7 days
+      value: 7
+    - label: 14 days
+      value: 14
+    - label: 30 days
+      value: 30
+    - label: 60 days
+      value: 60
+    - label: 90 days
+      value: 90
+    - label: 120 days
+      value: 120
+    - label: 150 days
+      value: 150
+    - label: 180 days
+      value: 180
+    - label: 365 days
+      value: 365
+    - label: 400 days
+      value: 400
+    - label: 545 days
+      value: 545
+    - label: 731 days
+      value: 731
+    - label: 1096 days
+      value: 1096
+    - label: 1827 days
+      value: 1827
+    - label: 2192 days
+      value: 2192
+    - label: 2557 days
+      value: 2557
+    - label: 2922 days
+      value: 2922
+    - label: 3288 days
+      value: 3288
+    - label: 3653 days
+      value: 3653
+  required: false
+  min: 0
+- id: cloudwatch_alarms_creation_enabled
+  label: Create CloudWatch alarms
+  type: boolean
+  description: Keep enabled to detect service degradation. Disable if another system provides equivalent monitoring. CloudWatch charges apply.
+  default: true
+- id: cloudwatch_alarm_cpu_threshold
+  label: CPU alarm threshold (%)
+  type: number
+  description: Triggers when the period average exceeds this value.
+  collapsible: true
+  max: 100
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 80
+- id: cloudwatch_alarm_memory_threshold
+  label: Memory alarm threshold (%)
+  type: number
+  description: Triggers when the period average exceeds this value.
+  collapsible: true
+  max: 100
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 80
+- id: cloudwatch_alarm_running_tasks_minimum
+  label: Minimum running tasks
+  type: number
+  description: Triggers when the period minimum falls below this value. Requires Container Insights on the cluster.
+  collapsible: true
+  min: 1
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 1
