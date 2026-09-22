@@ -4,7 +4,7 @@ definition:
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
   version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and optional CloudWatch alarms for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
 module:
   inputs:
     - id: section_cluster
@@ -813,7 +813,7 @@ module:
 
     Log retention (days) defaults to the value configured on the ECS cluster's Compliance section, so one cluster setting keeps every service consistent. Set a value here to override it for this service. Use 0 to retain logs indefinitely.
 
-    Enable Create CloudWatch alarms to add alarms for average CPU utilization, average memory utilization, and running task count. Because the service owns its target group, it also alarms on unhealthy targets, target 5xx responses, and target response time for this service only. Load balancer level alarms live on the ECS cluster.
+    CloudWatch alarms are enabled by default for average CPU utilization, average memory utilization, and running task count. Because the service owns its target group, it also alarms on unhealthy targets, target 5xx responses, and target response time for this service only. Load balancer level alarms live on the ECS cluster.
 
     The running task alarm uses the Container Insights `RunningTaskCount` metric and stays silent when Container Insights is disabled on the cluster. Every alarm treats missing data as not breaching and must breach for the configured number of consecutive periods before it fires. Add SNS topic ARNs as Alarm actions and OK actions to be notified.
 
@@ -865,7 +865,7 @@ module:
     | EFS file system                 | No       | false                      | Mount an EFS file system into the app container   |
     | EFS mount path                  | Yes*     | /mnt/efs                   | App container path for the referenced file system  |
     | Log retention (days) | No | Cluster default | Overrides the CloudWatch log retention inherited from the cluster |
-    | Create CloudWatch alarms | No | false | Adds CPU, memory, running task, unhealthy host, target 5xx, and target response time alarms |
+    | Create CloudWatch alarms | No | true | Adds CPU, memory, running task, unhealthy host, target 5xx, and target response time alarms |
     | Unhealthy hosts alarm threshold | No | 0 | Unhealthy targets in the service target group |
     | Target 5xx alarm threshold | No | 10 | 5xx responses from this service per period |
     | Target response time alarm threshold (seconds) | No | 1 | Average response time of this service |

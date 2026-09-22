@@ -607,13 +607,17 @@ run "no_ingress_security_groups_by_default" {
   }
 }
 
-# Test 31: CloudWatch alarms disabled by default
-run "cloudwatch_alarms_disabled_by_default" {
+# Test 31: CloudWatch alarms can be disabled explicitly
+run "cloudwatch_alarms_disabled" {
   command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = false
+  }
 
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_response_time) == 0
-    error_message = "No CloudWatch alarms should be created by default"
+    error_message = "No CloudWatch alarms should be created when explicitly disabled"
   }
 
   assert {
@@ -623,12 +627,8 @@ run "cloudwatch_alarms_disabled_by_default" {
 }
 
 # Test 32: CloudWatch alarms enabled with defaults
-run "cloudwatch_alarms_enabled" {
+run "cloudwatch_alarms_enabled_by_default" {
   command = plan
-
-  variables {
-    cloudwatch_alarms_creation_enabled = true
-  }
 
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1
@@ -709,5 +709,18 @@ run "cloudwatch_alarms_custom" {
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.target_response_time[0].ok_actions) == 1 && contains(aws_cloudwatch_metric_alarm.target_response_time[0].ok_actions, "arn:aws:sns:us-east-1:123456789012:recovered")
     error_message = "Alarms should notify the configured OK actions"
+  }
+}
+
+run "cloudwatch_alarms_null_uses_default" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = null
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 3 && length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1
+    error_message = "Expected alarms to be enabled by default, including null input"
   }
 }

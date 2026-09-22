@@ -337,7 +337,7 @@ variable "web_acl_arn" {
 variable "cloudwatch_alarms_creation_enabled" {
   type        = bool
   description = "Create CloudWatch alarms for load balancer 5xx responses, target 5xx responses, and target response time."
-  default     = false
+  default     = true
   nullable    = false
 }
 

@@ -194,6 +194,8 @@ module "api_service" {
 
 ## Inputs
 
+CloudWatch alarms are enabled by default. Set the creation toggle to `false` only when equivalent monitoring exists elsewhere. Existing explicit opt-outs remain disabled. Upgrading creates alarms on the next apply and incurs CloudWatch charges. Configure SNS action ARNs or an external EventBridge relay for notifications.
+
 ### General
 
 | Name | Description | Type | Default | Required |
@@ -216,7 +218,7 @@ module "api_service" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | log_retention_days | Default CloudWatch Logs retention (days) exposed as an output for services to inherit; 0 = indefinite | `number` | `90` | no |
-| alb_cloudwatch_alarms_creation_enabled | Create ELB 5xx, target 5xx, and target response time alarms on the public and private ALBs | `bool` | `false` | no |
+| alb_cloudwatch_alarms_creation_enabled | Create ELB 5xx, target 5xx, and target response time alarms on the public and private ALBs | `bool` | `true` | no |
 | alb_cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
 | alb_cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
 | alb_cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime (seconds) above which the ALB alarm fires | `number` | `1` | no |

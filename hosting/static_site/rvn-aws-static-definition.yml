@@ -292,7 +292,7 @@ module:
       label: Monitor CloudFront error rate
       type: boolean
       default: true
-      description: Alert when 5xx responses reach the configured percentage. Add notification action ARNs or configure an EventBridge alarm relay.
+      description: Keep enabled to detect failed requests. Disable if monitored elsewhere. Configure SNS actions or an EventBridge relay for notifications.
     - id: cloudwatch_alarm_error_rate_threshold
       label: Error rate threshold (%)
       type: number
@@ -333,7 +333,7 @@ module:
       default: []
       add_button_label: Add action ARN
       collapsible: true
-      description: SNS topics must be in us-east-1, where CloudFront alarms are created.
+      description: Use SNS topics in us-east-1.
       show_when:
         cloudwatch_alarms_creation_enabled: true
     - id: cloudwatch_ok_actions
@@ -342,7 +342,7 @@ module:
       default: []
       add_button_label: Add action ARN
       collapsible: true
-      description: SNS topics must be in us-east-1, where CloudFront alarms are created.
+      description: Use SNS topics in us-east-1.
       show_when:
         cloudwatch_alarms_creation_enabled: true
     - id: section_logging

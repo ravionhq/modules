@@ -932,20 +932,24 @@ run "default_container_port" {
 }
 
 ################################################################################
-# Test: CloudWatch alarms disabled by default
+# Test: CloudWatch alarms can be disabled explicitly
 ################################################################################
 
-run "cloudwatch_alarms_disabled_by_default" {
+run "cloudwatch_alarms_disabled" {
   command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = false
+  }
 
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.cpu_utilization) == 0 && length(aws_cloudwatch_metric_alarm.memory_utilization) == 0 && length(aws_cloudwatch_metric_alarm.running_tasks) == 0
-    error_message = "No service alarms should be created by default"
+    error_message = "No service alarms should be created when explicitly disabled"
   }
 
   assert {
     condition     = length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 0 && length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 0
-    error_message = "No target group alarms should be created by default"
+    error_message = "No target group alarms should be created when explicitly disabled"
   }
 
   assert {
@@ -1130,4 +1134,26 @@ run "cloudwatch_alarm_invalid_period" {
   }
 
   expect_failures = [var.cloudwatch_alarm_period]
+}
+
+run "cloudwatch_alarms_enabled_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 3 && length(aws_cloudwatch_metric_alarm.cpu_utilization) == 1 && length(aws_cloudwatch_metric_alarm.memory_utilization) == 1 && length(aws_cloudwatch_metric_alarm.running_tasks) == 1 && length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 0 && length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 0
+    error_message = "Expected alarms to be enabled by default, including null input"
+  }
+}
+
+run "cloudwatch_alarms_null_uses_default" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = null
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 3 && length(aws_cloudwatch_metric_alarm.cpu_utilization) == 1 && length(aws_cloudwatch_metric_alarm.memory_utilization) == 1 && length(aws_cloudwatch_metric_alarm.running_tasks) == 1 && length(aws_cloudwatch_metric_alarm.alb_unhealthy_hosts) == 0 && length(aws_cloudwatch_metric_alarm.nlb_unhealthy_hosts) == 0
+    error_message = "Expected alarms to be enabled by default, including null input"
+  }
 }

@@ -13,7 +13,7 @@ This module creates an AWS Application Load Balancer (ALB) with HTTP and HTTPS l
 - SNI support with additional SSL certificates
 - TLS 1.3 support with modern SSL policies
 - Security hardening (invalid header dropping, desync mitigation)
-- Optional CloudWatch alarms for load balancer 5xx, target 5xx, and target response time
+- CloudWatch alarms enabled by default for load balancer 5xx, target 5xx, and target response time
 
 ## Usage
 
@@ -337,9 +337,11 @@ spec:
 
 ### CloudWatch Alarms
 
+CloudWatch alarms are enabled by default. Set the creation toggle to `false` only when equivalent monitoring exists elsewhere. Existing explicit opt-outs remain disabled. Upgrading creates alarms on the next apply and incurs CloudWatch charges. Configure SNS action ARNs or an external EventBridge relay for notifications.
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| cloudwatch_alarms_creation_enabled | Create alarms for ELB 5xx, target 5xx, and target response time | `bool` | `false` | no |
+| cloudwatch_alarms_creation_enabled | Create alarms for ELB 5xx, target 5xx, and target response time | `bool` | `true` | no |
 | cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
 | cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
 | cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime in seconds above which the alarm fires (> 0) | `number` | `1` | no |

@@ -605,7 +605,7 @@ module:
       label: Monitor invocation error rate
       type: boolean
       default: true
-      description: Alert when failed invocations reach the configured percentage. Add notification action ARNs or configure an EventBridge alarm relay.
+      description: Keep enabled to detect invocation failures. Disable if monitored elsewhere. Configure SNS actions or an EventBridge relay for notifications.
     - id: cloudwatch_alarm_error_rate_threshold
       label: Error rate threshold (%)
       type: number
@@ -646,7 +646,7 @@ module:
       default: []
       add_button_label: Add action ARN
       collapsible: true
-      description: SNS topics must be in the alarm region. For Edge alarms, use the per-region overrides below.
+      description: SNS topics must share the metric region. Use the overrides below for Edge.
       show_when:
         cloudwatch_alarms_creation_enabled: true
     - id: cloudwatch_ok_actions
@@ -655,7 +655,7 @@ module:
       default: []
       add_button_label: Add action ARN
       collapsible: true
-      description: SNS topics must be in the alarm region. For Edge alarms, use the per-region overrides below.
+      description: SNS topics must share the metric region. Use the overrides below for Edge.
       show_when:
         cloudwatch_alarms_creation_enabled: true
     - id: cloudwatch_alarm_additional_regions
@@ -673,7 +673,7 @@ module:
       type: object
       default: {}
       collapsible: true
-      description: Map each alarm region to its action ARN list, for example us-west-2 to a local SNS topic. An empty list supports an external EventBridge relay.
+      description: Map regions to local SNS topic ARNs. Leave empty when using EventBridge for notifications.
       show_when:
         cloudwatch_alarms_creation_enabled: true
         lambda_type: edge
@@ -682,7 +682,7 @@ module:
       type: object
       default: {}
       collapsible: true
-      description: Map each alarm region to its action ARN list, for example us-west-2 to a local SNS topic. An empty list supports an external EventBridge relay.
+      description: Map regions to local SNS topic ARNs. Leave empty when using EventBridge for notifications.
       show_when:
         cloudwatch_alarms_creation_enabled: true
         lambda_type: edge

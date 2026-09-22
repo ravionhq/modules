@@ -5,24 +5,70 @@
 - id: section_compliance
   label: Compliance
   type: section
-  description: Log retention and CloudWatch alarms that support availability and monitoring controls. Alarm thresholds are hidden until alarms are enabled.
 - id: log_retention_days
   label: Log retention (days)
   type: number
-  description: Days to keep the service CloudWatch log group. Leave blank to inherit the retention configured on the ECS cluster. Must be a standard CloudWatch Logs retention value such as 30, 90, 180, or 365. Use 0 to retain logs indefinitely.
+  description: Leave blank to inherit the cluster setting. Never expire keeps logs indefinitely.
   collapsible: true
   placeholder: Inherited from the ECS cluster
+  values:
+    - label: Never expire
+      value: 0
+    - label: 1 day
+      value: 1
+    - label: 3 days
+      value: 3
+    - label: 5 days
+      value: 5
+    - label: 7 days
+      value: 7
+    - label: 14 days
+      value: 14
+    - label: 30 days
+      value: 30
+    - label: 60 days
+      value: 60
+    - label: 90 days
+      value: 90
+    - label: 120 days
+      value: 120
+    - label: 150 days
+      value: 150
+    - label: 180 days
+      value: 180
+    - label: 365 days
+      value: 365
+    - label: 400 days
+      value: 400
+    - label: 545 days
+      value: 545
+    - label: 731 days
+      value: 731
+    - label: 1096 days
+      value: 1096
+    - label: 1827 days
+      value: 1827
+    - label: 2192 days
+      value: 2192
+    - label: 2557 days
+      value: 2557
+    - label: 2922 days
+      value: 2922
+    - label: 3288 days
+      value: 3288
+    - label: 3653 days
+      value: 3653
   required: false
   min: 0
 - id: cloudwatch_alarms_creation_enabled
   label: Create CloudWatch alarms
   type: boolean
-  description: Create CloudWatch alarms for service CPU, memory, running task count, and load balancer target health when the service has a load balancer.
-  default: false
+  description: Keep enabled to detect service degradation. Disable if another system provides equivalent monitoring. CloudWatch charges apply.
+  default: true
 - id: cloudwatch_alarm_cpu_threshold
   label: CPU alarm threshold (%)
   type: number
-  description: Alarm when average service CPU utilization exceeds this percentage.
+  description: Maximum average CPU usage per period.
   collapsible: true
   max: 100
   min: 0
@@ -32,7 +78,7 @@
 - id: cloudwatch_alarm_memory_threshold
   label: Memory alarm threshold (%)
   type: number
-  description: Alarm when average service memory utilization exceeds this percentage.
+  description: Maximum average memory usage per period.
   collapsible: true
   max: 100
   min: 0
@@ -42,7 +88,7 @@
 - id: cloudwatch_alarm_running_tasks_minimum
   label: Minimum running tasks
   type: number
-  description: Alarm when fewer than this many tasks are running. Uses the Container Insights RunningTaskCount metric, so the ECS cluster must have Container Insights enabled.
+  description: Requires Container Insights on the cluster.
   collapsible: true
   min: 1
   show_when:

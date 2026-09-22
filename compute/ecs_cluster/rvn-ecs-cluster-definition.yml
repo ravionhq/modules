@@ -4,7 +4,7 @@ definition:
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
   version: 1.1.0
-  description: Add a Compliance section with a default log retention that ECS services inherit and optional CloudWatch alarms for the public and private Application Load Balancers, and document that Container Insights is enabled by default for SOC 2 compliance.
+  description: Add a Compliance section with a default log retention that ECS services inherit and CloudWatch alarms enabled by default for the public and private Application Load Balancers, and document that Container Insights is enabled by default for SOC 2 compliance.
 module:
   inputs:
     - id: network
@@ -52,9 +52,56 @@ module:
         - label: Disabled
           value: disabled
     - default: 90
-      description: Default CloudWatch Logs retention for ECS services in this cluster. Each service inherits this value unless it sets its own in its Compliance section. Must be a standard CloudWatch Logs retention value such as 30, 90, 180, or 365. Use 0 to retain logs indefinitely.
+      description: Inherited by services unless they set their own retention. Never expire keeps logs indefinitely.
       id: log_retention_days
       label: Default log retention (days)
+      values:
+        - label: Never expire
+          value: 0
+        - label: 1 day
+          value: 1
+        - label: 3 days
+          value: 3
+        - label: 5 days
+          value: 5
+        - label: 7 days
+          value: 7
+        - label: 14 days
+          value: 14
+        - label: 30 days
+          value: 30
+        - label: 60 days
+          value: 60
+        - label: 90 days
+          value: 90
+        - label: 120 days
+          value: 120
+        - label: 150 days
+          value: 150
+        - label: 180 days
+          value: 180
+        - label: 365 days
+          value: 365
+        - label: 400 days
+          value: 400
+        - label: 545 days
+          value: 545
+        - label: 731 days
+          value: 731
+        - label: 1096 days
+          value: 1096
+        - label: 1827 days
+          value: 1827
+        - label: 2192 days
+          value: 2192
+        - label: 2557 days
+          value: 2557
+        - label: 2922 days
+          value: 2922
+        - label: 3288 days
+          value: 3288
+        - label: 3653 days
+          value: 3653
       min: 0
       type: number
     - id: section_capacity
@@ -506,8 +553,8 @@ module:
       id: section_compliance
       label: Compliance
       type: section
-    - default: false
-      description: Create CloudWatch alarms for 5xx responses and target response time on the public and private Application Load Balancers. Network Load Balancers are not covered.
+    - default: true
+      description: Keep enabled to detect failed or slow requests on both ALBs. Disable if monitored elsewhere. CloudWatch charges apply; NLBs are excluded.
       id: cloudwatch_alarms_creation_enabled
       label: Create load balancer CloudWatch alarms
       type: boolean
@@ -609,7 +656,7 @@ module:
 
     ## Compliance
 
-    Enable Create load balancer CloudWatch alarms to add load balancer 5xx, target 5xx, and target response time alarms to the public and private Application Load Balancers. Thresholds, evaluation periods, and SNS actions are shared by both.
+    CloudWatch alarms for load balancer 5xx, target 5xx, and target response time are enabled by default on both ALBs. Thresholds, evaluation periods, and SNS actions are shared by both.
 
     Load balancer alarms cover the ALB-level metrics only. Per-service health, such as unhealthy targets and per-service error rates, is alarmed from each ECS service's own Compliance section. Network Load Balancers have no alarms in this module.
 
@@ -621,7 +668,7 @@ module:
     | ECS cluster name      | Yes      | `{project}-{env}`    | Name prefix for ECS and load balancer resources               |
     | Container insights    | No       | `enhanced`           | Collect enhanced task, service, cluster, and EC2 metrics in CloudWatch |
     | Default log retention (days) | No | `90`              | Log retention inherited by ECS services in this cluster        |
-    | Create load balancer CloudWatch alarms | No | `false` | Adds 5xx and response time alarms on both ALBs               |
+    | Create load balancer CloudWatch alarms | No | `true` | Adds 5xx and response time alarms on both ALBs               |
     | Fargate               | No       | `true`               | Allow services to use Fargate capacity                        |
     | Fargate Spot          | No       | `true`               | Allow services to use lower-cost interruptible Fargate Spot   |
     | EC2 instance type     | No       | —                    | Enables EC2 capacity when selected                            |

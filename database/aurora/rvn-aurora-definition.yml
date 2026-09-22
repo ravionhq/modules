@@ -869,7 +869,7 @@ module:
       type: number
     - collapsible: true
       default: 256
-      description: Displayed in MiB. Ravion converts this to bytes for Terraform.
+      description: Minimum available memory.
       id: cloudwatch_alarm_memory_threshold_mib
       label: Freeable memory alarm threshold (MiB)
       min: 1

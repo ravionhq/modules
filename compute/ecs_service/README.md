@@ -308,9 +308,11 @@ module "worker_service" {
 
 ### CloudWatch Alarms
 
+CloudWatch alarms are enabled by default. Set the creation toggle to `false` only when equivalent monitoring exists elsewhere. Existing explicit opt-outs remain disabled. Upgrading creates alarms on the next apply and incurs CloudWatch charges. Configure SNS action ARNs or an external EventBridge relay for notifications.
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| cloudwatch_alarms_creation_enabled | Create service CPU, memory, running task, and target group health alarms | `bool` | `false` | no |
+| cloudwatch_alarms_creation_enabled | Create service CPU, memory, running task, and target group health alarms | `bool` | `true` | no |
 | cloudwatch_alarm_cpu_threshold | Average CPUUtilization (%) above which the alarm fires | `number` | `80` | no |
 | cloudwatch_alarm_memory_threshold | Average MemoryUtilization (%) above which the alarm fires | `number` | `80` | no |
 | cloudwatch_alarm_running_tasks_minimum | Alarm when Container Insights RunningTaskCount drops below this | `number` | `1` | no |

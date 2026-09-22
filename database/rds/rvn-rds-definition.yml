@@ -835,7 +835,7 @@ module:
       type: number
     - collapsible: true
       default: 5
-      description: Displayed in GiB. Ravion converts this to bytes for Terraform.
+      description: Minimum available storage.
       id: cloudwatch_alarm_storage_threshold_gib
       label: Free storage alarm threshold (GiB)
       min: 0

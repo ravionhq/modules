@@ -3,7 +3,7 @@
 - id: cloudwatch_alarm_evaluation_periods
   label: Alarm evaluation periods
   type: number
-  description: Number of consecutive periods the threshold must be breached before an alarm fires.
+  description: Consecutive periods that must breach the threshold.
   collapsible: true
   min: 1
   show_when:
@@ -12,7 +12,7 @@
 - id: cloudwatch_alarm_period
   label: Alarm period
   type: number
-  description: Length of each evaluation period. AWS service metrics are published once a minute, so 60 seconds is the shortest useful period.
+  description: Use one minute or longer to match the AWS metric frequency.
   collapsible: true
   show_when:
     cloudwatch_alarms_creation_enabled: true
@@ -29,7 +29,7 @@
 - id: cloudwatch_alarm_actions
   label: Alarm actions
   type: string_array
-  description: ARNs to notify when an alarm transitions to ALARM, such as an SNS topic.
+  description: SNS topic ARNs to notify when a threshold is breached.
   add_button_label: Add alarm action ARN
   collapsible: true
   placeholder: arn:aws:sns:us-east-1:123456789012:alerts
@@ -39,7 +39,7 @@
 - id: cloudwatch_ok_actions
   label: OK actions
   type: string_array
-  description: ARNs to notify when an alarm transitions back to OK.
+  description: SNS topic ARNs to notify on recovery.
   add_button_label: Add OK action ARN
   collapsible: true
   placeholder: arn:aws:sns:us-east-1:123456789012:alerts

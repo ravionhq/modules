@@ -135,6 +135,12 @@ Use `collapsible: true` for advanced settings. Never make an input collapsible w
 
 Use `show_when` for build-type, EC2-only, load-balancer-only, autoscaling-only, replica-only, alarm-only, custom-credentials-only, existing-resource-only, and engine-specific fields.
 
+## Input Help Text
+
+Descriptions should add information the label does not convey. Omit section descriptions that only list the fields below them. For toggles, explain why to keep the feature enabled and when disabling it makes sense; mention material costs or prerequisites. For thresholds, state the direction, scope, units, or evaluation window only where the label leaves them unclear. Avoid repeating "alarm" or internal conversion details in every description.
+
+Use `values` for numeric inputs with a finite supported set, such as CloudWatch retention periods. Include every supported value, and preserve optional inheritance separately from explicit choices such as `0` for indefinite retention.
+
 ## Input Immutability
 
 Mark an input `immutable: true` only when changing it after creation would change foundational resource identity, move the stack to a different AWS target, or orphan/duplicate state-managed resources. Do not infer immutability from Terraform replacement alone; many replacement-prone operational controls are intentionally editable. Do not mark `advanced_terraform_variables` immutable; it intentionally remains a mutable escape hatch even though it can override protected Terraform variables.

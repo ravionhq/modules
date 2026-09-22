@@ -1099,6 +1099,46 @@ describe("compiler", () => {
   });
 });
 
+describe("monitoring defaults", () => {
+  const definitions = [
+    "networking/alb/rvn-aws-alb-definition.yml",
+    "compute/ecs_cluster/rvn-ecs-cluster-definition.yml",
+    "compute/ecs_service/rvn-ecs-web-definition.yml",
+    "compute/ecs_service/rvn-ecs-worker-definition.yml",
+    "compute/ecs_service/rvn-ecs-nlb-definition.yml",
+  ];
+
+  for (const definition of definitions) {
+    it(`enables alarms by default in ${definition}`, async () => {
+      const { module } = await compileDefinitionFile(join(repoRoot, definition));
+      const inputs = getModuleInputs(module);
+      const toggle = findInput(inputs, "cloudwatch_alarms_creation_enabled");
+      assert.equal(toggle.default, true);
+      assert.equal(toggle.type, "boolean");
+      const variable = definition.includes("ecs_cluster")
+        ? "alb_cloudwatch_alarms_creation_enabled"
+        : "cloudwatch_alarms_creation_enabled";
+      assert.equal(getTerraformVariable(module, variable), "<< module.input.cloudwatch_alarms_creation_enabled >>");
+    });
+  }
+
+  for (const definition of definitions.filter((path) => path.includes("ecs_"))) {
+    it(`offers supported retention periods in ${definition}`, async () => {
+      const { module } = await compileDefinitionFile(join(repoRoot, definition));
+      const retention = findInput(getModuleInputs(module), "log_retention_days");
+      assert.deepEqual(getValueOptions(retention), [
+        0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365,
+        400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653,
+      ]);
+      if (definition.includes("ecs_service")) {
+        assert.equal(retention.required, false);
+        assert.equal(retention.default, undefined);
+        assert.match(assertString(getTerraformVariable(module, "log_retention_days")), /module.input.log_retention_days != nil/);
+      }
+    });
+  }
+});
+
 function getModuleInputs(module: Record<string, unknown>): Record<string, unknown>[] {
   const inputs = module.inputs;
   assert.ok(Array.isArray(inputs), "module.inputs should be an array");

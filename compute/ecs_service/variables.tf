@@ -846,7 +846,7 @@ variable "region" {
 variable "cloudwatch_alarms_creation_enabled" {
   type        = bool
   description = "Create CloudWatch alarms for service CPU, memory, running task count, and load balancer target health."
-  default     = false
+  default     = true
   nullable    = false
 }
 

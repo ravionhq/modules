@@ -725,7 +725,7 @@ variable "log_retention_days" {
 variable "alb_cloudwatch_alarms_creation_enabled" {
   type        = bool
   description = "Create CloudWatch alarms for 5xx responses and target response time on the public and private ALBs."
-  default     = false
+  default     = true
   nullable    = false
 }
 
