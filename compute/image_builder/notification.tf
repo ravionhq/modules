@@ -16,7 +16,7 @@ resource "aws_cloudwatch_event_connection" "notify" {
   count = local.notify_enabled ? 1 : 0
 
   region             = local.region
-  name               = "${var.name}-image-notify"
+  name               = local.notify_names.connection
   description        = "Authorises ${var.name} build notifications"
   authorization_type = "API_KEY"
 
@@ -32,7 +32,7 @@ resource "aws_cloudwatch_event_api_destination" "notify" {
   count = local.notify_enabled ? 1 : 0
 
   region                           = local.region
-  name                             = "${var.name}-image-notify"
+  name                             = local.notify_names.destination
   description                      = "Where ${var.name} build notifications go"
   invocation_endpoint              = var.notify_url
   http_method                      = "POST"
@@ -47,7 +47,7 @@ resource "aws_cloudwatch_event_rule" "notify" {
   count = local.notify_enabled ? 1 : 0
 
   region      = local.region
-  name        = "${var.name}-image-available"
+  name        = local.notify_names.rule
   description = "A ${var.name} image finished building and distributing"
 
   event_pattern = jsonencode({
@@ -82,7 +82,7 @@ resource "aws_cloudwatch_event_target" "notify" {
 resource "aws_iam_role" "notify" {
   count = local.notify_enabled ? 1 : 0
 
-  name        = local.notify_role_name
+  name        = local.notify_names.role
   description = "Lets EventBridge deliver ${var.name} build notifications"
 
   assume_role_policy = jsonencode({

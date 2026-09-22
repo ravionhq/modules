@@ -1026,6 +1026,43 @@ run "the_rule_matches_only_this_pipelines_finished_images" {
   }
 }
 
+# EventBridge caps a name at 64 characters and the pipeline name may use all 64
+# on its own, so every notification name is bounded before it reaches AWS.
+run "notification_names_stay_within_the_eventbridge_limit" {
+  command = plan
+
+  variables {
+    name                = "an-image-pipeline-whose-name-uses-every-one-of-its-64-characters"
+    notify_url          = "https://api.example.com/hooks/image-built"
+    notify_header_value = "shhh"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify[0].name) <= 64
+    error_message = "The rule name must fit, got ${aws_cloudwatch_event_rule.notify[0].name}"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_connection.notify[0].name) <= 64
+    error_message = "The connection name must fit, got ${aws_cloudwatch_event_connection.notify[0].name}"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_api_destination.notify[0].name) <= 64
+    error_message = "The destination name must fit, got ${aws_cloudwatch_event_api_destination.notify[0].name}"
+  }
+
+  assert {
+    condition     = length(aws_iam_role.notify[0].name) <= 64
+    error_message = "The delivery role name must fit, got ${aws_iam_role.notify[0].name}"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_event_rule.notify[0].name != aws_cloudwatch_event_connection.notify[0].name
+    error_message = "A truncated name must still tell the rule and the connection apart"
+  }
+}
+
 # The delivery role can invoke this one destination and nothing else.
 run "the_delivery_role_reaches_one_destination" {
   command = plan

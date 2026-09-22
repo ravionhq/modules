@@ -155,8 +155,17 @@ locals {
   # this account; without both it is not configured, not half-configured.
   notify_enabled = var.notify_url != "" && var.notify_header_value != ""
 
-  notify_role_name_full = "${var.name}-image-notify"
-  notify_role_name      = length(local.notify_role_name_full) <= 64 ? local.notify_role_name_full : "${substr(local.notify_role_name_full, 0, 55)}-${substr(sha256(local.notify_role_name_full), 0, 8)}"
+  # EventBridge and IAM both cap a name at 64 characters, and name may use all
+  # 64 on its own. A name too long for its suffix keeps its readable head, and
+  # a hash of the full name keeps two pipelines from sharing one.
+  notify_names = {
+    for key, full in {
+      role        = "${var.name}-image-notify"
+      connection  = "${var.name}-image-notify"
+      destination = "${var.name}-image-notify"
+      rule        = "${var.name}-image-available"
+    } : key => length(full) <= 64 ? full : "${substr(full, 0, 55)}-${substr(sha256(full), 0, 8)}"
+  }
 
   log_prefix = trim(var.log_prefix, "/")
 
