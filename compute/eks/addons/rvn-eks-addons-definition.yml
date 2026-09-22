@@ -4,12 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.2
-  description: >-
-    Add a load balancer name prefix so the shared ALBs and NLBs can be named apart from the
-    cluster. An ECS cluster with the same name already owns <name>-pub and <name>-priv, and
-    creating the EKS add-ons next to it failed on the duplicate security group. The prefix
-    defaults to the cluster name, so existing installations are unchanged.
+  version: 0.10.0
+  description: Enable Karpenter interruption queue message-age monitoring by default, with configurable thresholds and notification destinations.
 module:
   inputs:
     - id: cluster
@@ -398,6 +394,44 @@ module:
       id: karpenter_enabled
       label: Karpenter
       type: boolean
+    - default: true
+      id: karpenter_interruption_queue_alarm_creation_enabled
+      label: Interruption queue age alarm
+      description: Detect stalled interruption processing. Disable if monitored elsewhere. CloudWatch charges apply.
+      type: boolean
+      show_when:
+        karpenter_enabled: true
+    - default: 60
+      id: karpenter_interruption_queue_alarm_age_threshold_seconds
+      label: Oldest message threshold (seconds)
+      description: Triggers when the maximum age over one minute reaches this value. Must be below the queue retention period (300 seconds by default).
+      type: number
+      min: 1
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
+    - id: karpenter_interruption_queue_alarm_actions
+      label: Alert actions
+      description: Invoked when entering ALARM, for example an SNS topic ARN. Empty disables direct notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
+    - id: karpenter_interruption_queue_alarm_ok_actions
+      label: Recovery actions
+      description: Invoked when returning to OK. Empty disables direct recovery notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
     - collapsible: true
       description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.0.
       id: karpenter_chart_version
@@ -1031,6 +1065,10 @@ module:
         cluster_name: << module.input.cluster_name >>
         region: << module.input.aws_region >>
         karpenter_enabled: << module.input.karpenter_enabled >>
+        karpenter_interruption_queue_alarm_creation_enabled: '<< module.input.karpenter_interruption_queue_alarm_creation_enabled != nil ? module.input.karpenter_interruption_queue_alarm_creation_enabled : true >>'
+        karpenter_interruption_queue_alarm_age_threshold_seconds: '<< module.input.karpenter_interruption_queue_alarm_age_threshold_seconds != nil ? module.input.karpenter_interruption_queue_alarm_age_threshold_seconds : 60 >>'
+        karpenter_interruption_queue_alarm_actions: '<< module.input.karpenter_interruption_queue_alarm_actions != nil ? module.input.karpenter_interruption_queue_alarm_actions : [] >>'
+        karpenter_interruption_queue_alarm_ok_actions: '<< module.input.karpenter_interruption_queue_alarm_ok_actions != nil ? module.input.karpenter_interruption_queue_alarm_ok_actions : [] >>'
         karpenter_controller_namespace: << module.input.karpenter_controller_namespace || "kube-system" >>
         karpenter_controller_service_account: << module.input.karpenter_controller_service_account || "karpenter" >>
         karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.0" >>
@@ -1264,9 +1302,11 @@ module:
 
     EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, and both observability pipelines additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
 
+    Karpenter's **Interruption queue age alarm** is enabled by default. It monitors the oldest unprocessed event with a 60-second threshold over one minute. Empty queues do not trigger it. Configure **Alert actions** and **Recovery actions** for direct notifications; both default to empty. Standard CloudWatch charges apply.
+
     ## Logs and metrics destinations
 
-    Each signal is one multi-select. **The in-cluster log store and Amazon Managed Prometheus are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in. Nothing CloudWatch is installed by default, or as a side effect of anything else.
+    Each signal is one multi-select. **The in-cluster log store and Amazon Managed Prometheus are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in. CloudWatch log and metrics collectors are not installed unless selected. The interruption queue uses native SQS metrics independently of these collectors.
 
     | Logs destination | What runs | In Ravion |
     | ---------------- | --------- | --------- |

@@ -32,6 +32,12 @@ When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
 
+## Interruption queue monitoring
+
+Karpenter's queue gets an `ApproximateAgeOfOldestMessage` CloudWatch alarm by default, independent of workload metrics providers. The default threshold is 60 seconds, using `Maximum` over one 60-second period and `GreaterThanOrEqualToThreshold`. Missing data is non-breaching. Keep the threshold below queue retention (300 seconds by default). This detects stalled consumption; metric publication and notification delays mean it cannot guarantee a response before a Spot interruption.
+
+Set `karpenter_interruption_queue_alarm_actions` and `karpenter_interruption_queue_alarm_ok_actions` to action ARNs for ALARM and OK transitions. Both default to `[]`, so direct notifications require configuration. Standard CloudWatch charges apply. Set `karpenter_interruption_queue_alarm_creation_enabled = false` to opt out; disabling Karpenter also removes the alarm.
+
 ## Usage
 
 ```hcl
@@ -571,6 +577,10 @@ failed during initialization have no provider resources to migrate.
 | karpenter_node_role_additional_managed_policy_arns | Extra managed policies on the Karpenter node role. | `list(string)` | `[]` | no |
 | karpenter_interruption_queue_name | Override interruption queue name (`karpenter-<cluster>` when null). | `string` | `null` | no |
 | karpenter_interruption_queue_message_retention_seconds | Interruption queue retention. | `number` | `300` | no |
+| karpenter_interruption_queue_alarm_creation_enabled | Create a CloudWatch message-age alarm for the Karpenter interruption queue. | `bool` | `true` | no |
+| karpenter_interruption_queue_alarm_age_threshold_seconds | Maximum oldest-message age in seconds before entering ALARM; evaluated over one 60-second period. | `number` | `60` | no |
+| karpenter_interruption_queue_alarm_actions | Action ARNs invoked when the interruption queue enters ALARM. Empty disables direct actions. | `list(string)` | `[]` | no |
+| karpenter_interruption_queue_alarm_ok_actions | Action ARNs invoked when the interruption queue returns to OK. Empty disables direct recovery actions. | `list(string)` | `[]` | no |
 | karpenter_helm_values | Extra YAML docs merged into the Karpenter chart values. | `list(string)` | `[]` | no |
 | karpenter_default_node_pool_creation_enabled | Create the default NodePool + EC2NodeClass. | `bool` | `true` | no |
 | node_subnet_ids | Private subnets for the default NodePool and internal load balancers. Required when Karpenter's default NodePool, the private ALB, or the private NLB is enabled. | `list(string)` | `null` | no |
