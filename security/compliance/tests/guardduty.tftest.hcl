@@ -78,6 +78,7 @@ run "rejects_region_not_enabled_for_account" {
 
   expect_failures = [
     aws_guardduty_detector.this["ap-south-1"],
+    aws_ecr_registry_scanning_configuration.this["ap-south-1"],
   ]
 }
 
@@ -246,7 +247,7 @@ run "default_tags" {
   }
 
   assert {
-    condition     = aws_guardduty_detector.this["us-east-1"].tags["Module"] == "security/guardduty"
+    condition     = aws_guardduty_detector.this["us-east-1"].tags["Module"] == "security/compliance"
     error_message = "Default Module tag must be present"
   }
 }

@@ -4,7 +4,8 @@
 
 variable "regions" {
   type        = list(string)
-  description = "AWS Regions where Amazon GuardDuty is enabled. Every Region must be enabled (opted in) for the account; GuardDuty creates one detector per Region."
+  nullable    = false
+  description = "AWS Regions where GuardDuty and registry-wide Basic ECR scan-on-push are enabled. Every Region must be enabled (opted in) for the account."
 
   validation {
     condition     = length(var.regions) > 0

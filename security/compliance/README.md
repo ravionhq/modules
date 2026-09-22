@@ -1,9 +1,10 @@
-# AWS GuardDuty Module
+# AWS compliance module
 
-Enables Amazon GuardDuty threat detection in a list of AWS Regions for one account. The module creates one GuardDuty detector per Region and explicitly manages every protection plan (S3, EKS, Malware, RDS, Lambda, Runtime Monitoring) as `ENABLED` or `DISABLED` in each Region, so the effective GuardDuty configuration is fully declared in code. Continuous threat detection across all in-use Regions is a common SOC 2 monitoring control.
+Manages GuardDuty threat detection and registry-wide Basic ECR image scanning on push for one AWS account across a shared list of Regions. Deploy `rvn-aws-compliance` once per account with all required Regions. These settings support threat-detection and vulnerability-scanning controls; application alarms, log retention, and other compliance controls remain in their respective modules.
 
 ## Features
 
+- Registry-wide ECR Basic `SCAN_ON_PUSH` with a `*` filter for all current and future private repositories, including Lambda image repositories.
 - One `aws_guardduty_detector` per Region, driven by the AWS provider's per-resource `region` argument (no provider alias per Region).
 - Fails at plan time when a requested Region is not enabled (opted in) for the account.
 - Explicit per-Region protection plans: S3 Protection, EKS Protection, Malware Protection for EC2, RDS Protection, Lambda Protection, and Runtime Monitoring with automated agent management for EKS, ECS Fargate, and EC2.
@@ -12,11 +13,11 @@ Enables Amazon GuardDuty threat detection in a list of AWS Regions for one accou
 
 ## Usage
 
-### Enable GuardDuty in every Region you use
+### Enable the baseline in every Region you use
 
 ```hcl
-module "guardduty" {
-  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=rvn-guardduty@0.1.0"
+module "compliance" {
+  source = "git::https://github.com/ravionhq/modules.git//security/compliance?ref=rvn-aws-compliance@0.1.0"
 
   regions = ["us-east-1", "us-west-2", "eu-west-1"]
 
@@ -29,8 +30,8 @@ module "guardduty" {
 ### Turn on Runtime Monitoring with managed agents
 
 ```hcl
-module "guardduty" {
-  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=rvn-guardduty@0.1.0"
+module "compliance" {
+  source = "git::https://github.com/ravionhq/modules.git//security/compliance?ref=rvn-aws-compliance@0.1.0"
 
   regions = ["us-east-1"]
 
@@ -39,11 +40,11 @@ module "guardduty" {
 }
 ```
 
-### Foundational detection only
+### Basic GuardDuty detection with ECR scanning
 
 ```hcl
-module "guardduty" {
-  source = "git::https://github.com/ravionhq/modules.git//security/guardduty?ref=rvn-guardduty@0.1.0"
+module "compliance" {
+  source = "git::https://github.com/ravionhq/modules.git//security/compliance?ref=rvn-aws-compliance@0.1.0"
 
   regions = ["us-east-1", "eu-central-1"]
 
@@ -62,13 +63,13 @@ module "guardduty" {
 | OpenTofu | >= 1.10.0 |
 | aws | >= 6.0 |
 
-The AWS provider 6.x per-resource `region` argument is required. The credentials used for the apply need GuardDuty administration permissions plus `ec2:DescribeRegions` (used to verify the requested Regions are enabled) and `iam:CreateServiceLinkedRole` for the GuardDuty and Malware Protection service-linked roles on first use.
+The AWS provider 6.x per-resource `region` argument is required. The credentials used for the apply need `ecr:GetRegistryScanningConfiguration`, `ecr:PutRegistryScanningConfiguration`, GuardDuty administration permissions plus `ec2:DescribeRegions` (used to verify the requested Regions are enabled) and `iam:CreateServiceLinkedRole` for the GuardDuty and Malware Protection service-linked roles on first use.
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
-| `regions` | AWS Regions where GuardDuty is enabled. Each must be enabled for the account. | `list(string)` | n/a | yes |
+| `regions` | AWS Regions where GuardDuty and ECR scan-on-push are enabled. Each must be enabled for the account. | `list(string)` | n/a | yes |
 | `finding_publishing_frequency` | Export cadence for updated findings: `FIFTEEN_MINUTES`, `ONE_HOUR`, or `SIX_HOURS`. | `string` | `"FIFTEEN_MINUTES"` | no |
 | `s3_protection_enabled` | Enable S3 Protection (`S3_DATA_EVENTS`). | `bool` | `true` | no |
 | `eks_protection_enabled` | Enable EKS Protection (`EKS_AUDIT_LOGS`). | `bool` | `true` | no |
@@ -83,32 +84,48 @@ The AWS provider 6.x per-resource `region` argument is required. The credentials
 
 | Name | Description |
 | ---- | ----------- |
-| `regions` | Sorted list of Regions where GuardDuty is enabled. |
+| `regions` | Sorted list of Regions covered by GuardDuty and ECR scanning. |
 | `detector_ids` | Map of Region to detector ID. |
 | `detector_arns` | Map of Region to detector ARN. |
-| `account_id` | AWS account ID that owns the detectors. |
+| `account_id` | AWS account ID where the baseline is managed. |
+| `registry_ids` | Map of Region to ECR registry ID. |
 | `protection_plans` | Map of protection plan feature name to enabled flag. |
+
+## ECR scanning and ownership
+
+The module always enables Basic scanning with a `SCAN_ON_PUSH` registry rule matching `*` in each selected Region. This covers existing and future repositories, including those used by Lambda, ECS, EKS, and EC2. It declares the registry configuration checked by OneLeet instead of relying only on individual repositories' `scan_on_push` flags.
+
+Basic scanning checks operating-system vulnerabilities when new images are pushed; it does not enable continuous scanning or retroactively scan all existing images. Applying replaces existing Enhanced scanning or custom registry filters with this Basic configuration, so review current settings before adoption. Existing manually configured registries can be managed by applying the module.
+
+ECR registry scanning and GuardDuty are account/Region-wide settings. Maintain one Terraform owner per account and Region. Do not deploy overlapping compliance modules or manage these resources from individual network or service modules. The ECR scanning resource does not support tags.
+
+Removing a Region or destroying the module resets ECR to Basic scanning without registry rules. ECR repositories and images are retained.
+
+## Existing GuardDuty detectors
+
+Import existing detectors before applying, preserving threat detection and findings. Do not disable GuardDuty to make module adoption possible. The selected protection-plan inputs will become authoritative.
 
 ## Notes
 
 - **One detector per Region.** AWS allows exactly one GuardDuty detector per account per Region. If GuardDuty is already enabled in a Region, import the existing detector instead of creating a new one:
 
   ```bash
-  tofu import 'module.guardduty.aws_guardduty_detector.this["us-east-1"]' <detector-id>
+  tofu import 'module.compliance.aws_guardduty_detector.this["us-east-1"]' <detector-id>
   ```
 
   Detector features are imported as `<detector-id>/<feature-name>`.
 
 - **Opt-in Regions.** GuardDuty cannot be enabled in a Region the account has not opted into. The module checks the account's enabled Regions and fails the plan with a clear message for any Region that is not enabled.
-- **Disabling.** Removing a Region from `regions` destroys that Region's detector, which disables GuardDuty there and discards its findings. Setting a protection plan to `false` keeps the detector and writes the plan as `DISABLED`.
+- **Disabling.** Removing a Region from `regions` destroys that Region's detector, which disables GuardDuty there and discards its findings. Setting a protection plan to `false` keeps the detector and writes the plan as `DISABLED`; it does not affect ECR scanning.
 - **Findings delivery.** GuardDuty publishes findings to EventBridge in each Region. Central aggregation (S3 export, Security Hub, a delegated administrator account) is out of scope for this module.
 - **Cost.** Protection plans are billed per Region by the volume of data analysed. Runtime Monitoring adds agent cost per workload and is therefore disabled by default.
 
 ## Testing
 
 ```bash
-cd security/guardduty
+cd security/compliance
 tofu init -backend=false
+tofu validate
 tofu test
 ```
 

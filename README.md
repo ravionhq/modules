@@ -40,8 +40,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `networking/` | `security-groups` | AWS Security Groups                                                    | v1.0.0  |
 | `networking/` | `vpc`             | AWS VPC with adaptive public and private subnets                       | v1.0.0  |
 | `security/`   | `acm_certificate` | AWS ACM public certificates with ordered domains, DNS validation, optional Route53, and optional wait | v1.0.0  |
-| `security/`   | `ecr_scanning`    | Registry-wide Basic ECR scan-on-push across selected Regions (includes the `rvn-ecr-scanning` module definition) | v0.1.0 |
-| `security/`   | `guardduty`       | AWS GuardDuty enabled across a list of Regions with explicit protection plans (includes the `rvn-guardduty` module definition) | v1.0.0  |
+| `security/`   | `compliance`     | Account-level GuardDuty and registry-wide Basic ECR scan-on-push across selected Regions (includes the `rvn-aws-compliance` module definition) | v0.1.0 |
 | `security/`   | `iam`             | AWS IAM roles and policies                                             | v1.0.0  |
 | `security/`   | `iam_policy`      | Reusable customer-managed AWS IAM policies                             | v1.0.0  |
 | `security/`   | `kms`             | AWS KMS keys (symmetric or asymmetric: signing, encryption, MAC, key agreement) (includes the `rvn-aws-kms` module definition) | v1.0.0  |
@@ -63,6 +62,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.2.1 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
+| `rvn-aws-compliance` | AWS compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
@@ -70,7 +70,6 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-static` | Static Hosting | v1.1.3 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.2 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v1.6.1 | `compute/ec2_service/` |
-| `rvn-ecr-scanning` | AWS ECR scanning | v0.1.0 | `security/ecr_scanning/` |
 | `rvn-ecs-cluster` | ECS Cluster | v1.1.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v1.6.0 | `compute/ecs_service/` |
 | `rvn-ecs-web` | ECS Web Service | v1.6.0 | `compute/ecs_service/` |
@@ -81,7 +80,6 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-web` | EKS Web Service | v1.1.1 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v0.4.1 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
-| `rvn-guardduty` | AWS GuardDuty | v0.1.0 | `security/guardduty/` |
 | `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.2.1 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |

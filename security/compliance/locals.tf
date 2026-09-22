@@ -33,7 +33,7 @@ locals {
 
   default_tags = {
     ManagedBy = "terraform"
-    Module    = "security/guardduty"
+    Module    = "security/compliance"
   }
 
   tags = merge(local.default_tags, var.tags)

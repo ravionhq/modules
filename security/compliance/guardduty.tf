@@ -16,14 +16,6 @@
 # composition level.
 ################################################################################
 
-data "aws_caller_identity" "current" {}
-
-# Regions the account has enabled (opted in). GuardDuty cannot be enabled in a
-# Region the account is not opted into, so fail early with a clear message.
-data "aws_regions" "enabled" {
-  all_regions = false
-}
-
 resource "aws_guardduty_detector" "this" {
   for_each = local.regions
 
@@ -37,7 +29,7 @@ resource "aws_guardduty_detector" "this" {
   lifecycle {
     precondition {
       condition     = contains(data.aws_regions.enabled.names, each.key)
-      error_message = "Region ${each.key} is not enabled for this AWS account. Opt in to the Region (or remove it from regions) before enabling GuardDuty there."
+      error_message = "Region ${each.key} is not enabled for this AWS account. Opt in to the Region (or remove it from regions) before enabling the compliance baseline there."
     }
   }
 }

@@ -33,6 +33,13 @@ run "all_repositories_scan_on_push_in_each_region" {
   }
 
   assert {
+    condition = toset(keys(aws_guardduty_detector.this)) == toset(keys(aws_ecr_registry_scanning_configuration.this)) && alltrue([
+      for region, detector in aws_guardduty_detector.this : detector.region == region && detector.enable
+    ])
+    error_message = "GuardDuty and ECR scanning must cover the same selected Regions."
+  }
+
+  assert {
     condition     = output.regions == tolist(["us-east-1", "us-west-2"])
     error_message = "Regions must be output in a stable order."
   }
@@ -46,7 +53,7 @@ run "single_region" {
   }
 
   assert {
-    condition     = length(aws_ecr_registry_scanning_configuration.this) == 1 && output.regions == tolist(["us-east-1"])
+    condition     = length(aws_ecr_registry_scanning_configuration.this) == 1 && length(aws_guardduty_detector.this) == 1 && output.regions == tolist(["us-east-1"])
     error_message = "Only the selected Region may be managed."
   }
 }
@@ -58,7 +65,10 @@ run "rejects_region_not_enabled_for_account" {
     regions = ["eu-west-1"]
   }
 
-  expect_failures = [aws_ecr_registry_scanning_configuration.this["eu-west-1"]]
+  expect_failures = [
+    aws_ecr_registry_scanning_configuration.this["eu-west-1"],
+    aws_guardduty_detector.this["eu-west-1"],
+  ]
 }
 
 run "rejects_empty_regions" {
