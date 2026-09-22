@@ -56,7 +56,7 @@ lifecycle:
 
 strategy:
   type: RollingUpdate
-  maxSurge: 25%
+  maxSurge: 100%
   maxUnavailable: 0
 
 resources:
