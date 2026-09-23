@@ -106,7 +106,7 @@ locals {
       }
     } : {},
     local.metrics_new_relic_enabled ? {
-      "otlphttp/new_relic" = {
+      "otlp_http/new_relic" = {
         endpoint = local.new_relic_otlp_endpoint
         headers = {
           "api-key" = "$${env:NEW_RELIC_LICENSE_KEY}"
@@ -114,7 +114,7 @@ locals {
       }
     } : {},
     local.metrics_otlp_enabled ? {
-      "otlphttp/custom" = merge(
+      "otlp_http/custom" = merge(
         { endpoint = local.otlp_metrics_config.endpoint },
         local.otlp_metrics_config.headers_secret_arn == null ? {} : {
           headers = { authorization = "$${env:OTLP_METRICS_AUTHORIZATION}" }

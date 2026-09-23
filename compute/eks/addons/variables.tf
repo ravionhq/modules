@@ -1055,12 +1055,12 @@ variable "metrics_additional_allowlist" {
 variable "otel_collector_chart_version" {
   type        = string
   description = "Version of the community opentelemetry-collector Helm chart used to run the collector."
-  default     = "0.169.0"
+  default     = "0.173.1"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.otel_collector_chart_version))
-    error_message = "The otel_collector_chart_version must be a semantic version like '0.169.0' (no leading 'v')."
+    error_message = "The otel_collector_chart_version must be a semantic version like '0.173.1' (no leading 'v')."
   }
 }
 
@@ -1072,7 +1072,7 @@ variable "otel_collector_image_repository" {
 
 variable "otel_collector_image_tag" {
   type        = string
-  description = "Tag of the metrics collector image. When null it follows the image the module chose: v0.49.0 for the AWS Distro, otel_contrib_image_tag for contrib."
+  description = "Tag of the metrics collector image. When null it follows the image the module chose: v0.50.0 for the AWS Distro, otel_contrib_image_tag for contrib."
   default     = null
 }
 
@@ -1118,12 +1118,12 @@ variable "kube_state_metrics_enabled" {
 variable "kube_state_metrics_chart_version" {
   type        = string
   description = "Version of the prometheus-community/kube-state-metrics Helm chart to install."
-  default     = "8.3.0"
+  default     = "8.5.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.kube_state_metrics_chart_version))
-    error_message = "The kube_state_metrics_chart_version must be a semantic version like '8.3.0' (no leading 'v')."
+    error_message = "The kube_state_metrics_chart_version must be a semantic version like '8.5.0' (no leading 'v')."
   }
 }
 
@@ -1239,12 +1239,12 @@ variable "loki_helm_values" {
 variable "alloy_chart_version" {
   type        = string
   description = "Version of the grafana/alloy Helm chart to install."
-  default     = "1.11.1"
+  default     = "1.12.1"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.alloy_chart_version))
-    error_message = "The alloy_chart_version must be a semantic version like '1.11.1' (no leading 'v')."
+    error_message = "The alloy_chart_version must be a semantic version like '1.12.1' (no leading 'v')."
   }
 }
 
@@ -1281,12 +1281,12 @@ variable "grafana_enabled" {
 variable "grafana_chart_version" {
   type        = string
   description = "Version of the grafana Helm chart to install, from the grafana-community repository - the maintained home of this chart since Grafana Labs deprecated their copy in January 2026."
-  default     = "12.10.4"
+  default     = "13.2.5"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.grafana_chart_version))
-    error_message = "The grafana_chart_version must be a semantic version like '12.10.4' (no leading 'v')."
+    error_message = "The grafana_chart_version must be a semantic version like '13.2.5' (no leading 'v')."
   }
 }
 
@@ -1592,7 +1592,7 @@ variable "otel_contrib_image_repository" {
 variable "otel_contrib_image_tag" {
   type        = string
   description = "Tag of the contrib collector image."
-  default     = "0.137.0"
+  default     = "0.161.0"
   nullable    = false
 }
 
@@ -1612,12 +1612,12 @@ variable "otel_contrib_command_name" {
 variable "prometheus_chart_version" {
   type        = string
   description = "Version of the prometheus-community/prometheus Helm chart installed for the in-cluster prometheus provider."
-  default     = "27.44.0"
+  default     = "29.33.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.prometheus_chart_version))
-    error_message = "The prometheus_chart_version must be a semantic version like '27.44.0' (no leading 'v')."
+    error_message = "The prometheus_chart_version must be a semantic version like '29.33.0' (no leading 'v')."
   }
 }
 
