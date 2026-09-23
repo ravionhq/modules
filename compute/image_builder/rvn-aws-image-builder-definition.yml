@@ -42,6 +42,28 @@ module:
         - label: Deployments
           description: This module owns only the build infrastructure. Each deploy creates its own recipe and runs the whole release.
           value: deployments
+    - collapsible: true
+      default: 5
+      description: Public images each region keeps. Each deploy makes older public images private. AWS allows 5 public AMIs per region by default.
+      id: retention_public_image_count
+      label: Public images to keep
+      max: 100
+      min: 1
+      required: true
+      show_when:
+        image_release_mode: deployments
+      type: number
+    - collapsible: true
+      default: 10
+      description: Private images each region keeps after the public ones. Each deploy deregisters older images and deletes their snapshots.
+      id: retention_private_image_count
+      label: Private images to keep
+      max: 1000
+      min: 0
+      required: true
+      show_when:
+        image_release_mode: deployments
+      type: number
     - default: false
       description: Build an image during every deploy that changes the recipe. The deploy waits for the build and its distribution, commonly 20-60 minutes. Off leaves builds to the schedule or a manual pipeline run.
       id: build_on_apply
@@ -1261,8 +1283,8 @@ module:
       tags: << deploy.input.extra_tags || {} >>
       publish: << deploy.input.publish >>
       retention:
-        public_image_count: 5
-        private_image_count: 10
+        public_image_count: << module.input.retention_public_image_count >>
+        private_image_count: << module.input.retention_private_image_count >>
   ui:
     links: |-
       <<
@@ -1292,7 +1314,7 @@ module:
 
     Switching to Deployments turns off Build on deploy, Schedule, Pipeline enabled, Allow a deploy step to start builds, and Build notification: a deploy sees its own build through to completion, so there is nothing left for the pipeline or a notification to do. Public image, Allow public AMI sharing in this account, and the shared account and organization lists move to each deploy's Publish input; a deploy started with Publish off leaves its images private, a candidate to test before a redeploy publishes them.
 
-    Retention keeps the newest 5 public images and 10 private images per region. Older public images are made private, and images past both windows are deregistered along with their snapshots.
+    Retention keeps the newest Public images to keep (5 by default) public and the next Private images to keep (10 by default) private in each region. Older public images are made private, and images past both windows are deregistered along with their snapshots.
 
     ## Use cases
 
