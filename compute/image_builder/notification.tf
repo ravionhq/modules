@@ -13,7 +13,7 @@
 ################################################################################
 
 resource "aws_cloudwatch_event_connection" "notify" {
-  count = local.notify_enabled ? 1 : 0
+  count = !local.deployments_mode && local.notify_enabled ? 1 : 0
 
   region             = local.region
   name               = local.notify_names.connection
@@ -29,7 +29,7 @@ resource "aws_cloudwatch_event_connection" "notify" {
 }
 
 resource "aws_cloudwatch_event_api_destination" "notify" {
-  count = local.notify_enabled ? 1 : 0
+  count = !local.deployments_mode && local.notify_enabled ? 1 : 0
 
   region                           = local.region
   name                             = local.notify_names.destination
@@ -52,7 +52,7 @@ resource "aws_cloudwatch_event_api_destination" "notify" {
 # it in the same apply, so an image still building against the previous recipe
 # when that happens finishes unannounced.
 resource "aws_cloudwatch_event_rule" "notify" {
-  count = local.notify_enabled ? 1 : 0
+  count = !local.deployments_mode && local.notify_enabled ? 1 : 0
 
   region      = local.region
   name        = local.notify_names.rule
@@ -64,14 +64,14 @@ resource "aws_cloudwatch_event_rule" "notify" {
     detail = {
       state = { status = ["AVAILABLE"] }
     }
-    resources = [{ prefix = "arn:${data.aws_partition.current.partition}:imagebuilder:${local.region}:${data.aws_caller_identity.current.account_id}:image/${lower(aws_imagebuilder_image_recipe.this.name)}/" }]
+    resources = [{ prefix = "arn:${data.aws_partition.current.partition}:imagebuilder:${local.region}:${data.aws_caller_identity.current.account_id}:image/${lower(aws_imagebuilder_image_recipe.this[0].name)}/" }]
   })
 
   tags = local.tags
 }
 
 resource "aws_cloudwatch_event_target" "notify" {
-  count = local.notify_enabled ? 1 : 0
+  count = !local.deployments_mode && local.notify_enabled ? 1 : 0
 
   region   = local.region
   rule     = aws_cloudwatch_event_rule.notify[0].name
@@ -88,7 +88,7 @@ resource "aws_cloudwatch_event_target" "notify" {
 }
 
 resource "aws_iam_role" "notify" {
-  count = local.notify_enabled ? 1 : 0
+  count = !local.deployments_mode && local.notify_enabled ? 1 : 0
 
   name        = local.notify_names.role
   description = "Lets EventBridge deliver ${var.name} build notifications"
@@ -107,7 +107,7 @@ resource "aws_iam_role" "notify" {
 
 # The role can invoke this destination and nothing else.
 resource "aws_iam_role_policy" "notify" {
-  count = local.notify_enabled ? 1 : 0
+  count = !local.deployments_mode && local.notify_enabled ? 1 : 0
 
   name = "invoke-destination"
   role = aws_iam_role.notify[0].id

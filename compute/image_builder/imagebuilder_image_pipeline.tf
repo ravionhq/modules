@@ -3,11 +3,14 @@
 ################################################################################
 
 resource "aws_imagebuilder_image_pipeline" "this" {
+  # Deployments mode creates no pipeline: each deploy starts its own build.
+  count = local.deployments_mode ? 0 : 1
+
   region                           = local.region
   name                             = var.name
   description                      = var.description
   status                           = var.pipeline_enabled ? "ENABLED" : "DISABLED"
-  image_recipe_arn                 = aws_imagebuilder_image_recipe.this.arn
+  image_recipe_arn                 = aws_imagebuilder_image_recipe.this[0].arn
   infrastructure_configuration_arn = aws_imagebuilder_infrastructure_configuration.this.arn
   distribution_configuration_arn   = aws_imagebuilder_distribution_configuration.this.arn
   enhanced_image_metadata_enabled  = var.enhanced_image_metadata_enabled
@@ -37,10 +40,11 @@ resource "aws_imagebuilder_image_pipeline" "this" {
 ################################################################################
 
 resource "aws_imagebuilder_image" "this" {
-  count = var.build_on_apply ? 1 : 0
+  # Deployments mode builds through a deploy instead, never on apply.
+  count = !local.deployments_mode && var.build_on_apply ? 1 : 0
 
   region                           = local.region
-  image_recipe_arn                 = aws_imagebuilder_image_recipe.this.arn
+  image_recipe_arn                 = aws_imagebuilder_image_recipe.this[0].arn
   infrastructure_configuration_arn = aws_imagebuilder_infrastructure_configuration.this.arn
   distribution_configuration_arn   = aws_imagebuilder_distribution_configuration.this.arn
   enhanced_image_metadata_enabled  = var.enhanced_image_metadata_enabled

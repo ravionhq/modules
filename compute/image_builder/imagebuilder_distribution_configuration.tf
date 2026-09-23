@@ -2,7 +2,9 @@
 # Distribution Configuration
 #
 # The same name, tags and launch permission in the build region and every
-# distribution region.
+# distribution region. In deployments mode this covers the home region only,
+# with no launch permission: it names and tags the build's AMI, and the
+# deploy manager copies, tags, and publishes it into every other region.
 ################################################################################
 
 resource "aws_imagebuilder_distribution_configuration" "this" {
@@ -11,7 +13,7 @@ resource "aws_imagebuilder_distribution_configuration" "this" {
   description = var.description
 
   dynamic "distribution" {
-    for_each = local.all_regions
+    for_each = local.distribution_config_regions
 
     content {
       region = distribution.value
@@ -49,7 +51,7 @@ resource "aws_imagebuilder_distribution_configuration" "this" {
 ################################################################################
 
 resource "aws_ec2_image_block_public_access" "this" {
-  for_each = var.public && var.manage_image_block_public_access ? toset(local.all_regions) : toset([])
+  for_each = !local.deployments_mode && var.public && var.manage_image_block_public_access ? toset(local.all_regions) : toset([])
 
   region = each.value
   state  = "unblocked"

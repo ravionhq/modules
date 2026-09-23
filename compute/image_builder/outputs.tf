@@ -4,23 +4,28 @@ output "region" {
 }
 
 output "pipeline_arn" {
-  description = "The ARN of the image pipeline. Start a build with `aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <arn>`."
-  value       = aws_imagebuilder_image_pipeline.this.arn
+  description = "The ARN of the image pipeline. Start a build with `aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <arn>`. Null in deployments mode, which creates no pipeline."
+  value       = try(aws_imagebuilder_image_pipeline.this[0].arn, null)
 }
 
 output "pipeline_name" {
-  description = "The name of the image pipeline."
-  value       = aws_imagebuilder_image_pipeline.this.name
+  description = "The name of the image pipeline. Null in deployments mode, which creates no pipeline."
+  value       = try(aws_imagebuilder_image_pipeline.this[0].name, null)
 }
 
 output "recipe_arn" {
-  description = "The ARN of the current image recipe."
-  value       = aws_imagebuilder_image_recipe.this.arn
+  description = "The ARN of the current image recipe. Null in deployments mode, where each deploy creates its own recipe instead."
+  value       = try(aws_imagebuilder_image_recipe.this[0].arn, null)
 }
 
 output "recipe_name" {
-  description = "The name of the current image recipe, which ends in a hash of its content."
-  value       = aws_imagebuilder_image_recipe.this.name
+  description = "The name of the current image recipe, which ends in a hash of its content. Null in deployments mode, where each deploy creates its own recipe instead."
+  value       = try(aws_imagebuilder_image_recipe.this[0].name, null)
+}
+
+output "component_refs" {
+  description = "Every component this module creates or references, in recipe order, with its real ARN regardless of source. Feeds an aws:ami deploy definition's infrastructure.components."
+  value       = local.component_refs
 }
 
 output "component_names" {

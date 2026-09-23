@@ -140,15 +140,15 @@ run "defaults" {
 
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.parent_image == "ami-0123456789abcdef0"
+    condition     = aws_imagebuilder_image_recipe.this[0].parent_image == "ami-0123456789abcdef0"
     error_message = "The recipe must build on parent_image"
   }
 
   # Pinned: a name that moves without its content moving would replace every
   # consumer's recipe and component on upgrade.
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.name == "test-image-4fd9befb"
-    error_message = "The recipe must be named by a stable content hash, got ${aws_imagebuilder_image_recipe.this.name}"
+    condition     = aws_imagebuilder_image_recipe.this[0].name == "test-image-4fd9befb"
+    error_message = "The recipe must be named by a stable content hash, got ${aws_imagebuilder_image_recipe.this[0].name}"
   }
 
   assert {
@@ -157,7 +157,7 @@ run "defaults" {
   }
 
   assert {
-    condition     = one(aws_imagebuilder_image_recipe.this.component[0].parameter).value == "v1.2.3"
+    condition     = one(aws_imagebuilder_image_recipe.this[0].component[0].parameter).value == "v1.2.3"
     error_message = "Component parameters must be passed by the recipe"
   }
 
@@ -177,7 +177,7 @@ run "defaults" {
   }
 
   assert {
-    condition     = length(aws_imagebuilder_image_pipeline.this.schedule) == 0
+    condition     = length(aws_imagebuilder_image_pipeline.this[0].schedule) == 0
     error_message = "The pipeline must be manual by default"
   }
 
@@ -242,7 +242,7 @@ run "public_multi_region" {
   }
 
   assert {
-    condition     = one(one(aws_imagebuilder_image_recipe.this.block_device_mapping).ebs).encrypted == "false"
+    condition     = one(one(aws_imagebuilder_image_recipe.this[0].block_device_mapping).ebs).encrypted == "false"
     error_message = "A public image's snapshot must not be encrypted"
   }
 }
@@ -289,7 +289,7 @@ run "public_refuses_an_encrypted_snapshot" {
     }
   }
 
-  expect_failures = [aws_imagebuilder_image_recipe.this]
+  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
 }
 
 ################################################################################
@@ -307,7 +307,7 @@ run "private_root_volume_is_encrypted" {
   }
 
   assert {
-    condition     = one(one(aws_imagebuilder_image_recipe.this.block_device_mapping).ebs).encrypted == "true"
+    condition     = one(one(aws_imagebuilder_image_recipe.this[0].block_device_mapping).ebs).encrypted == "true"
     error_message = "A private image's snapshot must be encrypted by default"
   }
 }
@@ -328,7 +328,7 @@ run "parent_image_lookup" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.parent_image == "ami-0aaaaaaaaaaaaaaaa"
+    condition     = aws_imagebuilder_image_recipe.this[0].parent_image == "ami-0aaaaaaaaaaaaaaaa"
     error_message = "The recipe must build on the image the lookup found"
   }
 }
@@ -340,7 +340,7 @@ run "parent_image_is_required" {
     parent_image = null
   }
 
-  expect_failures = [aws_imagebuilder_image_recipe.this]
+  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
 }
 
 ################################################################################
@@ -365,7 +365,7 @@ run "changed_document_is_a_new_component_and_recipe" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.name != "test-image-4fd9befb"
+    condition     = aws_imagebuilder_image_recipe.this[0].name != "test-image-4fd9befb"
     error_message = "A changed component must produce a differently named recipe"
   }
 }
@@ -389,7 +389,7 @@ run "changed_parameter_is_a_new_recipe_over_the_same_component" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.name != "test-image-4fd9befb"
+    condition     = aws_imagebuilder_image_recipe.this[0].name != "test-image-4fd9befb"
     error_message = "A changed parameter must produce a new recipe"
   }
 }
@@ -500,7 +500,7 @@ run "a_parameter_without_a_value_is_left_to_its_default" {
   }
 
   assert {
-    condition     = length(aws_imagebuilder_image_recipe.this.component[0].parameter) == 0
+    condition     = length(aws_imagebuilder_image_recipe.this[0].component[0].parameter) == 0
     error_message = "A parameter left without a value must not be passed by the recipe"
   }
 
@@ -528,7 +528,7 @@ run "a_parameter_value_reaches_the_recipe_over_the_same_component" {
   }
 
   assert {
-    condition     = one(aws_imagebuilder_image_recipe.this.component[0].parameter).value == "v1.2.3"
+    condition     = one(aws_imagebuilder_image_recipe.this[0].component[0].parameter).value == "v1.2.3"
     error_message = "A parameter value must be passed by the recipe"
   }
 
@@ -661,12 +661,12 @@ run "referenced_component_and_options" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.component[0].component_arn == "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
+    condition     = aws_imagebuilder_image_recipe.this[0].component[0].component_arn == "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
     error_message = "A referenced component must be used by ARN"
   }
 
   assert {
-    condition     = one(aws_imagebuilder_image_pipeline.this.schedule).schedule_expression == "cron(0 0 * * ? *)"
+    condition     = one(aws_imagebuilder_image_pipeline.this[0].schedule).schedule_expression == "cron(0 0 * * ? *)"
     error_message = "The schedule must be set on the pipeline"
   }
 
@@ -748,8 +748,8 @@ run "changed_description_is_a_new_recipe" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this.name != "test-image-4fd9befb"
-    error_message = "A changed description must produce a differently named recipe, got ${aws_imagebuilder_image_recipe.this.name}"
+    condition     = aws_imagebuilder_image_recipe.this[0].name != "test-image-4fd9befb"
+    error_message = "A changed description must produce a differently named recipe, got ${aws_imagebuilder_image_recipe.this[0].name}"
   }
 
   assert {
@@ -818,7 +818,7 @@ run "public_refuses_an_encrypted_parent_image" {
     }
   }
 
-  expect_failures = [aws_imagebuilder_image_recipe.this]
+  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
 }
 
 run "public_refuses_a_parent_image_it_cannot_describe" {
@@ -829,7 +829,7 @@ run "public_refuses_a_parent_image_it_cannot_describe" {
     parent_image = "ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
   }
 
-  expect_failures = [aws_imagebuilder_image_recipe.this]
+  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
 }
 
 run "public_refuses_a_region_that_encrypts_by_default" {
@@ -846,7 +846,7 @@ run "public_refuses_a_region_that_encrypts_by_default" {
     }
   }
 
-  expect_failures = [aws_imagebuilder_image_recipe.this]
+  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
 }
 
 run "a_private_image_ignores_encryption_by_default" {
@@ -1140,7 +1140,7 @@ run "the_rule_matches_only_this_pipelines_finished_images" {
   # Naming the recipe in full, separator and all, is what keeps a rule for
   # "test-image" from also forwarding "test-image-prod" images.
   assert {
-    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix == "arn:aws:imagebuilder:us-west-2:123456789012:image/${lower(aws_imagebuilder_image_recipe.this.name)}/"
+    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix == "arn:aws:imagebuilder:us-west-2:123456789012:image/${lower(aws_imagebuilder_image_recipe.this[0].name)}/"
     error_message = "The rule must be confined to this recipe's images, got ${jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix}"
   }
 
@@ -1204,5 +1204,124 @@ run "the_delivery_role_reaches_one_destination" {
   assert {
     condition     = jsondecode(aws_iam_role.notify[0].assume_role_policy).Statement[0].Principal.Service == "events.amazonaws.com"
     error_message = "Only EventBridge may assume the delivery role"
+  }
+}
+
+################################################################################
+# Deployments mode — Terraform owns build infrastructure only: no recipe,
+# pipeline, image, or build notification. Each deploy builds, copies, tags,
+# publishes, and retires images itself.
+################################################################################
+
+run "deployments_mode_creates_no_recipe_pipeline_or_notification" {
+  command = plan
+
+  variables {
+    image_release_mode   = "deployments"
+    distribution_regions = ["us-east-1", "eu-west-1"]
+    notify_url           = "https://api.example.com/hooks/image-built"
+    notify_header_value  = "shhh"
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_image_recipe.this) == 0
+    error_message = "Deployments mode must create no image recipe"
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_image_pipeline.this) == 0
+    error_message = "Deployments mode must create no image pipeline"
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_image.this) == 0
+    error_message = "Deployments mode must never build an image on apply"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_event_rule.notify) == 0
+    error_message = "Deployments mode must send no build notification even when notify_url is set"
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_distribution_configuration.this.distribution) == 1
+    error_message = "Deployments mode must configure the home region only, got ${length(aws_imagebuilder_distribution_configuration.this.distribution)} regions"
+  }
+
+  assert {
+    condition     = one(aws_imagebuilder_distribution_configuration.this.distribution).region == "us-west-2"
+    error_message = "Deployments mode's distribution configuration must cover the home region"
+  }
+
+  assert {
+    condition     = length(one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).launch_permission) == 0
+    error_message = "Deployments mode must never grant launch permission itself; the deploy publishes explicitly"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_infrastructure_configuration.this.name == "test-image"
+    error_message = "Deployments mode still owns the infrastructure configuration"
+  }
+
+  assert {
+    condition     = aws_iam_role.instance.name == "test-image-image-builder"
+    error_message = "Deployments mode still owns the build instance role"
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_component.this) == 1
+    error_message = "Deployments mode still owns the components each deploy's recipe runs"
+  }
+}
+
+run "deployments_mode_outputs_feed_the_aws_ami_deploy" {
+  command = plan
+
+  variables {
+    image_release_mode = "deployments"
+  }
+
+  assert {
+    condition     = length(output.component_refs) == 1
+    error_message = "component_refs must list every component the deploy's own recipe will run"
+  }
+
+  assert {
+    condition     = output.component_refs[0].name == "provision" && output.component_refs[0].arn == "arn:aws:imagebuilder:us-west-2:123456789012:component/test/1.0.0/1"
+    error_message = "component_refs must carry each component's real ARN regardless of source"
+  }
+
+  assert {
+    condition     = output.recipe_arn == null && output.recipe_name == null
+    error_message = "recipe_arn and recipe_name must be null when this module creates no recipe"
+  }
+
+  assert {
+    condition     = output.pipeline_arn == null && output.pipeline_name == null
+    error_message = "pipeline_arn and pipeline_name must be null when this module creates no pipeline"
+  }
+
+  assert {
+    condition     = output.infrastructure_configuration_arn != null && output.distribution_configuration_arn != null
+    error_message = "infrastructure_configuration_arn and distribution_configuration_arn must still be available for the deploy definition"
+  }
+}
+
+run "terraform_mode_is_unchanged" {
+  command = plan
+
+  assert {
+    condition     = length(aws_imagebuilder_image_recipe.this) == 1
+    error_message = "The default image_release_mode (terraform) must keep creating a recipe"
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_image_pipeline.this) == 1
+    error_message = "The default image_release_mode (terraform) must keep creating a pipeline"
+  }
+
+  assert {
+    condition     = output.recipe_arn != null && output.pipeline_arn != null
+    error_message = "The default image_release_mode (terraform) must keep publishing recipe_arn and pipeline_arn"
   }
 }

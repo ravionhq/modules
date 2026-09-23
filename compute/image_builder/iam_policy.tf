@@ -7,7 +7,8 @@
 ################################################################################
 
 resource "aws_iam_policy" "pipeline_execution" {
-  count = var.create_pipeline_execution_policy ? 1 : 0
+  # There is no pipeline to start in deployments mode.
+  count = !local.deployments_mode && var.create_pipeline_execution_policy ? 1 : 0
 
   name        = local.pipeline_execution_policy_name
   description = "Starts the ${var.name} Image Builder pipeline and reads the images it produces."
@@ -23,7 +24,7 @@ resource "aws_iam_policy" "pipeline_execution" {
           "imagebuilder:GetImagePipeline",
           "imagebuilder:ListImagePipelineImages",
         ]
-        Resource = aws_imagebuilder_image_pipeline.this.arn
+        Resource = aws_imagebuilder_image_pipeline.this[0].arn
       },
       {
         Sid      = "ReadTheImagesItProduces"

@@ -3,6 +3,10 @@
 ################################################################################
 
 resource "aws_imagebuilder_image_recipe" "this" {
+  # Deployments mode creates no recipe: each deploy builds its own, from the
+  # same components, with that deploy's own parameters.
+  count = local.deployments_mode ? 0 : 1
+
   region            = local.region
   name              = "${var.name}-${local.recipe_hash}"
   description       = var.description

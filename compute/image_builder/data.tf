@@ -68,7 +68,7 @@ data "aws_secretsmanager_secret_version" "notify_header" {
 # The account setting encrypts every new EBS volume in a region, including the
 # copies distribution makes, and no recipe can opt out of it.
 data "aws_ebs_encryption_by_default" "current" {
-  for_each = var.public ? toset(local.all_regions) : toset([])
+  for_each = !local.deployments_mode && var.public ? toset(local.all_regions) : toset([])
 
   region = each.value
 }

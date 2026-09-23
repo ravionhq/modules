@@ -5,6 +5,11 @@
 locals {
   region = coalesce(var.region, data.aws_region.current.region)
 
+  # In deployments mode a deploy creates its own recipe, builds, copies,
+  # tags, publishes, and retires images; this module stops short at the
+  # infrastructure the deploy manager builds against.
+  deployments_mode = var.image_release_mode == "deployments"
+
   default_tags = {
     ManagedBy = "terraform"
     Module    = "compute/image_builder"
@@ -149,7 +154,23 @@ locals {
 
   all_regions = distinct(concat([local.region], var.distribution_regions))
 
-  launch_permission_enabled = var.public || length(var.launch_account_ids) > 0 || length(var.launch_organization_arns) > 0
+  # The distribution configuration this module owns only ever covers the home
+  # region in deployments mode: the deploy manager copies to every other
+  # region itself, tagging and publishing as it goes.
+  distribution_config_regions = local.deployments_mode ? [local.region] : local.all_regions
+
+  launch_permission_enabled = !local.deployments_mode && (var.public || length(var.launch_account_ids) > 0 || length(var.launch_organization_arns) > 0)
+
+  # Every component this module creates or references, by name, with its
+  # real ARN regardless of source. Feeds an aws:ami deploy definition's
+  # infrastructure.components so each deploy's own recipe runs the same
+  # components in the same order.
+  component_refs = [
+    for c in local.components : {
+      name = c.name
+      arn  = c.arn != null ? c.arn : aws_imagebuilder_component.this[c.name].arn
+    }
+  ]
 
   # The header value is given here, or kept in Parameter Store or Secrets
   # Manager and read on deploy. A caller that names no source is read by

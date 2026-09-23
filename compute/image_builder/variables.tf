@@ -30,6 +30,17 @@ variable "tags" {
   default     = {}
 }
 
+variable "image_release_mode" {
+  type        = string
+  description = "How images are released. terraform (default): this module owns the recipe, the pipeline, and an optional build on apply, unchanged from prior versions. deployments: this module owns only the build infrastructure (IAM role, infrastructure configuration, components, and a home-region distribution configuration); Ravion builds and releases images through deploys instead, and this module creates no recipe, pipeline, or build."
+  default     = "terraform"
+
+  validation {
+    condition     = contains(["terraform", "deployments"], var.image_release_mode)
+    error_message = "The image_release_mode must be terraform or deployments."
+  }
+}
+
 ################################################################################
 # Recipe
 ################################################################################
