@@ -587,16 +587,16 @@ failed during initialization have no provider resources to migrate.
 | region | AWS region. When null, the provider's configured region is used. | `string` | `null` | no |
 | tags | Tags applied to created resources and Karpenter-launched instances. | `map(string)` | `{}` | no |
 | topology_aware_routing_enabled | Patch `kube-dns` with `trafficDistribution: PreferClose` so DNS stays zone-local (CoreDNS pods are spread by `compute/eks`). | `bool` | `true` | no |
-| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs. | `string` | `registry.k8s.io/kubectl:v1.33.12` | no |
+| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
 | aws_load_balancer_controller_enabled | Install the AWS Load Balancer Controller without any shared load balancer (it installs automatically with one). | `bool` | `false` | no |
-| aws_load_balancer_controller_chart_version | aws-load-balancer-controller chart version. | `string` | `"1.14.0"` | no |
+| aws_load_balancer_controller_chart_version | aws-load-balancer-controller chart version. Its CRDs come from the bundled `charts/aws-load-balancer-controller-crds` chart, which matches the default. | `string` | `"3.5.0"` | no |
 | aws_load_balancer_controller_namespace / aws_load_balancer_controller_service_account | Must match the Pod Identity association from `compute/eks`. | `string` | `"kube-system"` / `"aws-load-balancer-controller"` | no |
 | aws_load_balancer_controller_helm_values | Extra YAML docs merged into the chart values. | `list(string)` | `[]` | no |
 | karpenter_controller_namespace | Namespace for the controller and its Pod Identity association. | `string` | `"kube-system"` | no |
 | karpenter_controller_service_account | Service account for the controller and its Pod Identity association. | `string` | `"karpenter"` | no |
-| karpenter_chart_version | Karpenter (and karpenter-crd) chart version. | `string` | `"1.14.0"` | no |
+| karpenter_chart_version | Karpenter (and karpenter-crd) chart version. | `string` | `"1.14.1"` | no |
 | karpenter_node_role_additional_managed_policy_arns | Extra managed policies on the Karpenter node role. | `list(string)` | `[]` | no |
 | karpenter_interruption_queue_name | Override interruption queue name (`karpenter-<cluster>` when null). | `string` | `null` | no |
 | karpenter_interruption_queue_message_retention_seconds | Interruption queue retention. | `number` | `300` | no |
@@ -610,7 +610,7 @@ failed during initialization have no provider resources to migrate.
 | cluster_security_group_id | Cluster security group for Karpenter nodes and load-balancer-to-pod ingress. Required when Karpenter's default NodePool or any shared load balancer is enabled. | `string` | `null` | no |
 | karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry, consolidation). | `object` | `{}` | no |
 | eso_enabled | Install the External Secrets Operator, its Pod Identity role, and the Ravion ClusterSecretStores. | `bool` | `true` | no |
-| eso_chart_version | external-secrets chart version. | `string` | `"2.8.0"` | no |
+| eso_chart_version | external-secrets chart version. | `string` | `"2.11.0"` | no |
 | eso_namespace | Namespace the operator is installed into (created if missing). | `string` | `"external-secrets"` | no |
 | eso_service_account | Controller service account; must match the Pod Identity association. | `string` | `"external-secrets"` | no |
 | eso_secret_and_parameter_arns | Secrets Manager / SSM ARNs (wildcards allowed) the operator may read. Empty means account- and region-wide read. | `list(string)` | `[]` | no |
@@ -620,7 +620,7 @@ failed during initialization have no provider resources to migrate.
 | eso_parameter_store_store_name | Name of the cluster-scoped Parameter Store store. | `string` | `"ravion-aws-parameter-store"` | no |
 | eso_helm_values | Extra YAML docs merged into the external-secrets chart values. | `list(string)` | `[]` | no |
 | ebs_csi_driver_enabled | Install the aws-ebs-csi-driver add-on + Pod Identity role. | `bool` | `false` | no |
-| ebs_csi_addon_version / ebs_csi_addon_configuration_values | EBS CSI pin / JSON overrides. | `string` | `null` | no |
+| ebs_csi_addon_version / ebs_csi_addon_configuration_values | EBS CSI pin / JSON overrides. Null tracks the latest version compatible with the cluster. | `string` | `null` | no |
 | logs_providers | Where container logs go: any of `loki`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns logs off. Null falls back to the deprecated `logs_enabled`. | `list(string)` | `["loki"]` | no |
 | metrics_providers | Where metrics go: any of `amp`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns metrics off. Null falls back to the deprecated `metrics_enabled`. | `list(string)` | `["amp"]` | no |
 | observability_namespace | Namespace for the collectors, the log store, and the materialized vendor credentials. Null shares Ravion Operator's namespace, which is what keeps Loki's Service URL stable. | `string` | `null` | no |
@@ -639,7 +639,7 @@ failed during initialization have no provider resources to migrate.
 | metrics_cloudwatch | `{ enhanced_observability_enabled, application_signals_enabled, application_signals_namespaces, addon_version, addon_configuration_values }`. Auto-Monitor stays off unless Application Signals is enabled with no namespace list. | `object` | `{}` | no |
 | otel_logs_collector_service_account / _resources / _helm_values | The log collector's identity, sizing, and value overrides. | mixed | `"ravion-otel-logs-collector"` / requests `100m`/`128Mi`, limit `512Mi` / `[]` | no |
 | otel_contrib_image_repository / otel_contrib_image_tag / otel_contrib_command_name | The upstream contrib collector image, used by the log collector and by the metrics collector when a vendor exporter the AWS Distro lacks is selected. | `string` | `"docker.io/otel/opentelemetry-collector-contrib"` / `"0.137.0"` / `"otelcol-contrib"` | no |
-| cloudwatch_observability_addon_version / cloudwatch_observability_addon_configuration_values | CloudWatch Observability pin / JSON overrides. Fallbacks for the `metrics_cloudwatch` fields of the same name. | `string` | `null` | no |
+| cloudwatch_observability_addon_version / cloudwatch_observability_addon_configuration_values | CloudWatch Observability pin / JSON overrides; null tracks the latest version compatible with the cluster. Fallbacks for the `metrics_cloudwatch` fields of the same name. | `string` | `null` | no |
 | amp_workspace_id | Existing AMP workspace to write into. Null creates one aliased `ravion-<cluster>`. | `string` | `null` | no |
 | amp_region | Region the AMP workspace lives in. Null uses the cluster's region. | `string` | `null` | no |
 | amp_alias | Alias for the created workspace. Null uses `ravion-<cluster_name>`. | `string` | `null` | no |
@@ -778,7 +778,7 @@ All outputs are null when the corresponding add-on is disabled.
 - The default NodePool and EC2NodeClass are delivered as a local chart (`charts/karpenter-resources`) because the Helm provider is the only Kubernetes access this stack has.
 - On destroy, the Helm releases are removed before the AWS-side resources, so Karpenter drains and terminates the nodes it launched while its IAM roles and queue still exist.
 - The cluster must have the Pod Identity Agent add-on (the `compute/eks` composite installs it by default); Karpenter's node access entry additionally requires `authentication_mode = API`.
-- The load balancer controller's IAM role and Pod Identity association come from the `compute/eks` composite (`aws_load_balancer_controller_pod_identity_creation_enabled`, on by default); this stack only installs the chart, with `region` and `vpcId` set explicitly so it works under restricted IMDS and on Fargate.
+- The load balancer controller's IAM role and Pod Identity association come from the `compute/eks` composite (`aws_load_balancer_controller_pod_identity_creation_enabled`, on by default); this stack only installs the chart, with `region` and `vpcId` set explicitly so it works under restricted IMDS and on Fargate. Its CRDs are a separate release from the bundled `charts/aws-load-balancer-controller-crds` chart, because Helm never upgrades a chart's `crds/` directory. TargetGroupBindings re-check target health every 2 seconds while a pod waits on its load balancer readiness gate, instead of the controller's 15-second default, so rolling deploys finish as soon as the load balancer reports new pods healthy.
 - For automatic subnet discovery, tag public subnets with `kubernetes.io/role/elb = 1` and private subnets with `kubernetes.io/role/internal-elb = 1`, or specify subnets per Ingress via the `alb.ingress.kubernetes.io/subnets` annotation.
 - Unlike Karpenter, the `external-secrets` chart renders its CRDs as ordinary templates (`installCRDs`, default on), so Helm upgrades them and no separate CRD chart is needed. The `ClusterSecretStore`s are a separate local chart (`charts/external-secrets-resources`) that `depends_on` the operator release, because CRD-kind objects cannot be applied before the operator's CRDs exist and its validating webhook is serving.
 - The External Secrets Operator's `ClusterSecretStore`s carry no `auth` block. The operator resolves credentials through the AWS SDK default credential chain, which the Pod Identity Agent populates from the association this stack creates — so no static AWS credentials exist anywhere in the cluster, and `serviceAccountRef`-style IRSA config is deliberately absent (it conflicts with Pod Identity).

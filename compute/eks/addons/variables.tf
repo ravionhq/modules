@@ -60,7 +60,7 @@ variable "topology_aware_routing_enabled" {
 variable "kubectl_image" {
   type        = string
   description = "kubectl image (repository:tag) the kube-dns patch Jobs run. Pinned; override for clusters that must pull from a private mirror."
-  default     = "registry.k8s.io/kubectl:v1.33.12"
+  default     = "registry.k8s.io/kubectl:v1.36.4"
   nullable    = false
 
   validation {
@@ -81,13 +81,13 @@ variable "aws_load_balancer_controller_enabled" {
 
 variable "aws_load_balancer_controller_chart_version" {
   type        = string
-  description = "Version of the aws-load-balancer-controller Helm chart to install."
-  default     = "1.14.0"
+  description = "Version of the aws-load-balancer-controller Helm chart to install. The bundled CRD chart matches the default; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
+  default     = "3.5.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.aws_load_balancer_controller_chart_version))
-    error_message = "The aws_load_balancer_controller_chart_version must be a semantic version like '1.14.0' (no leading 'v')."
+    error_message = "The aws_load_balancer_controller_chart_version must be a semantic version like '3.5.0' (no leading 'v')."
   }
 }
 
@@ -121,7 +121,7 @@ variable "ebs_csi_driver_enabled" {
 
 variable "ebs_csi_addon_version" {
   type        = string
-  description = "Pinned version for the aws-ebs-csi-driver add-on. When null, AWS resolves the most recent compatible version."
+  description = "Pinned version for the aws-ebs-csi-driver add-on. When null, the module tracks the most recent version compatible with the cluster's Kubernetes version and upgrades it in place on apply."
   default     = null
 }
 
@@ -141,7 +141,7 @@ variable "ebs_csi_addon_configuration_values" {
 
 variable "cloudwatch_observability_addon_version" {
   type        = string
-  description = "Pinned version for the amazon-cloudwatch-observability add-on. When null, AWS resolves the most recent compatible version."
+  description = "Pinned version for the amazon-cloudwatch-observability add-on. When null, the module tracks the most recent version compatible with the cluster's Kubernetes version and upgrades it in place on apply."
   default     = null
 }
 
@@ -164,12 +164,12 @@ variable "eso_enabled" {
 variable "eso_chart_version" {
   type        = string
   description = "Version of the external-secrets Helm chart to install."
-  default     = "2.8.0"
+  default     = "2.11.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.eso_chart_version))
-    error_message = "The eso_chart_version must be a semantic version like '2.8.0' (no leading 'v')."
+    error_message = "The eso_chart_version must be a semantic version like '2.11.0' (no leading 'v')."
   }
 }
 
@@ -291,12 +291,12 @@ variable "karpenter_node_role_additional_managed_policy_arns" {
 variable "karpenter_chart_version" {
   type        = string
   description = "Version of the Karpenter Helm chart (and karpenter-crd chart) to install."
-  default     = "1.14.0"
+  default     = "1.14.1"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.karpenter_chart_version))
-    error_message = "The karpenter_chart_version must be a semantic version like '1.14.0' (no leading 'v')."
+    error_message = "The karpenter_chart_version must be a semantic version like '1.14.1' (no leading 'v')."
   }
 }
 

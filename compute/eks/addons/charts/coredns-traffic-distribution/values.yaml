@@ -16,7 +16,7 @@ service:
 # pull from a private mirror.
 image:
   repository: registry.k8s.io/kubectl
-  tag: v1.33.12
+  tag: v1.36.4
   pullPolicy: IfNotPresent
 
 # -- Give up after this many failed attempts and fail the release.
