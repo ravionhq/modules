@@ -1,4 +1,4 @@
-# Image Builder module tests — run from module root: tofu test
+# AMI module tests — run from module root: tofu test
 #
 # The module owns the build infrastructure only. It has no image recipe, image
 # pipeline or image resource to assert on: each deploy creates its own recipe

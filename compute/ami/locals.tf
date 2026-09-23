@@ -7,7 +7,7 @@ locals {
 
   default_tags = {
     ManagedBy = "terraform"
-    Module    = "compute/image_builder"
+    Module    = "compute/ami"
   }
 
   tags = merge(local.default_tags, var.tags)

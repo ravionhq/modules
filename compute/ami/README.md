@@ -1,7 +1,7 @@
-# EC2 Image Builder
+# AMI
 
 Creates the EC2 Image Builder infrastructure an AMI is baked on. Images are
-released only through deploys of the `rvn-aws-image-builder` module definition:
+released only through deploys of the `rvn-aws-ami` module definition:
 each deploy builds an AMI from a parent image and ordered components, copies it
 to every region, publishes it when asked, and retires older images.
 
@@ -97,7 +97,7 @@ higher quota before raising it.
 
 ```hcl
 module "image" {
-  source = "git::https://github.com/ravionhq/modules.git//compute/image_builder?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//compute/ami?ref=v1.0.0"
 
   name = "app-image"
 

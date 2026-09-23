@@ -1,10 +1,10 @@
 definition:
-  type: rvn-aws-image-builder
-  name: EC2 Image Builder
+  type: rvn-aws-ami
+  name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
 release:
-  version: 0.3.0
-  description: Images are now released only through deploys. Each deploy builds an AMI, copies it to every additional region, tags it, publishes it when asked, and retires older images past the public and private counts each region keeps. The image pipeline, schedules, build on deploy, build notifications, account and organization sharing, and the account-wide public AMI setting are removed.
+  version: 0.1.0
+  description: First release. Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI in the module's region, copies it to every additional region, tags it, publishes it when asked, and retires older images past the public and private counts each region keeps.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -909,7 +909,7 @@ module:
   stack:
     $template: ../../partials/templates/opentofu-stack.yml
     with:
-      base_path: compute/image_builder
+      base_path: compute/ami
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
         ami_description: << module.input.ami_description || nil >>
@@ -1107,4 +1107,4 @@ module:
     - [EC2 Image Builder](https://docs.aws.amazon.com/imagebuilder/latest/userguide/what-is-image-builder.html)
     - [Component documents](https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-use-documents.html)
     - [Make an AMI public](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/sharingamis-intro.html)
-    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/image_builder)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ami)
