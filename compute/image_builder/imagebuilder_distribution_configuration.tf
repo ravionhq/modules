@@ -1,10 +1,9 @@
 ################################################################################
 # Distribution Configuration
 #
-# The same name, tags and launch permission in the build region and every
-# distribution region. In deployments mode this covers the home region only,
-# with no launch permission: it names and tags the build's AMI, and the
-# deploy manager copies, tags, and publishes it into every other region.
+# The build region only, with no launch permission: it names and tags the image
+# a build produces and leaves it private. Each deploy copies the image to every
+# other region, tags it, and publishes it itself.
 ################################################################################
 
 resource "aws_imagebuilder_distribution_configuration" "this" {
@@ -12,47 +11,15 @@ resource "aws_imagebuilder_distribution_configuration" "this" {
   name        = var.name
   description = var.description
 
-  dynamic "distribution" {
-    for_each = local.distribution_config_regions
+  distribution {
+    region = local.region
 
-    content {
-      region = distribution.value
-
-      ami_distribution_configuration {
-        name        = local.ami_name
-        description = var.ami_description
-        ami_tags    = merge(local.tags, var.ami_tags)
-
-        dynamic "launch_permission" {
-          for_each = local.launch_permission_enabled ? [1] : []
-
-          content {
-            user_groups       = var.public ? ["all"] : null
-            user_ids          = length(var.launch_account_ids) > 0 ? var.launch_account_ids : null
-            organization_arns = length(var.launch_organization_arns) > 0 ? var.launch_organization_arns : null
-          }
-        }
-      }
+    ami_distribution_configuration {
+      name        = local.ami_name
+      description = var.ami_description
+      ami_tags    = merge(local.tags, var.ami_tags)
     }
   }
 
   tags = local.tags
-
-  # A public distribution fails at build time, not at apply, in a region that
-  # still blocks public sharing.
-  depends_on = [aws_ec2_image_block_public_access.this]
-}
-
-################################################################################
-# Public sharing
-#
-# New accounts block public AMI sharing per region. The setting is account-wide
-# for the region, and removing this resource leaves it as it is.
-################################################################################
-
-resource "aws_ec2_image_block_public_access" "this" {
-  for_each = !local.deployments_mode && var.public && var.manage_image_block_public_access ? toset(local.all_regions) : toset([])
-
-  region = each.value
-  state  = "unblocked"
 }

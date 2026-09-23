@@ -4,7 +4,7 @@
 
 variable "name" {
   type        = string
-  description = "Name of the pipeline, and the prefix of every other resource this module creates."
+  description = "Name of the configurations, and the prefix of every other resource this module creates."
 
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$", var.name))
@@ -14,13 +14,13 @@ variable "name" {
 
 variable "description" {
   type        = string
-  description = "Description stored on the pipeline, the recipe and the configurations."
+  description = "Description stored on the infrastructure and distribution configurations."
   default     = null
 }
 
 variable "region" {
   type        = string
-  description = "Region the image is built in. Defaults to the provider's region."
+  description = "Region images are built in. Defaults to the provider's region."
   default     = null
 }
 
@@ -30,35 +30,13 @@ variable "tags" {
   default     = {}
 }
 
-variable "image_release_mode" {
-  type        = string
-  description = "How images are released. terraform (default): this module owns the recipe, the pipeline, and an optional build on apply, unchanged from prior versions. deployments: this module owns only the build infrastructure (IAM role, infrastructure configuration, components, and a home-region distribution configuration); Ravion builds and releases images through deploys instead, and this module creates no recipe, pipeline, or build."
-  default     = "terraform"
-
-  validation {
-    condition     = contains(["terraform", "deployments"], var.image_release_mode)
-    error_message = "The image_release_mode must be terraform or deployments."
-  }
-}
-
 ################################################################################
-# Recipe
+# Parent image
 ################################################################################
-
-variable "recipe_version" {
-  type        = string
-  description = "Semantic version of the recipe and of the components this module creates. Recipes and components are immutable, so this module names each by a hash of its content; the version never has to change for an apply to succeed."
-  default     = "1.0.0"
-
-  validation {
-    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.recipe_version))
-    error_message = "The recipe_version must look like 1.0.0."
-  }
-}
 
 variable "parent_image" {
   type        = string
-  description = "Image the recipe builds on: an AMI id, an Image Builder image ARN, or an SSM parameter as ssm:<name>. Leave null to look one up with parent_image_lookup."
+  description = "Image each build starts from: an AMI id, an Image Builder image ARN, or an SSM parameter as ssm:<name>. Leave null to look one up with parent_image_lookup."
   default     = null
 }
 
@@ -68,7 +46,7 @@ variable "parent_image_lookup" {
     name         = string
     architecture = optional(string, "x86_64")
   })
-  description = "Looks the parent image up as the newest AMI in the build region matching an owner and a name pattern. The id is resolved at plan time, so an apply after the owner publishes a newer image produces a new recipe. Ignored when parent_image is set."
+  description = "Looks the parent image up as the newest AMI in the build region matching an owner and a name pattern. The parent_image output reports the match at apply time. Ignored when parent_image is set."
   default     = null
 
   validation {
@@ -79,6 +57,21 @@ variable "parent_image_lookup" {
   validation {
     condition     = var.parent_image_lookup == null || contains(["x86_64", "arm64"], try(var.parent_image_lookup.architecture, "x86_64"))
     error_message = "The parent_image_lookup.architecture must be x86_64 or arm64."
+  }
+}
+
+################################################################################
+# Components
+################################################################################
+
+variable "component_version" {
+  type        = string
+  description = "Semantic version of the components this module creates. Components are immutable, so this module names each by a hash of its content; the version never has to change for an apply to succeed."
+  default     = "1.0.0"
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.component_version))
+    error_message = "The component_version must look like 1.0.0."
   }
 }
 
@@ -126,7 +119,7 @@ variable "components" {
       max_attempts    = optional(number)
     })), [])
   }))
-  description = "Components the recipe runs, in order. Each is created here from the steps it describes (source steps), created here from a component document given verbatim (source document), or referenced by ARN (source arn) — an AWS-managed component or one that already exists. A steps component names its parameters in parameter_definitions and its work in build_steps, validate_steps and test_steps; the module writes the document. Parameters are passed to the component by the recipe, so a value can change without changing the document. A caller that leaves source out is read by whether it filled in arn, data, or steps."
+  description = "Components each build runs, in order. Each is created here from the steps it describes (source steps), created here from a component document given verbatim (source document), or referenced by ARN (source arn) — an AWS-managed component or one that already exists. A steps component names its parameters in parameter_definitions and its work in build_steps, validate_steps and test_steps; the module writes the document. Parameter values are passed to the component by each build's recipe, so a value can change without changing the document. A caller that leaves source out is read by whether it filled in arn, data, or steps."
 
   validation {
     condition     = length(var.components) > 0
@@ -207,50 +200,13 @@ variable "components" {
   }
 }
 
-variable "user_data" {
-  type        = string
-  description = "User data the build instance launches with, in plain text. Supplying it replaces the script Image Builder would otherwise use to install the Systems Manager agent, so it must install the agent itself on a parent image that does not ship one."
-  default     = null
-}
-
-variable "working_directory" {
-  type        = string
-  description = "Working directory for the build and test workflows. Null keeps the Image Builder default."
-  default     = null
-}
-
-variable "ssm_agent_uninstall_after_build" {
-  type        = bool
-  description = "Remove the Systems Manager agent from the image when Image Builder installed it for the build. An agent the parent image or user_data installed is left alone."
-  default     = true
-}
-
-variable "root_volume" {
-  type = object({
-    device_name = string
-    size_gb     = number
-    type        = optional(string, "gp3")
-    iops        = optional(number)
-    throughput  = optional(number)
-    encrypted   = optional(bool)
-    kms_key_id  = optional(string)
-  })
-  description = "Root volume of the build instance, which becomes the image's snapshot: its size is the smallest root volume an instance can launch the image with. Null keeps the parent image's mapping. Encryption defaults to on, and to off for a public image, which cannot be backed by an encrypted snapshot."
-  default     = null
-
-  validation {
-    condition     = var.root_volume == null || try(var.root_volume.size_gb >= 1 && var.root_volume.size_gb <= 65536, false)
-    error_message = "The root_volume.size_gb must be between 1 and 65536."
-  }
-}
-
 ################################################################################
 # Build infrastructure
 ################################################################################
 
 variable "instance_types" {
   type        = list(string)
-  description = "Instance types the build may run on, in order of preference. They must match the parent image's architecture."
+  description = "Instance types a build may run on, in order of preference. They must match the parent image's architecture."
   default     = ["m7i.large"]
 
   validation {
@@ -306,19 +262,13 @@ variable "log_prefix" {
   default     = "image-builder"
 }
 
-variable "create_pipeline_execution_policy" {
-  type        = bool
-  description = "Create a customer-managed IAM policy that starts this pipeline and reads the images it produces. Attach it to a deploy pipeline's role to build an image outside Terraform with `aws imagebuilder start-image-pipeline-execution`."
-  default     = false
-}
-
 ################################################################################
 # Distribution
 ################################################################################
 
 variable "ami_name" {
   type        = string
-  description = "Name of each image produced. It must be unique per build, so it ends in {{ imagebuilder:buildDate }} unless you put that elsewhere. Defaults to <name>-{{ imagebuilder:buildDate }}."
+  description = "Name of each image built. It must be unique per build, so it ends in {{ imagebuilder:buildDate }} unless you put that elsewhere. Defaults to <name>-{{ imagebuilder:buildDate }}."
   default     = null
 
   validation {
@@ -329,188 +279,12 @@ variable "ami_name" {
 
 variable "ami_description" {
   type        = string
-  description = "Description stored on each image produced."
+  description = "Description stored on each image built, in the build region."
   default     = null
 }
 
 variable "ami_tags" {
   type        = map(string)
-  description = "Tags written on each image produced, in every region. Tags are visible only to the owning account, even on a public image."
+  description = "Tags written on each image built, in the build region. Tags are visible only to the owning account, even on a public image."
   default     = {}
-}
-
-variable "distribution_regions" {
-  type        = list(string)
-  description = "Regions the finished image is copied to, beyond the build region."
-  default     = []
-
-  validation {
-    condition     = length(var.distribution_regions) == length(distinct(var.distribution_regions))
-    error_message = "The distribution_regions must not contain duplicates."
-  }
-}
-
-variable "public" {
-  type        = bool
-  description = "Make every image produced launchable by any AWS account."
-  default     = false
-}
-
-variable "manage_image_block_public_access" {
-  type        = bool
-  description = "When public is true, turn off the account-wide block on public AMI sharing in the build region and every distribution region. The setting covers every image the account owns in those regions, not only the images this module builds, and destroying this module does not turn it back on: re-block it with `aws ec2 enable-image-block-public-access --image-block-public-access block-new-sharing --region <region>`. Left false, a public build fails in any region that still blocks sharing, and the account keeps the block."
-  default     = false
-}
-
-variable "launch_account_ids" {
-  type        = list(string)
-  description = "AWS accounts granted launch permission on every image produced."
-  default     = []
-
-  validation {
-    condition     = alltrue([for id in var.launch_account_ids : can(regex("^[0-9]{12}$", id))])
-    error_message = "Each launch_account_ids entry must be a 12-digit AWS account id."
-  }
-}
-
-variable "launch_organization_arns" {
-  type        = list(string)
-  description = "AWS Organizations granted launch permission on every image produced."
-  default     = []
-}
-
-################################################################################
-# Pipeline
-################################################################################
-
-variable "pipeline_enabled" {
-  type        = bool
-  description = "Whether the pipeline can run. A disabled pipeline keeps its configuration and ignores its schedule."
-  default     = true
-}
-
-variable "schedule_expression" {
-  type        = string
-  description = "Cron expression the pipeline runs on, as cron(0 0 * * ? *). Null leaves it manual."
-  default     = null
-}
-
-variable "schedule_start_condition" {
-  type        = string
-  description = "Whether a scheduled run always builds, or only when the parent image or a component using a wildcard version has an update."
-  default     = "EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE"
-
-  validation {
-    condition     = contains(["EXPRESSION_MATCH_ONLY", "EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE"], var.schedule_start_condition)
-    error_message = "The schedule_start_condition must be EXPRESSION_MATCH_ONLY or EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE."
-  }
-}
-
-variable "image_tests_enabled" {
-  type        = bool
-  description = "Launch a test instance from the new image and run the components' test phases. The test instance is driven through the Systems Manager agent, so turn this off for an image that does not start one on boot."
-  default     = true
-}
-
-variable "image_tests_timeout_minutes" {
-  type        = number
-  description = "How long the test phase may run."
-  default     = 60
-
-  validation {
-    condition     = var.image_tests_timeout_minutes >= 60 && var.image_tests_timeout_minutes <= 1440
-    error_message = "The image_tests_timeout_minutes must be between 60 and 1440."
-  }
-}
-
-variable "enhanced_image_metadata_enabled" {
-  type        = bool
-  description = "Collect the package list and other metadata from each image built."
-  default     = true
-}
-
-variable "build_timeout_minutes" {
-  type        = number
-  description = "How long an apply waits for a build_on_apply build, covering the build, the tests and the distribution. Null allows an hour on top of image_tests_timeout_minutes."
-  default     = null
-
-  validation {
-    condition     = var.build_timeout_minutes == null || try(var.build_timeout_minutes > var.image_tests_timeout_minutes, false)
-    error_message = "The build_timeout_minutes must be greater than image_tests_timeout_minutes, which the build contains."
-  }
-}
-
-variable "build_on_apply" {
-  type        = bool
-  description = "Build an image during apply, and again whenever the recipe changes. The apply waits for the build and its distribution, which commonly takes 20-60 minutes. Destroying the image record later leaves the AMIs in place."
-  default     = false
-}
-
-################################################################################
-# Build notification
-################################################################################
-
-variable "notify_url" {
-  type        = string
-  description = "HTTPS endpoint told when a build finishes and its images are distributed. Empty sends no notifications."
-  default     = ""
-
-  validation {
-    condition     = var.notify_url == "" || startswith(var.notify_url, "https://")
-    error_message = "The notify_url must be an https:// endpoint."
-  }
-}
-
-variable "notify_header_name" {
-  type        = string
-  description = "Header the notification carries so the endpoint can authenticate it."
-  default     = "X-Lambda-Secret"
-}
-
-variable "notify_secret_source" {
-  type        = string
-  description = "Where the header value comes from: value for notify_header_value, parameter_store for notify_header_parameter, secrets_manager for notify_header_secret. Null is read from whichever one is filled in."
-  default     = null
-
-  validation {
-    condition     = var.notify_secret_source == null || contains(["value", "parameter_store", "secrets_manager"], coalesce(var.notify_secret_source, "value"))
-    error_message = "The notify_secret_source must be value, parameter_store or secrets_manager."
-  }
-
-  # A named source that holds nothing would leave the endpoint unprotected
-  # rather than unnotified, so it is refused here instead of read as "off".
-  validation {
-    condition = (
-      var.notify_secret_source == null ||
-      var.notify_secret_source == "value" ||
-      (var.notify_secret_source == "parameter_store" && try(trimspace(var.notify_header_parameter), "") != "") ||
-      (var.notify_secret_source == "secrets_manager" && try(trimspace(var.notify_header_secret), "") != "")
-    )
-    error_message = "A notify_secret_source of parameter_store needs notify_header_parameter, and one of secrets_manager needs notify_header_secret."
-  }
-}
-
-variable "notify_header_value" {
-  type        = string
-  description = "Value of that header, given here."
-  default     = ""
-  sensitive   = true
-}
-
-variable "notify_header_parameter" {
-  type        = string
-  description = "Name or ARN of the SSM Parameter Store parameter holding the header value. A SecureString is decrypted on read, so the deploy needs kms:Decrypt on its key as well as ssm:GetParameter."
-  default     = ""
-}
-
-variable "notify_header_secret" {
-  type        = string
-  description = "Name or ARN of the Secrets Manager secret holding the header value. The deploy needs secretsmanager:GetSecretValue on it, and kms:Decrypt on its key when the secret uses a customer-managed one."
-  default     = ""
-}
-
-variable "notify_header_secret_json_key" {
-  type        = string
-  description = "Key to read out of a Secrets Manager secret that stores JSON. Empty uses the whole secret string."
-  default     = ""
 }

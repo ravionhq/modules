@@ -18,7 +18,7 @@ locals {
 
 resource "aws_iam_role" "instance" {
   name        = local.instance_role_name
-  description = "Build instance role for the ${var.name} Image Builder pipeline."
+  description = "Build instance role for ${var.name} Image Builder builds."
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

@@ -1,7 +1,8 @@
 ################################################################################
 # Components
 #
-# One per inline document. Referenced components (arn) are used as they are.
+# One per steps or document component. Referenced components (arn) are used as
+# they are.
 ################################################################################
 
 resource "aws_imagebuilder_component" "this" {
@@ -11,13 +12,13 @@ resource "aws_imagebuilder_component" "this" {
   name        = "${var.name}-${each.key}-${each.value.hash}"
   description = each.value.description
   platform    = each.value.platform
-  version     = var.recipe_version
+  version     = var.component_version
   data        = each.value.data
 
   tags = local.tags
 
-  # The new component exists before the recipe moves to it and the old one is
-  # deleted only after nothing references it.
+  # A changed component exists before the old one is deleted, so the next
+  # deploy always has a component to build with.
   lifecycle {
     create_before_destroy = true
   }

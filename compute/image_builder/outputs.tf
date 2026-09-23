@@ -1,61 +1,31 @@
 output "region" {
-  description = "The region the image is built in."
+  description = "The region images are built in."
   value       = local.region
 }
 
-output "pipeline_arn" {
-  description = "The ARN of the image pipeline. Start a build with `aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <arn>`. Null in deployments mode, which creates no pipeline."
-  value       = try(aws_imagebuilder_image_pipeline.this[0].arn, null)
-}
+output "parent_image" {
+  description = "The parent image builds start from: the image given, or the newest AMI the lookup found at apply time. A deploy looks a lookup up again when it starts."
+  value       = local.parent_image
 
-output "pipeline_name" {
-  description = "The name of the image pipeline. Null in deployments mode, which creates no pipeline."
-  value       = try(aws_imagebuilder_image_pipeline.this[0].name, null)
-}
-
-output "recipe_arn" {
-  description = "The ARN of the current image recipe. Null in deployments mode, where each deploy creates its own recipe instead."
-  value       = try(aws_imagebuilder_image_recipe.this[0].arn, null)
-}
-
-output "recipe_name" {
-  description = "The name of the current image recipe, which ends in a hash of its content. Null in deployments mode, where each deploy creates its own recipe instead."
-  value       = try(aws_imagebuilder_image_recipe.this[0].name, null)
+  precondition {
+    condition     = local.parent_image != null
+    error_message = "Set parent_image or parent_image_lookup."
+  }
 }
 
 output "component_refs" {
-  description = "Every component this module creates or references, in recipe order, with its real ARN regardless of source and its parameter values. Feeds an aws:ami deploy definition's infrastructure.components."
+  description = "Every component this module creates or references, in run order, as {name, arn, parameters}: its real ARN regardless of source, and the parameter values a deploy passes it unless the deploy overrides them."
   value       = local.component_refs
 }
 
-output "component_names" {
-  description = "Names of the components this module created, keyed by component name. Each ends in a hash of its content."
-  value       = { for name, component in aws_imagebuilder_component.this : name => component.name }
-}
-
-output "parent_image" {
-  description = "The parent image the current recipe builds on."
-  value       = local.parent_image
-}
-
-output "component_arns" {
-  description = "ARNs of the components this module created, keyed by component name."
-  value       = { for name, component in aws_imagebuilder_component.this : name => component.arn }
-}
-
 output "infrastructure_configuration_arn" {
-  description = "The ARN of the infrastructure configuration."
+  description = "The ARN of the infrastructure configuration a build runs on."
   value       = aws_imagebuilder_infrastructure_configuration.this.arn
 }
 
 output "distribution_configuration_arn" {
-  description = "The ARN of the distribution configuration."
+  description = "The ARN of the distribution configuration that names and tags each image in the build region."
   value       = aws_imagebuilder_distribution_configuration.this.arn
-}
-
-output "distribution_regions" {
-  description = "Every region an image is produced in: the build region first, then the distribution regions."
-  value       = local.all_regions
 }
 
 output "instance_role_arn" {
@@ -66,29 +36,4 @@ output "instance_role_arn" {
 output "instance_role_name" {
   description = "The name of the build instance's IAM role, for attaching further policies."
   value       = aws_iam_role.instance.name
-}
-
-output "image_arn" {
-  description = "The ARN of the image built during apply. Null unless build_on_apply is true."
-  value       = try(aws_imagebuilder_image.this[0].arn, null)
-}
-
-output "ami_ids" {
-  description = "AMI ids of the image built during apply, keyed by region. Empty unless build_on_apply is true."
-  value = {
-    for ami in try(tolist(aws_imagebuilder_image.this[0].output_resources[0].amis), []) : ami.region => ami.image
-  }
-}
-
-output "pipeline_execution_policy_arn" {
-  description = "The ARN of the policy that starts this pipeline and reads the images it produces. Null unless create_pipeline_execution_policy is true."
-  value       = try(aws_iam_policy.pipeline_execution[0].arn, null)
-}
-
-output "notification_rule_arn" {
-  description = "The EventBridge rule that forwards finished builds, or null when notifications are off."
-  # Read off the rule itself rather than the flag that decides it: the flag is
-  # derived from the header value, and a value derived from a secret makes the
-  # whole output a secret.
-  value = one(aws_cloudwatch_event_rule.notify[*].arn)
 }

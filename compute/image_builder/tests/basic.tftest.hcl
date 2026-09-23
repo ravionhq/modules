@@ -1,24 +1,14 @@
 # Image Builder module tests — run from module root: tofu test
+#
+# The module owns the build infrastructure only. It has no image recipe, image
+# pipeline or image resource to assert on: each deploy creates its own recipe
+# and build from the outputs checked below.
 
 mock_provider "aws" {
   override_resource {
     target = aws_imagebuilder_component.this
     values = {
       arn = "arn:aws:imagebuilder:us-west-2:123456789012:component/test/1.0.0/1"
-    }
-  }
-
-  override_resource {
-    target = aws_imagebuilder_image_recipe.this
-    values = {
-      arn = "arn:aws:imagebuilder:us-west-2:123456789012:image-recipe/test/1.0.0"
-    }
-  }
-
-  override_resource {
-    target = aws_imagebuilder_image_pipeline.this
-    values = {
-      arn = "arn:aws:imagebuilder:us-west-2:123456789012:image-pipeline/test-image"
     }
   }
 
@@ -33,27 +23,6 @@ mock_provider "aws" {
     target = aws_imagebuilder_distribution_configuration.this
     values = {
       arn = "arn:aws:imagebuilder:us-west-2:123456789012:distribution-configuration/test"
-    }
-  }
-
-  override_resource {
-    target = aws_cloudwatch_event_connection.notify
-    values = {
-      arn = "arn:aws:events:us-west-2:123456789012:connection/test-image-notify/0123"
-    }
-  }
-
-  override_resource {
-    target = aws_cloudwatch_event_api_destination.notify
-    values = {
-      arn = "arn:aws:events:us-west-2:123456789012:api-destination/test-image-notify/0123"
-    }
-  }
-
-  override_resource {
-    target = aws_iam_role.notify
-    values = {
-      arn = "arn:aws:iam::123456789012:role/test-image-notify"
     }
   }
 
@@ -73,46 +42,9 @@ mock_provider "aws" {
   }
 
   override_data {
-    target = data.aws_caller_identity.current
-    values = {
-      account_id = "123456789012"
-    }
-  }
-
-  override_data {
     target = data.aws_ami.parent
     values = {
-      id                    = "ami-0aaaaaaaaaaaaaaaa"
-      block_device_mappings = []
-    }
-  }
-
-  override_data {
-    target = data.aws_ami.parent_snapshot
-    values = {
-      id                    = "ami-0123456789abcdef0"
-      block_device_mappings = []
-    }
-  }
-
-  override_data {
-    target = data.aws_ebs_encryption_by_default.current
-    values = {
-      enabled = false
-    }
-  }
-
-  override_data {
-    target = data.aws_ssm_parameter.notify_header
-    values = {
-      value = "from-parameter-store"
-    }
-  }
-
-  override_data {
-    target = data.aws_secretsmanager_secret_version.notify_header
-    values = {
-      secret_string = "{\"header\":\"from-secrets-manager\"}"
+      id = "ami-0aaaaaaaaaaaaaaaa"
     }
   }
 }
@@ -132,58 +64,20 @@ variables {
 }
 
 ################################################################################
-# Defaults — a private image in the build region only, built on demand
+# Defaults — the build infrastructure a deploy builds against
 ################################################################################
 
 run "defaults" {
   command = plan
 
-
   assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].parent_image == "ami-0123456789abcdef0"
-    error_message = "The recipe must build on parent_image"
-  }
-
-  # Pinned: a name that moves without its content moving would replace every
-  # consumer's recipe and component on upgrade.
-  assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].name == "test-image-4fd9befb"
-    error_message = "The recipe must be named by a stable content hash, got ${aws_imagebuilder_image_recipe.this[0].name}"
+    condition     = aws_imagebuilder_infrastructure_configuration.this.name == "test-image"
+    error_message = "The infrastructure configuration must be named after the module"
   }
 
   assert {
-    condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-26a95f58"
-    error_message = "An inline component must be named by a stable content hash, got ${aws_imagebuilder_component.this["provision"].name}"
-  }
-
-  assert {
-    condition     = one(aws_imagebuilder_image_recipe.this[0].component[0].parameter).value == "v1.2.3"
-    error_message = "Component parameters must be passed by the recipe"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_distribution_configuration.this.distribution) == 1
-    error_message = "With no distribution_regions the image is produced in the build region only"
-  }
-
-  assert {
-    condition     = length(one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).launch_permission) == 0
-    error_message = "An image must be private by default"
-  }
-
-  assert {
-    condition     = length(aws_ec2_image_block_public_access.this) == 0
-    error_message = "The public-sharing block must be left alone for a private image"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image_pipeline.this[0].schedule) == 0
-    error_message = "The pipeline must be manual by default"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image.this) == 0
-    error_message = "No image must be built during apply by default"
+    condition     = aws_imagebuilder_infrastructure_configuration.this.instance_profile_name == aws_iam_role.instance.name
+    error_message = "Builds must run as the build instance role"
   }
 
   assert {
@@ -192,128 +86,199 @@ run "defaults" {
   }
 
   assert {
+    condition     = aws_iam_role.instance.name == "test-image-image-builder"
+    error_message = "The build instance role must be named after the module, got ${aws_iam_role.instance.name}"
+  }
+
+  assert {
     condition     = length(aws_iam_role_policy_attachment.instance) == 2
     error_message = "The instance role must carry exactly the two Image Builder policies by default"
   }
-}
 
-################################################################################
-# Public, multi-region
-################################################################################
+  assert {
+    condition     = length(aws_iam_role_policy.instance) == 0 && length(aws_iam_role_policy.logs) == 0
+    error_message = "The instance role must carry no inline policy unless one is asked for"
+  }
 
-run "public_multi_region" {
-  command = plan
-
-  variables {
-    public                           = true
-    manage_image_block_public_access = true
-    distribution_regions             = ["us-east-1", "eu-west-1"]
-    ami_tags                         = { release = "v1.2.3" }
-    root_volume = {
-      device_name = "/dev/xvda"
-      size_gb     = 30
-    }
+  # Pinned: a name that moves without its content moving would replace every
+  # consumer's component on upgrade.
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-26a95f58"
+    error_message = "A document component must be named by a stable content hash, got ${aws_imagebuilder_component.this["provision"].name}"
   }
 
   assert {
-    condition     = length(aws_imagebuilder_distribution_configuration.this.distribution) == 3
-    error_message = "The image must be distributed to the build region and every distribution region"
-  }
-
-  assert {
-    condition = alltrue([
-      for d in aws_imagebuilder_distribution_configuration.this.distribution :
-      contains(one(one(d.ami_distribution_configuration).launch_permission).user_groups, "all")
-    ])
-    error_message = "Every region's image must be public"
-  }
-
-  assert {
-    condition = alltrue([
-      for d in aws_imagebuilder_distribution_configuration.this.distribution :
-      one(d.ami_distribution_configuration).ami_tags["release"] == "v1.2.3"
-    ])
-    error_message = "Every region's image must carry ami_tags"
-  }
-
-  assert {
-    condition     = toset(keys(aws_ec2_image_block_public_access.this)) == toset(["us-west-2", "us-east-1", "eu-west-1"])
-    error_message = "Public sharing must be unblocked in every region an image lands in"
-  }
-
-  assert {
-    condition     = one(one(aws_imagebuilder_image_recipe.this[0].block_device_mapping).ebs).encrypted == "false"
-    error_message = "A public image's snapshot must not be encrypted"
-  }
-}
-
-run "public_without_managing_the_block" {
-  command = plan
-
-  variables {
-    public                           = true
-    manage_image_block_public_access = false
-  }
-
-  assert {
-    condition     = length(aws_ec2_image_block_public_access.this) == 0
-    error_message = "The account setting must be left alone when it is managed elsewhere"
-  }
-}
-
-# The account-wide block protects every image the account owns, and turning it
-# off outlives this module, so a public image alone must not be enough to do it.
-run "a_public_image_alone_leaves_the_account_block_on" {
-  command = plan
-
-  variables {
-    public               = true
-    distribution_regions = ["us-east-1"]
-  }
-
-  assert {
-    condition     = length(aws_ec2_image_block_public_access.this) == 0
-    error_message = "Unblocking public sharing account-wide must be asked for, not assumed from a public image"
-  }
-}
-
-run "public_refuses_an_encrypted_snapshot" {
-  command = plan
-
-  variables {
-    public = true
-    root_volume = {
-      device_name = "/dev/xvda"
-      size_gb     = 30
-      encrypted   = true
-    }
-  }
-
-  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
-}
-
-################################################################################
-# Private volume defaults to encrypted
-################################################################################
-
-run "private_root_volume_is_encrypted" {
-  command = plan
-
-  variables {
-    root_volume = {
-      device_name = "/dev/xvda"
-      size_gb     = 30
-    }
-  }
-
-  assert {
-    condition     = one(one(aws_imagebuilder_image_recipe.this[0].block_device_mapping).ebs).encrypted == "true"
-    error_message = "A private image's snapshot must be encrypted by default"
+    condition     = output.parent_image == "ami-0123456789abcdef0"
+    error_message = "The parent_image output must report the image given"
   }
 }
 
 ################################################################################
-# Parent image lookup
+# Distribution — the build region only, and never public
+################################################################################
+
+run "distribution_covers_the_build_region_only" {
+  command = plan
+
+  variables {
+    ami_tags = { release = "v1.2.3" }
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_distribution_configuration.this.distribution) == 1
+    error_message = "The distribution configuration must cover the build region only, got ${length(aws_imagebuilder_distribution_configuration.this.distribution)} regions"
+  }
+
+  assert {
+    condition     = one(aws_imagebuilder_distribution_configuration.this.distribution).region == "us-west-2"
+    error_message = "The distribution configuration must cover the build region"
+  }
+
+  assert {
+    condition     = length(one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).launch_permission) == 0
+    error_message = "The distribution configuration must grant no launch permission; a deploy publishes explicitly"
+  }
+
+  assert {
+    condition     = one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).name == "test-image-{{ imagebuilder:buildDate }}"
+    error_message = "Each image must be named after the module and its build date by default"
+  }
+
+  assert {
+    condition     = one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).ami_tags["release"] == "v1.2.3"
+    error_message = "Each image must carry ami_tags"
+  }
+
+  assert {
+    condition     = one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).ami_tags["ManagedBy"] == "terraform"
+    error_message = "Each image must carry the module's own tags"
+  }
+}
+
+run "a_region_moves_every_resource_with_it" {
+  command = plan
+
+  variables {
+    region = "eu-west-1"
+  }
+
+  assert {
+    condition     = output.region == "eu-west-1"
+    error_message = "The region output must report the build region"
+  }
+
+  assert {
+    condition     = one(aws_imagebuilder_distribution_configuration.this.distribution).region == "eu-west-1"
+    error_message = "The distribution configuration must cover the build region"
+  }
+
+  assert {
+    condition = (
+      aws_imagebuilder_infrastructure_configuration.this.region == "eu-west-1" &&
+      aws_imagebuilder_distribution_configuration.this.region == "eu-west-1" &&
+      aws_imagebuilder_component.this["provision"].region == "eu-west-1"
+    )
+    error_message = "Every Image Builder resource must live in the build region"
+  }
+}
+
+run "ami_name_must_be_unique_per_build" {
+  command = plan
+
+  variables {
+    ami_name = "fixed-name"
+  }
+
+  expect_failures = [var.ami_name]
+}
+
+################################################################################
+# Outputs a deploy builds from
+################################################################################
+
+run "outputs_feed_the_deploy" {
+  command = plan
+
+  assert {
+    condition     = length(output.component_refs) == 1
+    error_message = "component_refs must list every component a deploy's recipe runs"
+  }
+
+  assert {
+    condition     = output.component_refs[0].name == "provision" && output.component_refs[0].arn == "arn:aws:imagebuilder:us-west-2:123456789012:component/test/1.0.0/1"
+    error_message = "component_refs must carry each component's name and real ARN"
+  }
+
+  assert {
+    condition     = output.component_refs[0].parameters == { Version = "v1.2.3" }
+    error_message = "component_refs must carry each component's parameter values, the defaults a deploy's own parameters override"
+  }
+
+  assert {
+    condition     = output.infrastructure_configuration_arn == "arn:aws:imagebuilder:us-west-2:123456789012:infrastructure-configuration/test"
+    error_message = "infrastructure_configuration_arn must name the infrastructure configuration"
+  }
+
+  assert {
+    condition     = output.distribution_configuration_arn == "arn:aws:imagebuilder:us-west-2:123456789012:distribution-configuration/test"
+    error_message = "distribution_configuration_arn must name the distribution configuration"
+  }
+
+  assert {
+    condition     = output.region == "us-west-2"
+    error_message = "The region output must default to the provider's region"
+  }
+}
+
+run "component_refs_keep_the_run_order_and_every_source" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name       = "update"
+        arn        = "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
+        parameters = { Reboot = "true" }
+      },
+      {
+        name        = "provision"
+        source      = "steps"
+        build_steps = [{ name = "Install", commands = ["echo installing"] }]
+        parameter_definitions = [
+          { name = "Version", default = "v1.0.0", value = "v1.2.3" },
+        ]
+      },
+    ]
+  }
+
+  assert {
+    condition     = [for ref in output.component_refs : ref.name] == ["update", "provision"]
+    error_message = "component_refs must keep the order the components run in"
+  }
+
+  assert {
+    condition     = output.component_refs[0].arn == "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
+    error_message = "A referenced component must be passed by the ARN it was given"
+  }
+
+  assert {
+    condition     = output.component_refs[0].parameters == { Reboot = "true" }
+    error_message = "A referenced component must carry the parameter values it was given"
+  }
+
+  assert {
+    condition     = output.component_refs[1].arn == "arn:aws:imagebuilder:us-west-2:123456789012:component/test/1.0.0/1"
+    error_message = "A steps component must be passed by the ARN of the component created here"
+  }
+
+  assert {
+    condition     = output.component_refs[1].parameters == { Version = "v1.2.3" }
+    error_message = "A steps component must carry the values its parameter definitions give"
+  }
+}
+
+################################################################################
+# Parent image
 ################################################################################
 
 run "parent_image_lookup" {
@@ -328,8 +293,8 @@ run "parent_image_lookup" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].parent_image == "ami-0aaaaaaaaaaaaaaaa"
-    error_message = "The recipe must build on the image the lookup found"
+    condition     = output.parent_image == "ami-0aaaaaaaaaaaaaaaa"
+    error_message = "The parent_image output must report the image the lookup found"
   }
 }
 
@@ -340,14 +305,24 @@ run "parent_image_is_required" {
     parent_image = null
   }
 
-  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
+  expect_failures = [output.parent_image]
+}
+
+run "a_blank_parent_image_is_unset" {
+  command = plan
+
+  variables {
+    parent_image = "  "
+  }
+
+  expect_failures = [output.parent_image]
 }
 
 ################################################################################
-# Immutable resources are renamed, not updated
+# Immutable components are renamed, not updated
 ################################################################################
 
-run "changed_document_is_a_new_component_and_recipe" {
+run "changed_document_is_a_new_component" {
   command = plan
 
   variables {
@@ -363,14 +338,9 @@ run "changed_document_is_a_new_component_and_recipe" {
     condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-26a95f58"
     error_message = "A changed document must produce a differently named component"
   }
-
-  assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].name != "test-image-4fd9befb"
-    error_message = "A changed component must produce a differently named recipe"
-  }
 }
 
-run "changed_parameter_is_a_new_recipe_over_the_same_component" {
+run "changed_parameter_value_keeps_the_same_component" {
   command = plan
 
   variables {
@@ -385,12 +355,48 @@ run "changed_parameter_is_a_new_recipe_over_the_same_component" {
 
   assert {
     condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-26a95f58"
-    error_message = "A changed parameter must not produce a new component"
+    error_message = "A changed parameter value must not produce a new component"
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].name != "test-image-4fd9befb"
-    error_message = "A changed parameter must produce a new recipe"
+    condition     = output.component_refs[0].parameters == { Version = "v1.2.4" }
+    error_message = "A changed parameter value must reach the deploy through component_refs"
+  }
+}
+
+run "changed_description_keeps_the_same_component" {
+  command = plan
+
+  variables {
+    description = "Bakes the application image."
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-26a95f58"
+    error_message = "A changed module description must not produce a new component"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_infrastructure_configuration.this.description == "Bakes the application image." && aws_imagebuilder_distribution_configuration.this.description == "Bakes the application image."
+    error_message = "The description must be stored on both configurations"
+  }
+}
+
+run "changed_component_version_is_a_new_component" {
+  command = plan
+
+  variables {
+    component_version = "1.0.1"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-26a95f58"
+    error_message = "A changed component version must produce a differently named component"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].version == "1.0.1"
+    error_message = "The component must carry component_version"
   }
 }
 
@@ -424,7 +430,7 @@ run "steps_become_a_component_document" {
         validate_steps = [
           {
             name       = "Check"
-            commands   = ["test -x /usr/local/bin/runner"]
+            commands   = ["test -x /usr/local/bin/app"]
             on_failure = "Continue"
           },
         ]
@@ -479,7 +485,7 @@ run "steps_become_a_component_document" {
 
   assert {
     condition     = !can(yamldecode(aws_imagebuilder_component.this["provision"].data).parameters[0].Version.value)
-    error_message = "A parameter's value belongs to the recipe, not the document"
+    error_message = "A parameter's value belongs to the deploy's recipe, not the document"
   }
 }
 
@@ -500,8 +506,8 @@ run "a_parameter_without_a_value_is_left_to_its_default" {
   }
 
   assert {
-    condition     = length(aws_imagebuilder_image_recipe.this[0].component[0].parameter) == 0
-    error_message = "A parameter left without a value must not be passed by the recipe"
+    condition     = output.component_refs[0].parameters == {}
+    error_message = "A parameter left without a value must not be passed to the deploy"
   }
 
   # Pinned so the next run can prove a value leaves this component alone.
@@ -511,7 +517,7 @@ run "a_parameter_without_a_value_is_left_to_its_default" {
   }
 }
 
-run "a_parameter_value_reaches_the_recipe_over_the_same_component" {
+run "a_parameter_value_reaches_the_deploy_over_the_same_component" {
   command = plan
 
   variables {
@@ -528,13 +534,13 @@ run "a_parameter_value_reaches_the_recipe_over_the_same_component" {
   }
 
   assert {
-    condition     = one(aws_imagebuilder_image_recipe.this[0].component[0].parameter).value == "v1.2.3"
-    error_message = "A parameter value must be passed by the recipe"
+    condition     = output.component_refs[0].parameters == { Version = "v1.2.3" }
+    error_message = "A parameter value must be passed to the deploy"
   }
 
   assert {
     condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-89e1f3f7"
-    error_message = "A parameter value must not change the component the recipe points at"
+    error_message = "A parameter value must not change the component a deploy builds with"
   }
 }
 
@@ -550,21 +556,22 @@ run "a_step_that_is_not_a_shell_carries_its_own_inputs" {
           {
             name        = "Fetch"
             action      = "S3Download"
-            inputs_json = jsonencode([{ source = "s3://releases/runner", destination = "/tmp/runner" }])
+            inputs_json = jsonencode([{ source = "s3://releases/app", destination = "/tmp/app" }])
           },
           {
             name            = "Install"
-            commands        = ["install -m 0755 /tmp/runner /usr/local/bin/runner"]
+            commands        = ["install -m 0755 /tmp/app /usr/local/bin/app"]
             timeout_seconds = 600
             max_attempts    = 2
           },
+          { name = "Restart", action = "Reboot" },
         ]
       },
     ]
   }
 
   assert {
-    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[0].inputs[0].source == "s3://releases/runner"
+    condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[0].inputs[0].source == "s3://releases/app"
     error_message = "A non-shell step must carry the inputs its action documents"
   }
 
@@ -577,6 +584,11 @@ run "a_step_that_is_not_a_shell_carries_its_own_inputs" {
     condition     = yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[1].maxAttempts == 2
     error_message = "A step must carry its attempt count"
   }
+
+  assert {
+    condition     = !can(yamldecode(aws_imagebuilder_component.this["provision"].data).phases[0].steps[2].inputs)
+    error_message = "An action that takes no inputs must carry none"
+  }
 }
 
 run "a_changed_step_is_a_new_component" {
@@ -585,15 +597,18 @@ run "a_changed_step_is_a_new_component" {
   variables {
     components = [
       {
-        name        = "provision"
-        source      = "steps"
+        name   = "provision"
+        source = "steps"
+        parameter_definitions = [
+          { name = "Version", default = "v1.0.0" },
+        ]
         build_steps = [{ name = "Install", commands = ["echo installing something else"] }]
       },
     ]
   }
 
   assert {
-    condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-26a95f58"
+    condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-89e1f3f7"
     error_message = "A changed step must produce a differently named component"
   }
 }
@@ -634,10 +649,10 @@ run "steps_must_be_named_apart_within_a_phase" {
 }
 
 ################################################################################
-# Referenced components, schedule, logs, build on apply
+# Referenced components and component validation
 ################################################################################
 
-run "referenced_component_and_options" {
+run "a_referenced_component_is_not_created" {
   command = plan
 
   variables {
@@ -647,12 +662,6 @@ run "referenced_component_and_options" {
         arn  = "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
       },
     ]
-    schedule_expression  = "cron(0 0 * * ? *)"
-    log_bucket           = "example-logs"
-    instance_policy_json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-    build_on_apply       = true
-    subnet_id            = "subnet-0123456789abcdef0"
-    security_group_ids   = ["sg-0123456789abcdef0"]
   }
 
   assert {
@@ -661,28 +670,8 @@ run "referenced_component_and_options" {
   }
 
   assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].component[0].component_arn == "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
-    error_message = "A referenced component must be used by ARN"
-  }
-
-  assert {
-    condition     = one(aws_imagebuilder_image_pipeline.this[0].schedule).schedule_expression == "cron(0 0 * * ? *)"
-    error_message = "The schedule must be set on the pipeline"
-  }
-
-  assert {
-    condition     = one(one(aws_imagebuilder_infrastructure_configuration.this.logging).s3_logs).s3_bucket_name == "example-logs"
-    error_message = "Logs must go to log_bucket"
-  }
-
-  assert {
-    condition     = length(aws_iam_role_policy.logs) == 1 && length(aws_iam_role_policy.instance) == 1
-    error_message = "The instance role must carry the log and component policies"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image.this) == 1
-    error_message = "build_on_apply must build an image"
+    condition     = output.component_refs[0].arn == "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
+    error_message = "A referenced component must be passed to the deploy by ARN"
   }
 }
 
@@ -704,16 +693,11 @@ run "source_picks_between_a_stale_document_and_an_arn" {
     condition     = length(aws_imagebuilder_component.this) == 0
     error_message = "A component whose source is arn must not be created from a leftover document"
   }
-}
 
-run "subnet_requires_security_groups" {
-  command = plan
-
-  variables {
-    subnet_id = "subnet-0123456789abcdef0"
+  assert {
+    condition     = output.component_refs[0].arn == "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
+    error_message = "A component whose source is arn must be passed to the deploy by that ARN"
   }
-
-  expect_failures = [aws_imagebuilder_infrastructure_configuration.this]
 }
 
 run "component_needs_exactly_one_source" {
@@ -726,47 +710,86 @@ run "component_needs_exactly_one_source" {
   expect_failures = [var.components]
 }
 
-run "ami_name_must_be_unique_per_build" {
+run "components_must_name_at_least_one" {
   command = plan
 
   variables {
-    ami_name = "fixed-name"
+    components = []
   }
 
-  expect_failures = [var.ami_name]
+  expect_failures = [var.components]
 }
 
-################################################################################
-# Immutable resources are renamed, not updated
-################################################################################
-
-run "changed_description_is_a_new_recipe" {
+run "component_names_must_be_unique" {
   command = plan
 
   variables {
-    description = "Bakes the sandbox guest image."
+    components = [
+      { name = "provision", data = "name: a\nschemaVersion: 1.0\nphases: []\n" },
+      { name = "provision", data = "name: b\nschemaVersion: 1.0\nphases: []\n" },
+    ]
   }
 
-  assert {
-    condition     = aws_imagebuilder_image_recipe.this[0].name != "test-image-4fd9befb"
-    error_message = "A changed description must produce a differently named recipe, got ${aws_imagebuilder_image_recipe.this[0].name}"
-  }
-
-  assert {
-    condition     = aws_imagebuilder_component.this["provision"].name == "test-image-provision-26a95f58"
-    error_message = "A changed recipe description must not produce a new component"
-  }
+  expect_failures = [var.components]
 }
 
 ################################################################################
-# Build instance role name
+# Build infrastructure
 ################################################################################
+
+run "build_infrastructure_options" {
+  command = plan
+
+  variables {
+    log_bucket                   = "example-logs"
+    instance_policy_json         = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
+    instance_managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"]
+    instance_types               = ["c7i.large", "m7i.large"]
+    subnet_id                    = "subnet-0123456789abcdef0"
+    security_group_ids           = ["sg-0123456789abcdef0"]
+  }
+
+  assert {
+    condition     = one(one(aws_imagebuilder_infrastructure_configuration.this.logging).s3_logs).s3_bucket_name == "example-logs"
+    error_message = "Logs must go to log_bucket"
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.logs) == 1 && length(aws_iam_role_policy.instance) == 1
+    error_message = "The instance role must carry the log and component policies"
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.instance) == 3
+    error_message = "The instance role must carry the extra managed policy beside the two Image Builder needs"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_infrastructure_configuration.this.instance_types == toset(["c7i.large", "m7i.large"])
+    error_message = "Builds must run on the instance types given"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_infrastructure_configuration.this.subnet_id == "subnet-0123456789abcdef0" && aws_imagebuilder_infrastructure_configuration.this.security_group_ids == toset(["sg-0123456789abcdef0"])
+    error_message = "Builds must launch in the subnet and security groups given"
+  }
+}
+
+run "subnet_requires_security_groups" {
+  command = plan
+
+  variables {
+    subnet_id = "subnet-0123456789abcdef0"
+  }
+
+  expect_failures = [aws_imagebuilder_infrastructure_configuration.this]
+}
 
 run "a_long_name_still_fits_an_iam_role_name" {
   command = plan
 
   variables {
-    name = "sandbox-guest-image-pipeline-for-the-us-west-2-build-fleet-2026"
+    name = "application-image-builder-for-the-us-west-2-build-fleet-in-2026"
   }
 
   assert {
@@ -775,91 +798,13 @@ run "a_long_name_still_fits_an_iam_role_name" {
   }
 
   assert {
-    condition     = startswith(aws_iam_role.instance.name, "sandbox-guest-image-pipeline-for-the-us-west-2-build-fl")
-    error_message = "A truncated role name must keep the head of the pipeline name, got ${aws_iam_role.instance.name}"
+    condition     = startswith(aws_iam_role.instance.name, "application-image-builder-for-the-us-west-2-build-fleet")
+    error_message = "A truncated role name must keep the head of the name, got ${aws_iam_role.instance.name}"
   }
 
   assert {
     condition     = aws_iam_instance_profile.instance.name == aws_iam_role.instance.name
     error_message = "The instance profile must carry the same name as the role"
-  }
-}
-
-run "a_short_name_keeps_the_readable_role_name" {
-  command = plan
-
-  assert {
-    condition     = aws_iam_role.instance.name == "test-image-image-builder"
-    error_message = "A name that fits must be used as it is, got ${aws_iam_role.instance.name}"
-  }
-}
-
-################################################################################
-# Public images must be provably unencrypted before the build
-################################################################################
-
-run "public_refuses_an_encrypted_parent_image" {
-  command = plan
-
-  variables {
-    public = true
-  }
-
-  override_data {
-    target = data.aws_ami.parent_snapshot
-    values = {
-      id = "ami-0123456789abcdef0"
-      block_device_mappings = [{
-        device_name  = "/dev/xvda"
-        ebs          = { encrypted = "true" }
-        no_device    = ""
-        virtual_name = ""
-      }]
-    }
-  }
-
-  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
-}
-
-run "public_refuses_a_parent_image_it_cannot_describe" {
-  command = plan
-
-  variables {
-    public       = true
-    parent_image = "ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-  }
-
-  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
-}
-
-run "public_refuses_a_region_that_encrypts_by_default" {
-  command = plan
-
-  variables {
-    public = true
-  }
-
-  override_data {
-    target = data.aws_ebs_encryption_by_default.current
-    values = {
-      enabled = true
-    }
-  }
-
-  expect_failures = [aws_imagebuilder_image_recipe.this[0]]
-}
-
-run "a_private_image_ignores_encryption_by_default" {
-  command = plan
-
-  assert {
-    condition     = length(data.aws_ebs_encryption_by_default.current) == 0
-    error_message = "The account setting must be left unread for a private image"
-  }
-
-  assert {
-    condition     = length(data.aws_ami.parent_snapshot) == 0
-    error_message = "The parent image must be left undescribed for a private image"
   }
 }
 
@@ -902,431 +847,5 @@ run "a_log_prefix_is_granted_and_written_under" {
   assert {
     condition     = one(one(aws_imagebuilder_infrastructure_configuration.this.logging).s3_logs).s3_key_prefix == "builds"
     error_message = "Image Builder must write under the prefix the policy grants"
-  }
-}
-
-################################################################################
-# Starting a build from outside Terraform
-################################################################################
-
-run "no_pipeline_execution_policy_by_default" {
-  command = plan
-
-  assert {
-    condition     = length(aws_iam_policy.pipeline_execution) == 0
-    error_message = "The pipeline execution policy must be created only when it is asked for"
-  }
-}
-
-run "pipeline_execution_policy" {
-  command = plan
-
-  variables {
-    create_pipeline_execution_policy = true
-  }
-
-  assert {
-    condition     = one(aws_iam_policy.pipeline_execution).name == "test-image-start-image-pipeline"
-    error_message = "The policy must be named after the pipeline, got ${one(aws_iam_policy.pipeline_execution).name}"
-  }
-
-  assert {
-    condition     = jsondecode(one(aws_iam_policy.pipeline_execution).policy).Statement[0].Resource == "arn:aws:imagebuilder:us-west-2:123456789012:image-pipeline/test-image"
-    error_message = "The policy must reach this pipeline only"
-  }
-
-  assert {
-    condition = toset(jsondecode(one(aws_iam_policy.pipeline_execution).policy).Statement[0].Action) == toset([
-      "imagebuilder:StartImagePipelineExecution",
-      "imagebuilder:GetImagePipeline",
-      "imagebuilder:ListImagePipelineImages",
-    ])
-    error_message = "The policy must start the pipeline and read its runs, and nothing more"
-  }
-
-  assert {
-    condition     = jsondecode(one(aws_iam_policy.pipeline_execution).policy).Statement[1].Resource == "arn:aws:imagebuilder:us-west-2:123456789012:image/test-image-*/*"
-    error_message = "The policy must reach the images this pipeline produces, got ${jsondecode(one(aws_iam_policy.pipeline_execution).policy).Statement[1].Resource}"
-  }
-}
-
-################################################################################
-# Build on apply waits out the tests it contains
-################################################################################
-
-run "the_build_wait_outlasts_the_test_phase" {
-  command = plan
-
-  variables {
-    build_on_apply              = true
-    image_tests_timeout_minutes = 600
-  }
-
-  assert {
-    condition     = one(aws_imagebuilder_image.this).timeouts.create == "660m"
-    error_message = "A raised test timeout must raise the wait that contains it, got ${one(aws_imagebuilder_image.this).timeouts.create}"
-  }
-}
-
-run "the_build_wait_keeps_its_original_length" {
-  command = plan
-
-  variables {
-    build_on_apply = true
-  }
-
-  assert {
-    condition     = one(aws_imagebuilder_image.this).timeouts.create == "120m"
-    error_message = "The default wait must stay at two hours, got ${one(aws_imagebuilder_image.this).timeouts.create}"
-  }
-}
-
-run "the_build_wait_must_contain_the_test_phase" {
-  command = plan
-
-  variables {
-    build_on_apply        = true
-    build_timeout_minutes = 30
-  }
-
-  expect_failures = [var.build_timeout_minutes]
-}
-
-################################################################################
-# Build notification
-################################################################################
-
-# Notifications are off unless somewhere to send them AND something to prove
-# they came from this account are both given. Half a configuration is not a
-# quieter notification, it is an unauthenticated one.
-run "no_notification_without_a_url" {
-  command = plan
-
-  variables {
-    notify_header_value = "shhh"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify) == 0
-    error_message = "A secret with no endpoint must not create a rule"
-  }
-}
-
-run "no_notification_without_a_secret" {
-  command = plan
-
-  variables {
-    notify_url = "https://api.example.com/hooks/image-built"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify) == 0
-    error_message = "An endpoint with no secret must not create a rule"
-  }
-}
-
-# The header value can be kept in Parameter Store or Secrets Manager instead of
-# given here. EventBridge takes the value itself, so the module reads it.
-run "the_header_value_can_come_from_parameter_store" {
-  command = plan
-
-  variables {
-    notify_url              = "https://api.example.com/hooks/image-built"
-    notify_secret_source    = "parameter_store"
-    notify_header_parameter = "/ravion/image-builder/notify-header"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify) == 1
-    error_message = "A parameter must be enough to notify"
-  }
-
-  assert {
-    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "from-parameter-store"
-    error_message = "The connection must carry the value the parameter holds"
-  }
-}
-
-run "the_header_value_can_come_from_secrets_manager" {
-  command = plan
-
-  variables {
-    notify_url           = "https://api.example.com/hooks/image-built"
-    notify_secret_source = "secrets_manager"
-    notify_header_secret = "ravion/image-builder/notify-header"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify) == 1
-    error_message = "A secret must be enough to notify"
-  }
-
-  assert {
-    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "{\"header\":\"from-secrets-manager\"}"
-    error_message = "A secret with no key named must be used whole"
-  }
-}
-
-run "a_json_secret_can_name_the_key_to_read" {
-  command = plan
-
-  variables {
-    notify_url                    = "https://api.example.com/hooks/image-built"
-    notify_secret_source          = "secrets_manager"
-    notify_header_secret          = "ravion/image-builder/notify-header"
-    notify_header_secret_json_key = "header"
-  }
-
-  assert {
-    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "from-secrets-manager"
-    error_message = "A named key must be read out of the secret"
-  }
-}
-
-# A source that names nothing would leave the endpoint unprotected rather than
-# unnotified.
-run "a_named_secret_source_must_name_something" {
-  command = plan
-
-  variables {
-    notify_url           = "https://api.example.com/hooks/image-built"
-    notify_secret_source = "secrets_manager"
-  }
-
-  expect_failures = [var.notify_secret_source]
-}
-
-# Nothing names a source, so the one that was filled in is the one that counts.
-run "the_secret_source_is_read_from_what_was_filled_in" {
-  command = plan
-
-  variables {
-    notify_url              = "https://api.example.com/hooks/image-built"
-    notify_header_parameter = "/ravion/image-builder/notify-header"
-  }
-
-  assert {
-    condition     = one(one(aws_cloudwatch_event_connection.notify[0].auth_parameters).api_key).value == "from-parameter-store"
-    error_message = "A parameter on its own must be read as the source"
-  }
-}
-
-# The rule matches this pipeline's finished images and nothing else: a build
-# still running produced no image, and another pipeline's images are somebody
-# else's business.
-run "the_rule_matches_only_this_pipelines_finished_images" {
-  command = plan
-
-  variables {
-    notify_url          = "https://api.example.com/hooks/image-built"
-    notify_header_value = "shhh"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify) == 1
-    error_message = "An endpoint and a secret must create a rule"
-  }
-
-  assert {
-    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).source == ["aws.imagebuilder"]
-    error_message = "The rule must listen to Image Builder"
-  }
-
-  assert {
-    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).detail.state.status == ["AVAILABLE"]
-    error_message = "The rule must only forward images that finished"
-  }
-
-  # Naming the recipe in full, separator and all, is what keeps a rule for
-  # "test-image" from also forwarding "test-image-prod" images.
-  assert {
-    condition     = jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix == "arn:aws:imagebuilder:us-west-2:123456789012:image/${lower(aws_imagebuilder_image_recipe.this[0].name)}/"
-    error_message = "The rule must be confined to this recipe's images, got ${jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix}"
-  }
-
-  assert {
-    condition     = !startswith("arn:aws:imagebuilder:us-west-2:123456789012:image/test-image-prod-4fd9befb/1.0.0/1", jsondecode(aws_cloudwatch_event_rule.notify[0].event_pattern).resources[0].prefix)
-    error_message = "The rule must not match a pipeline whose name starts with this one"
-  }
-}
-
-# EventBridge caps a name at 64 characters and the pipeline name may use all 64
-# on its own, so every notification name is bounded before it reaches AWS.
-run "notification_names_stay_within_the_eventbridge_limit" {
-  command = plan
-
-  variables {
-    name                = "an-image-pipeline-whose-name-uses-every-one-of-its-64-characters"
-    notify_url          = "https://api.example.com/hooks/image-built"
-    notify_header_value = "shhh"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify[0].name) <= 64
-    error_message = "The rule name must fit, got ${aws_cloudwatch_event_rule.notify[0].name}"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_connection.notify[0].name) <= 64
-    error_message = "The connection name must fit, got ${aws_cloudwatch_event_connection.notify[0].name}"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_api_destination.notify[0].name) <= 64
-    error_message = "The destination name must fit, got ${aws_cloudwatch_event_api_destination.notify[0].name}"
-  }
-
-  assert {
-    condition     = length(aws_iam_role.notify[0].name) <= 64
-    error_message = "The delivery role name must fit, got ${aws_iam_role.notify[0].name}"
-  }
-
-  assert {
-    condition     = aws_cloudwatch_event_rule.notify[0].name != aws_cloudwatch_event_connection.notify[0].name
-    error_message = "A truncated name must still tell the rule and the connection apart"
-  }
-}
-
-# The delivery role can invoke this one destination and nothing else.
-run "the_delivery_role_reaches_one_destination" {
-  command = plan
-
-  variables {
-    notify_url          = "https://api.example.com/hooks/image-built"
-    notify_header_value = "shhh"
-  }
-
-  assert {
-    condition     = jsondecode(aws_iam_role_policy.notify[0].policy).Statement[0].Action == "events:InvokeApiDestination"
-    error_message = "The role must only invoke a destination"
-  }
-
-  assert {
-    condition     = jsondecode(aws_iam_role.notify[0].assume_role_policy).Statement[0].Principal.Service == "events.amazonaws.com"
-    error_message = "Only EventBridge may assume the delivery role"
-  }
-}
-
-################################################################################
-# Deployments mode — Terraform owns build infrastructure only: no recipe,
-# pipeline, image, or build notification. Each deploy builds, copies, tags,
-# publishes, and retires images itself.
-################################################################################
-
-run "deployments_mode_creates_no_recipe_pipeline_or_notification" {
-  command = plan
-
-  variables {
-    image_release_mode   = "deployments"
-    distribution_regions = ["us-east-1", "eu-west-1"]
-    notify_url           = "https://api.example.com/hooks/image-built"
-    notify_header_value  = "shhh"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image_recipe.this) == 0
-    error_message = "Deployments mode must create no image recipe"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image_pipeline.this) == 0
-    error_message = "Deployments mode must create no image pipeline"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image.this) == 0
-    error_message = "Deployments mode must never build an image on apply"
-  }
-
-  assert {
-    condition     = length(aws_cloudwatch_event_rule.notify) == 0
-    error_message = "Deployments mode must send no build notification even when notify_url is set"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_distribution_configuration.this.distribution) == 1
-    error_message = "Deployments mode must configure the home region only, got ${length(aws_imagebuilder_distribution_configuration.this.distribution)} regions"
-  }
-
-  assert {
-    condition     = one(aws_imagebuilder_distribution_configuration.this.distribution).region == "us-west-2"
-    error_message = "Deployments mode's distribution configuration must cover the home region"
-  }
-
-  assert {
-    condition     = length(one(one(aws_imagebuilder_distribution_configuration.this.distribution).ami_distribution_configuration).launch_permission) == 0
-    error_message = "Deployments mode must never grant launch permission itself; the deploy publishes explicitly"
-  }
-
-  assert {
-    condition     = aws_imagebuilder_infrastructure_configuration.this.name == "test-image"
-    error_message = "Deployments mode still owns the infrastructure configuration"
-  }
-
-  assert {
-    condition     = aws_iam_role.instance.name == "test-image-image-builder"
-    error_message = "Deployments mode still owns the build instance role"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_component.this) == 1
-    error_message = "Deployments mode still owns the components each deploy's recipe runs"
-  }
-}
-
-run "deployments_mode_outputs_feed_the_aws_ami_deploy" {
-  command = plan
-
-  variables {
-    image_release_mode = "deployments"
-  }
-
-  assert {
-    condition     = length(output.component_refs) == 1
-    error_message = "component_refs must list every component the deploy's own recipe will run"
-  }
-
-  assert {
-    condition     = output.component_refs[0].name == "provision" && output.component_refs[0].arn == "arn:aws:imagebuilder:us-west-2:123456789012:component/test/1.0.0/1"
-    error_message = "component_refs must carry each component's real ARN regardless of source"
-  }
-
-  assert {
-    condition     = output.component_refs[0].parameters == { Version = "v1.2.3" }
-    error_message = "component_refs must carry each component's parameter values, the defaults a deploy's own parameters override"
-  }
-
-  assert {
-    condition     = output.recipe_arn == null && output.recipe_name == null
-    error_message = "recipe_arn and recipe_name must be null when this module creates no recipe"
-  }
-
-  assert {
-    condition     = output.pipeline_arn == null && output.pipeline_name == null
-    error_message = "pipeline_arn and pipeline_name must be null when this module creates no pipeline"
-  }
-
-  assert {
-    condition     = output.infrastructure_configuration_arn != null && output.distribution_configuration_arn != null
-    error_message = "infrastructure_configuration_arn and distribution_configuration_arn must still be available for the deploy definition"
-  }
-}
-
-run "terraform_mode_is_unchanged" {
-  command = plan
-
-  assert {
-    condition     = length(aws_imagebuilder_image_recipe.this) == 1
-    error_message = "The default image_release_mode (terraform) must keep creating a recipe"
-  }
-
-  assert {
-    condition     = length(aws_imagebuilder_image_pipeline.this) == 1
-    error_message = "The default image_release_mode (terraform) must keep creating a pipeline"
-  }
-
-  assert {
-    condition     = output.recipe_arn != null && output.pipeline_arn != null
-    error_message = "The default image_release_mode (terraform) must keep publishing recipe_arn and pipeline_arn"
   }
 }
