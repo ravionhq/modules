@@ -35,6 +35,13 @@ mock_provider "aws" {
       account_id = "123456789012"
     }
   }
+  # aws_eks_addon validates addon_version as a semantic version, which a random
+  # mock string never is.
+  mock_data "aws_eks_addon_version" {
+    defaults = {
+      version = "v6.7.0-eksbuild.1"
+    }
+  }
   # The helm provider is configured from this data source, and its CA is
   # base64-decoded while the provider is configured — a random mock value would
   # fail the decode before any run block executes.
@@ -171,6 +178,11 @@ run "cloudwatch_metrics_provider_pins_auto_monitor_off" {
   assert {
     condition     = jsondecode(aws_eks_addon.cloudwatch_observability[0].configuration_values).containerLogs.enabled == false
     error_message = "cloudwatch is a metrics provider here, so the add-on's Fluent Bit half must stay off"
+  }
+
+  assert {
+    condition     = aws_eks_addon.cloudwatch_observability[0].addon_version == "v6.7.0-eksbuild.1"
+    error_message = "An unpinned add-on must track the most recent version compatible with the cluster"
   }
 
   assert {

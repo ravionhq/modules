@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.11.0
-  description: Enable Karpenter interruption queue message-age monitoring by default, with configurable thresholds and notification destinations.
+  version: 0.12.0
+  description: Load-balanced EKS pods now receive traffic sooner during rolling deploys. The AWS Load Balancer Controller moves to 3.5.0, and its CRDs are now upgraded with the controller. Karpenter, External Secrets, kubectl, and the EBS CSI and CloudWatch add-ons move to their latest versions, and unpinned EKS add-ons track the newest compatible release.
 module:
   inputs:
     - id: cluster
@@ -381,10 +381,10 @@ module:
       label: Load balancer deletion protection
       type: boolean
     - collapsible: true
-      description: AWS Load Balancer Controller Helm chart version without a leading v, for example 1.14.0. The controller is installed when any shared load balancer is enabled.
+      description: AWS Load Balancer Controller Helm chart version without a leading v, for example 3.5.0. The controller is installed when any shared load balancer is enabled.
       id: aws_load_balancer_controller_chart_version
       label: Load balancer controller chart version
-      placeholder: 1.14.0
+      placeholder: 3.5.0
       type: string
     - description: Provides just-in-time node autoscaling and an optional general-purpose NodePool.
       id: section_karpenter
@@ -433,10 +433,10 @@ module:
         karpenter_enabled: true
         karpenter_interruption_queue_alarm_creation_enabled: true
     - collapsible: true
-      description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.0.
+      description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.1.
       id: karpenter_chart_version
       label: Chart version
-      placeholder: 1.14.0
+      placeholder: 1.14.1
       show_when:
         karpenter_enabled: true
       type: string
@@ -1037,10 +1037,10 @@ module:
         eso_enabled: true
       type: string_array
     - collapsible: true
-      description: External Secrets Helm chart version without a leading v, for example 2.8.0.
+      description: External Secrets Helm chart version without a leading v, for example 2.11.0.
       id: eso_chart_version
       label: Chart version
-      placeholder: 2.8.0
+      placeholder: 2.11.0
       show_when:
         eso_enabled: true
       type: string
@@ -1071,7 +1071,7 @@ module:
         karpenter_interruption_queue_alarm_ok_actions: '<< module.input.karpenter_interruption_queue_alarm_ok_actions != nil ? module.input.karpenter_interruption_queue_alarm_ok_actions : [] >>'
         karpenter_controller_namespace: << module.input.karpenter_controller_namespace || "kube-system" >>
         karpenter_controller_service_account: << module.input.karpenter_controller_service_account || "karpenter" >>
-        karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.0" >>
+        karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.1" >>
         karpenter_helm_values: []
         karpenter_default_node_pool_creation_enabled: '<< module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true >>'
         karpenter_default_node_pool:
@@ -1083,7 +1083,7 @@ module:
         node_subnet_ids: << module.input.node_subnet_ids >>
         cluster_security_group_id: << module.input.cluster_security_group_id >>
         ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
-        aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "1.14.0" >>
+        aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.5.0" >>
         ebs_csi_driver_enabled: << module.input.ebs_csi_driver_enabled >>
         ebs_csi_addon_version: << module.input.ebs_csi_addon_version >>
         # The signal toggle folds into the provider list: off is an empty list, on
@@ -1150,7 +1150,7 @@ module:
         grafana_role_creation_enabled: << module.input.grafana_role_creation_enabled >>
         grafana_enabled: << module.input.grafana_enabled >>
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
-        eso_chart_version: << module.input.eso_chart_version || "2.8.0" >>
+        eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         # Full-cluster Operator mode (the default) manages no specific namespaces,
@@ -1408,14 +1408,14 @@ module:
     | ---------------------- | -------- | -------------------- | ------------------------------------------------------ |
     | EKS cluster            | Yes      | -                    | Existing EKS Cluster module                            |
     | Karpenter              | No       | `true`               | Autoscaling end to end (IAM, queue, controller, NodePool) |
-    | Chart version          | No       | `1.14.0`             | Karpenter and karpenter-crd Helm chart version         |
+    | Chart version          | No       | `1.14.1`             | Karpenter and karpenter-crd Helm chart version         |
     | Default NodePool       | No       | `true`               | General-purpose NodePool and EC2NodeClass              |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |
     | CPU limit              | Yes*     | `100`                | Maximum vCPUs provisioned through the default NodePool |
     | Node lifetime          | Yes*     | `720h`               | Maximum age before Karpenter replaces a node           |
-    | Load balancer controller chart version | No | `1.14.0`    | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
+    | Load balancer controller chart version | No | `3.5.0`     | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
     | External Secrets Operator | No    | `true`               | Reference-only secrets, ClusterSecretStores, and a scoped Pod Identity role |
     | Readable secret ARNs   | No       | Account + region     | Scopes which Secrets Manager secrets and SSM parameters the operator may read |
     | EBS CSI driver         | No       | `false`              | EBS persistent volumes add-on and Pod Identity role    |
