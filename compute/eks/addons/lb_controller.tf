@@ -22,6 +22,23 @@ locals {
   )
 }
 
+# CRDs ship from a local chart because Helm never upgrades a chart's crds/
+# directory, which would leave an upgraded controller on the CRDs of whichever
+# version first installed it. The chart is a verbatim copy of the upstream
+# crds/crds.yaml for the default controller version. take_ownership adopts CRDs
+# an earlier controller install created outside any release.
+resource "helm_release" "lb_controller_crds" {
+  count = local.lb_controller_install ? 1 : 0
+
+  name      = "aws-load-balancer-controller-crds"
+  namespace = var.aws_load_balancer_controller_namespace
+  chart     = "${path.module}/charts/aws-load-balancer-controller-crds"
+
+  create_namespace = true
+  upgrade_install  = true
+  take_ownership   = true
+}
+
 resource "helm_release" "lb_controller" {
   count = local.lb_controller_install ? 1 : 0
 
@@ -34,6 +51,7 @@ resource "helm_release" "lb_controller" {
   # Adopt a same-named release already in the cluster (e.g. left behind by a
   # deleted module instance) instead of failing on install.
   upgrade_install = true
+  skip_crds       = true
 
   values = concat(
     [
@@ -47,8 +65,15 @@ resource "helm_release" "lb_controller" {
           create = true
           name   = var.aws_load_balancer_controller_service_account
         }
+        # How often a TargetGroupBinding re-reads target health while a pod
+        # waits on its load balancer readiness gate. The controller's 15-second
+        # default can hold a healthy pod unready for most of that interval,
+        # which every rolling deploy pays; it only polls while a gate is open.
+        targetgroupbindingRequeueDuration = "2s"
       }),
     ],
     var.aws_load_balancer_controller_helm_values,
   )
+
+  depends_on = [helm_release.lb_controller_crds]
 }

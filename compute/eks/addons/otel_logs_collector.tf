@@ -20,7 +20,7 @@
 #
 #   3. IT READS FILES, NOT THE API. Same trade as Alloy: a host mount and a root
 #      container, in exchange for keeping the read load of every container in
-#      the cluster off the API server. The only API access is k8sattributes
+#      the cluster off the API server. The only API access is k8s_attributes
 #      resolving a pod's workload, which is a watch on pods and replicasets.
 #
 #   4. CLOUDWATCH STREAMS ARE PER POD. The exporter names the group statically
@@ -105,7 +105,7 @@ locals {
       }
     } : {},
     local.logs_new_relic_enabled ? {
-      "otlphttp/new_relic" = {
+      "otlp_http/new_relic" = {
         endpoint = local.new_relic_otlp_endpoint
         headers = {
           "api-key" = "$${env:NEW_RELIC_LICENSE_KEY}"
@@ -137,7 +137,7 @@ locals {
       )
     } : {},
     local.logs_otlp_enabled ? {
-      "otlphttp/custom" = merge(
+      "otlp_http/custom" = merge(
         { endpoint = local.otlp_logs_config.endpoint },
         local.otlp_logs_config.headers_secret_arn == null ? {} : {
           headers = { authorization = "$${env:OTLP_LOGS_AUTHORIZATION}" }

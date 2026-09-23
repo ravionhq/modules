@@ -401,6 +401,10 @@ module "aurora" {
 | cloudwatch_alarms_creation_enabled | Create CloudWatch alarms. | `bool` | `false` | no |
 | cloudwatch_alarm_cpu_threshold | CPU utilization threshold (%). | `number` | `80` | no |
 | cloudwatch_alarm_memory_threshold | Freeable memory threshold (bytes). | `number` | `268435456` | no |
+| cloudwatch_alarm_storage_threshold | Minimum Aurora MySQL remaining volume space (bytes). | `number` | `107374182400` (100 GiB) | no |
+| cloudwatch_alarm_volume_bytes_used_threshold | Maximum Aurora PostgreSQL volume usage (bytes). Tune below the engine storage limit. | `number` | `126443837194240` (115 TiB) | no |
+| cloudwatch_alarm_read_iops_threshold | Read IOPS threshold; tune to workload capacity. | `number` | `1000` | no |
+| cloudwatch_alarm_write_iops_threshold | Write IOPS threshold; tune to workload capacity. | `number` | `1000` | no |
 | cloudwatch_alarm_connections_threshold | Database connections threshold. | `number` | `100` | no |
 | cloudwatch_alarm_actions | ARNs to notify on ALARM state. | `list(string)` | `[]` | no |
 | cloudwatch_ok_actions | ARNs to notify on OK state. | `list(string)` | `[]` | no |
@@ -577,8 +581,28 @@ Valid log export types depend on the database engine:
 | `module.security_group` | 0 or 1 | Security group via `networking/security-groups` (if `security_group_creation_enabled = true`) |
 | `aws_iam_role` | 0 or 1 | Enhanced Monitoring IAM role (if `monitoring_role_creation_enabled = true` and `monitoring_interval > 0`) |
 | `aws_iam_role_policy_attachment` | 0 or 1 | Monitoring role policy attachment |
-| `aws_cloudwatch_metric_alarm` | 0 or 3 | CPU, memory, connections alarms (if `cloudwatch_alarms_creation_enabled = true`) |
+| `aws_cloudwatch_metric_alarm` | 0 or 6 | CPU, memory, connections, cluster storage, read/write IOPS alarms (if `cloudwatch_alarms_creation_enabled = true`) |
 | `aws_rds_cluster_activity_stream` | 0 or 1 | Activity stream (if `activity_stream_enabled = true`) |
 | `aws_rds_cluster_role_association` | 0 to N | IAM role associations (via `for_each`) |
 | `aws_appautoscaling_target` | 0 or 1 | Auto-scaling target (if `autoscaling_enabled = true`) |
 | `aws_appautoscaling_policy` | 0 to 2 | CPU and/or connection scaling policies |
+
+## Storage and I/O alarms
+
+Enable `cloudwatch_alarms_creation_enabled` and provide `cloudwatch_alarm_actions`
+(e.g. an SNS topic ARN) to receive notifications. Ravion defaults alarm creation to
+true; direct Terraform usage defaults to false. Read and write IOPS each default
+to 1000 operations/second; tune these thresholds to the workload and capacity.
+New alarms use `missing` for missing data so unavailable metrics remain visible
+as INSUFFICIENT_DATA. IOPS periods are clamped to at least 60 seconds.
+
+Storage monitoring uses `AuroraVolumeBytesLeftTotal` below 100 GiB for MySQL and
+`VolumeBytesUsed` above 115 TiB for PostgreSQL, with at least a 300-second period.
+Both support provisioned and Serverless v2 clusters. Adjust the PostgreSQL
+threshold below the storage limit supported by your engine version. These measure
+cluster volume capacity, not instance temporary/local disk space.
+
+IOPS alarms use the cluster-level `Maximum`, so an idle reader does not hide a busy
+writer and autoscaled readers are included. `cloudwatch_alarm_arns` adds
+`cluster_storage`, `read_iops`, and `write_iops` while retaining existing keys.
+See [AWS Aurora metrics](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.AuroraMonitoring.Metrics.html).

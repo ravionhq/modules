@@ -179,3 +179,8 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "cloudwatch_alarm_arns" {
+  description = "CloudFront 5xx error-rate alarm ARNs keyed by distribution key."
+  value       = { for key, alarm in aws_cloudwatch_metric_alarm.error_rate : key => alarm.arn }
+}

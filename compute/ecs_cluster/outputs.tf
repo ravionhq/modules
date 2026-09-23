@@ -124,6 +124,11 @@ output "public_alb_https_listener_arn" {
   value       = var.public_alb_enabled && var.public_alb_https_enabled ? module.public_alb[0].https_listener_arn : null
 }
 
+output "public_alb_cloudwatch_alarm_arns" {
+  description = "Map of CloudWatch alarm ARNs for the public ALB (empty if disabled)."
+  value       = var.public_alb_enabled ? module.public_alb[0].cloudwatch_alarm_arns : {}
+}
+
 ################################################################################
 # Private ALB
 ################################################################################
@@ -166,6 +171,11 @@ output "private_alb_http_listener_arn" {
 output "private_alb_https_listener_arn" {
   description = "The ARN of the private ALB HTTPS listener (null if HTTPS disabled)."
   value       = var.private_alb_enabled && var.private_alb_https_enabled ? module.private_alb[0].https_listener_arn : null
+}
+
+output "private_alb_cloudwatch_alarm_arns" {
+  description = "Map of CloudWatch alarm ARNs for the private ALB (empty if disabled)."
+  value       = var.private_alb_enabled ? module.private_alb[0].cloudwatch_alarm_arns : {}
 }
 
 ################################################################################
@@ -249,4 +259,13 @@ output "aws_account_id" {
 output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
+}
+
+################################################################################
+# Compliance
+################################################################################
+
+output "log_retention_days" {
+  description = "Default CloudWatch Logs retention (days) that ECS services in this cluster inherit."
+  value       = var.log_retention_days
 }

@@ -703,6 +703,106 @@ variable "private_nlb_elastic_ip_allocation_ids" {
   }
 }
 
+################################################################################
+# Compliance: log retention and load balancer alarms
+################################################################################
+
+variable "log_retention_days" {
+  type        = number
+  description = "Default CloudWatch Logs retention (days) that ECS services in this cluster inherit. Exposed as an output; the cluster itself creates no log groups. 0 retains logs indefinitely."
+  default     = 90
+  nullable    = false
+
+  validation {
+    condition = contains(
+      [0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653],
+      var.log_retention_days
+    )
+    error_message = "The log_retention_days must be one of the values accepted by CloudWatch Logs (0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, or 3653)."
+  }
+}
+
+variable "alb_cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create CloudWatch alarms for 5xx responses and target response time on the public and private ALBs."
+  default     = true
+  nullable    = false
+}
+
+variable "alb_cloudwatch_alarm_elb_5xx_threshold" {
+  type        = number
+  description = "Number of load-balancer-generated 5xx responses (HTTPCode_ELB_5XX_Count, summed per period) above which the ALB alarm fires."
+  default     = 10
+  nullable    = false
+
+  validation {
+    condition     = var.alb_cloudwatch_alarm_elb_5xx_threshold >= 0
+    error_message = "The alb_cloudwatch_alarm_elb_5xx_threshold must be at least 0."
+  }
+}
+
+variable "alb_cloudwatch_alarm_target_5xx_threshold" {
+  type        = number
+  description = "Number of target-generated 5xx responses (HTTPCode_Target_5XX_Count, summed per period) above which the ALB alarm fires."
+  default     = 10
+  nullable    = false
+
+  validation {
+    condition     = var.alb_cloudwatch_alarm_target_5xx_threshold >= 0
+    error_message = "The alb_cloudwatch_alarm_target_5xx_threshold must be at least 0."
+  }
+}
+
+variable "alb_cloudwatch_alarm_target_response_time_threshold" {
+  type        = number
+  description = "Average target response time in seconds (TargetResponseTime) above which the ALB alarm fires."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.alb_cloudwatch_alarm_target_response_time_threshold > 0
+    error_message = "The alb_cloudwatch_alarm_target_response_time_threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "The number of periods over which data is compared to the threshold."
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1
+    error_message = "The cloudwatch_alarm_evaluation_periods must be at least 1."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "The period in seconds over which the statistic is applied. AWS service metrics are published at one-minute resolution, so 60 is the shortest useful period."
+  default     = 300
+  nullable    = false
+
+  validation {
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "The cloudwatch_alarm_period must be one of: 60, 300, 900, or 3600 seconds. AWS service metrics are published at one-minute resolution, so shorter periods never receive datapoints."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "A list of ARNs to notify when a CloudWatch alarm transitions to ALARM state."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "A list of ARNs to notify when a CloudWatch alarm transitions to OK state."
+  default     = []
+  nullable    = false
+}
+
 variable "region" {
   type        = string
   description = "AWS region. When null, the provider's configured region is used."

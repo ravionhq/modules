@@ -56,7 +56,7 @@ lifecycle:
 
 strategy:
   type: RollingUpdate
-  maxSurge: 25%
+  maxSurge: 100%
   maxUnavailable: 0
 
 resources:
@@ -80,10 +80,11 @@ probes:
     enabled: true
     path: /
     port: ""
-    initialDelaySeconds: 5
-    periodSeconds: 10
+    initialDelaySeconds: 0
+    periodSeconds: 1
     timeoutSeconds: 5
-    failureThreshold: 3
+    # -- About 30 seconds of failed checks at the 1-second period before the pod leaves traffic.
+    failureThreshold: 30
     successThreshold: 1
   startup:
     enabled: false

@@ -598,6 +598,95 @@ module:
       default: []
       show_when:
         lambda_type: regional
+    - id: section_cloudwatch_alarms
+      label: CloudWatch alarms
+      type: section
+    - id: cloudwatch_alarms_creation_enabled
+      label: Monitor invocation error rate
+      type: boolean
+      default: true
+      description: Keep enabled to detect invocation failures. Disable if monitored elsewhere. Configure SNS actions or an EventBridge relay for notifications.
+    - id: cloudwatch_alarm_error_rate_threshold
+      label: Error rate threshold (%)
+      description: Failed invocations as a percentage of all invocations; triggers at or above this value.
+      type: number
+      default: 1
+      min: 1
+      collapsible: true
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      max: 100
+    - id: cloudwatch_alarm_evaluation_periods
+      label: Consecutive alarm periods
+      type: number
+      default: 1
+      min: 1
+      collapsible: true
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+    - id: cloudwatch_alarm_period
+      label: Alarm period (seconds)
+      type: number
+      default: 300
+      min: 60
+      collapsible: true
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      values:
+        - label: "60"
+          value: 60
+        - label: "300"
+          value: 300
+        - label: "900"
+          value: 900
+        - label: "3600"
+          value: 3600
+    - id: cloudwatch_alarm_actions
+      label: Alarm action ARNs
+      type: string_array
+      default: []
+      add_button_label: Add action ARN
+      collapsible: true
+      description: SNS topics must share the metric region. Use the overrides below for Edge.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+    - id: cloudwatch_ok_actions
+      label: Recovery action ARNs
+      type: string_array
+      default: []
+      add_button_label: Add action ARN
+      collapsible: true
+      description: SNS topics must share the metric region. Use the overrides below for Edge.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+    - id: cloudwatch_alarm_additional_regions
+      label: Additional Edge alarm regions
+      type: string_array
+      default: []
+      values: $values:aws/regions
+      add_button_label: Add region
+      description: Select every region where this function executes. The origin region is always included. Update this list as traffic expands.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+        lambda_type: edge
+    - id: cloudwatch_alarm_actions_by_region
+      label: Alarm actions by region
+      type: object
+      default: {}
+      collapsible: true
+      description: Overrides shared destinations by region. Set a region to [] to suppress direct actions there.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+        lambda_type: edge
+    - id: cloudwatch_ok_actions_by_region
+      label: Recovery actions by region
+      type: object
+      default: {}
+      collapsible: true
+      description: Overrides shared destinations by region. Set a region to [] to suppress direct actions there.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+        lambda_type: edge
     - id: section_logs
       label: Logs
       type: section
@@ -910,7 +999,7 @@ module:
     - id: ecr_scan_on_push_enabled
       label: Scan images on push
       type: boolean
-      description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy.
+      description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy. Enabled by default to satisfy SOC 2 vulnerability-scanning requirements.
       collapsible: true
       default: true
       show_when:
@@ -953,6 +1042,15 @@ module:
           << module.input.package_type == "Zip" ? module.input.code_bucket_force_destroy_enabled : false >>
         code_bucket_name: >-
           << module.input.package_type == "Zip" ? (module.input.code_bucket_name || nil) : nil >>
+        cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
+        cloudwatch_alarm_error_rate_threshold: << module.input.cloudwatch_alarm_error_rate_threshold >>
+        cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+        cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
+        cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions >>
+        cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions >>
+        cloudwatch_alarm_additional_regions: << module.input.cloudwatch_alarm_additional_regions >>
+        cloudwatch_alarm_actions_by_region: << module.input.cloudwatch_alarm_actions_by_region >>
+        cloudwatch_ok_actions_by_region: << module.input.cloudwatch_ok_actions_by_region >>
         code_signing_config_arn: >-
           << module.input.lambda_type == "edge" ? nil : (module.input.package_type == "Zip" ? (module.input.code_signing_config_arn || nil) : nil) >>
         dead_letter_target_arn: >-
@@ -1261,6 +1359,12 @@ module:
     - Terraform creates a bootstrap zip package for zip functions and creates image package functions with a bootstrap image in the module-managed ECR repository.
     - Runtime configuration stays in Terraform to avoid deploy-time configuration drift.
     - The zip code bucket is versioned, but the build output currently passes the S3 key as the primary deploy input.
+
+    ## Error-rate monitoring
+
+    Invocation error-rate alarms are enabled by default in Ravion. The default is at least 1% failed invocations over one 5-minute period. Idle functions do not alert. Configure notification action ARNs or an external EventBridge relay to receive alerts.
+
+    For Lambda@Edge, select every additional execution region and provide regional action ARN overrides. The origin-region alarm is always included; it alone does not cover worldwide traffic. Add regions as traffic expands. These alarms monitor invocation failures, not HTTP status codes returned by application code or throttled requests.
 
     ## Learn more
 

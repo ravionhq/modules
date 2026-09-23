@@ -657,7 +657,7 @@ module:
     - id: ecr_scan_on_push_enabled
       label: Scan images on push
       type: boolean
-      description: Scan images for vulnerabilities after they are pushed to the Ravion-created ECR repository.
+      description: Scan images for vulnerabilities after they are pushed to the Ravion-created ECR repository. Enabled by default to satisfy SOC 2 vulnerability-scanning requirements.
       collapsible: true
       show_when:
         deploy_type: container

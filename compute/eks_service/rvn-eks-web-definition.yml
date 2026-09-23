@@ -141,15 +141,15 @@ module:
       collapsible: true
       max: 600
       min: 0
-      default: 5
+      default: 0
     - id: readiness_probe_period_seconds
       label: Readiness check interval (secs)
       type: number
-      description: Seconds between Kubernetes readiness checks. Use 1 for the fastest local readiness signal; the load balancer readiness gate still waits for target registration when enabled.
+      description: Seconds between Kubernetes readiness checks. A pod leaves traffic after about 30 seconds of failed checks at any interval; the load balancer readiness gate still waits for target registration when enabled.
       collapsible: true
       max: 300
       min: 1
-      default: 10
+      default: 1
     - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
@@ -359,7 +359,7 @@ module:
       collapsible: true
       max: 100
       min: 1
-      default: 25
+      default: 100
     - id: termination_grace_period_seconds
       label: Shutdown grace period (secs)
       type: number
@@ -467,12 +467,16 @@ module:
                   liveness:
                     enabled: << module.input.liveness_probe_enabled >>
                     path: '<< module.input.liveness_probe_path || module.input.health_check_path >>'
-                    initialDelaySeconds: '<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 5 >>'
+                    initialDelaySeconds: '<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 0 >>'
                   readiness:
                     enabled: true
                     path: << module.input.health_check_path >>
-                    initialDelaySeconds: '<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 5 >>'
-                    periodSeconds: '<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 10 >>'
+                    initialDelaySeconds: '<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 0 >>'
+                    periodSeconds: '<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1 >>'
+                    # A short period must not pull a pod out of the target group on a
+                    # brief health hiccup: keep about 30 seconds of failed checks
+                    # before unready, and never fewer than the chart's 3.
+                    failureThreshold: '<< module.input.readiness_probe_period_seconds != nil && module.input.readiness_probe_period_seconds >= 10 ? 3 : int((29 + (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) / (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) >>'
                   startup:
                     enabled: << module.input.startup_probe_enabled >>
                     path: '<< module.input.startup_probe_path || module.input.liveness_probe_path || module.input.health_check_path >>'
@@ -498,7 +502,7 @@ module:
                 lifecycle:
                   preStopSleepSeconds: '<< module.input.pre_stop_sleep_seconds != nil ? module.input.pre_stop_sleep_seconds : 10 >>'
                 strategy:
-                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 25 >>%'
+                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%'
                 podDisruptionBudget:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
@@ -733,7 +737,8 @@ module:
     | Timeout (secs) | 4 | Seconds to wait for a response; must be lower than the interval |
     | Healthy threshold | 2 | Successful checks before a target is healthy |
     | Unhealthy threshold | 2 | Failed checks before a target is unhealthy |
-    | Readiness check interval (secs) | 10 | Seconds between Kubernetes readiness checks; may be set to 1 |
+    | Readiness check interval (secs) | 1 | Seconds between Kubernetes readiness checks; a pod leaves traffic after about 30 seconds of failed checks |
+    | Health check initial delay (secs) | 0 | Seconds before the first readiness or liveness check |
 
     **Startup and recovery** are optional and independent. Enable **Enforce startup timeout** to restart a container that never finishes starting; its **Maximum startup time** defaults to 150 seconds. A bad startup path or a timeout shorter than the app's real boot time causes a restart loop. Enable **Restart unresponsive containers** to restart a process that remains running but stops answering. Processes that exit are restarted automatically even when this setting is off.
 
@@ -830,7 +835,7 @@ module:
 
     ## Deployment
 
-    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable by default. **Maximum rollout surge (%)** controls how many replacements start together: 25% by default, or 100% for a full replacement set when enough capacity is already available.
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable. **Maximum rollout surge (%)** defaults to 100%, allowing a full replacement set to start together when enough matching capacity is already available. Lower this advanced setting to limit temporary capacity. Existing explicitly configured surge values are retained.
 
     ## Graceful shutdown
 
@@ -898,7 +903,8 @@ module:
     | Start command arguments | No | [] | Overrides the image default arguments |
     | Container port | Yes | 8080 | Port the application listens on |
     | Traffic health path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
-    | Readiness check interval (secs) | No | 10 | Kubernetes readiness period; 1 is the fastest supported value |
+    | Readiness check interval (secs) | No | 1 | Kubernetes readiness period; about 30 seconds of failed checks remove a pod from traffic |
+    | Health check initial delay (secs) | No | 0 | Delay before the first readiness or liveness check |
     | Success codes | Yes | 200-399 | Health check status code matcher |
     | Sticky sessions | No | false | Keep repeat requests on the same pod |
     | Enforce startup timeout | No | false | Restart an app that does not finish starting in time |
@@ -919,7 +925,7 @@ module:
     | Maximum pods | No | 3 | Upper bound when autoscaling |
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
-    | Maximum rollout surge (%) | No | 25 | Extra pods during rolling updates; up to 100% |
+    | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
     | Pods | No | 2 | Fixed pod count when autoscaling is disabled |
     | Shutdown grace period (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
     | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |
