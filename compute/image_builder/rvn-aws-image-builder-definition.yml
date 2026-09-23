@@ -1,137 +1,39 @@
 definition:
   type: rvn-aws-image-builder
   name: EC2 Image Builder
-  description: Creates an EC2 Image Builder pipeline that bakes an AMI from a parent image and ordered components, then distributes it across regions, privately or publicly.
+  description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
 release:
   version: 0.3.0
-  description: Adds an image release mode. Deployments mode keeps only the build infrastructure in Terraform and releases images through deploys instead, so each deploy builds, copies, tags, publishes, and retires images on its own.
+  description: Images are now released only through deploys. Each deploy builds an AMI, copies it to every additional region, tags it, publishes it when asked, and retires older images past the public and private counts each region keeps. The image pipeline, schedules, build on deploy, build notifications, account and organization sharing, and the account-wide public AMI setting are removed.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
     - $include: ../../partials/inputs/aws-region.yml
-    - id: section_pipeline
-      label: Pipeline
+    - id: section_general
+      label: General
       type: section
     - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
-      description: Name of the pipeline and the prefix of the recipe, components, configurations, and build instance role.
+      description: Name of the build configurations, and the prefix of the components, the build instance role, each deploy's image recipe, and the AMI names.
       id: name
       immutable: true
-      label: Pipeline name
+      label: Name
       patterns:
         - message: 2-64 letters, numbers, hyphens, or underscores. Start with a letter or number.
           pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$
       required: true
       type: string
-    - description: Description stored on the pipeline, the recipe, and the configurations.
+    - description: Description stored on the infrastructure and distribution configurations.
       id: description
       label: Description
       patterns:
         - message: 1024 characters or fewer.
           pattern: ^.{0,1024}$
       type: string
-    - default: terraform
-      description: How images are released. Terraform builds and manages the pipeline directly, unchanged from prior versions. Deployments builds and releases images through deploys instead, so each deploy creates its own image recipe, copies it, tags it, publishes it, and retires older images.
-      id: image_release_mode
-      label: Image release mode
-      required: true
-      type: string
-      values:
-        - label: Terraform
-          description: This module owns the recipe, the pipeline, and an optional build on every deploy.
-          value: terraform
-        - label: Deployments
-          description: This module owns only the build infrastructure. Each deploy creates its own recipe and runs the whole release.
-          value: deployments
-    - collapsible: true
-      default: 5
-      description: Public images each region keeps. Each deploy makes older public images private. AWS allows 5 public AMIs per region by default.
-      id: retention_public_image_count
-      label: Public images to keep
-      max: 100
-      min: 1
-      required: true
-      show_when:
-        image_release_mode: deployments
-      type: number
-    - collapsible: true
-      default: 10
-      description: Private images each region keeps after the public ones. Each deploy deregisters older images and deletes their snapshots.
-      id: retention_private_image_count
-      label: Private images to keep
-      max: 1000
-      min: 0
-      required: true
-      show_when:
-        image_release_mode: deployments
-      type: number
-    - default: false
-      description: Build an image during every deploy that changes the recipe. The deploy waits for the build and its distribution, commonly 20-60 minutes. Off leaves builds to the schedule or a manual pipeline run.
-      id: build_on_apply
-      label: Build on deploy
-      show_when:
-        image_release_mode: terraform
-      type: boolean
-    - collapsible: true
-      description: How long a deploy waits for the build it starts, covering the build, the image tests, and the distribution. It must be greater than the image test timeout. Leave blank to allow an hour on top of that timeout.
-      id: build_timeout_minutes
-      label: Build timeout (minutes)
-      max: 2880
-      min: 61
-      placeholder: "120"
-      show_when:
-        build_on_apply: true
-        image_release_mode: terraform
-      type: number
-    - default: false
-      description: Create an IAM policy that starts this pipeline and reads the images it produces. Attach it to the role of a deploy step that runs `aws imagebuilder start-image-pipeline-execution`.
-      id: create_pipeline_execution_policy
-      label: Allow a deploy step to start builds
-      show_when:
-        image_release_mode: terraform
-      type: boolean
-    - collapsible: true
-      description: Cron expression the pipeline runs on. Leave blank to run it manually.
-      id: schedule_expression
-      label: Schedule
-      patterns:
-        - message: Use an Image Builder cron expression, for example cron(0 0 * * ? *).
-          pattern: ^$|^cron\(.+\)$
-      placeholder: cron(0 0 * * ? *)
-      show_when:
-        image_release_mode: terraform
-      type: string
-    - collapsible: true
-      default: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
-      description: Whether a scheduled run always builds, or only when the parent image or a wildcard-versioned component has an update.
-      id: schedule_start_condition
-      label: Scheduled run condition
-      show_when:
-        image_release_mode: terraform
-      type: string
-      values:
-        - label: Only when dependencies have updates
-          value: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
-        - label: Every scheduled run
-          value: EXPRESSION_MATCH_ONLY
-    - collapsible: true
-      default: true
-      description: Whether the pipeline can run. A disabled pipeline keeps its configuration and ignores its schedule.
-      id: pipeline_enabled
-      label: Pipeline enabled
-      show_when:
-        image_release_mode: terraform
-      type: boolean
-    - collapsible: true
-      default: true
-      description: Collect the package list and other metadata from each image built, and show it in the Image Builder console.
-      id: enhanced_image_metadata_enabled
-      label: Collect image metadata
-      type: boolean
     - id: section_parent_image
       label: Parent image
       type: section
     - default: image
-      description: Pin one parent image, or look up the newest image an owner publishes under a name pattern on every deploy.
+      description: Pin one parent image, or have every deploy build on the newest image an owner publishes under a name pattern.
       id: parent_image_source
       label: Parent image source
       required: true
@@ -141,7 +43,7 @@ module:
           description: An AMI ID, an Image Builder image ARN, or an SSM parameter.
           value: image
         - label: Newest matching AMI
-          description: The newest AMI from an owner whose name matches a pattern. A newer parent image produces a new recipe on the next deploy.
+          description: The newest AMI from an owner whose name matches a pattern, looked up again by every deploy.
           value: lookup
     - description: AMI ID, Image Builder image ARN, or SSM parameter written as ssm:<parameter name>.
       id: parent_image
@@ -184,11 +86,11 @@ module:
           value: x86_64
         - label: arm64
           value: arm64
-    - id: section_recipe
-      label: Recipe
+    - id: section_image
+      label: Image
       type: section
     - default: []
-      description: Components the recipe runs, in order. Describe what a component does as ordered steps, write its document yourself, or reference an AWS-managed or existing component by ARN.
+      description: Components each deploy's image recipe runs, in order. Describe what a component does as ordered steps, write its document yourself, or reference an AWS-managed or existing component by ARN.
       id: components
       item_inputs:
         - description: Short name for this component. Used in the created component's name.
@@ -220,13 +122,13 @@ module:
           description: What this component does. Shown on the component in the Image Builder console.
           id: description
           label: Description
-          placeholder: Installs the sandbox runtime
+          placeholder: Installs the application runtime
           show_when:
             source:
               - steps
               - document
           type: string
-        - description: Image Builder component document in YAML. Changing it creates a new component and a new recipe.
+        - description: Image Builder component document in YAML. Changing it creates a new component, which the next deploy builds with.
           id: data
           label: Component document
           placeholder: |-
@@ -257,7 +159,7 @@ module:
           type: string
         - collapsible: true
           default: []
-          description: Values the steps read as {{ ParameterName }}. A value is passed by the recipe, so changing one creates a new recipe over the same component; changing a name or a default creates a new component.
+          description: Values the steps read as {{ ParameterName }}. Each deploy passes the values to its image recipe and can override them, so changing a value leaves the component alone; changing a name or a default creates a new component.
           id: parameter_definitions
           item_inputs:
             - description: Name the steps refer to.
@@ -266,7 +168,7 @@ module:
               patterns:
                 - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter.
                   pattern: ^[A-Za-z][A-Za-z0-9_-]{0,127}$
-              placeholder: RunnerVersion
+              placeholder: ReleaseVersion
               required: true
               type: string
             - default: string
@@ -283,13 +185,13 @@ module:
                   value: boolean
                 - label: List of strings
                   value: stringList
-            - description: Value this recipe passes. Leave blank to use the default.
+            - description: Value each deploy passes unless the deploy overrides it. Leave blank to use the default.
               id: value
               label: Value
-              placeholder: v1.1.37
+              placeholder: v1.2.3
               type: string
             - collapsible: true
-              description: Value used when the recipe passes none.
+              description: Value used when a deploy passes none.
               id: default
               label: Default
               type: string
@@ -413,7 +315,7 @@ module:
             - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
               id: inputs_json
               label: Inputs
-              placeholder: '[{"source": "s3://releases/runner", "destination": "/tmp/runner"}]'
+              placeholder: '[{"source": "s3://my-releases/app", "destination": "/tmp/app"}]'
               show_when:
                 action:
                   not:
@@ -565,7 +467,7 @@ module:
             - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
               id: inputs_json
               label: Inputs
-              placeholder: '[{"source": "s3://releases/runner", "destination": "/tmp/runner"}]'
+              placeholder: '[{"source": "s3://my-releases/app", "destination": "/tmp/app"}]'
               show_when:
                 action:
                   not:
@@ -610,7 +512,7 @@ module:
           type: object_array
         - collapsible: true
           default: []
-          description: Steps that check an instance launched from the finished image. Run only when image tests are on.
+          description: Steps that check an instance launched from the finished image, after the build.
           id: test_steps
           item_inputs:
             - description: Name of this step, unique within the phase.
@@ -716,7 +618,7 @@ module:
             - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
               id: inputs_json
               label: Inputs
-              placeholder: '[{"source": "s3://releases/runner", "destination": "/tmp/runner"}]'
+              placeholder: '[{"source": "s3://my-releases/app", "destination": "/tmp/app"}]'
               show_when:
                 action:
                   not:
@@ -777,7 +679,7 @@ module:
               value: macOS
         - collapsible: true
           default: {}
-          description: Values for the parameters the component declares. Changing a value creates a new recipe over the same component.
+          description: Values for the parameters the component declares. Each deploy passes them to its image recipe unless the deploy overrides them.
           id: parameters
           label: Parameters
           show_when:
@@ -792,26 +694,6 @@ module:
       label: Components
       required: true
       type: object_array
-    - collapsible: true
-      description: User data the build instance launches with. Supplying it replaces the script Image Builder uses to install the Systems Manager agent, so it must install the agent on a parent image that does not ship one.
-      id: user_data
-      label: Build instance user data
-      type: text
-    - collapsible: true
-      description: Directory on the build instance the build and test workflows run in. Leave blank to keep the Image Builder default.
-      id: working_directory
-      label: Build working directory
-      patterns:
-        - message: Use an absolute path.
-          pattern: ^$|^/
-      placeholder: /tmp
-      type: string
-    - collapsible: true
-      default: true
-      description: Remove the Systems Manager agent from the image when Image Builder installed it for the build.
-      id: ssm_agent_uninstall_after_build
-      label: Remove Systems Manager agent after build
-      type: boolean
     - default: false
       description: Give the image a root volume configured here. The volume becomes the image's snapshot, and its size is the smallest root volume an instance can launch the image with.
       id: root_volume_override_enabled
@@ -880,35 +762,13 @@ module:
         root_volume_override_enabled: true
         root_volume_type: gp3
       type: number
-    - collapsible: true
-      default: true
-      description: Encrypt the image's root snapshot. Public images are always unencrypted.
-      id: root_volume_encrypted
-      label: Encrypt root volume
-      show_when:
-        public: false
-        root_volume_override_enabled: true
-      type: boolean
-    - collapsible: true
-      description: KMS key the root snapshot is encrypted with, as a key ID, alias, or ARN. Leave blank to use the account's default EBS key.
-      id: root_volume_kms_key_id
-      label: Root volume KMS key
-      patterns:
-        - message: Use a KMS key ID, alias, or ARN.
-          pattern: ^$|^alias/.+$|^[A-Fa-f0-9-]{36}$|^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:(key|alias)/.+$
-      placeholder: arn:aws:kms:us-west-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab
-      show_when:
-        public: false
-        root_volume_encrypted: true
-        root_volume_override_enabled: true
-      type: string
     - id: section_build
       label: Build infrastructure
       type: section
     - add_button_label: Add instance type
       default:
         - m7i.large
-      description: Instance types the build may run on, in order of preference. They must match the parent image's architecture.
+      description: Instance types a build may run on, in order of preference. They must match the parent image's architecture.
       id: instance_types
       label: Instance types
       required: true
@@ -970,22 +830,6 @@ module:
       label: Terminate instance on failure
       type: boolean
     - collapsible: true
-      default: true
-      description: Launch a test instance from the new image and run the components' test phases. Turn off for an image that does not start the Systems Manager agent on boot.
-      id: image_tests_enabled
-      label: Run image tests
-      type: boolean
-    - collapsible: true
-      default: 60
-      description: How long the test phase may run.
-      id: image_tests_timeout_minutes
-      label: Image test timeout (minutes)
-      max: 1440
-      min: 60
-      show_when:
-        image_tests_enabled: true
-      type: number
-    - collapsible: true
       description: S3 bucket the build logs are written to. The build instance is granted write access under the log prefix. Leave blank to keep the logs in CloudWatch only.
       id: log_bucket
       label: Build log bucket
@@ -1003,98 +847,11 @@ module:
         log_bucket:
           not: ""
       type: string
-    - id: section_notification
-      label: Build notification
-      type: section
-    - collapsible: true
-      description: HTTPS endpoint told when a build finishes and its images reach every region. The notification carries the image's ARN, and the endpoint reads the rest back from Image Builder. Leave blank to send none. Not available in deployments mode, where a deploy already sees its own build through to completion.
-      id: notify_url
-      label: Notify endpoint
-      patterns:
-        - message: Use an https:// URL.
-          pattern: ^$|^https://.+
-      placeholder: https://api.example.com/hooks/image-built
-      show_when:
-        image_release_mode: terraform
-      type: string
-    - collapsible: true
-      default: X-Lambda-Secret
-      description: Header the notification carries so the endpoint can tell it apart from any other caller.
-      id: notify_header_name
-      label: Notify header
-      show_when:
-        image_release_mode: terraform
-        notify_url:
-          not: ""
-      type: string
-    - default: value
-      description: Where the header value comes from. A parameter or a secret is read on each deploy, so rotating it reaches the endpoint on the next deploy rather than the moment it changes.
-      id: notify_secret_source
-      label: Header value source
-      required: true
-      show_when:
-        image_release_mode: terraform
-        notify_url:
-          not: ""
-      type: string
-      values:
-        - description: Enter the value here.
-          label: Value
-          value: value
-        - description: Read it from an SSM parameter.
-          label: Parameter Store
-          value: parameter_store
-        - description: Read it from a Secrets Manager secret.
-          label: Secrets Manager
-          value: secrets_manager
-    - description: Value of that header, which the endpoint checks before it trusts the call.
-      id: notify_header_value
-      label: Notify header value
-      required: true
-      show_when:
-        image_release_mode: terraform
-        notify_secret_source: value
-        notify_url:
-          not: ""
-      type: string
-    - description: Name or ARN of the parameter holding the header value. A SecureString is decrypted on read, so the deploy needs to be allowed ssm:GetParameter on it and kms:Decrypt on its key.
-      id: notify_header_parameter
-      label: Parameter
-      placeholder: /ravion/image-builder/notify-header
-      required: true
-      show_when:
-        image_release_mode: terraform
-        notify_secret_source: parameter_store
-        notify_url:
-          not: ""
-      type: string
-    - description: Name or ARN of the secret holding the header value. The deploy needs to be allowed secretsmanager:GetSecretValue on it, and kms:Decrypt on its key when the secret uses a customer-managed one.
-      id: notify_header_secret
-      label: Secret
-      placeholder: ravion/image-builder/notify-header
-      required: true
-      show_when:
-        image_release_mode: terraform
-        notify_secret_source: secrets_manager
-        notify_url:
-          not: ""
-      type: string
-    - collapsible: true
-      description: Key to read out of a secret that stores JSON. Leave blank to use the whole secret.
-      id: notify_header_secret_json_key
-      label: Secret JSON key
-      placeholder: header
-      show_when:
-        image_release_mode: terraform
-        notify_secret_source: secrets_manager
-        notify_url:
-          not: ""
-      type: string
     - id: section_distribution
       label: Distribution
       type: section
     - collapsible: true
-      description: Name of each image produced. Include {{ imagebuilder:buildDate }} so that every build gets its own name. Defaults to the pipeline name followed by the build date.
+      description: Name of each image built. Include {{ imagebuilder:buildDate }} so that every build gets its own name. Defaults to the name followed by the build date.
       id: ami_name
       label: AMI name
       patterns:
@@ -1103,7 +860,7 @@ module:
       placeholder: my-image-{{ imagebuilder:buildDate }}
       type: string
     - collapsible: true
-      description: Description stored on each image produced.
+      description: Description stored on each image built, in the build region.
       id: ami_description
       label: AMI description
       patterns:
@@ -1112,60 +869,37 @@ module:
       type: string
     - collapsible: true
       default: {}
-      description: Tags written on each image produced, in every region. Tags are visible only to the owning account, even on a public image.
+      description: Tags written on each image built, in the build region. A deploy's extra tags go on every image and snapshot in every region. Tags are visible only to the owning account, even on a public image.
       id: ami_tags
       label: AMI tags
       type: keyvalue
     - add_button_label: Add region
       default: []
-      description: Regions the finished image is copied to, beyond the build region.
+      description: Regions each deploy copies the finished image to, beyond the build region.
       id: distribution_regions
       label: Additional regions
       placeholder: Select a region
       type: string_array
       values: $values:aws/regions
-    - default: false
-      description: Make every image produced launchable by any AWS account. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in every region the image lands in. Not available in deployments mode, where each deploy's Publish input decides launch permission.
-      id: public
-      label: Public image
-      show_when:
-        image_release_mode: terraform
-      type: boolean
-    - default: false
-      description: Turn off the account-wide block on public AMI sharing in the build region and every additional region. The setting covers every image the account owns in those regions, not only the images built here, and stays off after this module is destroyed. Leave it off unless you mean to change the account, and a build that would publish a public image fails in any region that still blocks sharing.
-      id: manage_image_block_public_access
-      label: Allow public AMI sharing in this account
-      show_when:
-        image_release_mode: terraform
-        public: true
-      type: boolean
-    - add_button_label: Add account ID
-      default: []
-      description: AWS accounts granted launch permission on every image produced. Not available in deployments mode.
-      id: launch_account_ids
-      label: Shared account IDs
-      patterns:
-        - message: Use a 12-digit AWS account ID.
-          pattern: ^[0-9]{12}$
-      placeholder: "123456789012"
-      show_when:
-        image_release_mode: terraform
-        public: false
-      type: string_array
-    - add_button_label: Add organization ARN
-      collapsible: true
-      default: []
-      description: AWS Organizations granted launch permission on every image produced. Every account in the organization can launch the image. Not available in deployments mode.
-      id: launch_organization_arns
-      label: Shared organization ARNs
-      patterns:
-        - message: Use an AWS Organizations organization ARN.
-          pattern: ^arn:aws[a-z-]*:organizations::[0-9]{12}:organization/o-[a-z0-9]+$
-      placeholder: arn:aws:organizations::123456789012:organization/o-abc123def4
-      show_when:
-        image_release_mode: terraform
-        public: false
-      type: string_array
+    - id: section_retention
+      label: Retention
+      type: section
+    - default: 5
+      description: Public images each region keeps. Each deploy makes older public images private. AWS allows 5 public AMIs per region by default, counting every public AMI the account owns there.
+      id: retention_public_image_count
+      label: Public images to keep
+      max: 100
+      min: 1
+      required: true
+      type: number
+    - default: 10
+      description: Private images each region keeps after the public ones. Each deploy deregisters older images and deletes their snapshots.
+      id: retention_private_image_count
+      label: Private images to keep
+      max: 1000
+      min: 0
+      required: true
+      type: number
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -1181,59 +915,25 @@ module:
         ami_description: << module.input.ami_description || nil >>
         ami_name: << module.input.ami_name || nil >>
         ami_tags: << module.input.ami_tags || {} >>
-        build_on_apply: << module.input.build_on_apply >>
-        build_timeout_minutes: "<< module.input.build_on_apply ? (module.input.build_timeout_minutes || nil) : nil >>"
         components: << module.input.components || [] >>
-        create_pipeline_execution_policy: << module.input.create_pipeline_execution_policy >>
         description: << module.input.description || nil >>
-        distribution_regions: << module.input.distribution_regions || [] >>
-        enhanced_image_metadata_enabled: << module.input.enhanced_image_metadata_enabled >>
-        image_release_mode: << module.input.image_release_mode >>
-        image_tests_enabled: << module.input.image_tests_enabled >>
-        image_tests_timeout_minutes: << module.input.image_tests_timeout_minutes >>
         instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
         instance_policy_json: << module.input.instance_policy_json || nil >>
         instance_types: << module.input.instance_types >>
-        launch_account_ids: "<< module.input.public ? [] : (module.input.launch_account_ids || []) >>"
-        launch_organization_arns: "<< module.input.public ? [] : (module.input.launch_organization_arns || []) >>"
         log_bucket: << module.input.log_bucket || nil >>
         log_prefix: << module.input.log_prefix >>
-        manage_image_block_public_access: << module.input.manage_image_block_public_access >>
         name: << module.input.name >>
-        notify_header_name: << module.input.notify_header_name >>
-        notify_header_parameter: << module.input.notify_header_parameter || "" >>
-        notify_header_secret: << module.input.notify_header_secret || "" >>
-        notify_header_secret_json_key: << module.input.notify_header_secret_json_key || "" >>
-        notify_header_value: << module.input.notify_header_value || "" >>
-        notify_secret_source: << module.input.notify_secret_source || nil >>
-        notify_url: << module.input.notify_url || "" >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
         parent_image_lookup: >-
           << module.input.parent_image_source == "lookup" ?
           {"owners": module.input.parent_image_owners, "name": module.input.parent_image_name,
           "architecture": module.input.parent_image_architecture} : nil >>
-        pipeline_enabled: << module.input.pipeline_enabled >>
-        public: << module.input.public >>
         region: << module.input.aws_region >>
-        root_volume: >-
-          << module.input.root_volume_override_enabled ?
-          {"device_name": module.input.root_device_name, "size_gb": module.input.root_volume_size_gb,
-          "type": module.input.root_volume_type,
-          "iops": (module.input.root_volume_type == "gp2" ? nil : (module.input.root_volume_iops || nil)),
-          "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil),
-          "encrypted": (module.input.public ? nil : module.input.root_volume_encrypted),
-          "kms_key_id": (module.input.public || !module.input.root_volume_encrypted ?
-          nil : (module.input.root_volume_kms_key_id || nil))} : nil >>
-        schedule_expression: << module.input.schedule_expression || nil >>
-        schedule_start_condition: << module.input.schedule_start_condition >>
         security_group_ids: << module.input.security_group_ids || [] >>
-        ssm_agent_uninstall_after_build: << module.input.ssm_agent_uninstall_after_build >>
         subnet_id: << module.input.subnet_id || nil >>
         tags:
           $include: ../../partials/stack/ravion-tags.yml
         terminate_instance_on_failure: << module.input.terminate_instance_on_failure >>
-        user_data: << module.input.user_data || nil >>
-        working_directory: << module.input.working_directory || nil >>
   deploy:
     type: aws:ami
     concurrency:
@@ -1255,14 +955,13 @@ module:
       - id: publish
         label: Publish
         type: boolean
-        description: Grant launch permission all on this deploy's AMIs. Off keeps them private, a candidate to test before a redeploy publishes it.
+        description: Grant launch permission all on this deploy's AMIs, in every region. Off keeps them private.
         default: true
     infrastructure:
       aws_account_id: << module.input.aws_account_id >>
       region: << stack.output.region >>
       infrastructure_configuration_arn: << stack.output.infrastructure_configuration_arn >>
-      distribution_configuration_arn: >-
-        << module.input.image_release_mode == "deployments" ? stack.output.distribution_configuration_arn : nil >>
+      distribution_configuration_arn: << stack.output.distribution_configuration_arn >>
       components: << stack.output.component_refs >>
       parent_image: >-
         << module.input.parent_image_source == "lookup" ?
@@ -1288,33 +987,26 @@ module:
   ui:
     links: |-
       <<
-      stack.output.pipeline_arn && stack.output.region ?
-      [{"name":"Image pipeline","href":"https://" + stack.output.region + ".console.aws.amazon.com/imagebuilder/home?region=" + stack.output.region + "#/pipelines/" + stack.output.pipeline_arn}] :
+      stack.output.region ?
+      [{"name":"AMIs","href":"https://" + stack.output.region + ".console.aws.amazon.com/ec2/home?region=" + stack.output.region + "#Images:visibility=owned-by-me"}] :
       []
       >>
   readme: |
-    Creates an EC2 Image Builder pipeline that bakes an AMI and distributes it.
+    Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 
     ## Overview
 
-    Use this module to turn a manual image build into a repeatable pipeline. A recipe starts from a parent image, runs your components in order on a temporary build instance, snapshots the result as an AMI, and copies it to every region you list.
+    Use this module to turn a manual image build into a repeatable release. Applying the module creates what every build shares: the components, the build instance role, the infrastructure configuration a build runs on, and a distribution configuration that names and tags each image in the build region. It creates no image recipe, pipeline, or image. The only way to make a new AMI is a deploy.
 
-    The module creates the components, the recipe, the build infrastructure and its IAM role, the distribution settings, and the pipeline. It does not keep build instances around: each one exists only for the length of a build.
+    Each deploy is one release. It:
 
-    A pipeline builds on a schedule, on request from a pipeline step, or during a deploy that changes the recipe. The request path is what a release pipeline uses: a step starts the build, waits for the image, and hands the new AMI ID to whatever launches instances from it.
+    1. Creates an image recipe from the parent image, the components in order, and this deploy's component parameters, then builds it in the build region on a temporary build instance and runs the components' test phases on an instance launched from the new image.
+    2. Copies the new AMI to every additional region.
+    3. Tags every image and snapshot it created.
+    4. Grants launch permission `all` on the images in every region when Publish is on.
+    5. Retires older images in each region past the retention counts.
 
-    ## Image release mode
-
-    Image release mode decides who builds and releases images.
-
-    | Mode | Terraform owns | Each deploy |
-    | --- | --- | --- |
-    | Terraform (default) | The recipe, the pipeline, and, if turned on, a build on every apply | Unavailable |
-    | Deployments | The build infrastructure only: the IAM role, the infrastructure configuration, the components, and a home-region distribution configuration | Creates its own recipe from the current components, builds it, copies it to every additional region, tags it, publishes it when Publish is on, and retires images past the retention window |
-
-    Switching to Deployments turns off Build on deploy, Schedule, Pipeline enabled, Allow a deploy step to start builds, and Build notification: a deploy sees its own build through to completion, so there is nothing left for the pipeline or a notification to do. Public image, Allow public AMI sharing in this account, and the shared account and organization lists move to each deploy's Publish input; a deploy started with Publish off leaves its images private, a candidate to test before a redeploy publishes them.
-
-    Retention keeps the newest Public images to keep (5 by default) public and the next Private images to keep (10 by default) private in each region. Older public images are made private, and images past both windows are deregistered along with their snapshots.
+    A redeploy or a rollback releases an earlier deploy's images again without rebuilding them.
 
     ## Use cases
 
@@ -1323,7 +1015,7 @@ module:
     | Golden images | Bake packages, agents, and hardening into an AMI so instances boot ready to work. |
     | Release images | Bake one application release per image and roll it out by changing a launch template. |
     | Multi-region fleets | Build once and copy the image to every region that launches it. |
-    | Distributed software | Share an image with selected accounts, or publish it for any AWS account to launch. |
+    | Distributed software | Publish an image for any AWS account to launch. |
 
     ## Components and parameters
 
@@ -1337,95 +1029,47 @@ module:
 
     A step names an action and what that action needs. Run bash commands and Run PowerShell commands take a list of commands, run in order, and the phase stops at the first one that exits non-zero. Every other action takes Inputs, the JSON its AWS documentation describes.
 
-    Declare the values that change between builds, such as a release version, under Parameters. A step reads one as `{{ ParameterName }}`. A parameter's value is passed by the recipe rather than written into the document, so changing a value creates a new recipe over the same component and the document stays stable across releases.
+    Declare the values that change between releases, such as a release version, under Parameters. A step reads one as `{{ ParameterName }}`. A parameter's value is passed by each deploy's image recipe rather than written into the document, so a deploy can override it without creating a new component.
 
-    Image Builder recipes and components are immutable. This module names each by a hash of its content, so any change is a new recipe or component beside the old one, and the pipeline moves to it in the same deploy. There is no version to bump.
+    Image Builder components are immutable. This module names each by a hash of its content, so a changed document is a new component beside the old one, and the next deploy builds with it. There is no version to bump.
 
-    ## Building
+    ## Deploying
 
-    The pipeline is manual unless you give it a schedule. A build commonly takes 20-60 minutes.
-
-    | Trigger | Turn on | When it fits |
-    | --- | --- | --- |
-    | Schedule | A cron expression under Schedule | Weekly base images, or a rebuild whenever the parent image or a wildcard-versioned component updates |
-    | Pipeline step | Allow a deploy step to start builds | A release pipeline that bakes the release into an AMI and deploys it |
-    | Deploy | Build on deploy | A recipe you edit rarely, where the deploy should produce the image it describes |
-    | Manual | Nothing | One-off builds from the Image pipeline link |
-
-    ### Building from a pipeline step
-
-    Turning on Allow a deploy step to start builds creates an IAM policy that starts this pipeline and reads the images it produces, and nothing else. Its ARN is the module's `pipeline_execution_policy_arn` output. A `custom` step attaches that ARN under `permissions`, starts the pipeline, polls until the image is available, and publishes the AMI ID for later steps:
+    Start a deploy from a pipeline with a `deploy` step, from the dashboard, or with `ravion deploy create`. A build commonly takes 20-60 minutes, and the deploy finishes once every copy is available.
 
     ```yaml
-    - id: build_ami
-      name: Build AMI
-      type: custom
-      timeout: 7200
-      infrastructure:
-        type: ec2
-        instance_size: small
-        aws_account_id: my-aws-account
-        region: us-west-2
-        permissions:
-          attach:
-            - arn:aws:iam::123456789012:policy/app-host-start-image-pipeline
-      environment_variables:
-        AWS_REGION: us-west-2
-        PIPELINE_ARN: arn:aws:imagebuilder:us-west-2:123456789012:image-pipeline/app-host
-      outputs:
-        - ami_id
-      commands:
-        - |
-          set -euo pipefail
-
-          BUILD_ARN=$(aws imagebuilder start-image-pipeline-execution \
-            --image-pipeline-arn "$PIPELINE_ARN" \
-            --query imageBuildVersionArn --output text)
-
-          while true; do
-            STATE=$(aws imagebuilder list-image-pipeline-images \
-              --image-pipeline-arn "$PIPELINE_ARN" \
-              --query "imageSummaryList[?arn=='$BUILD_ARN'].state.status | [0]" --output text)
-            case "$STATE" in
-              AVAILABLE) break ;;
-              FAILED|CANCELLED) echo "Image build $STATE" >&2; exit 1 ;;
-            esac
-            sleep 60
-          done
-
-          AMI_ID=$(aws imagebuilder list-image-pipeline-images \
-            --image-pipeline-arn "$PIPELINE_ARN" \
-            --query "imageSummaryList[?arn=='$BUILD_ARN'].outputResources.amis[0].image | [0]" --output text)
-          echo "ami_id=$AMI_ID" >> "$RAVION_OUTPUT"
+    - id: release_image
+      name: Release image
+      type: deploy
+      module_instance: << pipeline.variant.id >>.app-image
+      input:
+        component_parameters:
+          provision:
+            ReleaseVersion: << steps.build_app.output.version >>
+        extra_tags:
+          release: << steps.build_app.output.version >>
+        publish: true
     ```
 
-    Later steps read the new image as `<< steps.build_ami.output.ami_id >>`. Give the step a timeout longer than a build takes, and pass the pipeline ARN as a pipeline input to reuse the step across environments.
+    | Input | Default | What it does |
+    | --- | --- | --- |
+    | Component parameters | None | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets here, key by key. |
+    | Extra tags | None | Tags added to every AMI and snapshot this deploy creates, in every region. |
+    | Publish | On | Grants launch permission `all` on this deploy's AMIs in every region. Off keeps them private. |
 
-    Image Builder drives the build instance through the Systems Manager agent. On a parent image that does not ship the agent, install it in Build instance user data.
+    Image Builder drives the build instance through the Systems Manager agent, and installs it on the distributions it supports. Build on a parent image that ships the agent or that Image Builder can install it on.
 
-    ## Build notifications
+    ## Retention
 
-    Notify endpoint forwards an event to an HTTPS endpoint once an image has finished building and reached every region it is distributed to. It is the only way to learn about a build nobody started from a deploy: a schedule, or a rebuild triggered by a new parent image. The notification carries the image's ARN, and the endpoint reads the rest back from Image Builder.
+    Each deploy keeps the newest Public images to keep (5 by default) public in each region, and the next Private images to keep (10 by default) private. Older public images are made private, and images past both counts are deregistered along with their snapshots.
 
-    The endpoint needs something to tell the call apart from any other caller, so the notification carries a header. Header value source says where its value comes from.
+    AWS allows 5 public AMIs per region by default, and the quota counts every public AMI the account owns in that region, not only the images this module releases. A deploy with Publish on fails in a region at its quota, so keep Public images to keep within what the account allows, and request a higher quota before raising it.
 
-    | Source | What it reads |
-    | --- | --- |
-    | Value | The value entered here. |
-    | Parameter Store | An SSM parameter, by name or ARN. |
-    | Secrets Manager | A Secrets Manager secret, by name or ARN. Name a Secret JSON key to read one field out of a secret that stores JSON. |
+    ## Public images
 
-    EventBridge is given the value itself rather than a reference to it, and two things follow. The deploy reads the parameter or the secret, so the role it runs as has to be allowed `ssm:GetParameter` or `secretsmanager:GetSecretValue` on it, and `kms:Decrypt` on the key behind a SecureString or a customer-managed secret. And rotation is not live: the value is read on the deploy that writes the connection, so a rotated parameter or secret reaches the endpoint on the next deploy rather than the moment it changes.
+    New AWS accounts block public AMI sharing in every region, and a deploy with Publish on fails in a region that still blocks it. Turning the block off is a change to the account rather than to one image: it covers every image the account owns in that region. Turn it off per region with `aws ec2 disable-image-block-public-access --region <region>`.
 
-    Only images built from this pipeline's current recipe are forwarded. The recipe moves whenever its content does and the rule moves with it in the same deploy, so an image still building against the previous recipe when that happens finishes unannounced.
-
-    ## Sharing
-
-    Images are private by default. Share them with listed accounts or AWS Organizations, or turn on Public image to let any AWS account launch them.
-
-    New AWS accounts block public AMI sharing in every region, and Public image on its own does not change that: a build that would publish an image fails in a region that still blocks sharing. Turning on Allow public AMI sharing in this account clears the block in the build region and every additional region. That is a change to the account rather than to this image: it covers every image the account owns in those regions, and it stays cleared after this module is destroyed. Restore it per region with `aws ec2 enable-image-block-public-access --image-block-public-access block-new-sharing --region <region>`.
-
-    A public image cannot be backed by an encrypted snapshot, and a build that produces one fails an hour in. Public image is therefore checked during the deploy: the parent image must be an AMI this account can describe whose snapshots are unencrypted, and EBS encryption by default must be off in every region the image lands in. A deploy that fails these checks names what to change.
+    A public image cannot be backed by an encrypted snapshot. Publish images built on an unencrypted parent image, in regions where EBS encryption by default is off.
 
     AMI tags are visible only to the account that owns the image, even when the image is public.
 
@@ -1433,35 +1077,20 @@ module:
 
     | Setting | Required | Default | Notes |
     | --- | --- | --- | --- |
-    | AWS account | Yes | None | Account that owns the pipeline and the images. |
-    | Region | Yes | None | Region the image is built in. |
-    | Pipeline name | Yes | Project, environment, and module given IDs | Prefix of every resource created. |
-    | Image release mode | Yes | Terraform | Terraform owns the recipe and the pipeline, or Deployments releases images through deploys instead. |
-    | Build on deploy | No | Off | Build during deploys that change the recipe. Terraform mode only. |
-    | Build timeout | No | Image test timeout plus an hour | How long a deploy waits for the build it starts. |
-    | Allow a deploy step to start builds | No | Off | Creates an IAM policy a deploy step's role can use to start this pipeline. |
-    | Schedule | No | Manual | Image Builder cron expression. |
-    | Pipeline enabled | No | On | A disabled pipeline keeps its configuration and ignores its schedule. |
-    | Collect image metadata | No | On | Package list and other metadata from each build. |
-    | Parent image | Yes | None | A specific image, or the newest AMI matching an owner and name pattern. |
+    | AWS account | Yes | None | Account that owns the build infrastructure and the images. |
+    | Region | Yes | None | Region images are built in. |
+    | Name | Yes | Project, environment, and module given IDs | Prefix of every resource created and of each AMI name. |
+    | Parent image | Yes | None | A specific image, or the newest AMI matching an owner and name pattern, looked up again by every deploy. |
     | Components | Yes | None | Steps, documents, or component ARNs, in run order. |
-    | Build instance user data | No | None | Replaces the Systems Manager agent install. |
-    | Build working directory | No | Image Builder default | Directory the build and test workflows run in. |
-    | Custom root volume | No | Off | Gives the image its own root volume: device name, size, type, IOPS, throughput, and encryption. |
+    | Custom root volume | No | Off | Gives the image its own root volume: device name, size, type, IOPS, and throughput. |
     | Instance types | Yes | `m7i.large` | Must match the parent image's architecture. |
     | Subnet and security groups | No | Default VPC | The build needs outbound internet or VPC endpoints. |
     | Build instance policies | No | Image Builder minimum | What the components need to reach. |
-    | Run image tests | No | On | Needs the Systems Manager agent to start on boot. |
-    | Image test timeout | No | 60 minutes | How long the test phase may run. |
     | Build log bucket and prefix | No | CloudWatch only | Build logs in S3, with write access scoped to the prefix. |
-    | AMI name, description, and tags | No | Pipeline name and build date | Applied in every region. |
-    | Additional regions | No | None | Regions the image is copied to. |
-    | Public image | No | Off | Any AWS account can launch the image. |
-    | Allow public AMI sharing in this account | No | Off | Clears the account-wide block in every region an image lands in. Stays cleared after this module is destroyed. |
-    | Shared account IDs | No | None | Accounts granted launch permission. |
-    | Shared organization ARNs | No | None | Organizations whose accounts can launch the image. |
-    | Notify endpoint | No | None | Where a finished build is announced. |
-    | Header value source | No | Value | Whether the notification header value is entered here or read from Parameter Store or Secrets Manager on each deploy. |
+    | AMI name, description, and tags | No | Name and build date | Applied to each image in the build region. |
+    | Additional regions | No | None | Regions each deploy copies the image to. |
+    | Public images to keep | Yes | 5 | Public images each region keeps. |
+    | Private images to keep | Yes | 10 | Private images each region keeps after the public ones. |
 
     ## Design decisions
 
@@ -1469,7 +1098,7 @@ module:
 
     The build instance requires IMDSv2 and is terminated after a failed build unless you keep it for debugging.
 
-    Private images default to an encrypted root snapshot, using the account's default EBS key unless you name a KMS key.
+    The distribution configuration covers the build region only and grants no launch permission. Each deploy copies, tags, and publishes the image itself, so an image is never public until a deploy asks for it.
 
     The root volume settings describe the image, not one instance. The size becomes the image's snapshot size, so every instance launched from the image carries at least that much root storage.
 
