@@ -11,6 +11,26 @@ The pipeline builds on a schedule, on request from a CI step, or during an
 apply that changes the recipe. The request path is what a release pipeline
 uses: the step starts the build, waits for the image, and reads the new AMI id.
 
+## Image release mode
+
+`image_release_mode` decides who builds and releases images.
+
+- `terraform` (default): unchanged from prior versions. This module owns the
+  recipe, the pipeline, and, if `build_on_apply` is set, a build on every apply.
+- `deployments`: this module owns only the build infrastructure — the IAM role
+  and instance profile, the infrastructure configuration, the components, and
+  a distribution configuration scoped to the home region with no launch
+  permission. It creates no recipe, pipeline, or build. Releases are driven
+  by deploys instead: each one creates its own recipe from the current
+  components, builds it, copies it to every additional region, tags it,
+  publishes it when asked, and retires images past the retention window.
+
+Switching to `deployments` mode turns off `build_on_apply`,
+`schedule_expression`, `pipeline_enabled`, `create_pipeline_execution_policy`,
+and the notify inputs, and the `public`/`manage_image_block_public_access`/
+`launch_account_ids`/`launch_organization_arns` inputs stop applying — a
+deploy's own publish behavior replaces them.
+
 ## Usage
 
 ```hcl
@@ -310,6 +330,7 @@ at the bucket root.
 | description | Description stored on the pipeline, the recipe and the configurations | `string` | `null` | no |
 | region | Region the image is built in | `string` | provider region | no |
 | tags | A map of tags to assign to resources | `map(string)` | `{}` | no |
+| image_release_mode | `"terraform"` (owns the recipe and pipeline) or `"deployments"` (owns build infrastructure only; deploys build and release images) | `string` | `"terraform"` | no |
 | recipe_version | Semantic version of the recipe and the created components | `string` | `"1.0.0"` | no |
 | parent_image | AMI id, Image Builder image ARN, or `ssm:<parameter>` | `string` | `null` | one of the two |
 | parent_image_lookup | Newest AMI by `owners`, `name` pattern and `architecture` | `object` | `null` | one of the two |
@@ -355,13 +376,14 @@ at the bucket root.
 | Name | Description |
 |------|-------------|
 | region | The region the image is built in |
-| pipeline_arn | The ARN of the image pipeline |
-| pipeline_name | The name of the image pipeline |
-| recipe_arn | The ARN of the current image recipe |
-| recipe_name | The name of the current image recipe |
+| pipeline_arn | The ARN of the image pipeline. Null in `deployments` mode |
+| pipeline_name | The name of the image pipeline. Null in `deployments` mode |
+| recipe_arn | The ARN of the current image recipe. Null in `deployments` mode |
+| recipe_name | The name of the current image recipe. Null in `deployments` mode |
 | parent_image | The parent image the current recipe builds on |
 | component_arns | ARNs of the created components, keyed by component name |
 | component_names | Names of the created components, keyed by component name |
+| component_refs | Every component this module creates or references, in recipe order, as `{name, arn}`. Feeds an `aws:ami` deploy definition's `infrastructure.components` |
 | infrastructure_configuration_arn | The ARN of the infrastructure configuration |
 | distribution_configuration_arn | The ARN of the distribution configuration |
 | distribution_regions | Every region an image is produced in |

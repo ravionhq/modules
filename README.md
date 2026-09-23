@@ -64,7 +64,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.0.1 | `networking/alb/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
-| `rvn-aws-image-builder` | EC2 Image Builder | v0.2.0 | `compute/image_builder/` |
+| `rvn-aws-image-builder` | EC2 Image Builder | v0.3.0 | `compute/image_builder/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
 | `rvn-aws-static` | Static Hosting | v1.2.0 | `hosting/static_site/` |

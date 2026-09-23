@@ -3,8 +3,8 @@ definition:
   name: EC2 Image Builder
   description: Creates an EC2 Image Builder pipeline that bakes an AMI from a parent image and ordered components, then distributes it across regions, privately or publicly.
 release:
-  version: 0.2.0
-  description: Adds a build notification that tells an endpoint when an image finishes and reaches every region.
+  version: 0.3.0
+  description: Adds an image release mode. Deployments mode keeps only the build infrastructure in Terraform and releases images through deploys instead, so each deploy builds, copies, tags, publishes, and retires images on its own.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -29,10 +29,25 @@ module:
         - message: 1024 characters or fewer.
           pattern: ^.{0,1024}$
       type: string
+    - default: terraform
+      description: How images are released. Terraform builds and manages the pipeline directly, unchanged from prior versions. Deployments builds and releases images through deploys instead, so each deploy creates its own image recipe, copies it, tags it, publishes it, and retires older images.
+      id: image_release_mode
+      label: Image release mode
+      required: true
+      type: string
+      values:
+        - label: Terraform
+          description: This module owns the recipe, the pipeline, and an optional build on every deploy.
+          value: terraform
+        - label: Deployments
+          description: This module owns only the build infrastructure. Each deploy creates its own recipe and runs the whole release.
+          value: deployments
     - default: false
       description: Build an image during every deploy that changes the recipe. The deploy waits for the build and its distribution, commonly 20-60 minutes. Off leaves builds to the schedule or a manual pipeline run.
       id: build_on_apply
       label: Build on deploy
+      show_when:
+        image_release_mode: terraform
       type: boolean
     - collapsible: true
       description: How long a deploy waits for the build it starts, covering the build, the image tests, and the distribution. It must be greater than the image test timeout. Leave blank to allow an hour on top of that timeout.
@@ -43,11 +58,14 @@ module:
       placeholder: "120"
       show_when:
         build_on_apply: true
+        image_release_mode: terraform
       type: number
     - default: false
       description: Create an IAM policy that starts this pipeline and reads the images it produces. Attach it to the role of a deploy step that runs `aws imagebuilder start-image-pipeline-execution`.
       id: create_pipeline_execution_policy
       label: Allow a deploy step to start builds
+      show_when:
+        image_release_mode: terraform
       type: boolean
     - collapsible: true
       description: Cron expression the pipeline runs on. Leave blank to run it manually.
@@ -57,12 +75,16 @@ module:
         - message: Use an Image Builder cron expression, for example cron(0 0 * * ? *).
           pattern: ^$|^cron\(.+\)$
       placeholder: cron(0 0 * * ? *)
+      show_when:
+        image_release_mode: terraform
       type: string
     - collapsible: true
       default: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
       description: Whether a scheduled run always builds, or only when the parent image or a wildcard-versioned component has an update.
       id: schedule_start_condition
       label: Scheduled run condition
+      show_when:
+        image_release_mode: terraform
       type: string
       values:
         - label: Only when dependencies have updates
@@ -74,6 +96,8 @@ module:
       description: Whether the pipeline can run. A disabled pipeline keeps its configuration and ignores its schedule.
       id: pipeline_enabled
       label: Pipeline enabled
+      show_when:
+        image_release_mode: terraform
       type: boolean
     - collapsible: true
       default: true
@@ -961,13 +985,15 @@ module:
       label: Build notification
       type: section
     - collapsible: true
-      description: HTTPS endpoint told when a build finishes and its images reach every region. The notification carries the image's ARN, and the endpoint reads the rest back from Image Builder. Leave blank to send none.
+      description: HTTPS endpoint told when a build finishes and its images reach every region. The notification carries the image's ARN, and the endpoint reads the rest back from Image Builder. Leave blank to send none. Not available in deployments mode, where a deploy already sees its own build through to completion.
       id: notify_url
       label: Notify endpoint
       patterns:
         - message: Use an https:// URL.
           pattern: ^$|^https://.+
       placeholder: https://api.example.com/hooks/image-built
+      show_when:
+        image_release_mode: terraform
       type: string
     - collapsible: true
       default: X-Lambda-Secret
@@ -975,6 +1001,7 @@ module:
       id: notify_header_name
       label: Notify header
       show_when:
+        image_release_mode: terraform
         notify_url:
           not: ""
       type: string
@@ -984,6 +1011,7 @@ module:
       label: Header value source
       required: true
       show_when:
+        image_release_mode: terraform
         notify_url:
           not: ""
       type: string
@@ -1002,6 +1030,7 @@ module:
       label: Notify header value
       required: true
       show_when:
+        image_release_mode: terraform
         notify_secret_source: value
         notify_url:
           not: ""
@@ -1012,6 +1041,7 @@ module:
       placeholder: /ravion/image-builder/notify-header
       required: true
       show_when:
+        image_release_mode: terraform
         notify_secret_source: parameter_store
         notify_url:
           not: ""
@@ -1022,6 +1052,7 @@ module:
       placeholder: ravion/image-builder/notify-header
       required: true
       show_when:
+        image_release_mode: terraform
         notify_secret_source: secrets_manager
         notify_url:
           not: ""
@@ -1032,6 +1063,7 @@ module:
       label: Secret JSON key
       placeholder: header
       show_when:
+        image_release_mode: terraform
         notify_secret_source: secrets_manager
         notify_url:
           not: ""
@@ -1071,20 +1103,23 @@ module:
       type: string_array
       values: $values:aws/regions
     - default: false
-      description: Make every image produced launchable by any AWS account. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in every region the image lands in.
+      description: Make every image produced launchable by any AWS account. A public image cannot be backed by an encrypted snapshot, so EBS encryption by default must be off in every region the image lands in. Not available in deployments mode, where each deploy's Publish input decides launch permission.
       id: public
       label: Public image
+      show_when:
+        image_release_mode: terraform
       type: boolean
     - default: false
       description: Turn off the account-wide block on public AMI sharing in the build region and every additional region. The setting covers every image the account owns in those regions, not only the images built here, and stays off after this module is destroyed. Leave it off unless you mean to change the account, and a build that would publish a public image fails in any region that still blocks sharing.
       id: manage_image_block_public_access
       label: Allow public AMI sharing in this account
       show_when:
+        image_release_mode: terraform
         public: true
       type: boolean
     - add_button_label: Add account ID
       default: []
-      description: AWS accounts granted launch permission on every image produced.
+      description: AWS accounts granted launch permission on every image produced. Not available in deployments mode.
       id: launch_account_ids
       label: Shared account IDs
       patterns:
@@ -1092,12 +1127,13 @@ module:
           pattern: ^[0-9]{12}$
       placeholder: "123456789012"
       show_when:
+        image_release_mode: terraform
         public: false
       type: string_array
     - add_button_label: Add organization ARN
       collapsible: true
       default: []
-      description: AWS Organizations granted launch permission on every image produced. Every account in the organization can launch the image.
+      description: AWS Organizations granted launch permission on every image produced. Every account in the organization can launch the image. Not available in deployments mode.
       id: launch_organization_arns
       label: Shared organization ARNs
       patterns:
@@ -1105,6 +1141,7 @@ module:
           pattern: ^arn:aws[a-z-]*:organizations::[0-9]{12}:organization/o-[a-z0-9]+$
       placeholder: arn:aws:organizations::123456789012:organization/o-abc123def4
       show_when:
+        image_release_mode: terraform
         public: false
       type: string_array
     - $include: ../../partials/inputs/misc-section.yml
@@ -1129,6 +1166,7 @@ module:
         description: << module.input.description || nil >>
         distribution_regions: << module.input.distribution_regions || [] >>
         enhanced_image_metadata_enabled: << module.input.enhanced_image_metadata_enabled >>
+        image_release_mode: << module.input.image_release_mode >>
         image_tests_enabled: << module.input.image_tests_enabled >>
         image_tests_timeout_minutes: << module.input.image_tests_timeout_minutes >>
         instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
@@ -1174,6 +1212,57 @@ module:
         terminate_instance_on_failure: << module.input.terminate_instance_on_failure >>
         user_data: << module.input.user_data || nil >>
         working_directory: << module.input.working_directory || nil >>
+  deploy:
+    type: aws:ami
+    concurrency:
+      queue_overflow: oldest
+      queue_size: 1
+    inputs:
+      - id: component_parameters
+        label: Component parameters
+        type: object
+        description: 'Per-component parameter overrides for this deploy, as {component_name: {parameter_name: value}}. Left out, each component keeps its module-level defaults.'
+        default: {}
+        required: false
+      - id: extra_tags
+        label: Extra tags
+        type: keyvalue
+        description: Tags added to every AMI and snapshot this deploy creates, beside the account and module tags.
+        default: {}
+        required: false
+      - id: publish
+        label: Publish
+        type: boolean
+        description: Grant launch permission all on this deploy's AMIs. Off keeps them private, a candidate to test before a redeploy publishes it.
+        default: true
+    infrastructure:
+      aws_account_id: << module.input.aws_account_id >>
+      region: << stack.output.region >>
+      infrastructure_configuration_arn: << stack.output.infrastructure_configuration_arn >>
+      distribution_configuration_arn: >-
+        << module.input.image_release_mode == "deployments" ? stack.output.distribution_configuration_arn : nil >>
+      components: << stack.output.component_refs >>
+      parent_image: >-
+        << module.input.parent_image_source == "lookup" ?
+        {"lookup": {"name": module.input.parent_image_name, "owners": module.input.parent_image_owners}} :
+        {"id": module.input.parent_image} >>
+      block_device_mappings: >-
+        << module.input.root_volume_override_enabled ? [{
+        "device_name": module.input.root_device_name,
+        "volume_size": module.input.root_volume_size_gb,
+        "volume_type": module.input.root_volume_type,
+        "iops": (module.input.root_volume_type == "gp2" ? nil : (module.input.root_volume_iops || nil)),
+        "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil)
+        }] : nil >>
+      distribution_regions: << module.input.distribution_regions || [] >>
+    definition:
+      name: << module.input.name >>
+      component_parameters: << deploy.input.component_parameters || {} >>
+      tags: << deploy.input.extra_tags || {} >>
+      publish: << deploy.input.publish >>
+      retention:
+        public_image_count: 5
+        private_image_count: 10
   ui:
     links: |-
       <<
@@ -1191,6 +1280,19 @@ module:
     The module creates the components, the recipe, the build infrastructure and its IAM role, the distribution settings, and the pipeline. It does not keep build instances around: each one exists only for the length of a build.
 
     A pipeline builds on a schedule, on request from a pipeline step, or during a deploy that changes the recipe. The request path is what a release pipeline uses: a step starts the build, waits for the image, and hands the new AMI ID to whatever launches instances from it.
+
+    ## Image release mode
+
+    Image release mode decides who builds and releases images.
+
+    | Mode | Terraform owns | Each deploy |
+    | --- | --- | --- |
+    | Terraform (default) | The recipe, the pipeline, and, if turned on, a build on every apply | Unavailable |
+    | Deployments | The build infrastructure only: the IAM role, the infrastructure configuration, the components, and a home-region distribution configuration | Creates its own recipe from the current components, builds it, copies it to every additional region, tags it, publishes it when Publish is on, and retires images past the retention window |
+
+    Switching to Deployments turns off Build on deploy, Schedule, Pipeline enabled, Allow a deploy step to start builds, and Build notification: a deploy sees its own build through to completion, so there is nothing left for the pipeline or a notification to do. Public image, Allow public AMI sharing in this account, and the shared account and organization lists move to each deploy's Publish input; a deploy started with Publish off leaves its images private, a candidate to test before a redeploy publishes them.
+
+    Retention keeps the newest 5 public images and 10 private images per region. Older public images are made private, and images past both windows are deregistered along with their snapshots.
 
     ## Use cases
 
@@ -1312,7 +1414,8 @@ module:
     | AWS account | Yes | None | Account that owns the pipeline and the images. |
     | Region | Yes | None | Region the image is built in. |
     | Pipeline name | Yes | Project, environment, and module given IDs | Prefix of every resource created. |
-    | Build on deploy | No | Off | Build during deploys that change the recipe. |
+    | Image release mode | Yes | Terraform | Terraform owns the recipe and the pipeline, or Deployments releases images through deploys instead. |
+    | Build on deploy | No | Off | Build during deploys that change the recipe. Terraform mode only. |
     | Build timeout | No | Image test timeout plus an hour | How long a deploy waits for the build it starts. |
     | Allow a deploy step to start builds | No | Off | Creates an IAM policy a deploy step's role can use to start this pipeline. |
     | Schedule | No | Manual | Image Builder cron expression. |
