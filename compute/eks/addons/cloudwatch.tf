@@ -129,12 +129,22 @@ resource "aws_eks_pod_identity_association" "fluent_bit" {
   tags = local.tags
 }
 
+# A null addon_version would freeze the add-on at whatever AWS's default was
+# when it was created, so resolve the newest version for the cluster instead.
+data "aws_eks_addon_version" "cloudwatch_observability" {
+  count = local.cloudwatch_addon_enabled && local.cloudwatch_metrics_config.addon_version == null ? 1 : 0
+
+  addon_name         = "amazon-cloudwatch-observability"
+  kubernetes_version = data.aws_eks_cluster.this.version
+  most_recent        = true
+}
+
 resource "aws_eks_addon" "cloudwatch_observability" {
   count = local.cloudwatch_addon_enabled ? 1 : 0
 
   cluster_name                = var.cluster_name
   addon_name                  = "amazon-cloudwatch-observability"
-  addon_version               = local.cloudwatch_metrics_config.addon_version
+  addon_version               = coalesce(local.cloudwatch_metrics_config.addon_version, one(data.aws_eks_addon_version.cloudwatch_observability[*].version))
   configuration_values        = local.cloudwatch_addon_configuration_values
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"

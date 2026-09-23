@@ -139,11 +139,14 @@ test_rvn_eks_web() {
   assert_eq "web: probe timings come from values" \
     "10 10 5 3" \
     "$(q "${default}" "${ctr} | .livenessProbe | [.initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold] | join(\" \")")"
+  assert_eq "web: readiness defaults to every second with about 30 seconds of failure tolerance" \
+    "0 1 5 30" \
+    "$(q "${default}" "${ctr} | .readinessProbe | [.initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold] | join(\" \")")"
   local fast_rollout
-  fast_rollout="$(render "${chart}" fast-rollout --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.readiness.initialDelaySeconds=0 --set probes.readiness.periodSeconds=1 --set-string strategy.maxSurge=100%)"
+  fast_rollout="$(render "${chart}" fast-rollout --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.readiness.initialDelaySeconds=0 --set probes.readiness.periodSeconds=1)"
   assert_eq "web: fast rollout readiness and surge settings render exactly" \
-    "0 1 100%" \
-    "$(q "${fast_rollout}" "${ctr} | .readinessProbe.initialDelaySeconds") $(q "${fast_rollout}" "${ctr} | .readinessProbe.periodSeconds") $(q "${fast_rollout}" "${dep} | .spec.strategy.rollingUpdate.maxSurge")"
+    "0 1 100% 0" \
+    "$(q "${fast_rollout}" "${ctr} | .readinessProbe.initialDelaySeconds") $(q "${fast_rollout}" "${ctr} | .readinessProbe.periodSeconds") $(q "${fast_rollout}" "${dep} | .spec.strategy.rollingUpdate.maxSurge") $(q "${fast_rollout}" "${dep} | .spec.strategy.rollingUpdate.maxUnavailable")"
   assert_eq "web: startup probe is off by default" \
     "" "$(q "${default}" "${ctr} | .startupProbe")"
   assert_eq "web: startup probe renders when enabled" \
@@ -340,6 +343,11 @@ test_rvn_eks_web() {
 
 test_rvn_eks_worker() {
   local chart=rvn-eks-worker
+  local fast_rollout
+  fast_rollout="$(render "${chart}" fast-rollout --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set replicaCount=2)"
+  assert_eq "worker: full replacement surge preserves zero-unavailable rollout" \
+    "2 100% 0" \
+    "$(q "${fast_rollout}" '.[] | select(.kind == "Deployment") | .spec | "\(.replicas) \(.strategy.rollingUpdate.maxSurge) \(.strategy.rollingUpdate.maxUnavailable)"')"
   local default full
   default="$(render "${chart}" default --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml")"
   full="$(render "${chart}" full --values "${CHARTS_DIR}/${chart}/ci/full-values.yaml")"
