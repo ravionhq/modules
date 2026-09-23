@@ -7,7 +7,7 @@ optionally a HorizontalPodAutoscaler, optionally a PodDisruptionBudget, optional
 supplied target group ARN, and optionally an ExternalSecret. **It never renders
 an Ingress** — see [the charts README](../README.md#load-balancing-rvn-eks-web).
 
-Chart version `0.3.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
+Chart version `0.3.1`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
 
 ## Usage
 

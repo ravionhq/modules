@@ -11,7 +11,7 @@ The image / env / resources / secrets surface is identical to
 [`rvn-eks-web`](../rvn-eks-web), so an app can move between the two shapes
 without rewriting those values.
 
-Chart version `0.1.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
+Chart version `0.3.1`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
 
 ## Usage
 
