@@ -139,6 +139,9 @@ test_rvn_eks_web() {
   assert_eq "web: probe timings come from values" \
     "10 10 5 3" \
     "$(q "${default}" "${ctr} | .livenessProbe | [.initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold] | join(\" \")")"
+  assert_eq "web: readiness defaults to every second with about 30 seconds of failure tolerance" \
+    "0 1 5 30" \
+    "$(q "${default}" "${ctr} | .readinessProbe | [.initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold] | join(\" \")")"
   local fast_rollout
   fast_rollout="$(render "${chart}" fast-rollout --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.readiness.initialDelaySeconds=0 --set probes.readiness.periodSeconds=1)"
   assert_eq "web: fast rollout readiness and surge settings render exactly" \

@@ -175,8 +175,18 @@ describe("compiler", () => {
     assert.equal(readiness.enabled, true);
     assert.equal(
       readiness.periodSeconds,
-      "<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 10 >>",
+      "<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1 >>",
     );
+    assert.equal(
+      readiness.initialDelaySeconds,
+      "<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 0 >>",
+    );
+    assert.equal(
+      readiness.failureThreshold,
+      "<< module.input.readiness_probe_period_seconds != nil && module.input.readiness_probe_period_seconds >= 10 ? 3 : int((29 + (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) / (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) >>",
+    );
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").default, 1);
+    assert.equal(findInput(inputs, "probe_initial_delay_seconds").default, 0);
     const strategy = assertRecord(values.strategy, "module.deploy.definition.values.strategy");
     assert.equal(
       strategy.maxSurge,

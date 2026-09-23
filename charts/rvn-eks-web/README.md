@@ -99,10 +99,10 @@ shape. Liveness and readiness are on by default; startup is off.
 | `probes.<p>.enabled` | bool | `true` / `true` / `false` | |
 | `probes.<p>.path` | string | `/` / `/` / `""` | Startup falls back to the readiness path. |
 | `probes.<p>.port` | string/int | `""` | Defaults to the `http` port. |
-| `probes.<p>.initialDelaySeconds` | int | `10` / `5` / `0` | |
-| `probes.<p>.periodSeconds` | int | `10` / `10` / `5` | |
+| `probes.<p>.initialDelaySeconds` | int | `10` / `0` / `0` | |
+| `probes.<p>.periodSeconds` | int | `10` / `1` / `5` | |
 | `probes.<p>.timeoutSeconds` | int | `5` | |
-| `probes.<p>.failureThreshold` | int | `3` / `3` / `30` | |
+| `probes.<p>.failureThreshold` | int | `3` / `30` / `30` | Readiness allows about 30 seconds of failed checks at its 1-second period. |
 | `probes.readiness.successThreshold` | int | `1` | Readiness only. |
 
 ### Scale and scheduling
