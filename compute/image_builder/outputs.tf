@@ -24,7 +24,7 @@ output "recipe_name" {
 }
 
 output "component_refs" {
-  description = "Every component this module creates or references, in recipe order, with its real ARN regardless of source. Feeds an aws:ami deploy definition's infrastructure.components."
+  description = "Every component this module creates or references, in recipe order, with its real ARN regardless of source and its parameter values. Feeds an aws:ami deploy definition's infrastructure.components."
   value       = local.component_refs
 }
 

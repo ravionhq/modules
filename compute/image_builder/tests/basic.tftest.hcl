@@ -1292,6 +1292,11 @@ run "deployments_mode_outputs_feed_the_aws_ami_deploy" {
   }
 
   assert {
+    condition     = output.component_refs[0].parameters == { Version = "v1.2.3" }
+    error_message = "component_refs must carry each component's parameter values, the defaults a deploy's own parameters override"
+  }
+
+  assert {
     condition     = output.recipe_arn == null && output.recipe_name == null
     error_message = "recipe_arn and recipe_name must be null when this module creates no recipe"
   }

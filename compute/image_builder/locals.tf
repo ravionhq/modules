@@ -167,8 +167,9 @@ locals {
   # components in the same order.
   component_refs = [
     for c in local.components : {
-      name = c.name
-      arn  = c.arn != null ? c.arn : aws_imagebuilder_component.this[c.name].arn
+      name       = c.name
+      arn        = c.arn != null ? c.arn : aws_imagebuilder_component.this[c.name].arn
+      parameters = c.parameters
     }
   ]
 
