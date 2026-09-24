@@ -103,6 +103,16 @@ jobs:
             printf '```\n'
           } > category-diff.md
 
+      - name: Upload publish dry-run plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: publish-plan
+          path: |
+            publish-plan.md
+            publish-plan.err
+          if-no-files-found: ignore
+
       - name: Comment publish dry-run plan
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         if: always()
@@ -110,6 +120,7 @@ jobs:
           script: |
             const fs = require('node:fs');
             const marker = '<!-- ravion-module-publish-plan -->';
+            const maxBodyLength = 65536;
             const planPath = 'publish-plan.md';
             const errorPath = 'publish-plan.err';
             const categoryDiffPath = 'category-diff.md';
@@ -117,7 +128,12 @@ jobs:
             const error = fs.existsSync(errorPath) ? fs.readFileSync(errorPath, 'utf8').trim().slice(-2000) : '';
             const categoryDiff = fs.existsSync(categoryDiffPath) ? fs.readFileSync(categoryDiffPath, 'utf8').trim() : '';
             const publishBody = plan || `${marker}\n## Ravion Module Publish Plan\n\nPublish dry run failed before a plan could be generated.\n\n\`\`\`text\n${error || 'No error output was captured.'}\n\`\`\``;
-            const body = `${publishBody.trimEnd()}${categoryDiff ? `\n\n${categoryDiff}` : ''}`;
+            const fullBody = `${publishBody.trimEnd()}${categoryDiff ? `\n\n${categoryDiff}` : ''}`;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const truncationNotice = `\n\`\`\`\n\n_Plan truncated to fit GitHub's comment limit. The full plan is attached as the \`publish-plan\` artifact on [this workflow run](${runUrl})._`;
+            const body = fullBody.length <= maxBodyLength
+              ? fullBody
+              : `${fullBody.slice(0, maxBodyLength - truncationNotice.length)}${truncationNotice}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
