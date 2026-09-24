@@ -1,0 +1,88 @@
+{{- if .Values.volumeExpansion.enabled }}
+{{/*
+The API server rejects any change to a StatefulSet's volumeClaimTemplates, so
+raising a chart's volume size fails the Helm upgrade. This policy catches an
+update whose ONLY template change is a larger storage request, records the
+requested sizes in an annotation, and puts the templates back to their stored
+value so the rest of the update goes through. Mutating admission runs before
+the StatefulSet's update validation, so the reverted object is valid.
+
+The resizer Deployment then grows each existing PersistentVolumeClaim to the
+recorded size. The EBS CSI driver expands the volume and its filesystem while
+the pod keeps running.
+
+Any other template change (a different class, access mode, label, a smaller
+size) does not match, and the API server rejects the update as before.
+failurePolicy Ignore means an evaluation error does the same, rather than
+blocking every StatefulSet update in the cluster.
+*/}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: {{ include "ebs-storage.name" . }}-statefulset-volume-expansion
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: Never
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["statefulsets"]
+  matchConditions:
+    - name: same-templates
+      expression: >-
+        has(object.spec.volumeClaimTemplates) && has(oldObject.spec.volumeClaimTemplates) &&
+        size(object.spec.volumeClaimTemplates) > 0 &&
+        size(object.spec.volumeClaimTemplates) == size(oldObject.spec.volumeClaimTemplates)
+    - name: only-storage-grew
+      expression: >-
+        object.spec.volumeClaimTemplates.all(t,
+          oldObject.spec.volumeClaimTemplates.exists_one(o,
+            o.metadata.name == t.metadata.name &&
+            o.metadata.?labels == t.metadata.?labels &&
+            o.metadata.?annotations == t.metadata.?annotations &&
+            o.spec.?accessModes == t.spec.?accessModes &&
+            o.spec.?storageClassName == t.spec.?storageClassName &&
+            o.spec.?volumeMode == t.spec.?volumeMode &&
+            o.spec.?selector == t.spec.?selector &&
+            o.spec.?dataSource == t.spec.?dataSource &&
+            o.spec.?dataSourceRef == t.spec.?dataSourceRef &&
+            o.spec.?volumeAttributesClassName == t.spec.?volumeAttributesClassName &&
+            o.spec.?resources.?limits == t.spec.?resources.?limits &&
+            'storage' in o.spec.resources.requests && 'storage' in t.spec.resources.requests &&
+            quantity(t.spec.resources.requests['storage']).compareTo(quantity(o.spec.resources.requests['storage'])) >= 0)) &&
+        object.spec.volumeClaimTemplates.exists(t,
+          oldObject.spec.volumeClaimTemplates.exists(o,
+            o.metadata.name == t.metadata.name &&
+            quantity(t.spec.resources.requests['storage']).isGreaterThan(quantity(o.spec.resources.requests['storage']))))
+  # Order matters: each mutation sees the object as left by the previous one,
+  # so the requested sizes are read before the templates are reverted.
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            metadata: Object.metadata{
+              annotations: {
+                {{ include "ebs-storage.sizesAnnotation" . | quote }}:
+                  object.spec.volumeClaimTemplates.map(t, t.metadata.name + '=' + t.spec.resources.requests['storage']).join(',')
+              }
+            }
+          }
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          [JSONPatch{op: 'replace', path: '/spec/volumeClaimTemplates', value: oldObject.spec.volumeClaimTemplates}]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "ebs-storage.name" . }}-statefulset-volume-expansion
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "ebs-storage.name" . }}-statefulset-volume-expansion
+{{- end }}
