@@ -200,7 +200,7 @@ function createInputAnalysis(input: Record<string, unknown>, nestedKind?: InputA
     if (Array.isArray(nested)) {
       children.push(
         ...nested
-          .filter((child): child is Record<string, unknown> => isRecord(child))
+          .filter((child): child is Record<string, unknown> => isRecord(child) && child.type !== "section")
           .map((child) => createInputAnalysis(child, key)),
       );
     }

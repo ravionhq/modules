@@ -184,6 +184,33 @@ describe("compiler", () => {
     assert.deepEqual(findInput(mappedChildren, "mapped_child").applied_by, ["stack"]);
   });
 
+  it("does not stamp applied_by on section children inside mapped_inputs", () => {
+    const module: Record<string, unknown> = {
+      inputs: [
+        {
+          id: "ref_input",
+          type: "$ref:example",
+          mapped_inputs: [
+            { id: "nested_section", type: "section" },
+            { id: "nested_input", type: "string" },
+          ],
+        },
+      ],
+      stack: {
+        ref: "<< module.input.ref_input.nested_input >>",
+      },
+    };
+
+    deriveAppliedBy(module);
+
+    const mappedChildren =
+      (findInput(getModuleInputs(module), "ref_input").mapped_inputs as
+        | Record<string, unknown>[]
+        | undefined) ?? [];
+    assert.equal(findInput(mappedChildren, "nested_section").applied_by, undefined);
+    assert.deepEqual(findInput(mappedChildren, "nested_input").applied_by, ["stack"]);
+  });
+
   it("attributes element references without dropping unrelated top-level references", () => {
     const module: Record<string, unknown> = {
       inputs: [
