@@ -1,0 +1,1112 @@
+definition:
+  type: rvn-aws-ami
+  name: AMI
+  description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
+release:
+  version: 0.1.0
+  description: First release. Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI in the module's region, copies it to every additional region, tags it, publishes it when asked, and retires older images past the public and private counts each region keeps.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_general
+      label: General
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Name of the build configurations, and the prefix of the components, the build instance role, each deploy's image recipe, and the AMI names.
+      id: name
+      immutable: true
+      label: Name
+      patterns:
+        - message: 2-64 letters, numbers, hyphens, or underscores. Start with a letter or number.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$
+      required: true
+      type: string
+    - description: Description stored on the infrastructure and distribution configurations.
+      id: description
+      label: Description
+      patterns:
+        - message: 1024 characters or fewer.
+          pattern: ^.{0,1024}$
+      type: string
+    - id: section_parent_image
+      label: Parent image
+      type: section
+    - default: image
+      description: Pin one parent image, or have every deploy build on the newest image an owner publishes under a name pattern.
+      id: parent_image_source
+      label: Parent image source
+      required: true
+      type: string
+      values:
+        - label: Specific image
+          description: An AMI ID, an Image Builder image ARN, or an SSM parameter.
+          value: image
+        - label: Newest matching AMI
+          description: The newest AMI from an owner whose name matches a pattern, looked up again by every deploy.
+          value: lookup
+    - description: AMI ID, Image Builder image ARN, or SSM parameter written as ssm:<parameter name>.
+      id: parent_image
+      label: Parent image
+      patterns:
+        - message: Use an AMI ID, an Image Builder image ARN, or ssm:<parameter name>.
+          pattern: ^(ami-[0-9a-f]{8,17}|arn:aws[a-z-]*:imagebuilder:[a-z0-9-]+:(aws|[0-9]{12}):image/.+|ssm:.+)$
+      placeholder: ami-0123456789abcdef0
+      required: true
+      show_when:
+        parent_image_source: image
+      type: string
+    - add_button_label: Add owner
+      default: []
+      description: The accounts that publish the parent image. The lookup considers only images these accounts own. Enter AWS account IDs, such as 136693071363 for Debian or 099720109477 for Canonical's Ubuntu, or the aliases amazon, aws-marketplace, or self for this account's own images.
+      id: parent_image_owners
+      label: Parent image owners
+      placeholder: "123456789012"
+      required: true
+      show_when:
+        parent_image_source: lookup
+      type: string_array
+    - description: AMI name pattern. Use * as a wildcard.
+      id: parent_image_name
+      label: Image name pattern
+      placeholder: al2023-ami-2023.*-x86_64
+      required: true
+      show_when:
+        parent_image_source: lookup
+      type: string
+    - default: x86_64
+      id: parent_image_architecture
+      label: Architecture
+      required: true
+      show_when:
+        parent_image_source: lookup
+      type: string
+      values:
+        - label: x86_64
+          value: x86_64
+        - label: arm64
+          value: arm64
+    - id: section_image
+      label: Image
+      type: section
+    - default: []
+      description: Components each deploy's image recipe runs, in order. Describe what a component does as ordered steps, write its document yourself, or reference an AWS-managed or existing component by ARN.
+      id: components
+      item_inputs:
+        - description: Short name for this component. Used in the created component's name.
+          id: name
+          label: Name
+          patterns:
+            - message: 1-40 letters, numbers, hyphens, or underscores. Start with a letter or number.
+              pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$
+          placeholder: provision
+          required: true
+          type: string
+        - default: steps
+          description: Where this component's document comes from.
+          id: source
+          label: Source
+          required: true
+          type: string
+          values:
+            - description: Describe the work as ordered steps and this module writes the document.
+              label: Steps
+              value: steps
+            - description: Write the Image Builder component document yourself.
+              label: Component document
+              value: document
+            - description: Use an AWS-managed component or one that already exists in this account.
+              label: Existing component ARN
+              value: arn
+        - collapsible: true
+          description: What this component does. Shown on the component in the Image Builder console.
+          id: description
+          label: Description
+          placeholder: Installs the application runtime
+          show_when:
+            source:
+              - steps
+              - document
+          type: string
+        - description: Image Builder component document in YAML. Changing it creates a new component, which the next deploy builds with.
+          id: data
+          label: Component document
+          placeholder: |-
+            name: provision
+            schemaVersion: 1.0
+            phases:
+              - name: build
+                steps:
+                  - name: Install
+                    action: ExecuteBash
+                    inputs:
+                      commands:
+                        - echo hello
+          required: true
+          show_when:
+            source: document
+          type: text
+        - description: ARN of an AWS-managed component or one that already exists in this account. Use x.x.x for the latest version.
+          id: arn
+          label: Component ARN
+          patterns:
+            - message: Use an Image Builder component ARN.
+              pattern: ^arn:aws[a-z-]*:imagebuilder:[a-z0-9-]+:(aws|[0-9]{12}):component/.+$
+          placeholder: arn:aws:imagebuilder:us-east-1:aws:component/update-linux/x.x.x
+          required: true
+          show_when:
+            source: arn
+          type: string
+        - collapsible: true
+          default: []
+          description: Values the steps read as {{ ParameterName }}. Each deploy passes the values to its image recipe and can override them, so changing a value leaves the component alone; changing a name or a default creates a new component.
+          id: parameter_definitions
+          item_inputs:
+            - description: Name the steps refer to.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter.
+                  pattern: ^[A-Za-z][A-Za-z0-9_-]{0,127}$
+              placeholder: ReleaseVersion
+              required: true
+              type: string
+            - default: string
+              id: type
+              label: Type
+              required: true
+              type: string
+              values:
+                - label: String
+                  value: string
+                - label: Integer
+                  value: integer
+                - label: Boolean
+                  value: boolean
+                - label: List of strings
+                  value: stringList
+            - description: Value each deploy passes unless the deploy overrides it. Leave blank to use the default.
+              id: value
+              label: Value
+              placeholder: v1.2.3
+              type: string
+            - collapsible: true
+              description: Value used when a deploy passes none.
+              id: default
+              label: Default
+              type: string
+            - collapsible: true
+              description: What this parameter controls.
+              id: description
+              label: Description
+              type: string
+          item_label: Parameter
+          item_title:
+            fallback: Parameter
+            template: "{name}"
+          label: Parameters
+          show_when:
+            source: steps
+          type: object_array
+        - default: []
+          description: Steps that build the image, in order.
+          id: build_steps
+          item_inputs:
+            - description: Name of this step, unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - default: ExecuteBash
+              description: What this step does. The shell actions run the commands below; every other action takes the inputs its AWS documentation describes.
+              id: action
+              label: Action
+              required: true
+              type: string
+              values:
+                - group_label: Run
+                  label: Run bash commands
+                  value: ExecuteBash
+                - group_label: Run
+                  label: Run PowerShell commands
+                  value: ExecutePowerShell
+                - group_label: Run
+                  label: Run a binary
+                  value: ExecuteBinary
+                - group_label: Run
+                  label: Run another component document
+                  value: ExecuteDocument
+                - group_label: Transfer
+                  label: Download from S3
+                  value: S3Download
+                - group_label: Transfer
+                  label: Upload to S3
+                  value: S3Upload
+                - group_label: Transfer
+                  label: Download from a URL
+                  value: WebDownload
+                - group_label: Files
+                  label: Create a file
+                  value: CreateFile
+                - group_label: Files
+                  label: Copy a file
+                  value: CopyFile
+                - group_label: Files
+                  label: Move a file
+                  value: MoveFile
+                - group_label: Files
+                  label: Delete a file
+                  value: DeleteFile
+                - group_label: Files
+                  label: Append to a file
+                  value: AppendFile
+                - group_label: Files
+                  label: Read a file
+                  value: ReadFile
+                - group_label: Files
+                  label: List files
+                  value: ListFiles
+                - group_label: Folders
+                  label: Create a folder
+                  value: CreateFolder
+                - group_label: Folders
+                  label: Copy a folder
+                  value: CopyFolder
+                - group_label: Folders
+                  label: Move a folder
+                  value: MoveFolder
+                - group_label: Folders
+                  label: Delete a folder
+                  value: DeleteFolder
+                - group_label: System
+                  label: Reboot
+                  value: Reboot
+                - group_label: System
+                  label: Update the operating system
+                  value: UpdateOS
+                - group_label: System
+                  label: Assert a condition
+                  value: Assert
+                - group_label: Windows
+                  label: Install an MSI
+                  value: InstallMSI
+                - group_label: Windows
+                  label: Uninstall an MSI
+                  value: UninstallMSI
+                - group_label: Windows
+                  label: Set a registry value
+                  value: SetRegistry
+            - add_button_label: Add command
+              default: []
+              description: Commands run in order. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: set -euo pipefail
+              required: true
+              show_when:
+                action:
+                  - ExecuteBash
+                  - ExecutePowerShell
+              type: string_array
+            - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
+              id: inputs_json
+              label: Inputs
+              placeholder: '[{"source": "s3://my-releases/app", "destination": "/tmp/app"}]'
+              show_when:
+                action:
+                  not:
+                    - ExecuteBash
+                    - ExecutePowerShell
+              type: text
+            - collapsible: true
+              default: Abort
+              description: What happens when this step fails.
+              id: on_failure
+              label: On failure
+              type: string
+              values:
+                - description: Stop the build.
+                  label: Abort
+                  value: Abort
+                - description: Run the rest of the phase, then fail it.
+                  label: Continue
+                  value: Continue
+                - description: Carry on as if the step had passed.
+                  label: Ignore
+                  value: Ignore
+            - collapsible: true
+              description: Seconds this step may run before it is stopped. Leave blank for the Image Builder default.
+              id: timeout_seconds
+              label: Timeout
+              min: 1
+              type: number
+            - collapsible: true
+              description: Times this step is retried before the phase fails.
+              id: max_attempts
+              label: Max attempts
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Build steps
+          required: true
+          show_when:
+            source: steps
+          type: object_array
+        - collapsible: true
+          default: []
+          description: Steps that check the build instance before the image is created. Run in order after the build phase.
+          id: validate_steps
+          item_inputs:
+            - description: Name of this step, unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - default: ExecuteBash
+              description: What this step does. The shell actions run the commands below; every other action takes the inputs its AWS documentation describes.
+              id: action
+              label: Action
+              required: true
+              type: string
+              values:
+                - group_label: Run
+                  label: Run bash commands
+                  value: ExecuteBash
+                - group_label: Run
+                  label: Run PowerShell commands
+                  value: ExecutePowerShell
+                - group_label: Run
+                  label: Run a binary
+                  value: ExecuteBinary
+                - group_label: Run
+                  label: Run another component document
+                  value: ExecuteDocument
+                - group_label: Transfer
+                  label: Download from S3
+                  value: S3Download
+                - group_label: Transfer
+                  label: Upload to S3
+                  value: S3Upload
+                - group_label: Transfer
+                  label: Download from a URL
+                  value: WebDownload
+                - group_label: Files
+                  label: Create a file
+                  value: CreateFile
+                - group_label: Files
+                  label: Copy a file
+                  value: CopyFile
+                - group_label: Files
+                  label: Move a file
+                  value: MoveFile
+                - group_label: Files
+                  label: Delete a file
+                  value: DeleteFile
+                - group_label: Files
+                  label: Append to a file
+                  value: AppendFile
+                - group_label: Files
+                  label: Read a file
+                  value: ReadFile
+                - group_label: Files
+                  label: List files
+                  value: ListFiles
+                - group_label: Folders
+                  label: Create a folder
+                  value: CreateFolder
+                - group_label: Folders
+                  label: Copy a folder
+                  value: CopyFolder
+                - group_label: Folders
+                  label: Move a folder
+                  value: MoveFolder
+                - group_label: Folders
+                  label: Delete a folder
+                  value: DeleteFolder
+                - group_label: System
+                  label: Reboot
+                  value: Reboot
+                - group_label: System
+                  label: Update the operating system
+                  value: UpdateOS
+                - group_label: System
+                  label: Assert a condition
+                  value: Assert
+                - group_label: Windows
+                  label: Install an MSI
+                  value: InstallMSI
+                - group_label: Windows
+                  label: Uninstall an MSI
+                  value: UninstallMSI
+                - group_label: Windows
+                  label: Set a registry value
+                  value: SetRegistry
+            - add_button_label: Add command
+              default: []
+              description: Commands run in order. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: set -euo pipefail
+              required: true
+              show_when:
+                action:
+                  - ExecuteBash
+                  - ExecutePowerShell
+              type: string_array
+            - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
+              id: inputs_json
+              label: Inputs
+              placeholder: '[{"source": "s3://my-releases/app", "destination": "/tmp/app"}]'
+              show_when:
+                action:
+                  not:
+                    - ExecuteBash
+                    - ExecutePowerShell
+              type: text
+            - collapsible: true
+              default: Abort
+              description: What happens when this step fails.
+              id: on_failure
+              label: On failure
+              type: string
+              values:
+                - description: Stop the build.
+                  label: Abort
+                  value: Abort
+                - description: Run the rest of the phase, then fail it.
+                  label: Continue
+                  value: Continue
+                - description: Carry on as if the step had passed.
+                  label: Ignore
+                  value: Ignore
+            - collapsible: true
+              description: Seconds this step may run before it is stopped. Leave blank for the Image Builder default.
+              id: timeout_seconds
+              label: Timeout
+              min: 1
+              type: number
+            - collapsible: true
+              description: Times this step is retried before the phase fails.
+              id: max_attempts
+              label: Max attempts
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Validate steps
+          show_when:
+            source: steps
+          type: object_array
+        - collapsible: true
+          default: []
+          description: Steps that check an instance launched from the finished image, after the build.
+          id: test_steps
+          item_inputs:
+            - description: Name of this step, unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - default: ExecuteBash
+              description: What this step does. The shell actions run the commands below; every other action takes the inputs its AWS documentation describes.
+              id: action
+              label: Action
+              required: true
+              type: string
+              values:
+                - group_label: Run
+                  label: Run bash commands
+                  value: ExecuteBash
+                - group_label: Run
+                  label: Run PowerShell commands
+                  value: ExecutePowerShell
+                - group_label: Run
+                  label: Run a binary
+                  value: ExecuteBinary
+                - group_label: Run
+                  label: Run another component document
+                  value: ExecuteDocument
+                - group_label: Transfer
+                  label: Download from S3
+                  value: S3Download
+                - group_label: Transfer
+                  label: Upload to S3
+                  value: S3Upload
+                - group_label: Transfer
+                  label: Download from a URL
+                  value: WebDownload
+                - group_label: Files
+                  label: Create a file
+                  value: CreateFile
+                - group_label: Files
+                  label: Copy a file
+                  value: CopyFile
+                - group_label: Files
+                  label: Move a file
+                  value: MoveFile
+                - group_label: Files
+                  label: Delete a file
+                  value: DeleteFile
+                - group_label: Files
+                  label: Append to a file
+                  value: AppendFile
+                - group_label: Files
+                  label: Read a file
+                  value: ReadFile
+                - group_label: Files
+                  label: List files
+                  value: ListFiles
+                - group_label: Folders
+                  label: Create a folder
+                  value: CreateFolder
+                - group_label: Folders
+                  label: Copy a folder
+                  value: CopyFolder
+                - group_label: Folders
+                  label: Move a folder
+                  value: MoveFolder
+                - group_label: Folders
+                  label: Delete a folder
+                  value: DeleteFolder
+                - group_label: System
+                  label: Reboot
+                  value: Reboot
+                - group_label: System
+                  label: Update the operating system
+                  value: UpdateOS
+                - group_label: System
+                  label: Assert a condition
+                  value: Assert
+                - group_label: Windows
+                  label: Install an MSI
+                  value: InstallMSI
+                - group_label: Windows
+                  label: Uninstall an MSI
+                  value: UninstallMSI
+                - group_label: Windows
+                  label: Set a registry value
+                  value: SetRegistry
+            - add_button_label: Add command
+              default: []
+              description: Commands run in order. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: set -euo pipefail
+              required: true
+              show_when:
+                action:
+                  - ExecuteBash
+                  - ExecutePowerShell
+              type: string_array
+            - description: Inputs for this action as JSON, in the shape its AWS documentation describes. Leave blank for an action that takes none.
+              id: inputs_json
+              label: Inputs
+              placeholder: '[{"source": "s3://my-releases/app", "destination": "/tmp/app"}]'
+              show_when:
+                action:
+                  not:
+                    - ExecuteBash
+                    - ExecutePowerShell
+              type: text
+            - collapsible: true
+              default: Abort
+              description: What happens when this step fails.
+              id: on_failure
+              label: On failure
+              type: string
+              values:
+                - description: Stop the build.
+                  label: Abort
+                  value: Abort
+                - description: Run the rest of the phase, then fail it.
+                  label: Continue
+                  value: Continue
+                - description: Carry on as if the step had passed.
+                  label: Ignore
+                  value: Ignore
+            - collapsible: true
+              description: Seconds this step may run before it is stopped. Leave blank for the Image Builder default.
+              id: timeout_seconds
+              label: Timeout
+              min: 1
+              type: number
+            - collapsible: true
+              description: Times this step is retried before the phase fails.
+              id: max_attempts
+              label: Max attempts
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Test steps
+          show_when:
+            source: steps
+          type: object_array
+        - collapsible: true
+          description: Operating system the component runs on.
+          id: platform
+          label: Platform
+          show_when:
+            source:
+              - steps
+              - document
+          type: string
+          values:
+            - label: Linux
+              value: Linux
+            - label: Windows
+              value: Windows
+            - label: macOS
+              value: macOS
+        - collapsible: true
+          default: {}
+          description: Values for the parameters the component declares. Each deploy passes them to its image recipe unless the deploy overrides them.
+          id: parameters
+          label: Parameters
+          show_when:
+            source:
+              - document
+              - arn
+          type: keyvalue
+      item_label: Component
+      item_title:
+        fallback: Component
+        template: "{name}"
+      label: Components
+      required: true
+      type: object_array
+    - default: false
+      description: Give the image a root volume configured here. The volume becomes the image's snapshot, and its size is the smallest root volume an instance can launch the image with.
+      id: root_volume_override_enabled
+      label: Custom root volume
+      type: boolean
+    - description: Root device name of the parent image, for example /dev/xvda or /dev/sda1.
+      id: root_device_name
+      label: Root device name
+      patterns:
+        - message: Use a device path, for example /dev/xvda.
+          pattern: ^/dev/[a-z0-9/]+$
+      placeholder: /dev/xvda
+      required: true
+      show_when:
+        root_volume_override_enabled: true
+      type: string
+    - default: 30
+      description: Size of the image's root snapshot. Every instance launched from the image gets a root volume at least this large.
+      id: root_volume_size_gb
+      label: Root volume size (GiB)
+      max: 65536
+      min: 1
+      required: true
+      show_when:
+        root_volume_override_enabled: true
+      type: number
+    - collapsible: true
+      default: gp3
+      description: EBS volume type of the root volume.
+      id: root_volume_type
+      label: Root volume type
+      show_when:
+        root_volume_override_enabled: true
+      type: string
+      values:
+        - label: gp3
+          value: gp3
+        - label: gp2
+          value: gp2
+        - label: io1
+          value: io1
+        - label: io2
+          value: io2
+    - collapsible: true
+      description: Provisioned IOPS for the root volume, 100 to 64,000. Required for io1 and io2. Leave blank on gp3 to take the volume type's default.
+      id: root_volume_iops
+      label: Root volume IOPS
+      max: 64000
+      min: 100
+      placeholder: "3000"
+      show_when:
+        root_volume_override_enabled: true
+        root_volume_type:
+          - gp3
+          - io1
+          - io2
+      type: number
+    - collapsible: true
+      description: Throughput of the root volume in MiB/s. Leave blank to take the gp3 default of 125.
+      id: root_volume_throughput
+      label: Root volume throughput (MiB/s)
+      max: 1000
+      min: 125
+      placeholder: "125"
+      show_when:
+        root_volume_override_enabled: true
+        root_volume_type: gp3
+      type: number
+    - id: section_build
+      label: Build infrastructure
+      type: section
+    - default:
+        - m7i.large
+      description: Instance types a build may run on, in order of preference. They must match the parent image's architecture.
+      id: instance_types
+      label: Instance types
+      no_options_message: Select an AWS account and region to load the instance types available there.
+      placeholder: Select an instance type
+      required: true
+      type: string_array
+      values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&costUnit=minute
+    - collapsible: true
+      description: Subnet the build instance launches in. It needs outbound access to Systems Manager, Image Builder, S3, and whatever the components download. Leave blank to use the default VPC.
+      id: subnet_id
+      label: Subnet ID
+      patterns:
+        - message: Use a subnet ID.
+          pattern: ^$|^subnet-[0-9a-f]{8,17}$
+      placeholder: subnet-0123456789abcdef0
+      type: string
+    - add_button_label: Add security group ID
+      collapsible: true
+      default: []
+      description: Security groups for the build instance. Required with a subnet ID.
+      id: security_group_ids
+      label: Security group IDs
+      placeholder: sg-0123456789abcdef0
+      show_when:
+        subnet_id:
+          not: ""
+      type: string_array
+    - add_button_label: Add managed policy ARN
+      collapsible: true
+      default: []
+      description: Managed policies attached to the build instance's role, beyond the two Image Builder requires.
+      id: instance_managed_policy_arns
+      label: Build instance managed policy ARNs
+      patterns:
+        - message: Use a valid IAM managed policy ARN.
+          pattern: ^arn:aws(-cn|-us-gov)?:iam::(aws|\d{12}):policy/.+$
+      placeholder: arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      type: string_array
+    - collapsible: true
+      description: Inline IAM policy for the build instance's role. Grant what the components need to reach, such as read access to a release bucket.
+      id: instance_policy_json
+      label: Build instance policy JSON
+      patterns:
+        - message: Include a JSON object with Version and Statement properties.
+          pattern: ^\s*$|^\s*\{[\s\S]*"Version"[\s\S]*"Statement"[\s\S]*\}\s*$
+      placeholder: |-
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:GetObject"],
+              "Resource": ["arn:aws:s3:::my-bucket/releases/*"]
+            }
+          ]
+        }
+      type: text
+    - collapsible: true
+      default: true
+      description: Terminate the build instance when a build fails. Turn off to keep it for debugging.
+      id: terminate_instance_on_failure
+      label: Terminate instance on failure
+      type: boolean
+    - collapsible: true
+      description: S3 bucket the build logs are written to. The build instance is granted write access under the log prefix. Leave blank to keep the logs in CloudWatch only.
+      id: log_bucket
+      label: Build log bucket
+      patterns:
+        - message: Use an S3 bucket name.
+          pattern: ^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
+      placeholder: my-build-logs
+      type: string
+    - collapsible: true
+      default: image-builder
+      description: Key prefix the build logs are written under. An empty prefix writes them at the bucket root.
+      id: log_prefix
+      label: Build log prefix
+      show_when:
+        log_bucket:
+          not: ""
+      type: string
+    - id: section_distribution
+      label: Distribution
+      type: section
+    - collapsible: true
+      description: Name of each image built. Include {{ imagebuilder:buildDate }} so that every build gets its own name. Defaults to the name followed by the build date.
+      id: ami_name
+      label: AMI name
+      patterns:
+        - message: Include {{ imagebuilder:buildDate }} or {{ imagebuilder:buildVersion }}.
+          pattern: ^$|\{\{\s*imagebuilder:build(Date|Version)\s*\}\}
+      placeholder: my-image-{{ imagebuilder:buildDate }}
+      type: string
+    - collapsible: true
+      description: Description stored on each image built, in the build region.
+      id: ami_description
+      label: AMI description
+      patterns:
+        - message: 1024 characters or fewer.
+          pattern: ^.{0,1024}$
+      type: string
+    - collapsible: true
+      default: {}
+      description: Tags written on each image built, in the build region. A deploy's extra tags go on every image and snapshot in every region. Tags are visible only to the owning account, even on a public image.
+      id: ami_tags
+      label: AMI tags
+      type: keyvalue
+    - add_button_label: Add region
+      default: []
+      description: Regions each deploy copies the finished image to, beyond the build region.
+      id: distribution_regions
+      label: Additional regions
+      placeholder: Select a region
+      type: string_array
+      values: $values:aws/regions
+    - id: section_retention
+      label: Retention
+      type: section
+    - default: 5
+      description: Published images each region keeps. Each deploy makes older published images private. AWS allows 5 public AMIs per region by default, counting every public AMI the account owns there.
+      id: retention_published_image_count
+      label: Published images to keep
+      max: 100
+      min: 1
+      required: true
+      type: number
+    - default: 10
+      description: Private images each region keeps after the public ones. Each deploy deregisters older images and deletes their snapshots.
+      id: retention_private_image_count
+      label: Private images to keep
+      max: 1000
+      min: 0
+      required: true
+      type: number
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: compute/ami
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        ami_description: << module.input.ami_description || nil >>
+        ami_name: << module.input.ami_name || nil >>
+        ami_tags: << module.input.ami_tags || {} >>
+        components: << module.input.components || [] >>
+        description: << module.input.description || nil >>
+        instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
+        instance_policy_json: << module.input.instance_policy_json || nil >>
+        instance_types: << module.input.instance_types >>
+        log_bucket: << module.input.log_bucket || nil >>
+        log_prefix: << module.input.log_prefix >>
+        name: << module.input.name >>
+        parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
+        parent_image_lookup: >-
+          << module.input.parent_image_source == "lookup" ?
+          {"owners": module.input.parent_image_owners, "name": module.input.parent_image_name,
+          "architecture": module.input.parent_image_architecture} : nil >>
+        region: << module.input.aws_region >>
+        security_group_ids: << module.input.security_group_ids || [] >>
+        subnet_id: << module.input.subnet_id || nil >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        terminate_instance_on_failure: << module.input.terminate_instance_on_failure >>
+  deploy:
+    type: aws:ami
+    concurrency:
+      queue_overflow: oldest
+      queue_size: 1
+    inputs:
+      - id: component_parameters
+        label: Component parameters
+        type: object
+        description: 'Per-component parameter overrides for this deploy, as {component_name: {parameter_name: value}}. Left out, each component keeps its module-level defaults.'
+        default: {}
+        required: false
+      - id: extra_tags
+        label: Extra tags
+        type: keyvalue
+        description: Tags added to every AMI and snapshot this deploy creates, beside the account and module tags.
+        default: {}
+        required: false
+      - id: publish
+        label: Publish
+        type: boolean
+        description: Grant launch permission all on this deploy's AMIs, in every region. Off keeps them private.
+        default: false
+    infrastructure:
+      aws_account_id: << module.input.aws_account_id >>
+      region: << stack.output.region >>
+      image_builder_infrastructure_configuration_arn: << stack.output.image_builder_infrastructure_configuration_arn >>
+      image_builder_distribution_configuration_arn: << stack.output.image_builder_distribution_configuration_arn >>
+      components: << stack.output.component_refs >>
+      parent_image: >-
+        << module.input.parent_image_source == "lookup" ?
+        {"lookup": {"name": module.input.parent_image_name, "owners": module.input.parent_image_owners}} :
+        {"id": module.input.parent_image} >>
+      block_device_mappings: >-
+        << module.input.root_volume_override_enabled ? [{
+        "device_name": module.input.root_device_name,
+        "volume_size": module.input.root_volume_size_gb,
+        "volume_type": module.input.root_volume_type,
+        "iops": (module.input.root_volume_type == "gp2" ? nil : (module.input.root_volume_iops || nil)),
+        "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil)
+        }] : nil >>
+      distribution_regions: << module.input.distribution_regions || [] >>
+      retention:
+        published_image_count: << module.input.retention_published_image_count >>
+        private_image_count: << module.input.retention_private_image_count >>
+    definition:
+      name: << module.input.name >>
+      component_parameters: << deploy.input.component_parameters || {} >>
+      tags: << deploy.input.extra_tags || {} >>
+      publish: << deploy.input.publish >>
+  ui:
+    links: |-
+      <<
+      stack.output.region ?
+      [{"name":"AMIs","href":"https://" + stack.output.region + ".console.aws.amazon.com/ec2/home?region=" + stack.output.region + "#Images:visibility=owned-by-me"}] :
+      []
+      >>
+  readme: |
+    Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
+
+    ## Overview
+
+    Use this module to turn a manual image build into a repeatable release. Applying the module creates what every build shares: the components, the build instance role, the infrastructure configuration a build runs on, and a distribution configuration that names and tags each image in the build region. It creates no image recipe, pipeline, or image. The only way to make a new AMI is a deploy.
+
+    Each deploy is one release. It:
+
+    1. Creates an image recipe from the parent image, the components in order, and this deploy's component parameters, then builds it in the build region on a temporary build instance and runs the components' test phases on an instance launched from the new image.
+    2. Copies the new AMI to every additional region.
+    3. Tags every image and snapshot it created.
+    4. Grants launch permission `all` on the images in every region when Publish is on.
+    5. Retires older images in each region past the retention counts.
+
+    A redeploy or a rollback releases an earlier deploy's images again without rebuilding them.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Golden images | Bake packages, agents, and hardening into an AMI so instances boot ready to work. |
+    | Release images | Bake one application release per image and roll it out by changing a launch template. |
+    | Multi-region fleets | Build once and copy the image to every region that launches it. |
+    | Distributed software | Publish an image for any AWS account to launch. |
+
+    ## Components and parameters
+
+    A component is an Image Builder document with build, validate, and test phases. Components run in the order listed, and each one names where its document comes from.
+
+    | Source | What you fill in | When it fits |
+    | --- | --- | --- |
+    | Steps | Named steps under Build steps, Validate steps, and Test steps | Most components. The module writes the document. |
+    | Component document | The YAML document itself | A document you already have, or an action this form does not offer |
+    | Existing component ARN | The ARN | An AWS-managed component, or one another module created |
+
+    A step names an action and what that action needs. Run bash commands and Run PowerShell commands take a list of commands, run in order, and the phase stops at the first one that exits non-zero. Every other action takes Inputs, the JSON its AWS documentation describes.
+
+    Declare the values that change between releases, such as a release version, under Parameters. A step reads one as `{{ ParameterName }}`. A parameter's value is passed by each deploy's image recipe rather than written into the document, so a deploy can override it without creating a new component.
+
+    Image Builder components are immutable. This module names each by a hash of its content, so a changed document is a new component beside the old one, and the next deploy builds with it. There is no version to bump.
+
+    ## Deploying
+
+    Start a deploy from a pipeline with a `deploy` step, from the dashboard, or with `ravion deploy create`. A build commonly takes 20-60 minutes, and the deploy finishes once every copy is available.
+
+    ```yaml
+    - id: release_image
+      name: Release image
+      type: deploy
+      module_instance: << pipeline.variant.id >>.app-image
+      input:
+        component_parameters:
+          provision:
+            ReleaseVersion: << steps.build_app.output.version >>
+        extra_tags:
+          release: << steps.build_app.output.version >>
+        publish: true
+    ```
+
+    | Input | Default | What it does |
+    | --- | --- | --- |
+    | Component parameters | None | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets here, key by key. |
+    | Extra tags | None | Tags added to every AMI and snapshot this deploy creates, in every region. |
+    | Publish | Off | Grants launch permission `all` on this deploy's AMIs in every region. Off keeps them private. |
+
+    Image Builder drives the build instance through the Systems Manager agent, and installs it on the distributions it supports. Build on a parent image that ships the agent or that Image Builder can install it on.
+
+    ## Retention
+
+    Each deploy keeps the newest Published images to keep (5 by default) public in each region, and the next Private images to keep (10 by default) private. Older published images are made private, and images past both counts are deregistered along with their snapshots.
+
+    AWS allows 5 public AMIs per region by default, and the quota counts every public AMI the account owns in that region, not only the images this module releases. A deploy with Publish on fails in a region at its quota, so keep Published images to keep within what the account allows, and request a higher quota before raising it.
+
+    ## Public images
+
+    New AWS accounts block public AMI sharing in every region, and a deploy with Publish on fails in a region that still blocks it. Turning the block off is a change to the account rather than to one image: it covers every image the account owns in that region. Turn it off per region with `aws ec2 disable-image-block-public-access --region <region>`.
+
+    A public image cannot be backed by an encrypted snapshot. Publish images built on an unencrypted parent image, in regions where EBS encryption by default is off.
+
+    AMI tags are visible only to the account that owns the image, even when the image is public.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | Account that owns the build infrastructure and the images. |
+    | Region | Yes | None | Region images are built in. |
+    | Name | Yes | Project, environment, and module given IDs | Prefix of every resource created and of each AMI name. |
+    | Parent image | Yes | None | A specific image, or the newest AMI matching an owner and name pattern, looked up again by every deploy. |
+    | Components | Yes | None | Steps, documents, or component ARNs, in run order. |
+    | Custom root volume | No | Off | Gives the image its own root volume: device name, size, type, IOPS, and throughput. |
+    | Instance types | Yes | `m7i.large` | Must match the parent image's architecture. |
+    | Subnet and security groups | No | Default VPC | The build needs outbound internet or VPC endpoints. |
+    | Build instance policies | No | Image Builder minimum | What the components need to reach. |
+    | Build log bucket and prefix | No | CloudWatch only | Build logs in S3, with write access scoped to the prefix. |
+    | AMI name, description, and tags | No | Name and build date | Applied to each image in the build region. |
+    | Additional regions | No | None | Regions each deploy copies the image to. |
+    | Published images to keep | Yes | 5 | Published images each region keeps. |
+    | Private images to keep | Yes | 10 | Private images each region keeps after the published ones. |
+
+    ## Design decisions
+
+    The build instance role carries only the two policies Image Builder requires. Anything the components download or call is granted explicitly, so an image build cannot reach more than it was given.
+
+    The build instance requires IMDSv2 and is terminated after a failed build unless you keep it for debugging.
+
+    The distribution configuration covers the build region only and grants no launch permission. Each deploy copies, tags, and publishes the image itself, so an image is never public until a deploy asks for it.
+
+    The root volume settings describe the image, not one instance. The size becomes the image's snapshot size, so every instance launched from the image carries at least that much root storage.
+
+    ## Learn more
+
+    - [EC2 Image Builder](https://docs.aws.amazon.com/imagebuilder/latest/userguide/what-is-image-builder.html)
+    - [Component documents](https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-use-documents.html)
+    - [Make an AMI public](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/sharingamis-intro.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ami)
