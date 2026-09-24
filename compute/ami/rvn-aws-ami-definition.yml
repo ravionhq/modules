@@ -738,10 +738,10 @@ module:
         - label: io2
           value: io2
     - collapsible: true
-      description: Provisioned IOPS for the root volume. Leave blank to take the volume type's default.
+      description: Provisioned IOPS for the root volume, 100 to 64,000. Required for io1 and io2. Leave blank on gp3 to take the volume type's default.
       id: root_volume_iops
       label: Root volume IOPS
-      max: 256000
+      max: 64000
       min: 100
       placeholder: "3000"
       show_when:
@@ -885,9 +885,9 @@ module:
       label: Retention
       type: section
     - default: 5
-      description: Public images each region keeps. Each deploy makes older public images private. AWS allows 5 public AMIs per region by default, counting every public AMI the account owns there.
-      id: retention_public_image_count
-      label: Public images to keep
+      description: Published images each region keeps. Each deploy makes older published images private. AWS allows 5 public AMIs per region by default, counting every public AMI the account owns there.
+      id: retention_published_image_count
+      label: Published images to keep
       max: 100
       min: 1
       required: true
@@ -976,14 +976,14 @@ module:
         "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil)
         }] : nil >>
       distribution_regions: << module.input.distribution_regions || [] >>
+      retention:
+        published_image_count: << module.input.retention_published_image_count >>
+        private_image_count: << module.input.retention_private_image_count >>
     definition:
       name: << module.input.name >>
       component_parameters: << deploy.input.component_parameters || {} >>
       tags: << deploy.input.extra_tags || {} >>
       publish: << deploy.input.publish >>
-      retention:
-        public_image_count: << module.input.retention_public_image_count >>
-        private_image_count: << module.input.retention_private_image_count >>
   ui:
     links: |-
       <<
@@ -1055,15 +1055,15 @@ module:
     | --- | --- | --- |
     | Component parameters | None | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets here, key by key. |
     | Extra tags | None | Tags added to every AMI and snapshot this deploy creates, in every region. |
-    | Publish | On | Grants launch permission `all` on this deploy's AMIs in every region. Off keeps them private. |
+    | Publish | Off | Grants launch permission `all` on this deploy's AMIs in every region. Off keeps them private. |
 
     Image Builder drives the build instance through the Systems Manager agent, and installs it on the distributions it supports. Build on a parent image that ships the agent or that Image Builder can install it on.
 
     ## Retention
 
-    Each deploy keeps the newest Public images to keep (5 by default) public in each region, and the next Private images to keep (10 by default) private. Older public images are made private, and images past both counts are deregistered along with their snapshots.
+    Each deploy keeps the newest Published images to keep (5 by default) public in each region, and the next Private images to keep (10 by default) private. Older published images are made private, and images past both counts are deregistered along with their snapshots.
 
-    AWS allows 5 public AMIs per region by default, and the quota counts every public AMI the account owns in that region, not only the images this module releases. A deploy with Publish on fails in a region at its quota, so keep Public images to keep within what the account allows, and request a higher quota before raising it.
+    AWS allows 5 public AMIs per region by default, and the quota counts every public AMI the account owns in that region, not only the images this module releases. A deploy with Publish on fails in a region at its quota, so keep Published images to keep within what the account allows, and request a higher quota before raising it.
 
     ## Public images
 
@@ -1089,8 +1089,8 @@ module:
     | Build log bucket and prefix | No | CloudWatch only | Build logs in S3, with write access scoped to the prefix. |
     | AMI name, description, and tags | No | Name and build date | Applied to each image in the build region. |
     | Additional regions | No | None | Regions each deploy copies the image to. |
-    | Public images to keep | Yes | 5 | Public images each region keeps. |
-    | Private images to keep | Yes | 10 | Private images each region keeps after the public ones. |
+    | Published images to keep | Yes | 5 | Published images each region keeps. |
+    | Private images to keep | Yes | 10 | Private images each region keeps after the published ones. |
 
     ## Design decisions
 

@@ -65,17 +65,17 @@ A deploy can also be started from the dashboard or with `ravion deploy create`.
 
 ## Retention
 
-Each deploy keeps the newest `retention_public_image_count` images (5 by
+Each deploy keeps the newest `retention_published_image_count` images (5 by
 default) public in each region, and the next `retention_private_image_count`
-(10 by default) private. Older public images are made private, and images past
-both counts are deregistered along with their snapshots. Both are inputs of the
-module definition rather than Terraform variables, because only the deploy reads
-them.
+(10 by default) private. Older published images are made private, and images
+past both counts are deregistered along with their snapshots. Both are inputs
+of the module definition rather than Terraform variables, because only the
+deploy reads them.
 
 AWS allows 5 public AMIs per region by default, and the quota counts every
 public AMI the account owns in that region, not only the images this module
 releases. A deploy with `publish` on fails in a region at its quota, so keep
-`retention_public_image_count` within what the account allows, and request a
+`retention_published_image_count` within what the account allows, and request a
 higher quota before raising it.
 
 ## Public images
