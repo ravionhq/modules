@@ -770,7 +770,6 @@ module:
       description: Instance types a build may run on, in order of preference. They must match the parent image's architecture.
       id: instance_types
       label: Instance types
-      no_options_message: Select an AWS account and region to load the instance types available there.
       placeholder: Select an instance type
       required: true
       type: string_array
