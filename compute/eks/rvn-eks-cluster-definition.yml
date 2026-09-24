@@ -4,8 +4,13 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.3.1
-  description: Fix managed node group capacity changes when the new minimum exceeds the current desired count or the new maximum is below it. Preserve autoscaler-owned capacity within the configured bounds and update all three scaling values together.
+  version: 0.4.0
+  description: >-
+    Upgrades can no longer replace a running cluster. Clusters created before 0.3.0 kept a creator setting that made 0.3.x
+    plan a full cluster replacement, and with deletion protection on, any plan that would replace or destroy the cluster
+    now fails before anything is applied. Managed node groups are now replaced blue/green, so changing instance types or
+    moving onto the hardened launch template brings up new nodes before the old ones are removed. Each node group is
+    replaced once on upgrade, with no loss of capacity. Node group names are now limited to 36 characters.
 module:
   inputs:
     - id: network
@@ -85,7 +90,7 @@ module:
       type: string
       values: $values:aws/eks-versions?region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
     - default: true
-      description: Prevent the cluster from being deleted via the AWS API. Must be turned off before this module can be destroyed.
+      description: Prevent the cluster from being deleted via the AWS API, and fail any plan that would destroy or replace the cluster before anything is applied. Must be turned off before this module can be destroyed.
       id: deletion_protection_enabled
       label: Deletion protection
       type: boolean
@@ -232,11 +237,11 @@ module:
       item_title:
         template: "{key}"
       key:
-        description: Unique EKS managed node group name.
+        description: Unique EKS managed node group name. EKS names the group with this name plus a generated suffix, so the group can be replaced without downtime.
         label: Node group name
         patterns:
-          - message: 1-63 letters, numbers, hyphens, and underscores. Start with a letter or number.
-            pattern: ^[0-9A-Za-z][A-Za-z0-9-_]{0,62}$
+          - message: 1-36 letters, numbers, hyphens, and underscores. Start with a letter or number.
+            pattern: ^[0-9A-Za-z][A-Za-z0-9-_]{0,35}$
         placeholder: applications-spot
       label: Additional node groups
       required: false
@@ -702,7 +707,8 @@ module:
     - **Hardened nodes:** managed nodes launch with an encrypted root volume (AWS-managed key unless you supply one) and IMDSv2 with a hop limit of 1, so pods cannot read the node's instance credentials; workloads get AWS access through Pod Identity instead
     - **NetworkPolicy enforced:** the VPC CNI's network policy agent is on, so the ingress allow-list on EKS Web services actually restricts traffic
     - **Least-privilege access:** Ravion's cluster-admin runner role trusts only Ravion's per-run pipeline runner roles, and the principal that creates the cluster keeps no admin access; people are granted access through explicit access entries
-    - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, preventing accidental destroys
+    - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, and any plan that would destroy or replace the cluster fails before anything is applied, so an upgrade can never take the cluster or its nodes away partway through
+    - **Node groups replaced without downtime:** a change AWS can only make by recreating a node group (instance types, capacity type, AMI type, subnets) brings the new group up before the old one is drained and deleted
     - **Autoscaler-friendly sizing:** Terraform sets the initial node count but never fights an autoscaler over the running count
     - **Pod Identity over IRSA:** add-on IAM roles use EKS Pod Identity associations; creating an IAM OIDC provider for IRSA workloads is opt-in
     - **Zone-local by default:** CoreDNS is spread across availability zones and, together with the EKS Add-ons and workload modules, Service traffic prefers same-zone endpoints, so multi-AZ resilience does not come with cross-AZ data transfer charges on every request

@@ -49,6 +49,29 @@ attachments without replacing nodes. Workloads needing broader ECR permissions
 should use their own IAM identity; explicit additional node policies remain
 supported. Worker-node and CNI permissions remain attached.
 
+### Replacement safety
+
+- **The cluster is never replaced while deletion protection is on.** `aws_eks_cluster` sets
+  `prevent_destroy = var.deletion_protection_enabled`, so a plan that would destroy or replace the
+  cluster fails at plan time. AWS-side deletion protection alone is not enough: a replacement only
+  fails when it reaches the cluster, after changes ordered before it (such as a node group
+  replacement) have already been applied. To destroy the cluster, set
+  `deletion_protection_enabled = false` and apply first.
+- **The creator bootstrap flag is ignored after creation.** AWS reads
+  `bootstrap_cluster_creator_admin_permissions` only at creation, and the provider marks it
+  ForceNew. The default changed from `true` to `false` in 0.3.0, so without `ignore_changes`, every
+  earlier cluster would plan a full replacement.
+- **Node groups are replaced blue/green.** `aws_eks_node_group` uses `node_group_name_prefix =
+  "<name>-"` with `create_before_destroy`, and is tagged `ravion.com/node-group = <name>`. When a
+  change forces a new group (instance types, capacity type, AMI type, subnets, node role, or moving
+  onto the module's launch template), the replacement comes up first and the old group is then
+  drained and deleted. With the previous fixed name, the old group had to be deleted first, which
+  left the cluster with no nodes from that group while one drained and the other booted. Upgrading
+  replaces each existing fixed-name group once in this safe order. The scaling lookup finds the live
+  group by its tag, or by its exact name for groups created before this change, and needs
+  `eks:ListNodegroups`. Node group names are limited to 36 characters, since the provider appends a
+  26-character suffix within EKS's 63-character limit.
+
 Child modules live in `compute/eks/modules/` and are **not** independently
 published root stacks — they have no `provider` / `cloud {}` blocks. Callers
 should consume this composite only.
@@ -134,7 +157,7 @@ for credentials and saved-plan behavior.
 | ravion_runner_role_creation_enabled | Create an assumable IAM role registered as an EKS access entry with cluster-admin, for runner Kubernetes API access. | `bool` | `true` | no |
 | ravion_runner_role_trusted_principal_arns | ArnLike patterns restricting who can assume the Ravion Runner role (empty = Ravion's per-run pipeline runner roles, `role/rvn-ci/rvn-ci-*`, in this account). | `list(string)` | `[]` | no |
 | pod_identity_associations | Extra Pod Identity associations. | `map(object)` | `{}` | no |
-| deletion_protection_enabled | Protect the cluster from API deletion. | `bool` | `true` | no |
+| deletion_protection_enabled | Protect the cluster from API deletion, and fail any plan that would destroy or replace it. | `bool` | `true` | no |
 | system_node_group | Default managed node group config. The minimum size is also its initial size. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
 | node_groups | Extra node groups keyed by name. Each group's minimum size is also its initial size. | `map(object)` | `{}` | no |
 | coredns_addon_version / coredns_addon_configuration_values | CoreDNS pin / JSON overrides. | `string` | `null` | no |
@@ -159,7 +182,7 @@ for credentials and saved-plan behavior.
 | secrets_kms_key_arn | Secrets KMS key (null if disabled). |
 | lb_controller_role_arn | LB Controller Pod Identity role. |
 | topology_aware_routing_enabled | Zone-local routing default (consumed by `addons`). |
-| system_node_group_name / system_node_group_arn | System node group identifiers. |
+| system_node_group_name / system_node_group_arn | System node group identifiers. The name is `system-<generated suffix>`. |
 | additional_node_group_names | Map of additional node group key -> name. |
 | fargate_profile_names | Map of Fargate profile key -> name. |
 
