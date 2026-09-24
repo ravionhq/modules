@@ -59,7 +59,7 @@ the deploy finishes once every copy is available.
 | --- | --- | --- |
 | `component_parameters` | `{}` | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets in the module, key by key. |
 | `extra_tags` | `{}` | Tags added to every AMI and snapshot this deploy creates, in every region. |
-| `publish` | `true` | Grants launch permission `all` on this deploy's AMIs in every region. `false` keeps them private. |
+| `publish` | `false` | Grants launch permission `all` on this deploy's AMIs in every region. `false` keeps them private. |
 
 A deploy can also be started from the dashboard or with `ravion deploy create`.
 

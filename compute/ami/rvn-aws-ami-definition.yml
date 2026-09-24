@@ -956,7 +956,7 @@ module:
         label: Publish
         type: boolean
         description: Grant launch permission all on this deploy's AMIs, in every region. Off keeps them private.
-        default: true
+        default: false
     infrastructure:
       aws_account_id: << module.input.aws_account_id >>
       region: << stack.output.region >>
