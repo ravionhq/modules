@@ -196,7 +196,7 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation. The plan fails if this, the Ravion Runner role and access_entries would all leave the cluster without an administrator."
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation: later changes are ignored, since AWS cannot change it on an existing cluster. The plan fails if this, the Ravion Runner role and access_entries would all leave the cluster without an administrator."
   default     = false
 }
 
@@ -327,7 +327,7 @@ variable "pod_identity_associations" {
 
 variable "deletion_protection_enabled" {
   type        = bool
-  description = "If true, the cluster cannot be deleted via the AWS API until this is set to false."
+  description = "If true, the cluster cannot be deleted via the AWS API until this is set to false, and any plan that would destroy or replace the cluster fails at plan time, before other changes are applied."
   default     = true
 }
 

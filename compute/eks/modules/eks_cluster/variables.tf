@@ -31,7 +31,7 @@ variable "tags" {
 
 variable "deletion_protection_enabled" {
   type        = bool
-  description = "If true, the resource cannot be deleted via the AWS API until this is set to false. Safe-by-default."
+  description = "If true, the cluster cannot be deleted via the AWS API until this is set to false, and any plan that would destroy or replace the cluster fails at plan time (prevent_destroy), before other changes are applied. Safe-by-default."
   default     = true
 }
 
@@ -139,7 +139,7 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default; manage access via aws_eks_access_entry instead. Only evaluated at cluster creation. With this off, the plan fails unless access_entries grants someone access or cluster_admin_access_managed_externally is set, so a cluster is never created without an administrator."
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default; manage access via aws_eks_access_entry instead. Only evaluated at cluster creation: later changes are ignored, since AWS cannot change it on an existing cluster. With this off, the plan fails unless access_entries grants someone access or cluster_admin_access_managed_externally is set, so a cluster is never created without an administrator."
   default     = false
 }
 

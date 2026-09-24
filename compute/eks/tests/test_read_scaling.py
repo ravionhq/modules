@@ -16,6 +16,19 @@ def response(payload=None, error=""):
     return subprocess.CompletedProcess([], 1 if error else 0, json.dumps(payload), error)
 
 
+def listing(*names):
+    return response({"nodegroups": list(names)})
+
+
+def group(name, desired, tag="system"):
+    tags = {"ravion.com/node-group": tag} if tag else {}
+    return response({"nodegroup": {
+        "nodegroupArn": f"arn:aws:eks:us-east-2:123456789012:nodegroup/test-cluster/{name}/id",
+        "scalingConfig": {"desiredSize": desired},
+        "tags": tags,
+    }})
+
+
 class ScalingReaderTest(unittest.TestCase):
     query = {
         "cluster_name": "test-cluster", "node_group_name": "system",
@@ -26,19 +39,41 @@ class ScalingReaderTest(unittest.TestCase):
     def test_preserves_live_capacity_including_zero(self):
         for desired in (0, 2, 8):
             with self.subTest(desired=desired), patch.object(
-                reader.subprocess, "run", side_effect=[self.identity, response({"nodegroup": {
-                    "nodegroupArn": "arn:aws:eks:us-east-2:123456789012:nodegroup/test-cluster/system/id",
-                    "scalingConfig": {"desiredSize": desired},
-                }})]
+                reader.subprocess, "run",
+                side_effect=[self.identity, listing("system-2026092412000000000001"), group("system-2026092412000000000001", desired)],
             ) as aws:
                 self.assertEqual(reader.read_scaling(self.query), {"exists": "true", "desired_size": str(desired)})
                 args = aws.call_args.args[0]
                 self.assertIn("describe-nodegroup", args)
                 self.assertEqual(args[args.index("--region") + 1], "us-east-2")
-                self.assertEqual(args[args.index("--nodegroup-name") + 1], "system")
+                self.assertEqual(args[args.index("--nodegroup-name") + 1], "system-2026092412000000000001")
 
-    def test_only_explicit_nodegroup_not_found_uses_creation_defaults(self):
-        error = "An error occurred (ResourceNotFoundException) when calling the DescribeNodegroup operation: No node group"
+    def test_finds_a_group_created_before_names_were_generated(self):
+        with patch.object(reader.subprocess, "run", side_effect=[self.identity, listing("system"), group("system", 3, tag=None)]):
+            self.assertEqual(reader.read_scaling(self.query), {"exists": "true", "desired_size": "3"})
+
+    def test_ignores_a_different_group_sharing_the_prefix(self):
+        with patch.object(
+            reader.subprocess, "run",
+            side_effect=[self.identity, listing("system-extra", "system-extra-2026092412000000000001"),
+                         group("system-extra", 5, tag=None), group("system-extra-2026092412000000000001", 7, tag="system-extra")],
+        ):
+            self.assertEqual(reader.read_scaling(self.query), {"exists": "false", "desired_size": "0"})
+
+    def test_mid_replacement_keeps_the_larger_capacity(self):
+        with patch.object(
+            reader.subprocess, "run",
+            side_effect=[self.identity, listing("system", "system-2026092412000000000001"),
+                         group("system", 4, tag=None), group("system-2026092412000000000001", 2)],
+        ):
+            self.assertEqual(reader.read_scaling(self.query), {"exists": "true", "desired_size": "4"})
+
+    def test_no_matching_group_uses_creation_defaults(self):
+        with patch.object(reader.subprocess, "run", side_effect=[self.identity, listing("applications")]):
+            self.assertEqual(reader.read_scaling(self.query), {"exists": "false", "desired_size": "0"})
+
+    def test_only_explicit_cluster_not_found_uses_creation_defaults(self):
+        error = "An error occurred (ResourceNotFoundException) when calling the ListNodegroups operation: No cluster found"
         with patch.object(reader.subprocess, "run", side_effect=[self.identity, response(error=error)]):
             self.assertEqual(reader.read_scaling(self.query), {"exists": "false", "desired_size": "0"})
 
@@ -47,6 +82,11 @@ class ScalingReaderTest(unittest.TestCase):
             with self.subTest(error=error), patch.object(reader.subprocess, "run", side_effect=[self.identity, response(error=error)]):
                 with self.assertRaises(RuntimeError):
                     reader.read_scaling(self.query)
+
+    def test_describe_errors_do_not_reset_live_capacity(self):
+        with patch.object(reader.subprocess, "run", side_effect=[self.identity, listing("system"), response(error="ThrottlingException")]):
+            with self.assertRaises(RuntimeError):
+                reader.read_scaling(self.query)
 
     def test_account_mismatch_fails_before_lookup(self):
         with patch.object(reader.subprocess, "run", return_value=response({"Account": "999999999999"})) as aws:

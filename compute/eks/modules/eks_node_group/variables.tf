@@ -14,11 +14,13 @@ variable "cluster_name" {
 
 variable "name" {
   type        = string
-  description = "Name of the managed node group. Must be unique within the cluster."
+  description = "Logical name of the managed node group. Must be unique within the cluster. The EKS node group is named `<name>-<generated suffix>` so it can be replaced blue/green, and carries the name in its `ravion.com/node-group` tag."
 
+  # EKS allows 63 characters; the provider appends a 26-character suffix to
+  # the "<name>-" prefix.
   validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-_]{0,62}$", var.name))
-    error_message = "The name must be 1-63 characters, alphanumerics with hyphens or underscores, starting with an alphanumeric."
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-_]{0,35}$", var.name))
+    error_message = "The name must be 1-36 characters, alphanumerics with hyphens or underscores, starting with an alphanumeric."
   }
 }
 
