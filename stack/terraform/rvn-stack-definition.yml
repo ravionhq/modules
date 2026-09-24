@@ -68,7 +68,7 @@ module:
       label: Git workflow
       type: section
     - default: plan
-      description: What runs when a pull request against the primary branch is opened or updated. Plan results are posted back to the pull request.
+      description: Plan results are posted to the pull request.
       id: pull_request_runs
       label: On pull request (opened/updated)
       required: true
@@ -76,12 +76,12 @@ module:
       values:
         - label: Nothing
           value: none
-        - label: Plan only (posted to the PR)
+        - label: Plan only
           value: plan
         - label: Plan → approve → apply from the PR branch
           value: plan_and_apply
     - default: plan_and_apply
-      description: What runs when commits land on the primary branch, including the push created by merging a pull request. Set to "Nothing" when you apply from pull requests to avoid a second apply after merge.
+      description: If you apply from pull requests, choose Nothing so merging doesn't apply a second time.
       id: primary_branch_runs
       label: On push to primary branch (incl. PR merge)
       required: true
