@@ -17,6 +17,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | ------------- | ----------------- | ---------------------------------------------------------------------- | ------- |
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
+| `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
 | `compute/`    | `autoscaling`     | AWS Auto Scaling groups                                                | v1.0.0  |
 | `compute/`    | `ec2_service`     | Supervised EC2 workloads with configurable rolling deploys, standalone or ECS-cluster ALB routing, target tuning, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
@@ -62,6 +63,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.3.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
+| `rvn-aws-ami` | AMI | v0.1.0 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |

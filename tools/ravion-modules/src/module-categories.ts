@@ -73,6 +73,13 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons"],
   },
   {
+    givenId: "machine-image",
+    name: "Machine image",
+    description: "For AMIs baked from a parent image and distributed to the regions and accounts that launch them.",
+    sortOrder: 95,
+    definitionTypes: ["rvn-aws-ami"],
+  },
+  {
     givenId: "network",
     name: "Network",
     description: "For private subnets, internet access, service connectivity, and shared load balancers.",
