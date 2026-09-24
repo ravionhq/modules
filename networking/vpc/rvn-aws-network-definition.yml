@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.1.0
-  description: Add VPC endpoints, a free S3 gateway endpoint enabled by default for new VPCs, an optional DynamoDB gateway endpoint, and selectable interface endpoints for private access to AWS services.
+  version: 1.1.1
+  description: Add VPC endpoints, a free S3 gateway endpoint enabled by default for new VPCs, an optional DynamoDB gateway endpoint, and selectable interface endpoints for private access to AWS services. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

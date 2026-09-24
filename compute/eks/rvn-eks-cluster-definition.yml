@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.3.1
-  description: Fix managed node group capacity changes when the new minimum exceeds the current desired count or the new maximum is below it. Preserve autoscaler-owned capacity within the configured bounds and update all three scaling values together.
+  version: 0.3.2
+  description: Fix managed node group capacity changes when the new minimum exceeds the current desired count or the new maximum is below it. Preserve autoscaler-owned capacity within the configured bounds and update all three scaling values together. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network

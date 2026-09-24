@@ -3,8 +3,8 @@ definition:
   name: Terraform Stack
   description: Automate Terraform and OpenTofu workflows with git-driven deployments and managed state.
 release:
-  version: 1.3.1
-  description: Clarify that pull request plan results are viewed in Ravion; posting them to the pull request is coming soon
+  version: 1.3.2
+  description: Clarify that pull request plan results are viewed in Ravion; posting them to the pull request is coming soon. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: section_aws

@@ -3,8 +3,8 @@ definition:
   name: AWS IAM Policy
   description: Creates one reusable customer-managed AWS IAM policy from structured statements or a complete JSON policy document.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.0.2
+  description: Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

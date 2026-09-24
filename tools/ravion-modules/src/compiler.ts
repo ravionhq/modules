@@ -23,7 +23,8 @@ export class CompileError extends Error {
   }
 }
 
-const DIRECTIVE_KEYS = new Set(["$include", "$merge", "$template"]);
+const DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES = "$deploy_reexecutes_stack_terraform_variables";
+const DIRECTIVE_KEYS = new Set(["$include", "$merge", "$template", DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES]);
 const LOCAL_TOKEN_PATTERN = /\$local\.[A-Za-z0-9_.-]+/g;
 const WITH_TOKEN_PATTERN = /^\$with\.([A-Za-z0-9_.-]+)$/;
 const WITH_TOKEN_LEAK_PATTERN = /\$with\.[A-Za-z0-9_.-]+/;
@@ -62,7 +63,9 @@ export async function compileDefinitionFile(filePath: string): Promise<CompiledD
     throw new CompileError(`${absoluteFilePath}: module compiled to a non-object value.`);
   }
 
+  const deployReexecutionVariables = consumeDeployReexecutionDirective(module, absoluteFilePath);
   rejectLeakedCompilerSyntax(module, absoluteFilePath, "module");
+  deriveAppliedBy(module, absoluteFilePath, deployReexecutionVariables);
 
   return {
     filePath: absoluteFilePath,
@@ -75,6 +78,459 @@ export async function compileDefinitionFile(filePath: string): Promise<CompiledD
     releaseDescription: definition.release.description,
     module,
   };
+}
+
+const APPLY_ACTIONS = ["stack", "build", "deploy"] as const;
+type ApplyAction = (typeof APPLY_ACTIONS)[number];
+
+interface InputAnalysis {
+  input: Record<string, unknown>;
+  nestedKind?: "item_inputs" | "mapped_inputs";
+  direct: Set<ApplyAction>;
+  elementDirect: Set<ApplyAction>;
+  children: InputAnalysis[];
+  derived: Set<ApplyAction>;
+}
+
+export function deriveAppliedBy(
+  module: Record<string, unknown>,
+  filePath = "<module>",
+  deployReexecutionVariables = consumeDeployReexecutionDirective(module, filePath),
+): void {
+  const inputs = module.inputs;
+  if (!Array.isArray(inputs)) {
+    return;
+  }
+
+  const analyses = inputs
+    .filter((input): input is Record<string, unknown> => isRecord(input) && input.type !== "section")
+    .map((input) => createInputAnalysis(input));
+
+  const ambiguousNestedIds = new Set<string>();
+  for (const action of APPLY_ACTIONS) {
+    collectInputReferences(module[action], action, analyses, ambiguousNestedIds);
+  }
+  collectDeployReexecutionReferences(module, deployReexecutionVariables, analyses, filePath);
+
+  for (const analysis of analyses) {
+    resolveInputAnalysis(analysis, new Set());
+    normalizeInputAnalysis(analysis);
+    stampInputAnalysis(analysis, filePath);
+  }
+}
+
+function consumeDeployReexecutionDirective(module: Record<string, unknown>, filePath: string): string[] {
+  const deploy = module.deploy;
+  if (!isRecord(deploy) || !(DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES in deploy)) {
+    return [];
+  }
+
+  const value = deploy[DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES];
+  delete deploy[DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES];
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((variable): variable is string => typeof variable !== "string" || variable.trim().length === 0)
+  ) {
+    throw new CompileError(
+      `${filePath} module.deploy.${DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES}: expected a non-empty array of Terraform variable names.`,
+    );
+  }
+
+  const variables = value as string[];
+  if (new Set(variables).size !== variables.length) {
+    throw new CompileError(
+      `${filePath} module.deploy.${DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES}: variable names must be unique.`,
+    );
+  }
+  return variables;
+}
+
+function collectDeployReexecutionReferences(
+  module: Record<string, unknown>,
+  variables: string[],
+  analyses: InputAnalysis[],
+  filePath: string,
+): void {
+  if (variables.length === 0) {
+    return;
+  }
+
+  const terraformVariables = findTerraformVariableMaps(module.stack);
+  const availableVariables = new Set(terraformVariables.flatMap((map) => Object.keys(map)));
+  const missingVariables = variables.filter((variable) => !availableVariables.has(variable));
+  if (missingVariables.length > 0) {
+    throw new CompileError(
+      `${filePath} module.deploy.${DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES}: Terraform variable(s) not found in module.stack: ${missingVariables.join(", ")}.`,
+    );
+  }
+
+  for (const variable of variables) {
+    const values = terraformVariables.flatMap((map) => (variable in map ? [map[variable]] : []));
+    let feedsInput = false;
+    for (const value of values) {
+      feedsInput ||= collectInputReferences(value, "deploy", analyses, new Set());
+    }
+    if (!feedsInput) {
+      throw new CompileError(
+        `${filePath} module.deploy.${DEPLOY_REEXECUTES_STACK_TERRAFORM_VARIABLES}: Terraform variable ${variable} does not reference a module input.`,
+      );
+    }
+  }
+}
+
+function findTerraformVariableMaps(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((child) => findTerraformVariableMaps(child));
+  }
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const maps = Object.entries(value).flatMap(([key, child]) =>
+    key === "terraform_variables" && isRecord(child) ? [child] : findTerraformVariableMaps(child),
+  );
+  return maps;
+}
+
+function createInputAnalysis(input: Record<string, unknown>, nestedKind?: InputAnalysis["nestedKind"]): InputAnalysis {
+  const children = [];
+  for (const key of ["item_inputs", "mapped_inputs"] as const) {
+    const nested = input[key];
+    if (Array.isArray(nested)) {
+      children.push(
+        ...nested
+          .filter((child): child is Record<string, unknown> => isRecord(child) && child.type !== "section")
+          .map((child) => createInputAnalysis(child, key)),
+      );
+    }
+  }
+  return { input, nestedKind, direct: new Set(), elementDirect: new Set(), children, derived: new Set() };
+}
+
+function collectInputReferences(
+  value: unknown,
+  action: ApplyAction,
+  analyses: InputAnalysis[],
+  ambiguousNestedIds: Set<string>,
+): boolean {
+  if (Array.isArray(value)) {
+    let matchedReference = false;
+    value.forEach((item) => {
+      matchedReference = collectInputReferences(item, action, analyses, ambiguousNestedIds) || matchedReference;
+    });
+    return matchedReference;
+  }
+  if (typeof value === "string") {
+    const referencePattern = /\bmodule\.input\.([A-Za-z0-9_-]+(?:(?:\.[A-Za-z0-9_-]+)|(?:\[[^\]]+\]))*)/g;
+    const references = [...value.matchAll(referencePattern)]
+      .map((match) => ({
+        end: (match.index ?? 0) + match[0].length,
+        path: match[1],
+        start: match.index ?? 0,
+      }))
+      .filter((reference): reference is { end: number; path: string; start: number } => Boolean(reference.path))
+      .map((reference) => ({ ...reference, parts: parseInputReferencePath(reference.path) }));
+    const elementReferences = [...value.matchAll(/#\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)/g)]
+      .map((match) => ({
+        path: match[1],
+        start: match.index ?? 0,
+      }))
+      .filter((reference): reference is { path: string; start: number } => Boolean(reference.path))
+      .map((reference) => ({ ...reference, parts: reference.path.split(".") }));
+    const mapReferences = findMapReferences(value);
+    let matchedReference = false;
+
+    for (const reference of references) {
+      const hasElementAccess = reference.parts.some((part) => part.startsWith("["));
+      if (hasElementAccess) {
+      const matched = markInputReference(reference.parts, action, analyses, ambiguousNestedIds);
+        if (matched) {
+          matchedReference = true;
+        }
+        continue;
+      }
+      const mapReference = mapReferences.find(
+        (candidate) =>
+          candidate.argumentStart <= reference.start &&
+          reference.end <= candidate.argumentEnd &&
+          candidate.elementReferences.some(
+            (elementReference) =>
+              candidate.start <= elementReference.start && elementReference.start < candidate.end,
+          ),
+      );
+      const matched = markInputReference(reference.parts, action, analyses, ambiguousNestedIds, !mapReference);
+      if (matched) {
+        matchedReference = true;
+      }
+    }
+
+    for (const elementReference of elementReferences) {
+      const containingMaps = mapReferences
+        .filter((candidate) => candidate.start <= elementReference.start && elementReference.start < candidate.end)
+        .sort((left, right) => left.end - left.start - (right.end - right.start));
+      const mapReference = containingMaps[0];
+      if (!mapReference?.collectionPath) {
+        const candidates = analyses.filter((analysis) => analysis.children.length > 0);
+        warnAmbiguousElementReference(elementReference.path, ambiguousNestedIds);
+        for (const analysis of candidates) {
+          matchedReference =
+            markNestedInputReference(analysis, elementReference.parts, action, ambiguousNestedIds) || matchedReference;
+        }
+        continue;
+      }
+      const [id, ...nestedPath] = mapReference.collectionPath;
+      const analysis = analyses.find((candidate) => candidate.input.id === id);
+      if (!analysis) {
+        warnAmbiguousElementReference(elementReference.path, ambiguousNestedIds);
+        for (const candidate of analyses.filter((candidate) => candidate.children.length > 0)) {
+          matchedReference =
+            markNestedInputReference(candidate, elementReference.parts, action, ambiguousNestedIds) || matchedReference;
+        }
+        continue;
+      }
+      matchedReference =
+        markNestedInputReference(analysis, nestedPath.concat(elementReference.parts), action, ambiguousNestedIds) ||
+        matchedReference;
+    }
+    return matchedReference;
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+  let matchedReference = false;
+  Object.values(value).forEach((child) => {
+    matchedReference = collectInputReferences(child, action, analyses, ambiguousNestedIds) || matchedReference;
+  });
+  return matchedReference;
+}
+
+function markInputReference(
+  path: string[],
+  action: ApplyAction,
+  analyses: InputAnalysis[],
+  ambiguousNestedIds: Set<string>,
+  inheritToChildren = true,
+): boolean {
+  const [id, ...nestedPath] = path;
+  if (!id) {
+    return false;
+  }
+  const analysis = analyses.find((candidate) => candidate.input.id === id);
+  if (analysis) {
+    return markNestedInputReference(analysis, nestedPath, action, ambiguousNestedIds, inheritToChildren);
+  }
+  const nestedMatches = findMappedInputAnalyses(id, analyses);
+  if (nestedMatches.length > 1) {
+    if (!ambiguousNestedIds.has(id)) {
+      ambiguousNestedIds.add(id);
+      console.warn(`Ambiguous mapped input reference: ${id}`);
+    }
+    return false;
+  }
+  const nestedAnalysis = nestedMatches[0];
+  if (nestedAnalysis) {
+    return markNestedInputReference(nestedAnalysis, nestedPath, action, ambiguousNestedIds, inheritToChildren);
+  }
+  return false;
+}
+
+function findMappedInputAnalyses(id: string, analyses: InputAnalysis[]): InputAnalysis[] {
+  const matches: InputAnalysis[] = [];
+  for (const analysis of analyses) {
+    if (analysis.nestedKind === "mapped_inputs" && analysis.input.id === id) {
+      matches.push(analysis);
+    }
+    matches.push(...findMappedInputAnalyses(id, analysis.children));
+  }
+  return matches;
+}
+
+function markNestedInputReference(
+  analysis: InputAnalysis,
+  path: string[],
+  action: ApplyAction,
+  ambiguousNestedIds: Set<string>,
+  inheritToChildren = true,
+): boolean {
+  if (path.length === 0) {
+    (inheritToChildren ? analysis.direct : analysis.elementDirect).add(action);
+    return true;
+  }
+  const [id, ...nestedPath] = path;
+  if (id?.startsWith("[")) {
+    return markNestedInputReference(analysis, nestedPath, action, ambiguousNestedIds, inheritToChildren);
+  }
+  const child = analysis.children.find((candidate) => candidate.input.id === id);
+  if (child) {
+    return markNestedInputReference(child, nestedPath, action, ambiguousNestedIds, inheritToChildren);
+  }
+  const mappedMatches = findMappedInputAnalyses(id, analysis.children);
+  if (mappedMatches.length > 1) {
+    if (!ambiguousNestedIds.has(id)) {
+      ambiguousNestedIds.add(id);
+      console.warn(`Ambiguous mapped input reference: ${id}`);
+    }
+    return false;
+  }
+  const mappedChild = mappedMatches[0];
+  if (mappedChild) {
+    return markNestedInputReference(mappedChild, nestedPath, action, ambiguousNestedIds, inheritToChildren);
+  } else {
+    (inheritToChildren ? analysis.direct : analysis.elementDirect).add(action);
+    return true;
+  }
+}
+
+function parseInputReferencePath(path: string): string[] {
+  return path.match(/[A-Za-z0-9_-]+|\[[^\]]+\]/g) ?? [];
+}
+
+interface MapReference {
+  argumentEnd: number;
+  argumentStart: number;
+  collectionPath?: string[];
+  elementReferences: { start: number }[];
+  end: number;
+  start: number;
+}
+
+function findMapReferences(value: string): MapReference[] {
+  const references: MapReference[] = [];
+  for (const match of value.matchAll(/\bmap\s*\(/g)) {
+    const start = match.index ?? 0;
+    const open = start + match[0].length - 1;
+    const end = findMatchingParenthesis(value, open);
+    if (end === undefined) {
+      continue;
+    }
+    const comma = findTopLevelComma(value, open, end);
+    if (comma === undefined) {
+      continue;
+    }
+    const argumentStart = open + 1;
+    const argument = value.slice(argumentStart, comma).trim();
+    const collectionMatch = argument.match(/^module\.input\.([A-Za-z0-9_-]+(?:(?:\.[A-Za-z0-9_-]+)|(?:\[[^\]]+\]))*)$/);
+    const elementReferences = [...value.slice(comma + 1, end).matchAll(/#\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)/g)].map(
+      (elementReference) => ({ start: comma + 1 + (elementReference.index ?? 0) }),
+    );
+    references.push({
+      argumentEnd: comma,
+      argumentStart,
+      collectionPath: collectionMatch?.[1] ? parseInputReferencePath(collectionMatch[1]) : undefined,
+      elementReferences,
+      end,
+      start,
+    });
+  }
+  return references;
+}
+
+function findMatchingParenthesis(value: string, open: number): number | undefined {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let index = open; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote) {
+      if (character === "\\" && index + 1 < value.length) {
+        index += 1;
+      } else if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "(") {
+      depth += 1;
+    } else if (character === ")" && --depth === 0) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+function findTopLevelComma(value: string, open: number, end: number): number | undefined {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let index = open + 1; index < end; index += 1) {
+    const character = value[index];
+    if (quote) {
+      if (character === "\\" && index + 1 < end) {
+        index += 1;
+      } else if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "(") {
+      depth += 1;
+    } else if (character === ")") {
+      depth -= 1;
+    } else if (character === "," && depth === 0) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
+function warnAmbiguousElementReference(path: string, ambiguousNestedIds: Set<string>): void {
+  const warningKey = `element:${path}`;
+  if (!ambiguousNestedIds.has(warningKey)) {
+    ambiguousNestedIds.add(warningKey);
+    console.warn(`Ambiguous collection element reference: ${path}`);
+  }
+}
+
+function resolveInputAnalysis(analysis: InputAnalysis, inherited: Set<ApplyAction>): Set<ApplyAction> {
+  const actions = new Set([...analysis.direct, ...analysis.elementDirect]);
+  const childInheritance = analysis.direct.size > 0 ? analysis.direct : inherited;
+  for (const child of analysis.children) {
+    const childActions = resolveInputAnalysis(child, childInheritance);
+    for (const action of childActions) {
+      actions.add(action);
+    }
+  }
+  if (actions.size === 0) {
+    for (const action of inherited) {
+      actions.add(action);
+    }
+  }
+  analysis.derived = actions;
+  return actions;
+}
+
+function normalizeInputAnalysis(analysis: InputAnalysis): void {
+  if (analysis.derived.has("build")) {
+    analysis.derived.add("deploy");
+  }
+  analysis.children.forEach((child) => normalizeInputAnalysis(child));
+}
+
+function stampInputAnalysis(analysis: InputAnalysis, filePath: string): void {
+  const derived = APPLY_ACTIONS.filter((action) => analysis.derived.has(action));
+  if ("applies_on" in analysis.input) {
+    throw new CompileError(
+      `${filePath}: input ${String(analysis.input.id)} uses the old applies_on field; use applied_by instead.`,
+    );
+  }
+  const authored = analysis.input.applied_by;
+  if (Array.isArray(authored)) {
+    console.warn(
+      `${filePath}: input ${String(analysis.input.id)} authors applied_by; prefer compiler derivation. Correct the module wiring instead, or use module.deploy.$deploy_reexecutes_stack_terraform_variables for stack-rendered deploy artifacts. Hand-authored applied_by should be a justified last resort.`,
+    );
+    const missing = derived.filter((action) => !authored.includes(action));
+    if (missing.length > 0) {
+      console.warn(
+        `${filePath}: input ${String(analysis.input.id)} authored applied_by is missing statically derived action(s): ${missing.join(", ")}`,
+      );
+    }
+  } else {
+    analysis.input.applied_by = derived;
+  }
+  analysis.children.forEach((child) => stampInputAnalysis(child, filePath));
 }
 
 export async function compileAllDefinitions(rootPath = process.cwd()): Promise<CompiledDefinition[]> {

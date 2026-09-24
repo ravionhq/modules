@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.1.0
-  description: Add CloudWatch alarms enabled by default for load balancer 5xx responses, target 5xx responses, and target response time, and retain access logs for 365 days by default to meet SOC 2 log retention requirements.
+  version: 1.1.1
+  description: Add CloudWatch alarms enabled by default for load balancer 5xx responses, target 5xx responses, and target response time, and retain access logs for 365 days by default to meet SOC 2 log retention requirements. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network

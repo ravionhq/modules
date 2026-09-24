@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon RDS Proxy that provides connection pooling in front of an RDS instance or Aurora cluster.
 
 release:
-  version: 0.1.0
-  description: Initial release of the RDS Proxy module definition.
+  version: 0.1.1
+  description: Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network

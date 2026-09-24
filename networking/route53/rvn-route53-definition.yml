@@ -3,8 +3,8 @@ definition:
   name: Route 53 DNS
   description: Manage Route 53 hosted zones, DNS records, query logging, and DNSSEC.
 release:
-  version: 1.0.3
-  description: Correct long TXT and SPF record encoding for the AWS provider.
+  version: 1.0.4
+  description: Correct long TXT and SPF record encoding and derive per-input apply-action metadata.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

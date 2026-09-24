@@ -60,34 +60,34 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 
 | Definition | Name | Version | Module path |
 | ---------- | ---- | ------- | ----------- |
-| `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
-| `rvn-aurora` | Aurora Database | v1.3.0 | `database/aurora/` |
-| `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
+| `rvn-acm-certificate` | ACM Certificate | v1.0.2 | `security/acm_certificate/` |
+| `rvn-aurora` | Aurora Database | v1.3.1 | `database/aurora/` |
+| `rvn-aws-alb` | AWS Application Load Balancer | v1.1.1 | `networking/alb/` |
 | `rvn-aws-ami` | AMI | v0.1.0 | `compute/ami/` |
-| `rvn-aws-compliance` | AWS Compliance | v0.1.0 | `security/compliance/` |
-| `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
-| `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
-| `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
-| `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
-| `rvn-aws-static` | Static Hosting | v1.1.3 | `hosting/static_site/` |
-| `rvn-cloudfront` | CloudFront CDN | v1.3.2 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v1.6.1 | `compute/ec2_service/` |
-| `rvn-ecs-cluster` | ECS Cluster | v1.1.0 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v1.6.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v1.6.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v1.6.0 | `compute/ecs_service/` |
-| `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.12.0 | `compute/eks/addons/` |
-| `rvn-eks-cluster` | EKS Cluster | v0.3.1 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.3.1 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.6.0 | `compute/eks_service/` |
-| `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
-| `rvn-rds` | RDS Database | v1.3.0 | `database/rds/` |
-| `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |
-| `rvn-route53` | Route 53 DNS | v1.0.3 | `networking/route53/` |
-| `rvn-s3` | S3 Bucket | v1.0.1 | `storage/s3/` |
-| `rvn-stack` | Terraform Stack | v1.3.1 | `stack/terraform/` |
+| `rvn-aws-compliance` | AWS Compliance | v0.1.1 | `security/compliance/` |
+| `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.2 | `security/iam_policy/` |
+| `rvn-aws-iam-role` | AWS IAM Role | v1.0.2 | `security/iam/` |
+| `rvn-aws-kms` | AWS KMS Key | v0.1.1 | `security/kms/` |
+| `rvn-aws-network` | VPC Network | v1.1.1 | `networking/vpc/` |
+| `rvn-aws-static` | Static Hosting | v1.1.4 | `hosting/static_site/` |
+| `rvn-cloudfront` | CloudFront CDN | v1.3.3 | `cdn/cloudfront/` |
+| `rvn-ec2-service` | EC2 Service | v1.6.2 | `compute/ec2_service/` |
+| `rvn-ecs-cluster` | ECS Cluster | v1.1.1 | `compute/ecs_cluster/` |
+| `rvn-ecs-nlb` | ECS Network Service | v1.6.1 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v1.6.1 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v1.6.1 | `compute/ecs_service/` |
+| `rvn-efs` | EFS File System | v1.0.2 | `storage/efs/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.12.1 | `compute/eks/addons/` |
+| `rvn-eks-cluster` | EKS Cluster | v0.3.2 | `compute/eks/` |
+| `rvn-eks-web` | EKS Web Service | v1.3.2 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.6.1 | `compute/eks_service/` |
+| `rvn-elasticache` | ElastiCache | v1.0.2 | `cache/elasticache/` |
+| `rvn-lambda` | Lambda Function | v1.1.3 | `compute/lambda/` |
+| `rvn-rds` | RDS Database | v1.3.1 | `database/rds/` |
+| `rvn-rds-proxy` | RDS Proxy | v0.1.1 | `database/rds-proxy/` |
+| `rvn-route53` | Route 53 DNS | v1.0.4 | `networking/route53/` |
+| `rvn-s3` | S3 Bucket | v1.0.2 | `storage/s3/` |
+| `rvn-stack` | Terraform Stack | v1.3.2 | `stack/terraform/` |
 
 <!-- END GENERATED: module-definitions -->
 

@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 1.1.0
-  description: Add a Compliance section with a default log retention that ECS services inherit and CloudWatch alarms enabled by default for the public and private Application Load Balancers, and document that Container Insights is enabled by default for SOC 2 compliance.
+  version: 1.1.1
+  description: Add a Compliance section with a default log retention that ECS services inherit and CloudWatch alarms enabled by default for the public and private Application Load Balancers, and document that Container Insights is enabled by default for SOC 2 compliance. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network

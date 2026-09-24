@@ -3,8 +3,8 @@ definition:
   name: ElastiCache
   description: Creates and manages Amazon ElastiCache for Redis, Valkey, Memcached, or serverless Redis-compatible caches.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.0.2
+  description: Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network

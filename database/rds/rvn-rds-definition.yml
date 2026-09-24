@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon RDS database. Supports PostgreSQL, MySQL, MariaDB, Oracle, and SQL Server engines.
 
 release:
-  version: 1.3.0
-  description: Add configurable read/write IOPS alarms alongside existing free storage monitoring.
+  version: 1.3.1
+  description: Add configurable read/write IOPS alarms alongside existing free storage monitoring. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network

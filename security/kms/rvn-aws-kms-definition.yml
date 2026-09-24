@@ -3,8 +3,8 @@ definition:
   name: AWS KMS Key
   description: Creates a regional symmetric AWS KMS encryption key and stable alias.
 release:
-  version: 0.1.0
-  description: Create regional symmetric AWS KMS encryption keys with optional key-user access.
+  version: 0.1.1
+  description: Create regional symmetric AWS KMS encryption keys with optional key-user access. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

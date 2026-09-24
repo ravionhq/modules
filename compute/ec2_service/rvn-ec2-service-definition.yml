@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.6.1
-  description: Document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 1.6.2
+  description: Document that image scanning on push is enabled by default for SOC 2 compliance. Add Builder IAM policies inputs and derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: network
@@ -688,22 +688,6 @@ module:
       collapsible: true
       min: 1
       default: 30
-    - id: log_rotation_max_size_mb
-      label: Log rotation size (MB)
-      type: number
-      description: Size at which supervisord rotates the app log file on the instance. Bounds disk usage when the process restarts repeatedly.
-      collapsible: true
-      min: 1
-      max: 1024
-      default: 20
-    - id: log_rotation_backup_count
-      label: Rotated log files kept
-      type: number
-      description: Number of rotated app log files kept on the instance. On-instance usage is bounded by (this + 1) times the rotation size.
-      collapsible: true
-      min: 1
-      max: 100
-      default: 5
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
   stack:
@@ -776,8 +760,6 @@ module:
           module.input.ecs_cluster_alb_visibility == "public" ? module.input.public_alb_security_group_id :
           module.input.private_alb_security_group_id >>
         log_retention_in_days: << module.input.log_retention_in_days >>
-        log_rotation_backup_count: << module.input.log_rotation_backup_count >>
-        log_rotation_max_size_mb: << module.input.log_rotation_max_size_mb >>
         manual_start_command: '<< module.input.deploy_type == "manual" ? module.input.start_command : nil >>'
         max_size: << module.input.max_capacity >>
         min_size: << module.input.min_capacity >>
@@ -796,6 +778,9 @@ module:
     $merge: ../../partials/build/ecs-service-image-build.yml
     type: '<< module.input.deploy_type == "manual" || module.input.build_source == "image_registry" || module.input.build_source == "ecr" ? "disabled" : "image" >>'
   deploy:
+    $deploy_reexecutes_stack_terraform_variables:
+      - environment_variables
+      - secrets
     type: aws:ec2
     concurrency:
       queue_overflow: oldest
@@ -1051,8 +1036,6 @@ module:
 
     App stdout and stderr from the supervised process are sent to `/ravion/ec2/<service-name>` in CloudWatch Logs. Every deployment and instance has a distinct stream named `deployment/<deployment-id>/instance/<instance-id>`. SSM preparation and deploy-script stdout and stderr are copied into the same instance stream while remaining available with the deployment command.
 
-    Supervisord rotates the log file on the instance so a crash-looping process cannot fill the root volume. Log rotation size (MB) and Rotated log files kept bound on-instance usage to (kept + 1) times the rotation size for each deployment log. Ravion writes the supervisord program configuration after Deploy commands run, so rotation cannot be changed from a deploy command; change these fields instead. Newly launched instances receive the same settings from the launch template.
-
     The dashboard shows desired and in-service instance counts for every service. Web services also show request count, target response time, target 4xx and 5xx responses, and healthy and unhealthy host counts. Worker groups omit load-balancer metrics.
 
     ## Storage and durability
@@ -1184,8 +1167,6 @@ module:
     | EFS file system | No | false | Enable shared storage for files several instances must share |
     | EFS file system reference / mount path | Yes* | - / /mnt/efs | Ravion EFS module and its host/container mount path |
     | Log retention (days) | No | 30 | CloudWatch retention for supervised app logs |
-    | Log rotation size (MB) | No | 20 | Size at which supervisord rotates the on-instance app log |
-    | Rotated log files kept | No | 5 | Rotated app log files kept on each instance |
     | Tags | No | Standard Ravion tags | Additional tags applied to resources |
     | Advanced Terraform variables | No | {} | Lower-level overrides for exceptional settings |
     | OpenTofu version override | No | Ravion default | Stack OpenTofu version override |

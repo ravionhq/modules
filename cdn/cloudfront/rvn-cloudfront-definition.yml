@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.3.2
-  description: Retain access logs for 365 days by default to meet SOC 2 log retention requirements.
+  version: 1.3.3
+  description: Retain access logs for 365 days by default to meet SOC 2 log retention requirements, and derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

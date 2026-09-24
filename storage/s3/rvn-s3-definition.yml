@@ -3,8 +3,8 @@ definition:
   name: S3 Bucket
   description: S3 bucket with public access blocking, encryption, versioning, CORS, lifecycle rules, and configurable bucket policies.
 release:
-  version: 1.0.1
-  description: Update Terraform module sources and documentation links to the renamed `ravionhq` GitHub organization.
+  version: 1.0.2
+  description: Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

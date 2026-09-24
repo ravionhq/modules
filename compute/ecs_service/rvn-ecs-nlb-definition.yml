@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 1.6.1
+  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance. Add Builder IAM policies inputs and derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: section_cluster
