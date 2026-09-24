@@ -4,8 +4,11 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.7.0
-  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
+  version: 0.6.0
+  description: >-
+    Default rolling updates to 100% surge so a full replacement set of worker pods can
+    start together when spare capacity is available. Zero-unavailable protection
+    remains enabled, and a new advanced surge setting can limit temporary capacity.
 module:
   inputs:
     - id: section_cluster
