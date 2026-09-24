@@ -55,6 +55,12 @@ jobs:
       - name: Test CloudFront viewer-request function
         run: node --test cdn/cloudfront/functions/viewer_request.test.js
 
+      - name: Test EKS capacity reconciliation
+        run: |
+          python3 -m unittest discover -s compute/eks/tests -p 'test_*.py' -v
+          tofu -chdir=compute/eks init -backend=false
+          tofu -chdir=compute/eks test -filter=tests/node_group_scaling.tftest.hcl
+
       - name: Lint modules
         run: tflint --recursive
 
@@ -63,6 +69,7 @@ jobs:
         with:
           scan-type: config
           scan-ref: .
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: '1'
           severity: HIGH,CRITICAL

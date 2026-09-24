@@ -1,0 +1,22 @@
+# All values are supplied by the compute/eks/addons Terraform module.
+#
+# This chart exists because the Ravion Operator chart deliberately does NOT create the
+# credential Secret — Terraform does, and Ravion Operator holds no RBAC on Secrets at
+# all, so the kubelet is what reads this object and projects it into the
+# container. Delivering it as a local chart keeps the Helm provider as the only
+# Kubernetes access this stack has, matching external-secrets-resources and
+# karpenter-resources.
+
+# Name of the Secret. Must match the Ravion Operator chart's credential.secretName.
+secretName: ravion-operator-credential
+
+# Key names inside the Secret. Must match the Ravion Operator chart's
+# credential.clientIdKey / credential.clientSecretKey.
+clientIdKey: clientId
+clientSecretKey: clientSecret
+
+# The WorkOS Connect M2M pair, returned by Ravion's enrollment endpoint exactly
+# once. Empty here on purpose: there is no default and the template refuses to
+# render without both.
+clientId: ""
+clientSecret: ""

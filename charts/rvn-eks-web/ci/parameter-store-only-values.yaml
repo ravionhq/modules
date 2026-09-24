@@ -1,0 +1,14 @@
+# Only Parameter Store secrets: the ExternalSecret's top-level secretStoreRef
+# must point at the SSM store, with no per-entry override and no reference to
+# the Secrets Manager store the workload does not use.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
+  tag: v1.2.3
+ravion:
+  secrets:
+    - name: FEATURE_FLAGS
+      provider: parameterStore
+      key: arn:aws:ssm:us-east-1:123456789012:parameter/demo/feature-flags
+    - name: RATE_LIMIT
+      provider: parameterStore
+      key: arn:aws:ssm:us-east-1:123456789012:parameter/demo/rate-limit

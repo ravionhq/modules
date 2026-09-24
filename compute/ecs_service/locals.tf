@@ -15,6 +15,11 @@ locals {
 
   tags = merge(local.default_tags, var.tags)
 
+  # ELBv2 target group names allow only alphanumerics and hyphens, while
+  # var.name may carry underscores (ECS services and ECR repositories accept
+  # them). Every target group name is derived from this hyphenated copy.
+  target_group_base_name = replace(var.name, "_", "-")
+
   # Every strategy runs on the native ECS deployment controller — the
   # blue_green / linear / canary traffic shifts are executed by ECS
   # itself (deployment_configuration.strategy), not CodeDeploy.
@@ -38,6 +43,9 @@ locals {
 
   # Determine if load balancer is configured
   enable_load_balancer = var.load_balancer_attachment != null && var.load_balancer_attachment.enabled
+
+  # Cluster name for CloudWatch dimensions (cluster ARN: .../cluster/<name>)
+  cluster_name = split("/", var.cluster_arn)[1]
 
   # Determine if NLB listeners should be created (vs ALB listener rules).
   enable_nlb_listener = local.enable_load_balancer && length(try(var.load_balancer_attachment.nlb_listeners, [])) > 0

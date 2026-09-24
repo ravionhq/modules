@@ -87,6 +87,28 @@ describe("compiler", () => {
     assert.equal("global" in compiled.module, false);
   });
 
+  it("compiles EKS cron scheduling controls and keeps the definition unpublished", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-cron-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+    const deploy = assertRecord(compiled.module.deploy, "module.deploy");
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+
+    assert.equal(compiled.published, false);
+    assert.equal(findInput(inputs, "scheduling_enabled").default, true);
+    assert.equal(inputs.some((input) => input.id === "suspend"), false);
+    assert.equal(
+      values.suspend,
+      "<< module.input.scheduling_enabled != nil ? !module.input.scheduling_enabled : false >>",
+    );
+  });
+
+  it("keeps the EKS cluster definition private", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
+
+    assert.equal(compiled.global, false);
+  });
+
   it("compiles all colocated definitions under module category directories", async () => {
     const compiled = await compileAllDefinitions(join(fixturesDir, "modules"));
 
@@ -123,6 +145,438 @@ describe("compiler", () => {
       getTerraformVariable(aurora.module, "master_user_password_preservation_enabled"),
       "<< module.input.master_user_password_preservation_enabled || false >>",
     );
+  });
+
+  it("prevents EKS and database major version downgrades", async () => {
+    const eks = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
+    const rds = await compileDefinitionFile(join(repoRoot, "database", "rds", "rvn-rds-definition.yml"));
+    const aurora = await compileDefinitionFile(join(repoRoot, "database", "aurora", "rvn-aurora-definition.yml"));
+
+    assert.equal(findInput(getModuleInputs(eks.module), "kubernetes_version").min_current_value, true);
+
+    const rdsMajorVersion = findInput(getModuleInputs(rds.module), "engine_major_version");
+    assert.equal(rdsMajorVersion.min_current_value, true);
+    assert.equal(rdsMajorVersion.immutable, undefined);
+
+    assert.equal(findInput(getModuleInputs(aurora.module), "engine_major_version").min_current_value, true);
+  });
+
+  it("compiles EKS web startup and recovery probes with safe path and timeout fallbacks", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-web-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+    const deploy = assertRecord(compiled.module.deploy, "module.deploy");
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+    const probes = assertRecord(values.probes, "module.deploy.definition.values.probes");
+    const readiness = assertRecord(probes.readiness, "probes.readiness");
+    const liveness = assertRecord(probes.liveness, "probes.liveness");
+    const startup = assertRecord(probes.startup, "probes.startup");
+
+    assert.equal(readiness.enabled, true);
+    assert.equal(
+      readiness.periodSeconds,
+      "<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1 >>",
+    );
+    assert.equal(
+      readiness.initialDelaySeconds,
+      "<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 0 >>",
+    );
+    assert.equal(
+      readiness.failureThreshold,
+      "<< module.input.readiness_probe_period_seconds != nil && module.input.readiness_probe_period_seconds >= 10 ? 3 : int((29 + (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) / (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) >>",
+    );
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").default, 1);
+    assert.equal(findInput(inputs, "probe_initial_delay_seconds").default, 0);
+    const strategy = assertRecord(values.strategy, "module.deploy.definition.values.strategy");
+    assert.equal(
+      strategy.maxSurge,
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%",
+    );
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").min, 1);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").max, 100);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").default, 100);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").collapsible, true);
+    assert.equal(liveness.path, "<< module.input.liveness_probe_path || module.input.health_check_path >>");
+    assert.equal(
+      startup.path,
+      "<< module.input.startup_probe_path || module.input.liveness_probe_path || module.input.health_check_path >>",
+    );
+    assert.equal(
+      startup.failureThreshold,
+      "<< module.input.startup_timeout_seconds != nil ? int((module.input.startup_timeout_seconds + 4) / 5) : 30 >>",
+    );
+    assert.equal(
+      inputs.findIndex((input) => input.id === "probe_initial_delay_seconds"),
+      inputs.findIndex((input) => input.id === "health_check_timeout") + 1,
+    );
+    assert.equal(inputs.some((input) => input.id === "section_load_balancer"), false);
+    assert.equal(inputs.some((input) => input.id === "public_web_service_enabled"), false);
+    assert.equal(inputs.some((input) => input.id === "healthy_threshold"), false);
+    assert.equal(inputs.some((input) => input.id === "unhealthy_threshold"), false);
+  });
+
+  it("compiles EKS worker rollout surge into Helm values with a collapsible full-surge default", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-worker-definition.yml"));
+    const input = findInput(getModuleInputs(compiled.module), "rollout_max_surge_percent");
+    assert.equal(input.default, 100);
+    assert.equal(input.collapsible, true);
+    assert.equal(input.min, 1);
+    assert.equal(input.max, 100);
+    const deploy = assertRecord(compiled.module.deploy, "module.deploy");
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+    const strategy = assertRecord(values.strategy, "values.strategy");
+    assert.equal(
+      strategy.maxSurge,
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%",
+    );
+  });
+
+  it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
+    const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
+    const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
+    const web = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-web-definition.yml"));
+    const clusterInputs = getModuleInputs(cluster.module);
+
+    const additionalNodeGroups = findInput(clusterInputs, "node_groups");
+    assert.equal(additionalNodeGroups.type, "object_map");
+    const additionalNodeGroupInputs = additionalNodeGroups.item_inputs;
+    assert.ok(Array.isArray(additionalNodeGroupInputs));
+    const additionalNodeGroupFields = additionalNodeGroupInputs.map((input) =>
+      assertRecord(input, "node_groups.item_inputs[]"),
+    );
+    assert.equal(
+      additionalNodeGroupFields.some((input) => input.id === "desired_size"),
+      false,
+    );
+    const additionalMinSize = findInput(additionalNodeGroupFields, "min_size");
+    const additionalMaxSize = findInput(additionalNodeGroupFields, "max_size");
+    assert.equal(additionalMinSize.label, "Minimum nodes");
+    assert.equal(additionalMaxSize.label, "Maximum nodes");
+    assert.match(String(additionalMinSize.description), /spare capacity/);
+    assert.match(String(additionalMaxSize.description), /pods can remain pending/);
+    assert.equal(findInput(clusterInputs, "system_node_min_size").label, "Minimum nodes");
+    assert.equal(findInput(clusterInputs, "system_node_max_size").label, "Maximum nodes");
+    assert.equal(findInput(clusterInputs, "system_node_min_size").default, 2);
+    assert.equal(findInput(clusterInputs, "system_node_max_size").default, 4);
+    assert.match(String(findInput(clusterInputs, "system_node_min_size").description), /spare capacity/);
+    assert.match(String(findInput(clusterInputs, "system_node_max_size").description), /pods can remain pending/);
+    for (const inputId of [
+      "system_node_capacity_type",
+      "system_node_instance_types",
+      "system_node_min_size",
+      "system_node_max_size",
+      "system_node_disk_size",
+    ]) {
+      assert.equal(findInput(clusterInputs, inputId).collapsible, true, `${inputId} should be collapsible`);
+    }
+    assert.equal(clusterInputs.some((input) => input.id === "section_system_nodes"), false);
+    assert.equal(clusterInputs.some((input) => input.id === "section_application_capacity"), false);
+    assert.match(String(findInput(clusterInputs, "section_capacity").description), /0\.5 vCPU and 1 GiB/);
+    assert.ok(clusterInputs.findIndex((input) => input.id === "section_capacity") < clusterInputs.findIndex((input) => input.id === "system_node_capacity_type"));
+    assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_capacity_type") < clusterInputs.findIndex((input) => input.id === "system_node_instance_types"));
+    assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_disk_size") < clusterInputs.findIndex((input) => input.id === "node_groups"));
+    assert.equal(clusterInputs.some((input) => input.id === "section_endpoint"), false);
+    assert.ok(clusterInputs.findIndex((input) => input.id === "section_access") < clusterInputs.findIndex((input) => input.id === "endpoint_private_access_enabled"));
+    assert.ok(clusterInputs.findIndex((input) => input.id === "section_fargate") < clusterInputs.findIndex((input) => input.id === "section_access"));
+    assert.ok(clusterInputs.findIndex((input) => input.id === "access_entries") < clusterInputs.findIndex((input) => input.id === "section_observability"));
+    assert.equal(clusterInputs.some((input) => input.id === "ravion_runner_security_group_creation_enabled"), false);
+    assert.equal(clusterInputs.some((input) => input.id === "public_access_cidrs"), false);
+    assert.equal(clusterInputs.some((input) => input.id === "enabled_cluster_log_types"), false);
+    assert.equal(clusterInputs.some((input) => input.id === "cluster_log_retention_in_days"), false);
+
+    const systemNodeInstanceTypes = findInput(clusterInputs, "system_node_instance_types");
+    assert.equal(systemNodeInstanceTypes.type, "string_array");
+    assert.deepEqual(systemNodeInstanceTypes.default, ["t3.medium"]);
+    assert.equal(
+      systemNodeInstanceTypes.values,
+      "$values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>",
+    );
+    assert.equal(
+      findInput(additionalNodeGroupFields, "instance_types").values,
+      systemNodeInstanceTypes.values,
+    );
+
+    const fargateProfiles = findInput(clusterInputs, "fargate_profiles");
+    assert.equal(fargateProfiles.type, "object_map");
+    const fargateProfileFields = (fargateProfiles.item_inputs as unknown[]).map((input) =>
+      assertRecord(input, "fargate_profiles.item_inputs[]"),
+    );
+    const fargateSelectors = findInput(fargateProfileFields, "selectors");
+    assert.equal(fargateSelectors.type, "object_array");
+    assert.equal(fargateSelectors.required, true);
+    assert.equal(fargateSelectors.add_button_label, undefined);
+    const fargateSelectorFields = (fargateSelectors.item_inputs as unknown[]).map((input) =>
+      assertRecord(input, "fargate_profiles.selectors.item_inputs[]"),
+    );
+    assert.equal(findInput(fargateSelectorFields, "namespace").required, true);
+    assert.equal(findInput(fargateSelectorFields, "labels").type, "keyvalue");
+    assert.equal(findInput(fargateProfileFields, "subnet_ids").type, "string_array");
+    assert.equal(findInput(fargateProfileFields, "pod_execution_role_arn").type, "string");
+
+    const accessEntries = findInput(clusterInputs, "access_entries");
+    assert.equal(accessEntries.type, "object_map");
+    const accessEntryFields = (accessEntries.item_inputs as unknown[]).map((input) =>
+      assertRecord(input, "access_entries.item_inputs[]"),
+    );
+    assert.equal(findInput(accessEntryFields, "principal_arn").required, true);
+    const policyAssociations = findInput(accessEntryFields, "policy_associations");
+    assert.equal(policyAssociations.type, "object_map");
+    const policyAssociationFields = (policyAssociations.item_inputs as unknown[]).map((input) =>
+      assertRecord(input, "access_entries.policy_associations.item_inputs[]"),
+    );
+    assert.equal(findInput(policyAssociationFields, "policy_arn").required, true);
+    assert.equal(findInput(policyAssociationFields, "access_scope_type").default, "cluster");
+    assert.deepEqual(findInput(policyAssociationFields, "access_scope_namespaces").show_when, {
+      access_scope_type: "namespace",
+    });
+
+    const systemNodeGroup = assertRecord(getTerraformVariable(cluster.module, "system_node_group"), "system_node_group");
+    assert.equal(systemNodeGroup.instance_types, "<< module.input.system_node_instance_types >>");
+    assert.equal("desired_size" in systemNodeGroup, false);
+    assert.equal(getTerraformVariable(cluster.module, "ravion_runner_security_group_creation_enabled"), undefined);
+
+    const karpenterNodePool = assertRecord(
+      getTerraformVariable(addons.module, "karpenter_default_node_pool"),
+      "karpenter_default_node_pool",
+    );
+    assert.equal(
+      karpenterNodePool.capacity_types,
+      '<< module.input.karpenter_default_node_pool_capacity_types != nil ? module.input.karpenter_default_node_pool_capacity_types : ["on-demand", "spot"] >>',
+    );
+
+    const addonsInputs = getModuleInputs(addons.module);
+    const addonsCluster = findInput(addonsInputs, "cluster");
+    const addonsClusterMappedInputs = (addonsCluster.mapped_inputs as unknown[]).map((input) =>
+      assertRecord(input, "addons.cluster.mapped_inputs[]"),
+    );
+    const runnerSecurityGroup = findInput(addonsClusterMappedInputs, "ravion_runner_security_group_id");
+    assert.equal(runnerSecurityGroup.default, "<<ref.stack.output.ravion_runner_security_group_id>>");
+    assert.equal(runnerSecurityGroup.immutable, true);
+
+    const addonsStack = assertRecord(addons.module.stack, "addons.module.stack");
+    const addonsPipelines = assertRecord(addonsStack.pipelines, "addons.module.stack.pipelines");
+    const addonsDefaults = assertRecord(addonsPipelines.defaults, "addons.module.stack.pipelines.defaults");
+    const addonsPipelineInput = assertRecord(addonsDefaults.input, "addons.module.stack.pipelines.defaults.input");
+    assert.deepEqual(addonsPipelineInput.execution_environment_overrides, {
+      security_group: "<< module.input.ravion_runner_security_group_id >>",
+    });
+
+    const addonsUi = assertRecord(addons.module.ui, "addons.module.ui");
+    const addonsMetrics = addonsUi.metrics;
+    assert.ok(Array.isArray(addonsMetrics), "addons.module.ui.metrics should be an array");
+    for (const metric of addonsMetrics) {
+      const metricRecord = assertRecord(metric, "addons.module.ui.metrics[]");
+      const source = assertRecord(metricRecord.source, `addons metric ${String(metricRecord.id)} source`);
+      assert.equal(source.type, "amp", `addons metric ${String(metricRecord.id)} should use the AMP source`);
+    }
+
+    const deploy = assertRecord(web.module.deploy, "module.deploy");
+    const webInputs = getModuleInputs(web.module);
+    const computeTarget = findInput(webInputs, "compute_target");
+    assert.equal(computeTarget.default, "any");
+    assert.deepEqual(computeTarget.moved_from, ["capacity_type"]);
+    assert.deepEqual(getValueOptions(computeTarget), ["any", "on_demand", "spot", "fargate"]);
+    const clusterInput = findInput(webInputs, "cluster");
+    const mappedInputs = (clusterInput.mapped_inputs as unknown[]).map((input) =>
+      assertRecord(input, "cluster.mapped_inputs[]"),
+    );
+    const clusterPrivateSubnetIds = findInput(mappedInputs, "cluster_private_subnet_ids");
+    assert.equal(clusterPrivateSubnetIds.required, true);
+    assert.deepEqual(clusterPrivateSubnetIds.show_when, { compute_target: "fargate" });
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+    assert.equal(
+      values.affinity,
+      '<< module.input.compute_target == "on_demand" || module.input.compute_target == "spot" ? {"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"eks.amazonaws.com/capacityType","operator":"In","values":[module.input.compute_target == "spot" ? "SPOT" : "ON_DEMAND"]}]},{"matchExpressions":[{"key":"karpenter.sh/capacity-type","operator":"In","values":[module.input.compute_target == "spot" ? "spot" : "on-demand"]}]}]}}} : {} >>',
+    );
+    assert.equal(
+      values.podLabels,
+      '<< module.input.compute_target == "fargate" ? {"eks.amazonaws.com/fargate-profile": module.input.name + "-fargate"} : {} >>',
+    );
+    assert.equal(
+      values.podAnnotations,
+      '<< module.input.compute_target == "on_demand" || module.input.compute_target == "spot" ? {"eks.amazonaws.com/compute-type": "ec2"} : {} >>',
+    );
+    assert.equal(
+      getTerraformVariable(web.module, "fargate_profile"),
+      '<< module.input.compute_target == "fargate" ? {"name": module.input.name + "-fargate", "subnet_ids": module.input.cluster_private_subnet_ids, "selectors": [{"namespace": module.input.namespace, "labels": {"app.kubernetes.io/instance": module.input.name}}]} : nil >>',
+    );
+  });
+
+  it("compiles concise EKS add-on guidance and input constraints", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+
+    const nodeLifetime = findInput(inputs, "karpenter_default_node_pool_expire_after");
+    assert.match(String(nodeLifetime.description), /1h30m.*720h.*Never/);
+    assert.deepEqual(nodeLifetime.patterns, [
+      {
+        message: "Use integer segments with s, m, or h, such as 1h30m or 720h, or Never.",
+        pattern: "^(([0-9]+(s|m|h))+|Never)$",
+      },
+    ]);
+
+    const lokiRetention = findInput(inputs, "loki_retention_days");
+    assert.equal(lokiRetention.min, 1);
+    assert.equal(lokiRetention.max, 3650);
+    assert.equal(lokiRetention.collapsible, true);
+    assert.equal(inputs.some((input) => input.id === "log_retention_days"), false);
+    assert.equal(findInput(inputs, "karpenter_default_node_pool_creation_enabled").collapsible, true);
+    assert.equal(findInput(inputs, "prometheus_retention_days").min, 1);
+    assert.match(
+      String(findInput(inputs, "cloudwatch_application_signals_namespaces").description),
+      /does not add injection annotations/,
+    );
+    const operator = findInput(inputs, "ravion_operator_enabled");
+    assert.equal(inputs.some((input) => input.id === "ravion_operator_deploy_enabled"), false);
+    assert.equal(operator.default, true);
+    assert.deepEqual(operator.moved_from, ["beacon_enabled"]);
+    for (const id of [
+      "ravion_operator_execution_jobs_enabled",
+      "ravion_operator_namespaces_creation_enabled",
+      "ravion_operator_deploy_namespaces",
+      "ravion_operator_self_update_enabled",
+      "ravion_operator_full_management_enabled",
+      "ravion_operator_execution_image",
+      "ravion_operator_chart_version",
+      "ravion_operator_execution_max_concurrent",
+      "ravion_operator_warm_capacity",
+      "ravion_operator_coordinator_enabled",
+      "ravion_operator_coordinator_adaptive_enabled",
+      "ravion_operator_coordinator_replicas",
+      "ravion_operator_coordinator_distinct_nodes_enabled",
+    ]) {
+      assert.equal(inputs.some((input) => input.id === id), false, `${id} is managed automatically`);
+    }
+    assert.equal(
+      getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
+      "0.5.11",
+    );
+    for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
+      assert.equal(getTerraformVariable(compiled.module, id), true);
+    }
+    for (const id of ["ravion_operator_namespaces_creation_enabled", "ravion_operator_self_update_enabled", "ravion_operator_deploy_namespaces"]) {
+      assert.equal(getTerraformVariable(compiled.module, id), undefined, `${id} uses its Terraform default`);
+    }
+    assert.deepEqual(findInput(inputs, "logs_excluded_namespaces").default, [
+      "kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon",
+    ]);
+    assert.equal(
+      getTerraformVariable(compiled.module, "logs_excluded_namespaces"),
+      '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>',
+    );
+    assert.equal(findInput(inputs, "public_alb_creation_enabled").default, true);
+    assert.equal(inputs.some((input) => input.id === "public_nlb_security_group_ids"), false);
+    assert.equal(inputs.some((input) => input.id === "private_nlb_security_group_ids"), false);
+    assert.equal(inputs.some((input) => input.id === "amp_region"), false);
+    assert.equal(inputs.some((input) => input.id === "beacon_enabled"), false);
+    assert.equal(inputs.some((input) => input.id === "beacon_deploy_enabled"), false);
+    assert.equal(inputs.some((input) => input.id === "beacon_deploy_namespaces"), false);
+    assert.equal(
+      getTerraformVariable(compiled.module, "ravion_operator_deploy_enabled"),
+      getTerraformVariable(compiled.module, "ravion_operator_enabled"),
+    );
+    for (const legacyVariable of [
+      "beacon_enabled",
+      "beacon_deploy_enabled",
+      "beacon_deploy_namespaces",
+      "beacon_project_id",
+      "beacon_environment_id",
+      "beacon_aws_account_record_id",
+    ]) {
+      assert.equal(getTerraformVariable(compiled.module, legacyVariable), undefined);
+    }
+    for (const sectionId of ["section_ravion_operator", "section_karpenter", "section_external_secrets"]) {
+      assert.doesNotMatch(String(findInput(inputs, sectionId).description), /Terraform runner/);
+    }
+    assert.doesNotMatch(JSON.stringify(compiled), /\bBeacon\b/);
+
+    for (const definitionName of ["rvn-eks-web", "rvn-eks-worker", "rvn-eks-cron"]) {
+      const workload = await compileDefinitionFile(
+        join(repoRoot, "compute", "eks_service", `${definitionName}-definition.yml`),
+      );
+      assert.doesNotMatch(JSON.stringify(workload), /\bBeacon\b/, `${definitionName} uses retired Beacon terminology`);
+    }
+
+    for (const input of inputs) {
+      if (typeof input.description === "string") {
+        assert.doesNotMatch(input.description, /on by default/i, `${String(input.id)} repeats its visible default`);
+      }
+    }
+  });
+
+  it("places EKS add-on load balancers below Ravion EKS Management", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+    const indexOf = (id: string) => inputs.findIndex((input) => input.id === id);
+
+    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_enabled") + 1);
+    assert.ok(indexOf("section_alb") < indexOf("section_nlb"));
+    assert.ok(indexOf("section_nlb") < indexOf("aws_load_balancer_controller_chart_version"));
+    assert.ok(indexOf("aws_load_balancer_controller_chart_version") < indexOf("section_karpenter"));
+  });
+
+  it("keeps EKS section descriptions only for cross-field guidance", async () => {
+    const definitions = [
+      {
+        path: ["compute", "eks", "rvn-eks-cluster-definition.yml"],
+        sectionIds: ["section_capacity"],
+      },
+      {
+        path: ["compute", "eks", "addons", "rvn-eks-addons-definition.yml"],
+        sectionIds: [
+          "section_ravion_operator",
+          "section_alb",
+          "section_nlb",
+          "section_karpenter",
+          "section_grafana",
+          "section_external_secrets",
+        ],
+      },
+      {
+        path: ["compute", "eks_service", "rvn-eks-web-definition.yml"],
+        sectionIds: [],
+      },
+      {
+        path: ["compute", "eks_service", "rvn-eks-worker-definition.yml"],
+        sectionIds: [],
+      },
+      {
+        path: ["compute", "eks_service", "rvn-eks-cron-definition.yml"],
+        sectionIds: [],
+      },
+    ];
+
+    for (const definition of definitions) {
+      const compiled = await compileDefinitionFile(join(repoRoot, ...definition.path));
+      const describedSections = getModuleInputs(compiled.module)
+        .filter((input) => input.type === "section" && typeof input.description === "string")
+        .map((input) => input.id);
+
+      assert.deepEqual(describedSections, definition.sectionIds, `${compiled.type} has redundant section guidance`);
+    }
+  });
+
+  it("groups EKS add-ons with cluster selection", async () => {
+    for (const definitionName of ["rvn-eks-web", "rvn-eks-worker", "rvn-eks-cron"]) {
+      const compiled = await compileDefinitionFile(
+        join(repoRoot, "compute", "eks_service", `${definitionName}-definition.yml`),
+      );
+      const inputs = getModuleInputs(compiled.module);
+      const clusterIndex = inputs.findIndex((input) => input.id === "cluster");
+      const addonsIndex = inputs.findIndex((input) => input.id === "addons");
+      const serviceSectionIndex = inputs.findIndex((input) => input.id === "section_service");
+
+      assert.equal(addonsIndex, clusterIndex + 1, `${definitionName} should place add-ons after cluster`);
+      assert.ok(addonsIndex < serviceSectionIndex, `${definitionName} should keep add-ons in the cluster section`);
+      assert.equal(inputs.some((input) => input.id === "section_addons"), false);
+      assert.equal(inputs.some((input) => input.id === "create_namespace"), false);
+    }
   });
 
   it("compiles focused KMS inputs with complete key user ARN validation", async () => {
@@ -206,7 +660,7 @@ describe("compiler", () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"));
     const inputs = getModuleInputs(compiled.module);
 
-    assert.deepEqual(getValueOptions(findInput(inputs, "build_source")), ["dockerfile", "railpack", "image_registry"]);
+    assert.deepEqual(getValueOptions(findInput(inputs, "build_source")), ["dockerfile", "railpack", "image_registry", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "source_repo")), ["dockerfile", "railpack"]);
 
     const basePath = findInput(inputs, "source_base_path");
@@ -228,11 +682,18 @@ describe("compiler", () => {
     }
 
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_builder_config")), ["dockerfile", "railpack", "nixpacks"]);
-    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_ecr")), ["dockerfile", "railpack", "nixpacks"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_ecr")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_scan_on_push_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_force_deletion_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["image_registry", "ecr"]);
     assert.equal(findInput(inputs, "min_capacity").label, "Minimum tasks");
     assert.equal(findInput(inputs, "max_capacity").label, "Maximum tasks");
 
     const build = getModuleBuild(compiled.module);
+    assert.equal(
+      build.type,
+      '<< module.input.build_source == "image_registry" || module.input.build_source == "ecr" ? "disabled" : "image" >>',
+    );
     const builder = assertString(build.builder);
     assert.match(builder, /module\.input\.build_source == "railpack"/);
     assert.match(builder, /module\.input\.build_source == "nixpacks"/);
@@ -249,7 +710,7 @@ describe("compiler", () => {
     const ecrRepositoryCreationEnabled = getTerraformVariable(compiled.module, "ecr_repository_creation_enabled");
     assert.equal(
       ecrRepositoryCreationEnabled,
-      '<< module.input.build_source == "dockerfile" || module.input.build_source == "railpack" || module.input.build_source == "nixpacks" >>',
+      '<< module.input.build_source == "dockerfile" || module.input.build_source == "railpack" || module.input.build_source == "nixpacks" || module.input.build_source == "ecr" >>',
     );
   });
 
@@ -581,6 +1042,9 @@ describe("compiler", () => {
       ["compute", "ecs_service", "rvn-ecs-nlb-definition.yml"],
       ["compute", "ecs_service", "rvn-ecs-web-definition.yml"],
       ["compute", "ecs_service", "rvn-ecs-worker-definition.yml"],
+      ["compute", "eks_service", "rvn-eks-cron-definition.yml"],
+      ["compute", "eks_service", "rvn-eks-web-definition.yml"],
+      ["compute", "eks_service", "rvn-eks-worker-definition.yml"],
       ["compute", "lambda", "rvn-lambda-definition.yml"],
       ["hosting", "static_site", "rvn-aws-static-definition.yml"],
     ];
@@ -594,7 +1058,7 @@ describe("compiler", () => {
         `${definition.type} should include shared Git source guidance`,
       );
 
-      const builderType = findInput(inputs, "build_infrastructure_type");
+      const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
         builderType.description,
         "Use on-demand EC2 for predictable availability or EC2 Spot for lower cost with possible capacity delays or interruption.",
@@ -611,6 +1075,19 @@ describe("compiler", () => {
           ["ec2", "Use on-demand capacity for predictable availability without Spot interruption."],
           ["ec2-spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
         ],
+      );
+      for (const removedInputId of [
+        "build_infrastructure_type",
+        "build_instance_size",
+        "build_ami",
+        "dockerfile_inject_env_variables",
+      ]) {
+        assert.equal(inputs.some((input) => input.id === removedInputId), false);
+      }
+      assert.equal(
+        findInput(inputs, "build_default_policies_enabled").collapsible,
+        true,
+        `${definition.type} should keep default build policies in collapsible builder settings`,
       );
     }
 
@@ -649,7 +1126,8 @@ describe("compiler", () => {
     assert.match(nlbListeners, /#\.tls_certificate_arn/);
 
     const deploy = assertRecord(compiled.module.deploy, "module.deploy");
-    assert.equal(deploy.strategy, undefined);
+    assert.ok(deploy.strategy && typeof deploy.strategy === "object");
+    assert.equal(Reflect.get(deploy.strategy, "type"), "rolling");
     assert.deepEqual(deploy.infrastructure, {
       ecs_cluster_arn: "<<stack.output.service_cluster>>",
       ecs_service_arn: "<<stack.output.service_arn>>",
@@ -660,6 +1138,46 @@ describe("compiler", () => {
     assert.match(containerDefinitions, /port_mappings": map\(module\.input\.listeners/);
     assert.doesNotMatch(containerDefinitions, /module\.input\.container_port/);
   });
+});
+
+describe("monitoring defaults", () => {
+  const definitions = [
+    "networking/alb/rvn-aws-alb-definition.yml",
+    "compute/ecs_cluster/rvn-ecs-cluster-definition.yml",
+    "compute/ecs_service/rvn-ecs-web-definition.yml",
+    "compute/ecs_service/rvn-ecs-worker-definition.yml",
+    "compute/ecs_service/rvn-ecs-nlb-definition.yml",
+  ];
+
+  for (const definition of definitions) {
+    it(`enables alarms by default in ${definition}`, async () => {
+      const { module } = await compileDefinitionFile(join(repoRoot, definition));
+      const inputs = getModuleInputs(module);
+      const toggle = findInput(inputs, "cloudwatch_alarms_creation_enabled");
+      assert.equal(toggle.default, true);
+      assert.equal(toggle.type, "boolean");
+      const variable = definition.includes("ecs_cluster")
+        ? "alb_cloudwatch_alarms_creation_enabled"
+        : "cloudwatch_alarms_creation_enabled";
+      assert.equal(getTerraformVariable(module, variable), "<< module.input.cloudwatch_alarms_creation_enabled >>");
+    });
+  }
+
+  for (const definition of definitions.filter((path) => path.includes("ecs_"))) {
+    it(`offers supported retention periods in ${definition}`, async () => {
+      const { module } = await compileDefinitionFile(join(repoRoot, definition));
+      const retention = findInput(getModuleInputs(module), "log_retention_days");
+      assert.deepEqual(getValueOptions(retention), [
+        0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365,
+        400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653,
+      ]);
+      if (definition.includes("ecs_service")) {
+        assert.equal(retention.required, false);
+        assert.equal(retention.default, undefined);
+        assert.match(assertString(getTerraformVariable(module, "log_retention_days")), /module.input.log_retention_days != nil/);
+      }
+    });
+  }
 });
 
 function getModuleInputs(module: Record<string, unknown>): Record<string, unknown>[] {

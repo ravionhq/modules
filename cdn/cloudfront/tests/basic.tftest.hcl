@@ -896,7 +896,7 @@ run "test_logging_default_creates_cloudwatch_chain" {
   }
 
   assert {
-    condition     = aws_cloudwatch_log_group.access_logs[0].retention_in_days == 90
+    condition     = aws_cloudwatch_log_group.access_logs[0].retention_in_days == 365
     error_message = "The log group retention must follow logging_bucket_retention_days."
   }
 
@@ -1387,8 +1387,8 @@ run "test_defaults" {
   }
 
   assert {
-    condition     = var.logging_bucket_retention_days == 90
-    error_message = "logging_bucket_retention_days should default to 90."
+    condition     = var.logging_bucket_retention_days == 365
+    error_message = "logging_bucket_retention_days should default to 365."
   }
 
   assert {

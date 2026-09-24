@@ -1,0 +1,168 @@
+definition:
+  type: rvn-aws-compliance
+  name: AWS Compliance
+  description: Manages an AWS compliance baseline with GuardDuty threat detection and registry-wide ECR image scanning across selected Regions.
+release:
+  version: 0.1.0
+  description: Enable GuardDuty and registry-wide ECR scan-on-push together across selected AWS Regions.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $merge:
+        - ../../partials/inputs/aws-region.yml
+      description: Region where the Terraform runner executes. GuardDuty and ECR scanning are enabled in the Regions selected below.
+    - id: section_regions
+      label: Compliance regions
+      type: section
+    - add_button_label: Add Region
+      description: AWS Regions where GuardDuty and Basic ECR scan-on-push are enabled. ECR scanning covers every repository and replaces existing Enhanced scanning or custom filters. Use one module per account with all required Regions; each Region must already be enabled.
+      id: regions
+      label: Regions
+      required: true
+      type: string_array
+      values: $values:aws/regions
+    - id: section_protection_plans
+      label: GuardDuty protection plans
+      type: section
+    - default: true
+      description: Monitor S3 data events for suspicious access to buckets and objects.
+      id: s3_protection_enabled
+      label: S3 protection
+      type: boolean
+    - default: true
+      description: Monitor Kubernetes audit logs from EKS clusters.
+      id: eks_protection_enabled
+      label: EKS protection
+      type: boolean
+    - default: true
+      description: Scan EBS volumes attached to EC2 instances and container workloads when GuardDuty detects malicious behaviour.
+      id: malware_protection_enabled
+      label: Malware protection for EC2
+      type: boolean
+    - default: true
+      description: Monitor login activity to Aurora and supported RDS databases.
+      id: rds_protection_enabled
+      label: RDS protection
+      type: boolean
+    - default: true
+      description: Monitor Lambda network activity logs.
+      id: lambda_protection_enabled
+      label: Lambda protection
+      type: boolean
+    - default: false
+      description: OS-level threat detection for EKS, ECS Fargate, and EC2 workloads using the GuardDuty security agent. Adds agent cost per workload.
+      id: runtime_monitoring_enabled
+      label: Runtime monitoring
+      type: boolean
+    - add_button_label: Add workload type
+      default:
+        - EKS_ADDON_MANAGEMENT
+        - ECS_FARGATE_AGENT_MANAGEMENT
+        - EC2_AGENT_MANAGEMENT
+      description: Workload types where GuardDuty installs and manages the Runtime Monitoring security agent automatically.
+      id: runtime_monitoring_automated_agents
+      label: Automated agent management
+      patterns:
+        - message: Must be EKS_ADDON_MANAGEMENT, ECS_FARGATE_AGENT_MANAGEMENT, or EC2_AGENT_MANAGEMENT.
+          pattern: ^(EKS_ADDON_MANAGEMENT|ECS_FARGATE_AGENT_MANAGEMENT|EC2_AGENT_MANAGEMENT)$
+      show_when:
+        runtime_monitoring_enabled: true
+      type: string_array
+    - id: section_findings
+      label: Findings
+      type: section
+    - collapsible: true
+      default: FIFTEEN_MINUTES
+      description: How often GuardDuty exports updated findings to EventBridge. New findings are always exported within five minutes.
+      id: finding_publishing_frequency
+      label: Finding publishing frequency
+      type: string
+      values:
+        - label: Every 15 minutes
+          value: FIFTEEN_MINUTES
+        - label: Every hour
+          value: ONE_HOUR
+        - label: Every 6 hours
+          value: SIX_HOURS
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: security/compliance
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        eks_protection_enabled: << module.input.eks_protection_enabled >>
+        finding_publishing_frequency: << module.input.finding_publishing_frequency || "FIFTEEN_MINUTES" >>
+        lambda_protection_enabled: << module.input.lambda_protection_enabled >>
+        malware_protection_enabled: << module.input.malware_protection_enabled >>
+        rds_protection_enabled: << module.input.rds_protection_enabled >>
+        regions: << module.input.regions >>
+        runtime_monitoring_automated_agents: "<< module.input.runtime_monitoring_enabled ? (module.input.runtime_monitoring_automated_agents || []) : [] >>"
+        runtime_monitoring_enabled: << module.input.runtime_monitoring_enabled >>
+        s3_protection_enabled: << module.input.s3_protection_enabled >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+  ui:
+    links: |-
+      <<
+      stack.output.regions != nil && stack.output.regions != [] ? map(stack.output.regions, {
+        "name":"GuardDuty " + #,
+        "href":"https://" + # + ".console.aws.amazon.com/guardduty/home?region=" + #
+      }) : []
+      >>
+  readme: |
+    Manages an AWS compliance baseline with GuardDuty threat detection and Basic ECR image scanning on push across selected Regions.
+
+    ## Account-level setup
+
+    Deploy one module for an AWS account and select every Region you want covered. The runner Region controls where Terraform executes; the Regions list controls where both services are configured. Every selected Region must already be enabled for the account.
+
+    Each Region receives a GuardDuty detector with explicitly managed protection plans and an ECR registry scanning rule covering all existing and future private repositories. The module supports threat-detection and vulnerability-scanning controls; application alarms, log retention, and other compliance controls remain in their respective modules.
+
+    ## GuardDuty
+
+    S3, EKS audit logs, EC2 malware, RDS login, and Lambda network protection are enabled by default. Runtime Monitoring is opt-in because it adds security-agent costs. Each protection plan is explicitly enabled or disabled in every selected Region.
+
+    GuardDuty sends findings to EventBridge. The finding publishing frequency controls updates to existing findings, defaulting to every 15 minutes. Central aggregation and notification routing are configured separately. GuardDuty protection plans incur AWS charges.
+
+    ## ECR image scanning
+
+    Basic scan-on-push is always enabled with a registry-level `*` filter. It covers repositories used by ECS, EKS, EC2, Lambda, and other workloads, including repositories created later. This declares the registry settings checked by OneLeet's image-scanning monitor.
+
+    Basic scans check operating-system vulnerabilities on new image pushes. They do not provide continuous scanning or automatically scan all images pushed before this configuration was enabled.
+
+    ## Existing resources and ownership
+
+    GuardDuty detectors and ECR scanning configurations are shared by the whole account in each Region. Keep exactly one Terraform owner per account and Region; do not deploy overlapping instances or also manage them from a VPC or service module.
+
+    If GuardDuty is already enabled, import the existing detectors into this module's Terraform state before applying. Do not disable GuardDuty just to adopt this module. Existing protection-plan settings are reconciled to the selected inputs.
+
+    Applying replaces any existing ECR Enhanced scanning or custom filters with Basic scan-on-push for all repositories. Review the current configuration before adoption. Manually configured ECR registries can be managed by applying this module.
+
+    Removing a Region or destroying the module deletes its GuardDuty detector and findings and resets ECR scanning to Basic without registry rules. It does not delete ECR repositories or images.
+
+    ## Configuration
+
+    | Setting | Default | Purpose |
+    | --- | --- | --- |
+    | AWS account | Required | Account whose regional security settings are managed. |
+    | Region | Required | Terraform runner Region. |
+    | Regions | Required | Regions covered by both GuardDuty and ECR scanning. |
+    | ECR scanning | Basic scan-on-push for all repositories | Always enabled by this module. |
+    | S3, EKS, malware, RDS, Lambda protection | Enabled | GuardDuty protection plans. |
+    | Runtime monitoring | Disabled | Optional workload security agents. |
+    | Automated agent management | EKS, ECS Fargate, EC2 | Used when Runtime Monitoring is enabled. |
+    | Finding publishing frequency | Every 15 minutes | Export cadence for updated GuardDuty findings. |
+    | Tags | Standard Ravion tags | Additional tags for GuardDuty detectors; ECR registry scanning does not support tags. |
+
+    ## Learn more
+
+    - [Amazon GuardDuty](https://docs.aws.amazon.com/guardduty/latest/ug/what-is-guardduty.html)
+    - [GuardDuty protection plans](https://docs.aws.amazon.com/guardduty/latest/ug/guardduty-features-activation-model.html)
+    - [ECR scanning filters](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-filters.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/security/compliance)

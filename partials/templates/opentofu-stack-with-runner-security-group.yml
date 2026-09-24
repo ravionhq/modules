@@ -1,0 +1,25 @@
+type: opentofu
+ravion_state_backend_workspace: >-
+  << module.input.ravion_state_backend_workspace || project.given_id + "-" + environment.given_id + "-"
+  + module.given_id + "-" + stack.id>>
+pipelines:
+  defaults:
+    input:
+      aws_account_id: "<< module.input.execution_environment_id ? null : module.input.aws_account_id >>"
+      aws_region: "<< module.input.execution_environment_id ? null : module.input.aws_region >>"
+      base_path: $with.base_path
+      branch: main
+      execution_environment_id: << module.input.execution_environment_id >>
+      execution_environment_overrides:
+        security_group: $with.runner_security_group_id
+      ref: $local.module_tag
+      repo: https://github.com/ravionhq/modules
+      stack_id: <<stack.id>>
+      terraform_variables: $with.terraform_variables
+      tool: opentofu
+      tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
+    variant: standard
+  change:
+    pipeline_id: << defaults.change_pipeline_id >>
+  destroy:
+    pipeline_id: << defaults.destroy_pipeline_id >>

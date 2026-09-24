@@ -4,8 +4,8 @@
   type: section
 - default: ec2
   description: Use on-demand EC2 for predictable availability or EC2 Spot for lower cost with possible capacity delays or interruption.
-  id: build_infrastructure_type
-  label: Builder instance type
+  id: build_capacity_type
+  label: Builder capacity type
   required: true
   show_when: $with.show_when
   type: string
@@ -18,8 +18,8 @@
       value: ec2-spot
 - default: c7a.4xlarge
   description: EC2 instance type for builds. Start with the default value, then increase or decrease it based on the resource usage report at the end of builds.
-  id: build_instance_size
-  label: Builder instance size
+  id: build_instance_type
+  label: Builder instance type
   no_options_message: $with.no_options_message
   required: true
   show_when: $with.show_when
@@ -35,12 +35,13 @@
   values: $values:ravion/execution_environments
 - collapsible: true
   description: Optional AMI ID for build runners. Leave empty to use the default runner image.
-  id: build_ami
+  id: build_ami_id
   label: Builder AMI
   required: false
   show_when: $with.show_when
   type: string
 - default: true
+  collapsible: true
   description: The step's built-in policies (ECR/S3 access, CloudWatch agent) stay attached alongside your Builder IAM policies. Turn off to run the build with only the policies listed below.
   id: build_default_policies_enabled
   label: Include default build policies

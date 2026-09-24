@@ -1,0 +1,18 @@
+{{- range $namespace := .Values.namespaces | uniq | sortAlpha }}
+{{- $existing := lookup "v1" "Namespace" "" $namespace }}
+{{- $annotations := dig "metadata" "annotations" (dict) $existing }}
+{{- $owned := and (eq (get $annotations "meta.helm.sh/release-name") $.Release.Name) (eq (get $annotations "meta.helm.sh/release-namespace") $.Release.Namespace) }}
+{{- if or (not $existing) $owned }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace | quote }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service | quote }}
+  annotations:
+    helm.sh/resource-policy: keep
+    meta.helm.sh/release-name: {{ $.Release.Name | quote }}
+    meta.helm.sh/release-namespace: {{ $.Release.Namespace | quote }}
+{{- end }}
+{{- end }}

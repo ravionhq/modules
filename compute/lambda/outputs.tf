@@ -136,3 +136,8 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "cloudwatch_alarm_arns" {
+  description = "Lambda error-rate alarm ARNs keyed by AWS Region."
+  value       = { for region, alarm in aws_cloudwatch_metric_alarm.error_rate : region => alarm.arn }
+}

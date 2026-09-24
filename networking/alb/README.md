@@ -13,6 +13,7 @@ This module creates an AWS Application Load Balancer (ALB) with HTTP and HTTPS l
 - SNI support with additional SSL certificates
 - TLS 1.3 support with modern SSL policies
 - Security hardening (invalid header dropping, desync mitigation)
+- CloudWatch alarms enabled by default for load balancer 5xx, target 5xx, and target response time
 
 ## Usage
 
@@ -95,6 +96,29 @@ module "alb" {
   default_action_message     = "Not Found"
 }
 ```
+
+### With CloudWatch Alarms
+
+Alarms use the load balancer's own metrics, so they work regardless of which services attach. Point the actions at an SNS topic:
+
+```hcl
+module "alb" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/alb?ref=v1.0.0"
+
+  name       = "main"
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.public_subnet_ids
+
+  cloudwatch_alarms_creation_enabled              = true
+  cloudwatch_alarm_elb_5xx_threshold              = 10
+  cloudwatch_alarm_target_5xx_threshold           = 10
+  cloudwatch_alarm_target_response_time_threshold = 1
+  cloudwatch_alarm_actions                        = [aws_sns_topic.alerts.arn]
+  cloudwatch_ok_actions                           = [aws_sns_topic.alerts.arn]
+}
+```
+
+Unhealthy host count is a per-target-group metric, so alarm on it from the service that owns the target group.
 
 ### Integration with ECS Service
 
@@ -250,7 +274,7 @@ spec:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| internal_load_balancer_enabled | If true, the ALB will be internal_load_balancer_enabled (not internet-facing) | `bool` | `false` | no |
+| internal_load_balancer_enabled | If true, the ALB will be internal (not internet-facing) | `bool` | `false` | no |
 | deletion_protection_enabled | If true, the resource cannot be deleted via the AWS API until this is set to false | `bool` | `true` | no |
 | idle_timeout | The time in seconds that the connection is allowed to be idle (1-4000) | `number` | `60` | no |
 | http2_enabled | Enable HTTP/2 on the ALB | `bool` | `true` | no |
@@ -300,7 +324,7 @@ spec:
 | access_logs_enabled | Enable access logging for the ALB | `bool` | `false` | no |
 | access_logs_bucket_arn | Existing S3 bucket ARN for access logs (creates new if null) | `string` | `null` | no |
 | access_logs_prefix | S3 prefix for access logs | `string` | `""` | no |
-| access_logs_retention_days | Days to retain access logs in S3 | `number` | `90` | no |
+| access_logs_retention_days | Days to retain access logs in S3 | `number` | `365` | no |
 | access_logs_kms_key_id | KMS key ID for S3 bucket encryption (uses AES256 if null) | `string` | `null` | no |
 | access_logs_versioning_enabled | Enable versioning for the access logs S3 bucket | `bool` | `false` | no |
 
@@ -311,12 +335,28 @@ spec:
 | waf_association_enabled | Whether to associate a WAF Web ACL with the ALB | `bool` | `false` | no |
 | web_acl_arn | The ARN of a WAFv2 Web ACL to associate with the ALB | `string` | `null` | no |
 
+### CloudWatch Alarms
+
+CloudWatch alarms are enabled by default. Set the creation toggle to `false` only when equivalent monitoring exists elsewhere. Existing explicit opt-outs remain disabled. Upgrading creates alarms on the next apply and incurs CloudWatch charges. Configure SNS action ARNs or an external EventBridge relay for notifications.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| cloudwatch_alarms_creation_enabled | Create alarms for ELB 5xx, target 5xx, and target response time | `bool` | `true` | no |
+| cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
+| cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
+| cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime in seconds above which the alarm fires (> 0) | `number` | `1` | no |
+| cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
+| cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
+| cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
+
 ## Outputs
 
 ### Application Load Balancer
 
 | Name | Description |
 |------|-------------|
+| load_balancer_name | The name of the Application Load Balancer, as passed in `name` |
 | alb_id | The ID of the Application Load Balancer |
 | alb_arn | The ARN of the Application Load Balancer |
 | alb_arn_suffix | The ARN suffix of the ALB for use with CloudWatch Metrics |
@@ -334,6 +374,7 @@ spec:
 
 | Name | Description |
 |------|-------------|
+| security_group_name | The name of the ALB security group |
 | security_group_id | The ID of the ALB security group |
 | security_group_arn | The ARN of the ALB security group |
 
@@ -343,6 +384,12 @@ spec:
 |------|-------------|
 | access_logs_bucket_name | The name of the S3 bucket for access logs (null if disabled or using existing) |
 | access_logs_bucket_arn | The ARN of the S3 bucket for access logs (null if disabled or using existing) |
+
+### CloudWatch Alarms
+
+| Name | Description |
+|------|-------------|
+| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `elb_5xx`, `target_5xx`, and `target_response_time` (empty when disabled) |
 
 ## Architecture
 

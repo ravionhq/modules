@@ -16,6 +16,9 @@
     - description: Deploy an image from a registry configured on this module. Provide only the tag or digest at deploy time.
       label: Pull from image registry
       value: image_registry
+    - description: Ravion manages an ECR repository that a pipeline build step pushes to. Provide only the tag or digest at deploy time.
+      label: Managed ECR repository
+      value: ecr
 - $template: ./build-git-source.yml
   with:
     show_when:
@@ -48,7 +51,9 @@
   required: false
   default: []
   show_when:
-    build_source: image_registry
+    build_source:
+      - image_registry
+      - ecr
 - $template: ./dockerfile-build.yml
   with:
     show_when:

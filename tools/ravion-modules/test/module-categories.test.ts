@@ -34,5 +34,26 @@ describe("module categories", () => {
       getModuleCategoriesForDefinitionType("rvn-ecs-nlb").map((category) => category.givenId),
       ["web-server", "tcp-udp-server"],
     );
+    assert.deepEqual(
+      getModuleCategoriesForDefinitionType("rvn-eks-web").map((category) => category.givenId),
+      ["web-server"],
+    );
+    assert.deepEqual(
+      getModuleCategoriesForDefinitionType("rvn-eks-cron").map((category) => category.givenId),
+      ["worker"],
+    );
+    assert.deepEqual(
+      getModuleCategoriesForDefinitionType("rvn-eks-worker").map((category) => category.givenId),
+      ["worker"],
+    );
+  });
+
+  it("groups EKS infrastructure definitions with clusters", () => {
+    for (const definitionType of ["rvn-eks-cluster", "rvn-eks-addons"]) {
+      assert.deepEqual(
+        getModuleCategoriesForDefinitionType(definitionType).map((category) => category.givenId),
+        ["cluster"],
+      );
+    }
   });
 });

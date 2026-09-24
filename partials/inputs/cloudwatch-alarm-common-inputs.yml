@@ -1,0 +1,48 @@
+# Shared CloudWatch alarm evaluation and notification inputs.
+# Include after a boolean input with id cloudwatch_alarms_creation_enabled.
+- id: cloudwatch_alarm_evaluation_periods
+  label: Alarm evaluation periods
+  type: number
+  description: Consecutive periods that must breach the threshold.
+  collapsible: true
+  min: 1
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 2
+- id: cloudwatch_alarm_period
+  label: Alarm period
+  type: number
+  description: Use one minute or longer to match the AWS metric frequency.
+  collapsible: true
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 300
+  values:
+    - label: 60 seconds
+      value: 60
+    - label: 5 minutes
+      value: 300
+    - label: 15 minutes
+      value: 900
+    - label: 1 hour
+      value: 3600
+- id: cloudwatch_alarm_actions
+  label: Alarm actions
+  type: string_array
+  description: Invoked when entering the alerting state, for example an SNS topic ARN.
+  add_button_label: Add alarm action ARN
+  collapsible: true
+  placeholder: arn:aws:sns:us-east-1:123456789012:alerts
+  required: false
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+- id: cloudwatch_ok_actions
+  label: OK actions
+  type: string_array
+  description: Invoked when returning to the healthy state, for example an SNS topic ARN.
+  add_button_label: Add OK action ARN
+  collapsible: true
+  placeholder: arn:aws:sns:us-east-1:123456789012:alerts
+  required: false
+  show_when:
+    cloudwatch_alarms_creation_enabled: true

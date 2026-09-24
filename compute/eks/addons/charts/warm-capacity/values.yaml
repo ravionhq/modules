@@ -1,0 +1,25 @@
+enabled: false
+replicas: 8
+
+image:
+  repository: registry.k8s.io/pause
+  tag: 3.10.1
+  pullPolicy: IfNotPresent
+
+priorityClass:
+  name: ravion-warm-capacity
+  value: -10
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+    ephemeral-storage: 1Gi
+
+nodeSelector: {}
+tolerations: []
+topologySpread:
+  enabled: false
+  maxSkew: 1
+  topologyKey: topology.kubernetes.io/zone
+  whenUnsatisfiable: ScheduleAnyway

@@ -603,7 +603,7 @@ variable "performance_insights_kms_key_id" {
 
 variable "cloudwatch_alarms_creation_enabled" {
   type        = bool
-  description = "Create CloudWatch alarms for CPU, storage, and connections."
+  description = "Create CloudWatch alarms for CPU, storage, connections, and read/write IOPS."
   default     = false
 }
 
@@ -626,6 +626,32 @@ variable "cloudwatch_alarm_storage_threshold" {
   validation {
     condition     = var.cloudwatch_alarm_storage_threshold >= 0
     error_message = "The cloudwatch_alarm_storage_threshold must be at least 0."
+  }
+}
+
+variable "cloudwatch_alarm_read_iops_threshold" {
+  description = "Read I/O operations per second threshold. Tune to the workload and instance/storage capacity."
+  type        = number
+  default     = 1000
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_read_iops_threshold > 0
+    error_message = "Read IOPS alarm threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_write_iops_threshold" {
+  description = "Write I/O operations per second threshold. Tune to the workload and instance/storage capacity."
+  type        = number
+  default     = 1000
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_write_iops_threshold > 0
+    error_message = "Write IOPS alarm threshold must be greater than 0."
   }
 }
 

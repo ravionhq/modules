@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aws-load-balancer-controller-crds
+description: CRDs for the AWS Load Balancer Controller, copied verbatim from the upstream aws-load-balancer-controller chart's crds/ directory so Helm upgrades them with the controller.
+type: application
+version: 3.5.0
+appVersion: v3.5.0

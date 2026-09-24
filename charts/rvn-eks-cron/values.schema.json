@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "rvn-eks-cron values",
+  "description": "Public values contract for the Ravion EKS cron chart. Additive changes only within a major version.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "nameOverride": {
+      "type": "string"
+    },
+    "fullnameOverride": {
+      "type": "string"
+    },
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^$|^sha256:[a-f0-9]{64}$"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        }
+      }
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean"
+        }
+      }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podLabels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podSecurityContext": {
+      "type": "object"
+    },
+    "securityContext": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "affinity": {
+      "type": "object"
+    },
+    "volumes": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "volumeMounts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "ravion": {
+      "$ref": "#/definitions/ravion"
+    },
+    "schedule": {
+      "type": "string",
+      "description": "Cron expression. Required."
+    },
+    "timeZone": {
+      "type": "string"
+    },
+    "concurrencyPolicy": {
+      "type": "string",
+      "enum": [
+        "Allow",
+        "Forbid",
+        "Replace"
+      ]
+    },
+    "suspend": {
+      "type": "boolean"
+    },
+    "successfulJobsHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failedJobsHistoryLimit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "startingDeadlineSeconds": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backoffLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeDeadlineSeconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "ttlSecondsAfterFinished": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "restartPolicy": {
+          "type": "string",
+          "enum": [
+            "OnFailure",
+            "Never"
+          ]
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ravion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Reserved for Ravion-generated values. Never contains secret material.",
+      "properties": {
+        "secrets": {
+          "type": "array",
+          "description": "Secret references only. A value never appears here.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "provider",
+              "key"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+                "description": "Environment variable name inside the container."
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "secretsManager",
+                  "parameterStore"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^arn:aws[a-zA-Z-]*:(secretsmanager|ssm):",
+                "description": "Full ARN of the remote secret or parameter."
+              },
+              "property": {
+                "type": "string",
+                "description": "JSON key within the secret payload."
+              },
+              "version": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "secretStores": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Names of the ClusterSecretStores provisioned by the ESO addon. One AWS store serves one service, hence two.",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "ClusterSecretStore",
+                "SecretStore"
+              ]
+            },
+            "secretsManager": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parameterStore": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "secretRefreshInterval": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

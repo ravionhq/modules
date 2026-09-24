@@ -1,0 +1,29 @@
+{{/*
+PodDisruptionBudget. Limits voluntary disruptions (node drains, consolidation,
+cluster upgrades) so they evict this chart's pods gradually instead of all at
+once. It does not affect rolling updates, which the Deployment strategy
+governs.
+
+Rendered only when enabled AND the lowest replica count the chart can run at
+(autoscaling.minReplicas, or replicaCount) is greater than minAvailable. A
+budget with minAvailable >= replicas allows zero evictions, which blocks every
+node drain until someone deletes the budget, so the chart skips it instead.
+
+unhealthyPodEvictionPolicy AlwaysAllow lets a drain evict pods that are not
+Ready (crash-looping, never started) even when the budget is exhausted, so a
+broken pod never holds a node hostage.
+*/}}
+{{- if and .Values.podDisruptionBudget.enabled (gt (int (include "rvn-eks-web.replicaFloor" .)) (int .Values.podDisruptionBudget.minAvailable)) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rvn-eks-web.fullname" . }}
+  labels:
+    {{- include "rvn-eks-web.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- include "rvn-eks-web.selectorLabels" . | nindent 6 }}
+{{- end }}

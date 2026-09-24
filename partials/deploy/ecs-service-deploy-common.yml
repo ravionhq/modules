@@ -20,13 +20,15 @@ pre_deploy: >-
   int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) * 1024))),
   "ephemeral_storage": (module.input.pre_deploy_ephemeral_storage_size_gib ? {size_in_gib:
   module.input.pre_deploy_ephemeral_storage_size_gib} : nil), "task_role_arn": stack.output.task_role_arn,
-  "execution_role_arn": stack.output.execution_role_arn, "capacity_provider_strategy": ((module.input.capacity_provider ==
+  "execution_role_arn": stack.output.execution_role_arn, "capacity_provider_strategy": (get(module.input.advanced_terraform_variables,
+  "capacity_provider_strategies") != nil ? get(module.input.advanced_terraform_variables,
+  "capacity_provider_strategies") : ((module.input.capacity_provider ==
   "fargate" || module.input.additional_fargate_capacity_enabled ? [{capacity_provider:
   module.input.fargate_capacity_provider_name, weight: 1, base: 0}] : []) | concat(module.input.capacity_provider ==
   "fargate_spot" || module.input.additional_fargate_spot_capacity_enabled ? [{capacity_provider:
   module.input.fargate_spot_capacity_provider_name, weight: 1, base: 0}] : []) | concat(module.input.capacity_provider ==
   "ec2" || module.input.additional_ec2_capacity_enabled ? [{capacity_provider: module.input.ec2_capacity_provider_name,
-  weight: 1, base: 0}] : [])), "network_configuration": {"awsvpc_configuration": {"subnets":
+  weight: 1, base: 0}] : []))), "network_configuration": {"awsvpc_configuration": {"subnets":
   (module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids),
   "security_groups": ([stack.output.security_group_id] | concat(module.input.security_group_ids != nil ?
   module.input.security_group_ids : [])), "assign_public_ip": (module.input.private_subnet_placement_enabled ?
@@ -41,13 +43,15 @@ post_deploy: >-
   int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) * 1024))),
   "ephemeral_storage": (module.input.post_deploy_ephemeral_storage_size_gib ? {size_in_gib:
   module.input.post_deploy_ephemeral_storage_size_gib} : nil), "task_role_arn": stack.output.task_role_arn,
-  "execution_role_arn": stack.output.execution_role_arn, "capacity_provider_strategy": ((module.input.capacity_provider ==
+  "execution_role_arn": stack.output.execution_role_arn, "capacity_provider_strategy": (get(module.input.advanced_terraform_variables,
+  "capacity_provider_strategies") != nil ? get(module.input.advanced_terraform_variables,
+  "capacity_provider_strategies") : ((module.input.capacity_provider ==
   "fargate" || module.input.additional_fargate_capacity_enabled ? [{capacity_provider:
   module.input.fargate_capacity_provider_name, weight: 1, base: 0}] : []) | concat(module.input.capacity_provider ==
   "fargate_spot" || module.input.additional_fargate_spot_capacity_enabled ? [{capacity_provider:
   module.input.fargate_spot_capacity_provider_name, weight: 1, base: 0}] : []) | concat(module.input.capacity_provider ==
   "ec2" || module.input.additional_ec2_capacity_enabled ? [{capacity_provider: module.input.ec2_capacity_provider_name,
-  weight: 1, base: 0}] : [])), "network_configuration": {"awsvpc_configuration": {"subnets":
+  weight: 1, base: 0}] : []))), "network_configuration": {"awsvpc_configuration": {"subnets":
   (module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids),
   "security_groups": ([stack.output.security_group_id] | concat(module.input.security_group_ids != nil ?
   module.input.security_group_ids : [])), "assign_public_ip": (module.input.private_subnet_placement_enabled ?

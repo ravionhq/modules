@@ -1,0 +1,10 @@
+# PodDisruptionBudget requested on a single fixed replica: the chart skips the
+# budget, because minAvailable >= replicas would block every node drain and
+# there is no way to drain one pod gradually.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-worker
+  tag: v1.2.3
+replicaCount: 1
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
