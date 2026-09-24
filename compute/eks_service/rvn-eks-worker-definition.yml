@@ -4,11 +4,12 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.6.0
+  version: 0.6.1
   description: >-
     Default rolling updates to 100% surge so a full replacement set of worker pods can
     start together when spare capacity is available. Zero-unavailable protection
     remains enabled, and a new advanced surge setting can limit temporary capacity.
+    Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: section_cluster

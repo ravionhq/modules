@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.12.0
-  description: Load-balanced EKS pods now receive traffic sooner during rolling deploys. The AWS Load Balancer Controller moves to 3.5.0, and its CRDs are now upgraded with the controller. Fixes the log collector failing to start. Karpenter, External Secrets, Prometheus, Grafana, Alloy, kube-state-metrics, the OpenTelemetry collectors and kubectl move to their latest versions, and unpinned EBS CSI and CloudWatch add-ons now track the newest compatible release.
+  version: 0.12.1
+  description: Load-balanced EKS pods now receive traffic sooner during rolling deploys. The AWS Load Balancer Controller moves to 3.5.0, and its CRDs are now upgraded with the controller. Fixes the log collector failing to start. Karpenter, External Secrets, Prometheus, Grafana, Alloy, kube-state-metrics, the OpenTelemetry collectors and kubectl move to their latest versions, and unpinned EBS CSI and CloudWatch add-ons now track the newest compatible release. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - id: cluster

@@ -3,8 +3,8 @@ definition:
   name: AWS Compliance
   description: Manages an AWS compliance baseline with GuardDuty threat detection and registry-wide ECR image scanning across selected Regions.
 release:
-  version: 0.1.0
-  description: Enable GuardDuty and registry-wide ECR scan-on-push together across selected AWS Regions.
+  version: 0.1.1
+  description: Enable GuardDuty and registry-wide ECR scan-on-push together across selected AWS Regions. Derive per-input apply-action metadata in the compiled module definition.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
