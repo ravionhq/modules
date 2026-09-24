@@ -334,7 +334,7 @@ locals {
   )
 
   otel_metrics_image_tag = var.otel_collector_image_tag != null ? var.otel_collector_image_tag : (
-    local.metrics_needs_contrib ? var.otel_contrib_image_tag : "v0.49.0"
+    local.metrics_needs_contrib ? var.otel_contrib_image_tag : "v0.50.0"
   )
 
   otel_metrics_command_name = var.otel_collector_command_name != null ? var.otel_collector_command_name : (

@@ -50,7 +50,7 @@ run "patches_kube_dns_by_default" {
     error_message = "The patch must prefer same-zone endpoints."
   }
   assert {
-    condition     = yamldecode(helm_release.coredns_traffic_distribution[0].values[0]).image == { repository = "registry.k8s.io/kubectl", tag = "v1.33.12" }
+    condition     = yamldecode(helm_release.coredns_traffic_distribution[0].values[0]).image == { repository = "registry.k8s.io/kubectl", tag = "v1.36.4" }
     error_message = "The pinned kubectl image must reach the chart split into repository and tag."
   }
 }

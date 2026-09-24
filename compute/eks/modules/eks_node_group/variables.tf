@@ -125,19 +125,19 @@ variable "min_size" {
   default     = 1
 
   validation {
-    condition     = var.min_size >= 0
-    error_message = "The min_size must be 0 or greater."
+    condition     = var.min_size >= 0 && floor(var.min_size) == var.min_size
+    error_message = "The min_size must be a non-negative integer."
   }
 }
 
 variable "desired_size" {
   type        = number
-  description = "Desired number of nodes at creation. Subsequent changes by an autoscaler are ignored to avoid drift."
+  description = "Desired number of nodes at creation, clamped to min_size/max_size. Existing groups preserve their live desired count unless it falls outside the configured bounds."
   default     = 1
 
   validation {
-    condition     = var.desired_size >= 0
-    error_message = "The desired_size must be 0 or greater."
+    condition     = var.desired_size >= 0 && floor(var.desired_size) == var.desired_size
+    error_message = "The desired_size must be a non-negative integer."
   }
 }
 
@@ -147,8 +147,8 @@ variable "max_size" {
   default     = 3
 
   validation {
-    condition     = var.max_size >= 1
-    error_message = "The max_size must be at least 1."
+    condition     = var.max_size >= 1 && floor(var.max_size) == var.max_size
+    error_message = "The max_size must be a positive integer."
   }
 }
 

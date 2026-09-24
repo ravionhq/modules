@@ -17,6 +17,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | ------------- | ----------------- | ---------------------------------------------------------------------- | ------- |
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
+| `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
 | `compute/`    | `autoscaling`     | AWS Auto Scaling groups                                                | v1.0.0  |
 | `compute/`    | `ec2_service`     | Supervised EC2 workloads with configurable rolling deploys, standalone or ECS-cluster ALB routing, target tuning, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
@@ -62,6 +63,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.0.2 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.3.1 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.1 | `networking/alb/` |
+| `rvn-aws-ami` | AMI | v0.1.0 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.2 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.2 | `security/iam/` |
@@ -75,17 +77,17 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v1.6.1 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v1.6.1 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.0.2 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.11.0 | `compute/eks/addons/` |
-| `rvn-eks-cluster` | EKS Cluster | v0.3.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.3.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.5.0 | `compute/eks_service/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.12.0 | `compute/eks/addons/` |
+| `rvn-eks-cluster` | EKS Cluster | v0.3.1 | `compute/eks/` |
+| `rvn-eks-web` | EKS Web Service | v1.3.1 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.6.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.2 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v1.1.3 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.3.1 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.1 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.0.4 | `networking/route53/` |
 | `rvn-s3` | S3 Bucket | v1.0.2 | `storage/s3/` |
-| `rvn-stack` | Terraform Stack | v1.2.5 | `stack/terraform/` |
+| `rvn-stack` | Terraform Stack | v1.3.2 | `stack/terraform/` |
 
 <!-- END GENERATED: module-definitions -->
 
