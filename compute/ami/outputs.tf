@@ -18,12 +18,12 @@ output "component_refs" {
   value       = local.component_refs
 }
 
-output "infrastructure_configuration_arn" {
+output "image_builder_infrastructure_configuration_arn" {
   description = "The ARN of the infrastructure configuration a build runs on."
   value       = aws_imagebuilder_infrastructure_configuration.this.arn
 }
 
-output "distribution_configuration_arn" {
+output "image_builder_distribution_configuration_arn" {
   description = "The ARN of the distribution configuration that names and tags each image in the build region."
   value       = aws_imagebuilder_distribution_configuration.this.arn
 }

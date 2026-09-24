@@ -215,13 +215,13 @@ run "outputs_feed_the_deploy" {
   }
 
   assert {
-    condition     = output.infrastructure_configuration_arn == "arn:aws:imagebuilder:us-west-2:123456789012:infrastructure-configuration/test"
-    error_message = "infrastructure_configuration_arn must name the infrastructure configuration"
+    condition     = output.image_builder_infrastructure_configuration_arn == "arn:aws:imagebuilder:us-west-2:123456789012:infrastructure-configuration/test"
+    error_message = "image_builder_infrastructure_configuration_arn must name the infrastructure configuration"
   }
 
   assert {
-    condition     = output.distribution_configuration_arn == "arn:aws:imagebuilder:us-west-2:123456789012:distribution-configuration/test"
-    error_message = "distribution_configuration_arn must name the distribution configuration"
+    condition     = output.image_builder_distribution_configuration_arn == "arn:aws:imagebuilder:us-west-2:123456789012:distribution-configuration/test"
+    error_message = "image_builder_distribution_configuration_arn must name the distribution configuration"
   }
 
   assert {

@@ -960,8 +960,8 @@ module:
     infrastructure:
       aws_account_id: << module.input.aws_account_id >>
       region: << stack.output.region >>
-      infrastructure_configuration_arn: << stack.output.infrastructure_configuration_arn >>
-      distribution_configuration_arn: << stack.output.distribution_configuration_arn >>
+      image_builder_infrastructure_configuration_arn: << stack.output.image_builder_infrastructure_configuration_arn >>
+      image_builder_distribution_configuration_arn: << stack.output.image_builder_distribution_configuration_arn >>
       components: << stack.output.component_refs >>
       parent_image: >-
         << module.input.parent_image_source == "lookup" ?

@@ -144,8 +144,8 @@ module "image" {
 }
 ```
 
-A deploy reads `region`, `infrastructure_configuration_arn`,
-`distribution_configuration_arn` and `component_refs` from the outputs.
+A deploy reads `region`, `image_builder_infrastructure_configuration_arn`,
+`image_builder_distribution_configuration_arn` and `component_refs` from the outputs.
 
 ## Components
 
@@ -257,8 +257,8 @@ at the bucket root.
 | region | The region images are built in |
 | parent_image | The parent image given, or the lookup's match at apply time |
 | component_refs | Every component this module creates or references, in run order, as `{name, arn, parameters}` |
-| infrastructure_configuration_arn | The ARN of the infrastructure configuration a build runs on |
-| distribution_configuration_arn | The ARN of the build-region distribution configuration |
+| image_builder_infrastructure_configuration_arn | The ARN of the infrastructure configuration a build runs on |
+| image_builder_distribution_configuration_arn | The ARN of the build-region distribution configuration |
 | instance_role_arn | The ARN of the build instance's IAM role |
 | instance_role_name | The name of the build instance's IAM role |
 
