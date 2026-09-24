@@ -1,0 +1,145 @@
+{{- if .Values.volumeExpansion.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ebs-storage.resizerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ebs-storage.resizerName" . }}
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ebs-storage.resizerName" . }}
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "ebs-storage.resizerName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ebs-storage.resizerName" . }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ebs-storage.resizerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+data:
+  resize.sh: |
+    {{- .Files.Get "files/resize.sh" | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ebs-storage.resizerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ebs-storage.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Two resizers patching the same claims would be harmless, but pointless.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ebs-storage.resizerName" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "ebs-storage.resizerName" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: ravion
+      annotations:
+        checksum/script: {{ .Files.Get "files/resize.sh" | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "ebs-storage.resizerName" . }}
+      priorityClassName: system-cluster-critical
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # The kubectl image has no shell. busybox is statically linked, so it
+      # runs from the shared volume inside the kubectl container.
+      initContainers:
+        - name: tools
+          image: {{ .Values.busyboxImage.repository }}:{{ .Values.busyboxImage.tag }}
+          imagePullPolicy: {{ .Values.busyboxImage.pullPolicy }}
+          command: ["/bin/busybox", "sh", "-c", "cp /bin/busybox /tools/busybox && /tools/busybox --install -s /tools"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tools
+              mountPath: /tools
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      containers:
+        - name: resizer
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/tools/sh", "/scripts/resize.sh"]
+          env:
+            - name: PATH
+              value: /tools:/bin:/usr/local/bin:/usr/bin
+            - name: SIZES_ANNOTATION
+              value: {{ include "ebs-storage.sizesAnnotation" . | quote }}
+            - name: INTERVAL_SECONDS
+              value: {{ .Values.volumeExpansion.intervalSeconds | quote }}
+            - name: TMPDIR
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tools
+              mountPath: /tools
+            - name: scripts
+              mountPath: /scripts
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: tools
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: scripts
+          configMap:
+            name: {{ include "ebs-storage.resizerName" . }}
+{{- end }}

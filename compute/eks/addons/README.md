@@ -7,7 +7,7 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 | **Karpenter** | `karpenter_enabled` | `true` | Controller + node IAM roles, Pod Identity association, instance profile, EKS access entry, SQS interruption queue, EventBridge rules (via `modules/eks_karpenter`), plus the `karpenter-crd` and `karpenter` Helm charts and an optional default NodePool |
 | **AWS Load Balancer Controller** | automatic with any load balancer, or `aws_load_balancer_controller_enabled` opt-in | `false` | `aws-load-balancer-controller` Helm chart wired to the Pod Identity role created by the `compute/eks` composite; registers workload pods into shared load balancer target groups (`TargetGroupBinding`); Ingress → ALB, LoadBalancer Service → NLB |
 | **External Secrets Operator** | `eso_enabled` | `true` | `external-secrets` Helm chart + Pod Identity role scoped to Secrets Manager / Parameter Store reads, plus the cluster-scoped `ravion-aws` and `ravion-aws-parameter-store` `ClusterSecretStore`s |
-| **EBS CSI driver** | `ebs_csi_driver_enabled` | `false` | `aws-ebs-csi-driver` EKS add-on + Pod Identity role |
+| **EBS CSI driver** | `ebs_csi_driver_enabled` | `false` | `aws-ebs-csi-driver` EKS add-on + Pod Identity role, plus the local `charts/ebs-storage`: a default encrypted `gp3` StorageClass with volume expansion (`ebs_default_storage_class_enabled`) and online StatefulSet volume growth (`statefulset_volume_expansion_enabled`, Kubernetes 1.36+). See [EBS storage defaults](#ebs-storage-defaults) |
 | **Workload logs** | `logs_providers` | `["loki"]` | Per destination. `loki`: an S3 bucket with a retention lifecycle rule, a Pod Identity role scoped to it, Loki in single-binary mode, and Grafana Alloy as a collection DaemonSet. `cloudwatch` and every vendor: an OpenTelemetry contrib DaemonSet with one exporter each. `[]` installs nothing |
 | **Workload metrics** | `metrics_providers` | `["amp"]` | Per destination. `amp`: an Amazon Managed Prometheus workspace, a Pod Identity role scoped to `aps:RemoteWrite` on it, `kube-state-metrics`, and an OpenTelemetry collector scraping a curated allow-list. Vendors: one more exporter on the same collector. `cloudwatch`: the `amazon-cloudwatch-observability` add-on. `[]` installs nothing |
 | **CloudWatch (Container Insights)** | `cloudwatch` in either provider list | not selected | `amazon-cloudwatch-observability` EKS add-on + Pod Identity role, with **Auto-Monitor off**: the Fluent Bit half only when it is a logs destination, the metrics agent only when it is a metrics destination |
@@ -17,7 +17,7 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 | **Ravion Operator** | `ravion_operator_enabled` | `false` | Enrolls the cluster, stores its credential and installs the public `operator` chart. Supports optional digest-pinned executor Jobs, HA coordinators and explicit full-cluster management. |
 | **Shared load balancers** | `public_alb_creation_enabled`, `private_alb_creation_enabled`, `public_nlb_creation_enabled`, `private_nlb_creation_enabled` | `false` | Terraform-managed ALBs/NLBs (via `networking/alb` and `networking/nlb`) that workloads attach to with the load balancer controller's `TargetGroupBinding` CRD, plus cluster security group ingress rules allowing each load balancer to reach pods |
 
-The [`compute/eks`](..) composite intentionally creates none of these, so clusters only carry what they use. EBS CSI and Container Insights are native EKS add-ons installed purely through the AWS API. Karpenter, the AWS Load Balancer Controller, the External Secrets Operator, Ravion Operator, and the metrics and logs pipelines additionally install Helm charts, which are the only parts that need Kubernetes API connectivity.
+The [`compute/eks`](..) composite intentionally creates none of these, so clusters only carry what they use. EBS CSI and Container Insights are native EKS add-ons installed purely through the AWS API. Karpenter, the AWS Load Balancer Controller, the External Secrets Operator, Ravion Operator, the metrics and logs pipelines, and the EBS storage defaults additionally install Helm charts, which are the only parts that need Kubernetes API connectivity.
 
 > **Connectivity contract (Helm add-ons only):** the machine running Terraform must be able to reach the cluster's Kubernetes API endpoint. For private-endpoint clusters, run inside the cluster VPC with the composite's Ravion Runner security group (`ravion_runner_security_group_id` output) attached, and have the AWS CLI on PATH for `aws eks get-token`. With `karpenter_enabled`, `eso_enabled`, `aws_load_balancer_controller_enabled`, `ravion_operator_enabled`, and all four load balancer creation toggles off, no cluster connectivity is needed. `ravion_operator_enabled` additionally requires reachability to the Ravion API from the Terraform runner, because the `ravion` provider mints the agent's credential during the run — but nothing beyond the provider binary: no `curl`, no API-token input.
 >
@@ -31,6 +31,17 @@ replacing nodes, unless explicitly included in
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
+
+## EBS storage defaults
+
+With `ebs_csi_driver_enabled`, the local `charts/ebs-storage` release (in `kube-system`) adds two things. Both are on by default.
+
+- **`gp3` StorageClass** (`ebs_default_storage_class_enabled`): encrypted gp3 volumes with `allowVolumeExpansion: true` and `WaitForFirstConsumer` binding, annotated as the cluster default. EKS stopped creating a default class in 1.30. If a class named `gp3` that this release doesn't own already exists, the install fails.
+- **Online StatefulSet volume growth** (`statefulset_volume_expansion_enabled`, Kubernetes 1.36+): the API server rejects every change to `spec.volumeClaimTemplates`, so raising a chart's volume size fails the Helm upgrade. The chart fixes this in two parts.
+  - A `MutatingAdmissionPolicy` matches StatefulSet updates whose only template change is a larger storage request. It records the requested sizes in the `ravion.com/volume-claim-template-sizes` annotation and reverts the templates to their stored value. Mutating admission runs before update validation, so the rest of the update is applied. Any other template change still fails as before. `failurePolicy: Ignore` means a policy error also falls back to the API server's rejection, rather than blocking StatefulSet updates.
+  - A resizer Deployment (the kubectl image, with a shell copied in from busybox) patches each bound PersistentVolumeClaim of ordinals `0..replicas-1` up to the recorded size every 30 seconds. That includes claims a later scale-up creates at the template's original size. The EBS CSI driver and kubelet expand the volume and filesystem online, so pods are not restarted.
+
+  On clusters older than 1.36, the feature is skipped and a `check` warning is shown. EBS allows one modification per volume every six hours, so a second increase inside that window is applied when the window ends. A Helm upgrade that raised the size and then rolled back leaves the claims at the larger size, because claims can't shrink.
 
 ## Interruption queue monitoring
 
@@ -587,7 +598,7 @@ failed during initialization have no provider resources to migrate.
 | region | AWS region. When null, the provider's configured region is used. | `string` | `null` | no |
 | tags | Tags applied to created resources and Karpenter-launched instances. | `map(string)` | `{}` | no |
 | topology_aware_routing_enabled | Patch `kube-dns` with `trafficDistribution: PreferClose` so DNS stays zone-local (CoreDNS pods are spread by `compute/eks`). | `bool` | `true` | no |
-| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
+| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs and the volume resizer. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
 | aws_load_balancer_controller_enabled | Install the AWS Load Balancer Controller without any shared load balancer (it installs automatically with one). | `bool` | `false` | no |
@@ -621,6 +632,9 @@ failed during initialization have no provider resources to migrate.
 | eso_helm_values | Extra YAML docs merged into the external-secrets chart values. | `list(string)` | `[]` | no |
 | ebs_csi_driver_enabled | Install the aws-ebs-csi-driver add-on + Pod Identity role. | `bool` | `false` | no |
 | ebs_csi_addon_version / ebs_csi_addon_configuration_values | EBS CSI pin / JSON overrides. Null tracks the latest version compatible with the cluster. | `string` | `null` | no |
+| ebs_default_storage_class_enabled | Create the encrypted, expandable `gp3` StorageClass and make it the cluster default (with EBS CSI). | `bool` | `true` | no |
+| statefulset_volume_expansion_enabled | Grow StatefulSet volumes online when a deploy raises their `volumeClaimTemplates` storage (with EBS CSI, Kubernetes 1.36+). | `bool` | `true` | no |
+| busybox_image | Static busybox image that supplies a shell to the volume resizer. | `string` | `"public.ecr.aws/docker/library/busybox:1.37.0-musl"` | no |
 | logs_providers | Where container logs go: any of `loki`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns logs off. Null falls back to the deprecated `logs_enabled`. | `list(string)` | `["loki"]` | no |
 | metrics_providers | Where metrics go: any of `amp`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns metrics off. Null falls back to the deprecated `metrics_enabled`. | `list(string)` | `["amp"]` | no |
 | observability_namespace | Namespace for the collectors, the log store, and the materialized vendor credentials. Null shares Ravion Operator's namespace, which is what keeps Loki's Service URL stable. | `string` | `null` | no |
@@ -733,6 +747,8 @@ All outputs are null when the corresponding add-on is disabled.
 | eso_role_arn | External Secrets Operator Pod Identity role. |
 | eso_secrets_manager_store_name / eso_parameter_store_store_name | `ClusterSecretStore` names workload charts reference. |
 | ebs_csi_addon_version / ebs_csi_role_arn | EBS CSI add-on version and Pod Identity role. |
+| default_storage_class_name | `gp3` when the default StorageClass is created, otherwise null. |
+| statefulset_volume_expansion_enabled | Whether online StatefulSet volume growth is installed. |
 | cloudwatch_observability_addon_version / cloudwatch_observability_role_arn | CloudWatch Observability add-on version and Pod Identity role. |
 | cloudwatch_application_signals_namespaces | Namespaces Application Signals was asked for. Auto-Monitor stays cluster-wide-off when this is non-empty; annotate exactly these. |
 | logs_providers / metrics_providers | The destinations selected, as given. |

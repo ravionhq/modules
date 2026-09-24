@@ -1,0 +1,31 @@
+# -- gp3 StorageClass backed by the EBS CSI driver. Volume expansion is
+# allowed so that PersistentVolumeClaims can grow online.
+storageClass:
+  enabled: true
+  name: gp3
+  # -- Mark the class as the cluster default, so a PersistentVolumeClaim
+  # that names no class gets gp3. Where another default exists, Kubernetes
+  # 1.26+ picks the most recently created one.
+  default: true
+
+# -- Online expansion of StatefulSet volumes. A MutatingAdmissionPolicy lets
+# a StatefulSet update through when the only volumeClaimTemplate change is a
+# larger storage request, and a resizer grows the existing
+# PersistentVolumeClaims to match. Needs Kubernetes 1.36+.
+volumeExpansion:
+  enabled: true
+  # -- Seconds between resizer passes.
+  intervalSeconds: 30
+
+# -- kubectl image the resizer runs. It has no shell, so busybox supplies one.
+image:
+  repository: registry.k8s.io/kubectl
+  tag: v1.36.4
+  pullPolicy: IfNotPresent
+
+# -- Statically linked busybox, copied into the resizer pod by an init
+# container to provide sh and awk.
+busyboxImage:
+  repository: public.ecr.aws/docker/library/busybox
+  tag: 1.37.0-musl
+  pullPolicy: IfNotPresent
