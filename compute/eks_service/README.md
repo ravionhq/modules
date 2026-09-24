@@ -2,7 +2,7 @@
 
 The AWS-side infrastructure for a single EKS workload: an optional ECR repository, an optional workload-specific EKS Fargate profile, plus an optional Application Load Balancer attachment made of one IP-mode `aws_lb_target_group` and one `aws_lb_listener_rule` on a shared listener created by [`compute/eks/addons`](../eks/addons).
 
-Each part is independently optional, which is what lets one root module serve all three EKS workload definitions. Selecting Fargate adds a profile and pod execution role to any row below; omitting `fargate_profile` leaves scheduling to existing cluster compute:
+Each part is independently optional, which is what lets one root module serve all four EKS workload definitions. Selecting Fargate adds a profile and pod execution role to any row below; omitting `fargate_profile` leaves scheduling to existing cluster compute:
 
 | Caller | `ecr_repository_creation_enabled` | `listener_arn` | Creates |
 |--------|-----------------------------------|----------------|---------|
@@ -10,6 +10,9 @@ Each part is independently optional, which is what lets one root module serve al
 | `rvn-eks-web`, registry image | `false` | set | Target group, listener rule |
 | `rvn-eks-worker`, `rvn-eks-cron`, Dockerfile or Railpack build | `true` | `null` | ECR repository |
 | `rvn-eks-worker`, `rvn-eks-cron`, registry image | `false` | `null` | Nothing |
+| `rvn-eks-chart` (third-party chart) | `false` | `null` | Nothing |
+
+`rvn-eks-chart` deploys a third-party chart from an HTTP Helm repository or an OCI registry. It uses this module only for the optional Pod Identity role and for the destroy-time `helm uninstall` of its release.
 
 This mirrors `compute/ecs_service`, where one root module serves web, worker, and NLB services, gating ECR on `ecr_repository_creation_enabled` and the load balancer on a nullable `load_balancer_attachment`.
 

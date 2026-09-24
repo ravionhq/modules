@@ -1,0 +1,394 @@
+global: false
+definition:
+  type: rvn-eks-chart
+  name: EKS Helm Chart
+  description: Install any third-party Helm chart from an HTTP Helm repository or an OCI registry onto an EKS cluster, with full control over the chart's values.
+release:
+  version: 0.1.0
+  description: Install third-party Helm charts from HTTP repositories or OCI registries onto an EKS cluster, with any chart value configurable.
+module:
+  inputs:
+    - id: section_cluster
+      label: EKS cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-eks-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/eks-workload-cluster-mapped-inputs.yml
+      required: true
+    - id: section_release
+      label: Helm release
+      type: section
+    - $template: ../../partials/templates/eks-workload-release-inputs.yml
+      with:
+        name_description: Name of the Helm release. Charts usually prefix the Kubernetes objects they create with it.
+    - id: section_chart
+      label: Chart
+      type: section
+    - id: chart_source_type
+      label: Chart source
+      type: string
+      required: true
+      default: http
+      values:
+        - description: A classic Helm repository served over HTTP(S), the kind added with helm repo add
+          label: Helm repository
+          value: http
+        - description: A chart published to an OCI registry, such as ECR, GHCR or Docker Hub
+          label: OCI registry
+          value: oci
+    - id: chart_repository_url
+      label: Repository URL
+      type: string
+      description: URL of the Helm repository, the same URL you would pass to helm repo add.
+      placeholder: https://nats-io.github.io/k8s/helm/charts/
+      required: true
+      show_when:
+        chart_source_type: http
+      patterns:
+        - message: An http:// or https:// URL.
+          pattern: ^https?://\S+$
+    - id: chart_name
+      label: Chart name
+      type: string
+      description: Name of the chart within the repository.
+      placeholder: nats
+      required: true
+      show_when:
+        chart_source_type: http
+      patterns:
+        - message: A chart name without the repository prefix, such as nats rather than nats/nats.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+    - id: chart_url
+      label: Chart URL
+      type: string
+      description: Full OCI reference of the chart, without a version tag.
+      placeholder: oci://registry-1.docker.io/bitnamicharts/redis
+      required: true
+      show_when:
+        chart_source_type: oci
+      patterns:
+        - message: An oci:// reference without a tag, such as oci://registry-1.docker.io/bitnamicharts/redis.
+          pattern: ^oci://[^\s:]+(:[0-9]+)?/[^\s:@]+$
+    - id: chart_version
+      label: Chart version
+      type: string
+      description: >-
+        Version of the Helm chart to install. This is the chart's own version, not the version of the
+        app it installs. To list versions, run helm search repo <repo>/<chart> --versions for a Helm
+        repository, or helm show chart <chart URL> for an OCI registry. You can also look the chart
+        up on artifacthub.io. Pin an exact version so that deploys are reproducible. If you leave it
+        blank, each deploy installs whatever the repository marks as latest.
+      placeholder: 2.15.0
+      required: false
+    - id: chart_registry_credentials
+      label: Registry credentials
+      type: object
+      description: >-
+        Credentials for a private Helm repository or OCI registry, as username and password references
+        to Parameter Store or Secrets Manager. Ravion resolves them on the deploy runner and never
+        stores their values. Leave blank for public charts.
+      collapsible: true
+      required: false
+      placeholder: |-
+        {
+          "username": {
+            "from_parameter_store": "/charts/registry-username"
+          },
+          "password": {
+            "from_secrets_manager": {
+              "key": "charts-registry",
+              "json_key": "password"
+            }
+          }
+        }
+    - id: section_values
+      label: Chart values
+      type: section
+    - id: values
+      label: Values
+      type: object
+      description: >-
+        Helm values for the chart, written as JSON. This is the same document you would pass with
+        --values, merged over the chart's defaults. Any value the chart supports can be set here,
+        including nested keys and lists. The top-level key ravion is reserved.
+      required: false
+      default: {}
+      placeholder: |-
+        {
+          "config": {
+            "cluster": {
+              "enabled": true,
+              "replicas": 3
+            },
+            "jetstream": {
+              "enabled": true
+            }
+          }
+        }
+    - id: section_iam
+      label: AWS permissions
+      type: section
+    - id: pod_identity_role_creation_enabled
+      label: Create IAM role
+      type: boolean
+      description: >-
+        Create an IAM role and bind it through EKS Pod Identity to a ServiceAccount the chart creates.
+        The AWS SDK in those pods then gets short-lived credentials for the role without any keys.
+        Leave this off if the chart does not call AWS APIs.
+      default: false
+    - id: pod_identity_service_account_name
+      label: ServiceAccount name
+      type: string
+      description: >-
+        Name of the ServiceAccount the chart creates in the release namespace. The role is bound to
+        this ServiceAccount. Leave blank to use the release name, which many charts use by default.
+        Check the chart's serviceAccount.name value to be sure.
+      required: false
+      show_when:
+        pod_identity_role_creation_enabled: true
+      patterns:
+        - message: 1-253 lowercase letters, numbers, dots and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$
+    - id: pod_identity_role_name
+      label: IAM role name
+      type: string
+      description: Name of the IAM role. Leave blank to use <release name>-task. IAM role names must be unique within an account.
+      collapsible: true
+      required: false
+      show_when:
+        pod_identity_role_creation_enabled: true
+      patterns:
+        - message: 1-64 characters of letters, digits and + = , . @ _ -
+          pattern: ^[\w+=,.@-]{1,64}$
+    - id: pod_identity_managed_policy_arns
+      label: IAM policy ARNs
+      type: string_array
+      description: Managed IAM policy ARNs to attach to the role.
+      add_button_label: Add policy ARN
+      placeholder: arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      collapsible: true
+      required: false
+      default: []
+      show_when:
+        pod_identity_role_creation_enabled: true
+    - id: pod_identity_inline_policies
+      label: IAM inline policies
+      type: object
+      description: Inline IAM policy documents to attach to the role, keyed by policy name.
+      collapsible: true
+      required: false
+      show_when:
+        pod_identity_role_creation_enabled: true
+      placeholder: |-
+        {
+          "read-bucket": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject"],
+                "Resource": "arn:aws:s3:::my-bucket/*"
+              }
+            ]
+          }
+        }
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    # compute/eks_service with no image repository, load balancer or Fargate
+    # profile. The stack exists for two things: the optional Pod Identity
+    # role, and the destroy-time `helm uninstall` of the release, which runs
+    # from the Terraform runner through the cluster's Ravion Runner security
+    # group.
+    $template: ../../partials/templates/opentofu-stack-with-runner-security-group.yml
+    with:
+      base_path: compute/eks_service
+      runner_security_group_id: << module.input.ravion_runner_security_group_id >>
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        name: << module.input.name >>
+        region: << module.input.aws_region >>
+        vpc_id: << module.input.vpc_id >>
+        listener_arn: null
+        ecr_repository_creation_enabled: false
+        workload_release_cleanup_enabled: true
+        cluster_name: << module.input.cluster_name >>
+        ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
+        release_name: << module.input.name >>
+        release_namespace: << module.input.namespace >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        pod_identity_role_creation_enabled: << module.input.pod_identity_role_creation_enabled >>
+        pod_identity_role_name: << module.input.pod_identity_role_name >>
+        pod_identity_service_account_name: << module.input.pod_identity_service_account_name >>
+        pod_identity_managed_policy_arns: '<< module.input.pod_identity_managed_policy_arns != nil ? module.input.pod_identity_managed_policy_arns : [] >>'
+        pod_identity_inline_policies: '<< module.input.pod_identity_inline_policies != nil ? module.input.pod_identity_inline_policies : {} >>'
+  deploy:
+    # The infrastructure block matches partials/deploy/eks-workload-deploy-common.yml.
+    # That partial is not reused because it declares the image_ref deploy
+    # input, and a third-party chart has no image for Ravion to deploy.
+    type: aws:eks
+    concurrency:
+      queue_overflow: oldest
+      queue_size: 1
+    timeout: 1800
+    infrastructure:
+      cluster_arn: << module.input.cluster_arn >>
+      cluster_name: << module.input.cluster_name >>
+      cluster_endpoint: << module.input.cluster_endpoint >>
+      cluster_certificate_authority_data: << module.input.cluster_certificate_authority_data >>
+      ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
+      execution_environment_id: << deploy.input.execution_environment_id || module.input.execution_environment_id >>
+      execution_environment_overrides:
+        security_group: << module.input.ravion_runner_security_group_id >>
+    inputs:
+      - id: chart_version
+        label: Chart version
+        type: string
+        description: >-
+          Chart version to install for this deploy. Defaults to the version configured on the module.
+          Leave both blank to install the latest version.
+        required: false
+        default: << module.input.chart_version >>
+      - id: execution_environment_id
+        label: Execution environment
+        type: string
+        description: >-
+          Execution environment the deploy runner launches into to reach the Kubernetes API. Leave
+          empty to use the environment inherited from the EKS cluster, or the default environment of
+          the account that owns the cluster. Its region must match the cluster region.
+        collapsible: true
+        required: false
+        default: << module.input.execution_environment_id >>
+        values: $values:ravion/execution_environments
+    definition:
+      type: helm
+      release_name: << module.input.name >>
+      namespace: << module.input.namespace >>
+      create_namespace: '<< module.input.namespace_creation_enabled != nil ? module.input.namespace_creation_enabled : true >>'
+      # The source type decides which fields the chart source may carry, so the
+      # whole object is built in one expression rather than field by field.
+      source: >-
+        << module.input.chart_source_type == "oci" ? {"type": "oci", "chart_url": module.input.chart_url,
+        "version": deploy.input.chart_version || module.input.chart_version, "credentials":
+        module.input.chart_registry_credentials} : {"type": "http", "repo_url": module.input.chart_repository_url,
+        "chart_name": module.input.chart_name, "version": deploy.input.chart_version || module.input.chart_version,
+        "credentials": module.input.chart_registry_credentials} >>
+      values: '<< module.input.values != nil ? module.input.values : {} >>'
+  readme: |
+    Install any third-party Helm chart onto an EKS cluster: NATS, Redis, Grafana, cert-manager, or anything else published to a Helm repository or an OCI registry.
+
+    ## Overview
+
+    EKS Helm Chart deploys a chart you don't maintain onto an existing Ravion EKS cluster. Point it at a chart and a version, write the values you want in JSON, and Ravion installs the release. Each deploy runs `helm upgrade --install --atomic`, so a failed deploy rolls back to the previous revision automatically.
+
+    Unlike EKS Web Service and EKS Worker, this module has no build and no image. The chart decides which Kubernetes resources to create, and your values configure them.
+
+    Terraform source: [ravionhq/modules/compute/eks_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/eks_service)
+
+    ## Use cases
+
+    | Scenario | EKS Helm Chart helps by... |
+    | -------- | -------------------------- |
+    | Messaging and streaming | Running NATS, RabbitMQ or Kafka inside the cluster |
+    | Caches and datastores | Installing Redis, Valkey or other stateful charts |
+    | Cluster tooling | Adding operators and controllers that are not EKS add-ons |
+    | Vendor agents | Installing an agent chart that a vendor publishes |
+
+    ## Prerequisites
+
+    - An **EKS Cluster** module.
+    - For charts with persistent volumes, a storage driver such as the **EBS CSI** add-on on the EKS Add-ons module.
+    - For **Create IAM role**, the `eks-pod-identity-agent` add-on on the cluster.
+
+    ## Chart source
+
+    | Chart source | Fields | Example |
+    | ------------ | ------ | ------- |
+    | Helm repository | **Repository URL** and **Chart name** | `https://nats-io.github.io/k8s/helm/charts/` and `nats` |
+    | OCI registry | **Chart URL** | `oci://registry-1.docker.io/bitnamicharts/redis` |
+
+    **Chart version** is the chart's own version from its `Chart.yaml`. It is not the version of the app the chart installs (`appVersion`), though some charts, such as NATS, keep the two in step. To find the available versions:
+
+    | Chart source | How to list versions |
+    | ------------ | -------------------- |
+    | Helm repository | `helm repo add <repo> <repository URL>`, then `helm search repo <repo>/<chart> --versions`. The repository's `index.yaml` lists the same versions. |
+    | OCI registry | `helm show chart <chart URL>` for the latest version, or the registry's tag list for every version |
+    | Either | Search for the chart on [Artifact Hub](https://artifacthub.io), which shows its versions, release notes and default values |
+
+    Chart version pins the release to one chart version. If you leave it blank, each deploy installs whatever the repository marks as latest, so a redeploy can upgrade the chart without warning. Pin a version for anything you run in production. You can also override the version for a single deploy.
+
+    For a private repository or registry, set **Registry credentials** to a username and password pair. Each one is a reference to Parameter Store (`from_parameter_store`) or Secrets Manager (`from_secrets_manager`), never the value itself. Ravion resolves them on the deploy runner.
+
+    ## Chart values
+
+    **Values** is the JSON form of a Helm values file. Ravion passes it to Helm as `--values`, and Helm merges it over the chart's defaults. Any value the chart supports can be set this way, including nested objects and lists. To find the available values, see the chart's `values.yaml` or run `helm show values <chart>`.
+
+    For example, a three-node NATS cluster with JetStream enabled:
+
+    ```json
+    {
+      "config": {
+        "cluster": { "enabled": true, "replicas": 3 },
+        "jetstream": {
+          "enabled": true,
+          "fileStore": { "pvc": { "size": "20Gi", "storageClassName": "gp3" } }
+        }
+      },
+      "podDisruptionBudget": { "enabled": true }
+    }
+    ```
+
+    The top-level key `ravion` is reserved, and a deploy whose values set it fails. Values are stored in the Helm release, so don't put secrets in them. Reference a Kubernetes Secret that the chart can read instead, for example one created by the External Secrets Operator.
+
+    ## AWS permissions
+
+    **Create IAM role** creates an IAM role and binds it through EKS Pod Identity to a ServiceAccount in the release namespace. Set **ServiceAccount name** to the ServiceAccount the chart creates. This is usually the release name, but check the chart's `serviceAccount.name` value. The role's trust policy only accepts pods in this cluster and account.
+
+    ## Deployment
+
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or the cluster stays on the previous revision. Deploys collapse: if several are queued, only the newest runs.
+
+    Destroying the module's stack runs `helm uninstall` on the release. The namespace is never deleted, because other releases may share it. Some charts leave PersistentVolumeClaims behind on uninstall. Delete them yourself if you no longer need the data.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | ----- | -------- | ------- | ----------- |
+    | Cluster | Yes | - | Existing rvn-eks-cluster module instance |
+    | Service name | Yes | {project}-{env}-{module} | Helm release name |
+    | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
+    | Create namespace | No | true | Create the namespace if it does not exist |
+    | Chart source | Yes | Helm repository | Helm repository or OCI registry |
+    | Repository URL | Yes* | - | Helm repository URL, for Helm repository sources |
+    | Chart name | Yes* | - | Chart name within the repository, for Helm repository sources |
+    | Chart URL | Yes* | - | `oci://` chart reference, for OCI registry sources |
+    | Chart version | No | Latest | Chart version to install |
+    | Registry credentials | No | - | Username and password references for a private source |
+    | Values | No | {} | Helm values as JSON, merged over the chart's defaults |
+    | Create IAM role | No | false | Create an IAM role bound to the chart's ServiceAccount through EKS Pod Identity |
+    | ServiceAccount name | No | Release name | ServiceAccount the role is bound to |
+    | IAM role name | No | {release}-task | Explicit role name |
+    | IAM policy ARNs | No | [] | Managed policy ARNs attached to the role |
+    | IAM inline policies | No | - | Inline policy documents keyed by name |
+    | Tags | No | Standard Ravion tags | Additional tags applied to AWS resources |
+    | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
+    | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
+    | Ravion Terraform workspace name | No | {project}-{env}-{module} | Override the state backend workspace name |
+
+    ## Design decisions
+
+    - **Values are a single JSON document.** A chart's values can be any shape. A single document covers all of them, and it maps directly onto the values file that the chart's own documentation describes.
+    - **No Git chart source.** EKS Web Service, EKS Worker and EKS Cron already cover charts you build yourself. This module is for charts someone else publishes.
+    - **No Ravion secret injection.** EKS Web Service and EKS Worker render an ExternalSecret from secret references. A third-party chart does not know about that mechanism, so this module does not offer it.
+    - **Name and namespace are fixed after creation.** Together they identify the Helm release that rollback, history and uninstall target.
+
+    ## Learn more
+
+    - [Helm values files](https://helm.sh/docs/chart_template_guide/values_files/)
+    - [Helm OCI registries](https://helm.sh/docs/topics/registries/)
+    - [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html)
