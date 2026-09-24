@@ -58,9 +58,9 @@ module:
       type: string
     - add_button_label: Add owner
       default: []
-      description: AWS account IDs or owner aliases (amazon, aws-marketplace) that publish the parent image.
+      description: The accounts that publish the parent image. The lookup considers only images these accounts own. Enter AWS account IDs, such as 136693071363 for Debian or 099720109477 for Canonical's Ubuntu, or the aliases amazon, aws-marketplace, or self for this account's own images.
       id: parent_image_owners
-      label: Image owners
+      label: Parent image owners
       placeholder: "123456789012"
       required: true
       show_when:
@@ -765,14 +765,16 @@ module:
     - id: section_build
       label: Build infrastructure
       type: section
-    - add_button_label: Add instance type
-      default:
+    - default:
         - m7i.large
       description: Instance types a build may run on, in order of preference. They must match the parent image's architecture.
       id: instance_types
       label: Instance types
+      no_options_message: Select an AWS account and region to load the instance types available there.
+      placeholder: Select an instance type
       required: true
       type: string_array
+      values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&costUnit=minute
     - collapsible: true
       description: Subnet the build instance launches in. It needs outbound access to Systems Manager, Image Builder, S3, and whatever the components download. Leave blank to use the default VPC.
       id: subnet_id
