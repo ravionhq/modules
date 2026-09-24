@@ -82,28 +82,6 @@ jobs:
         run: npm test
         working-directory: tools/ravion-modules
 
-      - name: Check out trusted module tooling
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: main
-          path: trusted-tools
-          sparse-checkout: tools/ravion-modules
-          sparse-checkout-cone-mode: true
-
-      - name: Install trusted tool dependencies
-        run: npm ci --ignore-scripts
-        working-directory: trusted-tools/tools/ravion-modules
-
-      - name: Build trusted tools
-        run: npm run typecheck && ./node_modules/.bin/tsc
-        working-directory: trusted-tools/tools/ravion-modules
-
-      - name: Use trusted tools for API calls
-        run: |
-          rm -rf tools/ravion-modules/dist tools/ravion-modules/node_modules
-          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/dist" tools/ravion-modules/dist
-          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/node_modules" tools/ravion-modules/node_modules
-
       - name: Generate publish dry-run plan
         id: publish_plan
         continue-on-error: true
