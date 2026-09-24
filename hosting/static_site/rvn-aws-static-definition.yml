@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.1.3
-  description: Enable CloudFront 5xx error-rate alarms and retain access logs for 365 days by default.
+  version: 1.2.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   build:
     builder: >-

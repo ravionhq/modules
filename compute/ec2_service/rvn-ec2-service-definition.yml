@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.6.1
-  description: Document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 1.7.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   inputs:
     - id: network

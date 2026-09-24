@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.3.1
-  description: Default rolling updates to 100% surge and Kubernetes readiness checks to every second with no initial delay, so a full replacement set starts together and takes traffic seconds after the app starts. Zero-unavailable protection remains enabled, readiness still tolerates about 30 seconds of failed checks before removing a pod, and every setting can still be changed.
+  version: 1.4.0
+  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
 module:
   inputs:
     - id: section_cluster
