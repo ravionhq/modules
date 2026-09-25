@@ -14,10 +14,12 @@ inputs:
 pre_deploy: >-
   << module.input.pre_deploy_enabled && len(module.input.pre_deploy_command) > 0 ? {"container_overrides": [{"name": stack.output.container_name,
   "command": module.input.pre_deploy_command, "environment": module.input.pre_deploy_environment_variables,
-  "cpu": module.input.pre_deploy_cpu || nil, "memory": module.input.pre_deploy_memory || nil}], "cpu": string(module.input.pre_deploy_cpu ||
-  (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu)
-  * 1024))), "memory": string(module.input.pre_deploy_memory || (module.input.capacity_provider == "ec2" ?
-  int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) * 1024))),
+  "cpu": (module.input.pre_deploy_vcpu ? int(float(module.input.pre_deploy_vcpu) * 1024) : nil), "memory":
+  (module.input.pre_deploy_memory_gb ? int(float(module.input.pre_deploy_memory_gb) * 1024) : nil)}], "cpu":
+  string(module.input.pre_deploy_vcpu ? int(float(module.input.pre_deploy_vcpu) * 1024) : (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu)
+  * 1024))), "memory": string(module.input.pre_deploy_memory_gb ? int(float(module.input.pre_deploy_memory_gb) * 1024) :
+  (module.input.capacity_provider == "ec2" ? int(float(module.input.task_memory) * 1024) :
+  int(float(module.input.fargate_size.memory_gb) * 1024))),
   "ephemeral_storage": (module.input.pre_deploy_ephemeral_storage_size_gib ? {size_in_gib:
   module.input.pre_deploy_ephemeral_storage_size_gib} : nil), "task_role_arn": stack.output.task_role_arn,
   "execution_role_arn": stack.output.execution_role_arn, "capacity_provider_strategy": (get(module.input.advanced_terraform_variables,
@@ -37,10 +39,12 @@ pre_deploy: >-
 post_deploy: >-
   << module.input.post_deploy_enabled && len(module.input.post_deploy_command) > 0 ? {"container_overrides": [{"name": stack.output.container_name,
   "command": module.input.post_deploy_command, "environment": module.input.post_deploy_environment_variables,
-  "cpu": module.input.post_deploy_cpu || nil, "memory": module.input.post_deploy_memory || nil}], "cpu": string(module.input.post_deploy_cpu ||
-  (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu)
-  * 1024))), "memory": string(module.input.post_deploy_memory || (module.input.capacity_provider == "ec2" ?
-  int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) * 1024))),
+  "cpu": (module.input.post_deploy_vcpu ? int(float(module.input.post_deploy_vcpu) * 1024) : nil), "memory":
+  (module.input.post_deploy_memory_gb ? int(float(module.input.post_deploy_memory_gb) * 1024) : nil)}], "cpu":
+  string(module.input.post_deploy_vcpu ? int(float(module.input.post_deploy_vcpu) * 1024) : (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu)
+  * 1024))), "memory": string(module.input.post_deploy_memory_gb ? int(float(module.input.post_deploy_memory_gb) * 1024) :
+  (module.input.capacity_provider == "ec2" ? int(float(module.input.task_memory) * 1024) :
+  int(float(module.input.fargate_size.memory_gb) * 1024))),
   "ephemeral_storage": (module.input.post_deploy_ephemeral_storage_size_gib ? {size_in_gib:
   module.input.post_deploy_ephemeral_storage_size_gib} : nil), "task_role_arn": stack.output.task_role_arn,
   "execution_role_arn": stack.output.execution_role_arn, "capacity_provider_strategy": (get(module.input.advanced_terraform_variables,

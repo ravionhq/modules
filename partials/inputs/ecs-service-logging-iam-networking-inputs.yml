@@ -176,27 +176,33 @@
       type: boolean
       description: When enabled, ECS stops the whole task if this sidecar exits. Leave disabled for optional agents or helpers that should not take down the app.
       default: false
-    - id: cpu
-      label: CPU units
-      type: number
-      description: Optional CPU units reserved for this sidecar. Increase the task size if sidecars need dedicated CPU.
-      min: 0
-      placeholder: "128"
+    - id: vcpu
+      label: vCPU
+      type: string
+      description: Optional vCPU reserved for this sidecar. Increase the task size if sidecars need dedicated CPU.
+      placeholder: "0.125"
       required: false
-    - id: memory
-      label: Memory limit in MiB
-      type: number
+      patterns:
+        - message: Enter a vCPU value, such as 0.125, 0.25, or 1.
+          pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
+    - id: memory_gb
+      label: Memory limit in GB
+      type: string
       description: Optional hard memory limit for this sidecar. ECS stops the container if it exceeds this limit.
-      min: 0
-      placeholder: "256"
+      placeholder: "0.25"
       required: false
-    - id: memory_reservation
-      label: Memory reservation in MiB
-      type: number
+      patterns:
+        - message: Enter a memory value in GB, such as 0.125, 0.25, or 1.
+          pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
+    - id: memory_reservation_gb
+      label: Memory reservation in GB
+      type: string
       description: Optional soft memory reservation for this sidecar. Useful for agents that can burst above their normal memory use.
-      min: 0
-      placeholder: "128"
+      placeholder: "0.125"
       required: false
+      patterns:
+        - message: Enter a memory value in GB, such as 0.125, 0.25, or 1.
+          pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
     - id: environment
       label: Environment variables
       type: object_array

@@ -4,7 +4,7 @@ definition:
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
   version: 2.0.0
-  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks.
+  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks. Pre-deploy, post-deploy, and sidecar CPU and memory are now set in vCPU and GB, like the app task; re-enter any pre-deploy or post-deploy CPU and memory overrides after upgrading.
 module:
   inputs:
     - id: section_cluster
@@ -142,7 +142,13 @@ module:
         (stack.output.container_name), "readonly_root_filesystem": false,
         "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars : []) >>
+        "stop_timeout": 30}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "essential": #.essential, "cpu": (#.vcpu ? int(float(#.vcpu) * 1024) : #.cpu), "memory":
+        (#.memory_gb ? int(float(#.memory_gb) * 1024) : #.memory), "memory_reservation":
+        (#.memory_reservation_gb ? int(float(#.memory_reservation_gb) * 1024) : #.memory_reservation),
+        "environment": #.environment, "secrets": #.secrets, "port_mappings": #.port_mappings,
+        "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
+        #.entry_point, "working_directory": #.working_directory}) : []) >>
   ui:
     logs:
       - id: ecs_worker_logs
