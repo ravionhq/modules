@@ -5,7 +5,12 @@ definition:
   description: Selectable add-ons for an existing EKS cluster.
 release:
   version: 0.13.0
-  description: With the EBS CSI driver on, the cluster gets an encrypted, expandable gp3 StorageClass as its default, and raising a StatefulSet's volume size in a deploy now grows the existing volumes online instead of failing the deploy (Kubernetes 1.36+). Both are on by default and can be turned off.
+  description: >-
+    With the EBS CSI driver on, the cluster gets an encrypted, expandable gp3 StorageClass as its default, and
+    raising a StatefulSet's volume size in a deploy now grows the existing volumes online instead of failing
+    the deploy (Kubernetes 1.36+). Both are on by default and can be turned off. Karpenter and the HA Operator
+    now fit the cluster's system node group: with a single system node, one controller and one coordinator run
+    instead of an extra replica staying Pending and failing upgrades.
 module:
   inputs:
     - id: cluster
@@ -74,6 +79,17 @@ module:
           label: Node subnet IDs
           placeholder: subnet-0123456789abcdef0
           type: string_array
+        - collapsible: true
+          default: << ref.input.system_node_min_size >>
+          description: >-
+            Minimum size of the cluster's system node group. Karpenter's controller and the Ravion Operator's HA
+            coordinators run one per system node, so they are scaled down to fit: with one system node, one of
+            each runs without high availability. Raise the cluster's minimum to 2 or more for high availability.
+          id: system_node_count
+          label: System nodes
+          min: 0
+          required: false
+          type: number
         - add_button_label: Add subnet ID
           collapsible: true
           default: <<ref.stack.output.public_subnet_ids>>
@@ -1098,6 +1114,7 @@ module:
           cpu_limit: '<< module.input.karpenter_default_node_pool_cpu_limit != nil ? module.input.karpenter_default_node_pool_cpu_limit : 100 >>'
           expire_after: '<< module.input.karpenter_default_node_pool_expire_after || "720h" >>'
         node_subnet_ids: << module.input.node_subnet_ids >>
+        system_node_count: << module.input.system_node_count >>
         cluster_security_group_id: << module.input.cluster_security_group_id >>
         ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
         aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.5.0" >>
@@ -1360,7 +1377,7 @@ module:
 
     Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module targets chart `0.5.11` from `public.ecr.aws/a8z1i1r2/operator` for execution-status watch RBAC and executor image prewarming; it must be published before this module version is released or applied. No image digest or chart version needs to be entered after the required chart is published. Execution mode customization is available only through **Advanced Terraform variables**.
 
-    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas=1` through **Advanced Terraform variables**.
+    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. With fewer system nodes than coordinators, the count is reduced to fit automatically. With a single system node, one coordinator runs without high availability, and so does one Karpenter controller. Set the cluster's system node minimum to 2 or more for high availability.
 
     Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
