@@ -245,6 +245,7 @@ module:
       execution_environment_id: << module.input.execution_environment_id >>
       execution_environment_overrides:
         security_group: << module.input.ravion_runner_security_group_id >>
+    inputs: []
     definition:
       type: helm
       release_name: << module.input.name >>
