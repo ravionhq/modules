@@ -4,8 +4,8 @@ definition:
   name: EKS Helm Chart
   description: Install any third-party Helm chart from an HTTP Helm repository or an OCI registry onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.1.1
-  description: Deploy the chart version configured on the module and use the same execution environment as Terraform without redundant deploy-time inputs.
+  version: 0.1.2
+  description: Use the configured chart version and Terraform execution environment for deploys, and omit empty credentials for public charts.
 module:
   inputs:
     - id: section_cluster
@@ -256,9 +256,9 @@ module:
       source: >-
         << module.input.chart_source_type == "oci" ? {"type": "oci", "chart_url": module.input.chart_url,
         "version": module.input.chart_version, "credentials":
-        module.input.chart_registry_credentials} : {"type": "http", "repo_url": module.input.chart_repository_url,
+        (module.input.chart_registry_credentials != nil && len(module.input.chart_registry_credentials) > 0 ? module.input.chart_registry_credentials : nil)} : {"type": "http", "repo_url": module.input.chart_repository_url,
         "chart_name": module.input.chart_name, "version": module.input.chart_version,
-        "credentials": module.input.chart_registry_credentials} >>
+        "credentials": (module.input.chart_registry_credentials != nil && len(module.input.chart_registry_credentials) > 0 ? module.input.chart_registry_credentials : nil)} >>
       values: '<< module.input.values != nil ? module.input.values : {} >>'
   readme: |
     Install any third-party Helm chart onto an EKS cluster: NATS, Redis, Grafana, cert-manager, or anything else published to a Helm repository or an OCI registry.
