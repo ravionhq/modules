@@ -4,8 +4,8 @@ definition:
   name: EKS Helm Chart
   description: Install any third-party Helm chart from an HTTP Helm repository or an OCI registry onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.1.0
-  description: Install third-party Helm charts from HTTP repositories or OCI registries onto an EKS cluster, with any chart value configurable.
+  version: 0.1.1
+  description: Deploy the chart version configured on the module and use the same execution environment as Terraform without redundant deploy-time inputs.
 module:
   inputs:
     - id: section_cluster
@@ -242,29 +242,9 @@ module:
       cluster_endpoint: << module.input.cluster_endpoint >>
       cluster_certificate_authority_data: << module.input.cluster_certificate_authority_data >>
       ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
-      execution_environment_id: << deploy.input.execution_environment_id || module.input.execution_environment_id >>
+      execution_environment_id: << module.input.execution_environment_id >>
       execution_environment_overrides:
         security_group: << module.input.ravion_runner_security_group_id >>
-    inputs:
-      - id: chart_version
-        label: Chart version
-        type: string
-        description: >-
-          Chart version to install for this deploy. Defaults to the version configured on the module.
-          Leave both blank to install the latest version.
-        required: false
-        default: << module.input.chart_version >>
-      - id: execution_environment_id
-        label: Execution environment
-        type: string
-        description: >-
-          Execution environment the deploy runner launches into to reach the Kubernetes API. Leave
-          empty to use the environment inherited from the EKS cluster, or the default environment of
-          the account that owns the cluster. Its region must match the cluster region.
-        collapsible: true
-        required: false
-        default: << module.input.execution_environment_id >>
-        values: $values:ravion/execution_environments
     definition:
       type: helm
       release_name: << module.input.name >>
@@ -274,9 +254,9 @@ module:
       # whole object is built in one expression rather than field by field.
       source: >-
         << module.input.chart_source_type == "oci" ? {"type": "oci", "chart_url": module.input.chart_url,
-        "version": deploy.input.chart_version || module.input.chart_version, "credentials":
+        "version": module.input.chart_version, "credentials":
         module.input.chart_registry_credentials} : {"type": "http", "repo_url": module.input.chart_repository_url,
-        "chart_name": module.input.chart_name, "version": deploy.input.chart_version || module.input.chart_version,
+        "chart_name": module.input.chart_name, "version": module.input.chart_version,
         "credentials": module.input.chart_registry_credentials} >>
       values: '<< module.input.values != nil ? module.input.values : {} >>'
   readme: |
