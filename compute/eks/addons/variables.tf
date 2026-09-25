@@ -963,6 +963,17 @@ variable "ravion_operator_warm_capacity" {
   }
 }
 
+variable "system_node_count" {
+  type        = number
+  description = "Nodes guaranteed to exist that Karpenter does not manage: the minimum size of the cluster's system node group. Karpenter's controller and the HA coordinators run only on such nodes, one per node, so their replica counts are capped to it (Karpenter at 2, coordinators at ravion_operator_coordinator_replicas). With a single node, one of each runs without HA instead of a second replica staying Pending and failing Helm upgrades. Null applies no cap."
+  default     = null
+
+  validation {
+    condition     = var.system_node_count == null || (try(var.system_node_count >= 0 && floor(var.system_node_count) == var.system_node_count, false))
+    error_message = "The system_node_count must be a whole number of nodes, or null."
+  }
+}
+
 variable "ravion_operator_coordinator_enabled" {
   type        = bool
   description = "Enable elected HA coordinators. Requires executor Jobs and a replica-aware Ravion gateway."
