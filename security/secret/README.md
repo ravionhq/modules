@@ -1,4 +1,4 @@
-# AWS Generated Secret Module
+# AWS Secret Module
 
 Generates a random value and stores it in SSM Parameter Store (SecureString) or AWS Secrets Manager. The value is produced by an ephemeral `random_password` and written through write-only arguments (`value_wo` / `secret_string_wo`), so it is never stored in Terraform state or plan files. Only the ARN and name are exported.
 
@@ -15,7 +15,7 @@ Generates a random value and stores it in SSM Parameter Store (SecureString) or 
 
 ```hcl
 module "master_key" {
-  source = "git::https://github.com/ravionhq/modules.git//security/generated_secret?ref=rvn-aws-generated-secret@0.1.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/secret?ref=rvn-aws-secret@0.1.0"
 
   name = "myapp/production/master-key"
 }
@@ -31,7 +31,7 @@ secrets = [{
 
 ```hcl
 module "session_secret" {
-  source = "git::https://github.com/ravionhq/modules.git//security/generated_secret?ref=rvn-aws-generated-secret@0.1.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/secret?ref=rvn-aws-secret@0.1.0"
 
   name   = "myapp/production/session-secret"
   store  = "secrets_manager"

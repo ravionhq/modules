@@ -1,4 +1,4 @@
-# Generated secret module tests — run from module root: tofu test
+# Secret module tests — run from module root: tofu test
 
 mock_provider "aws" {
   override_data {
@@ -53,7 +53,7 @@ run "parameter_store_default" {
   }
 
   assert {
-    condition     = aws_ssm_parameter.this[0].tags["Module"] == "security/generated_secret"
+    condition     = aws_ssm_parameter.this[0].tags["Module"] == "security/secret"
     error_message = "Default tags must be present"
   }
 }
