@@ -176,28 +176,28 @@
       type: boolean
       description: When enabled, ECS stops the whole task if this sidecar exits. Leave disabled for optional agents or helpers that should not take down the app.
       default: false
-    - id: vcpu
-      label: vCPU
+    - id: cpu
+      label: CPU
       type: string
-      description: Optional vCPU reserved for this sidecar. Increase the task size if sidecars need dedicated CPU.
+      description: Optional CPU reserved for this sidecar, where 1 is one vCPU. Increase the task size if sidecars need dedicated CPU.
       placeholder: "0.125"
       required: false
       patterns:
-        - message: Enter a vCPU value, such as 0.125, 0.25, or 1.
+        - message: Enter a CPU value in vCPU, such as 0.125, 0.25, or 1.
           pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
-    - id: memory_gb
-      label: Memory limit in GB
+    - id: memory
+      label: Memory limit
       type: string
-      description: Optional hard memory limit for this sidecar. ECS stops the container if it exceeds this limit.
+      description: Optional hard memory limit for this sidecar, where 1 is 1 GB. ECS stops the container if it exceeds this limit.
       placeholder: "0.25"
       required: false
       patterns:
         - message: Enter a memory value in GB, such as 0.125, 0.25, or 1.
           pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
-    - id: memory_reservation_gb
-      label: Memory reservation in GB
+    - id: memory_reservation
+      label: Memory reservation
       type: string
-      description: Optional soft memory reservation for this sidecar. Useful for agents that can burst above their normal memory use.
+      description: Optional soft memory reservation for this sidecar, where 1 is 1 GB. Useful for agents that can burst above their normal memory use.
       placeholder: "0.125"
       required: false
       patterns:

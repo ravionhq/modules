@@ -1191,35 +1191,32 @@ describe("ECS service CPU and memory units", () => {
   ];
 
   for (const definition of definitions) {
-    it(`takes pre-deploy, post-deploy, and sidecar sizing in vCPU and GB in ${definition}`, async () => {
+    it(`takes pre-deploy, post-deploy, and sidecar CPU in vCPU and memory in GB in ${definition}`, async () => {
       const { module } = await compileDefinitionFile(join(repoRoot, definition));
       const inputs = getModuleInputs(module);
       for (const phase of ["pre", "post"]) {
-        assert.equal(findInput(inputs, `${phase}_deploy_vcpu`).type, "string");
-        assert.equal(findInput(inputs, `${phase}_deploy_memory_gb`).type, "string");
-        assert.equal(inputs.find((input) => input.id === `${phase}_deploy_cpu`), undefined);
-        assert.equal(inputs.find((input) => input.id === `${phase}_deploy_memory`), undefined);
+        assert.equal(findInput(inputs, `${phase}_deploy_cpu`).type, "string");
+        assert.equal(findInput(inputs, `${phase}_deploy_memory`).type, "string");
       }
 
       const deploy = assertRecord(module.deploy, "module.deploy");
       for (const phase of ["pre", "post"]) {
         const expression = assertString(deploy[`${phase}_deploy`]);
-        assert.match(expression, new RegExp(`int\\(float\\(module\\.input\\.${phase}_deploy_vcpu\\) \\* 1024\\)`));
-        assert.match(expression, new RegExp(`int\\(float\\(module\\.input\\.${phase}_deploy_memory_gb\\) \\* 1024\\)`));
+        assert.match(expression, new RegExp(`int\\(float\\(module\\.input\\.${phase}_deploy_cpu\\) \\* 1024\\)`));
+        assert.match(expression, new RegExp(`int\\(float\\(module\\.input\\.${phase}_deploy_memory\\) \\* 1024\\)`));
       }
 
       const sidecarInputs = findInput(inputs, "sidecars").item_inputs as Record<string, unknown>[];
-      assert.deepEqual(
-        sidecarInputs.map((input) => input.id).filter((id) => /cpu|memory/.test(String(id))),
-        ["vcpu", "memory_gb", "memory_reservation_gb"],
-      );
+      for (const id of ["cpu", "memory", "memory_reservation"]) {
+        assert.equal(sidecarInputs.find((input) => input.id === id)?.type, "string");
+      }
       const taskDefinition = assertRecord(deploy.task_definition, "module.deploy.task_definition");
       const containerDefinitions = assertString(taskDefinition.container_definitions);
-      assert.match(containerDefinitions, /"cpu": \(#\.vcpu \? int\(float\(#\.vcpu\) \* 1024\) : #\.cpu\)/);
-      assert.match(containerDefinitions, /"memory":\s+\(#\.memory_gb \? int\(float\(#\.memory_gb\) \* 1024\) : #\.memory\)/);
+      assert.match(containerDefinitions, /"cpu": \(#\.cpu \? int\(float\(#\.cpu\) \* 1024\) : nil\)/);
+      assert.match(containerDefinitions, /"memory":\s+\(#\.memory \? int\(float\(#\.memory\) \* 1024\) : nil\)/);
       assert.match(
         containerDefinitions,
-        /"memory_reservation":\s+\(#\.memory_reservation_gb \? int\(float\(#\.memory_reservation_gb\) \* 1024\) : #\.memory_reservation\)/,
+        /"memory_reservation":\s+\(#\.memory_reservation \? int\(float\(#\.memory_reservation\) \* 1024\) : nil\)/,
       );
     });
   }
