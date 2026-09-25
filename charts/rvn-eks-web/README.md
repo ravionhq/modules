@@ -7,7 +7,7 @@ optionally a HorizontalPodAutoscaler, optionally a PodDisruptionBudget, optional
 supplied target group ARN, and optionally an ExternalSecret. **It never renders
 an Ingress** — see [the charts README](../README.md#load-balancing-rvn-eks-web).
 
-Chart version `0.3.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
+Chart version `0.3.1`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
 
 ## Usage
 
@@ -99,10 +99,10 @@ shape. Liveness and readiness are on by default; startup is off.
 | `probes.<p>.enabled` | bool | `true` / `true` / `false` | |
 | `probes.<p>.path` | string | `/` / `/` / `""` | Startup falls back to the readiness path. |
 | `probes.<p>.port` | string/int | `""` | Defaults to the `http` port. |
-| `probes.<p>.initialDelaySeconds` | int | `10` / `5` / `0` | |
-| `probes.<p>.periodSeconds` | int | `10` / `10` / `5` | |
+| `probes.<p>.initialDelaySeconds` | int | `10` / `0` / `0` | |
+| `probes.<p>.periodSeconds` | int | `10` / `1` / `5` | |
 | `probes.<p>.timeoutSeconds` | int | `5` | |
-| `probes.<p>.failureThreshold` | int | `3` / `3` / `30` | |
+| `probes.<p>.failureThreshold` | int | `3` / `30` / `30` | Readiness allows about 30 seconds of failed checks at its 1-second period. |
 | `probes.readiness.successThreshold` | int | `1` | Readiness only. |
 
 ### Scale and scheduling
@@ -116,7 +116,7 @@ shape. Liveness and readiness are on by default; startup is off.
 | `autoscaling.targetCPUUtilizationPercentage` | int/null | `70` | Set `null` to drop the CPU metric. |
 | `autoscaling.targetMemoryUtilizationPercentage` | int/null | `null` | Set a number to add a memory metric. |
 | `strategy.type` | string | `RollingUpdate` | Or `Recreate`. |
-| `strategy.maxSurge` | string/int | `25%` | |
+| `strategy.maxSurge` | string/int | `100%` | Full replacement set; lower to limit temporary capacity. |
 | `strategy.maxUnavailable` | string/int | `0` | Zero-downtime by default. |
 | `revisionHistoryLimit` | int | `10` | |
 | `terminationGracePeriodSeconds` | int | `30` | Seconds a pod has to shut down after SIGTERM, including any preStop sleep. Raise it for services that drain long-lived connections. |

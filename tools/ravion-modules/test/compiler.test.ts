@@ -173,6 +173,29 @@ describe("compiler", () => {
     const startup = assertRecord(probes.startup, "probes.startup");
 
     assert.equal(readiness.enabled, true);
+    assert.equal(
+      readiness.periodSeconds,
+      "<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1 >>",
+    );
+    assert.equal(
+      readiness.initialDelaySeconds,
+      "<< module.input.probe_initial_delay_seconds != nil ? module.input.probe_initial_delay_seconds : 0 >>",
+    );
+    assert.equal(
+      readiness.failureThreshold,
+      "<< module.input.readiness_probe_period_seconds != nil && module.input.readiness_probe_period_seconds >= 10 ? 3 : int((29 + (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) / (module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 1)) >>",
+    );
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").default, 1);
+    assert.equal(findInput(inputs, "probe_initial_delay_seconds").default, 0);
+    const strategy = assertRecord(values.strategy, "module.deploy.definition.values.strategy");
+    assert.equal(
+      strategy.maxSurge,
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%",
+    );
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").min, 1);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").max, 100);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").default, 100);
+    assert.equal(findInput(inputs, "rollout_max_surge_percent").collapsible, true);
     assert.equal(liveness.path, "<< module.input.liveness_probe_path || module.input.health_check_path >>");
     assert.equal(
       startup.path,
@@ -190,6 +213,23 @@ describe("compiler", () => {
     assert.equal(inputs.some((input) => input.id === "public_web_service_enabled"), false);
     assert.equal(inputs.some((input) => input.id === "healthy_threshold"), false);
     assert.equal(inputs.some((input) => input.id === "unhealthy_threshold"), false);
+  });
+
+  it("compiles EKS worker rollout surge into Helm values with a collapsible full-surge default", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-worker-definition.yml"));
+    const input = findInput(getModuleInputs(compiled.module), "rollout_max_surge_percent");
+    assert.equal(input.default, 100);
+    assert.equal(input.collapsible, true);
+    assert.equal(input.min, 1);
+    assert.equal(input.max, 100);
+    const deploy = assertRecord(compiled.module.deploy, "module.deploy");
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+    const strategy = assertRecord(values.strategy, "values.strategy");
+    assert.equal(
+      strategy.maxSurge,
+      "<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%",
+    );
   });
 
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
@@ -419,6 +459,7 @@ describe("compiler", () => {
       "ravion_operator_execution_image",
       "ravion_operator_chart_version",
       "ravion_operator_execution_max_concurrent",
+      "ravion_operator_warm_capacity",
       "ravion_operator_coordinator_enabled",
       "ravion_operator_coordinator_adaptive_enabled",
       "ravion_operator_coordinator_replicas",
@@ -428,7 +469,7 @@ describe("compiler", () => {
     }
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
-      "0.5.1",
+      "0.5.11",
     );
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);
@@ -1140,6 +1181,46 @@ describe("compiler", () => {
     assert.match(containerDefinitions, /port_mappings": map\(module\.input\.listeners/);
     assert.doesNotMatch(containerDefinitions, /module\.input\.container_port/);
   });
+});
+
+describe("monitoring defaults", () => {
+  const definitions = [
+    "networking/alb/rvn-aws-alb-definition.yml",
+    "compute/ecs_cluster/rvn-ecs-cluster-definition.yml",
+    "compute/ecs_service/rvn-ecs-web-definition.yml",
+    "compute/ecs_service/rvn-ecs-worker-definition.yml",
+    "compute/ecs_service/rvn-ecs-nlb-definition.yml",
+  ];
+
+  for (const definition of definitions) {
+    it(`enables alarms by default in ${definition}`, async () => {
+      const { module } = await compileDefinitionFile(join(repoRoot, definition));
+      const inputs = getModuleInputs(module);
+      const toggle = findInput(inputs, "cloudwatch_alarms_creation_enabled");
+      assert.equal(toggle.default, true);
+      assert.equal(toggle.type, "boolean");
+      const variable = definition.includes("ecs_cluster")
+        ? "alb_cloudwatch_alarms_creation_enabled"
+        : "cloudwatch_alarms_creation_enabled";
+      assert.equal(getTerraformVariable(module, variable), "<< module.input.cloudwatch_alarms_creation_enabled >>");
+    });
+  }
+
+  for (const definition of definitions.filter((path) => path.includes("ecs_"))) {
+    it(`offers supported retention periods in ${definition}`, async () => {
+      const { module } = await compileDefinitionFile(join(repoRoot, definition));
+      const retention = findInput(getModuleInputs(module), "log_retention_days");
+      assert.deepEqual(getValueOptions(retention), [
+        0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365,
+        400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653,
+      ]);
+      if (definition.includes("ecs_service")) {
+        assert.equal(retention.required, false);
+        assert.equal(retention.default, undefined);
+        assert.match(assertString(getTerraformVariable(module, "log_retention_days")), /module.input.log_retention_days != nil/);
+      }
+    });
+  }
 });
 
 function getModuleInputs(module: Record<string, unknown>): Record<string, unknown>[] {

@@ -194,6 +194,8 @@ module "api_service" {
 
 ## Inputs
 
+CloudWatch alarms are enabled by default. Set the creation toggle to `false` only when equivalent monitoring exists elsewhere. Existing explicit opt-outs remain disabled. Upgrading creates alarms on the next apply and incurs CloudWatch charges. Configure SNS action ARNs or an external EventBridge relay for notifications.
+
 ### General
 
 | Name | Description | Type | Default | Required |
@@ -210,6 +212,20 @@ module "api_service" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | container_insights | CloudWatch Container Insights setting. Valid values: `enhanced`, `enabled`, `disabled` | `string` | `"enhanced"` | no |
+
+### Compliance
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| log_retention_days | Default CloudWatch Logs retention (days) exposed as an output for services to inherit; 0 = indefinite | `number` | `90` | no |
+| alb_cloudwatch_alarms_creation_enabled | Create ELB 5xx, target 5xx, and target response time alarms on the public and private ALBs | `bool` | `true` | no |
+| alb_cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
+| alb_cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
+| alb_cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime (seconds) above which the ALB alarm fires | `number` | `1` | no |
+| cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
+| cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
+| cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
+| cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
 | capacity_provider_default | Family for the cluster default strategy: `ec2`, `fargate` (includes Fargate Spot when enabled), or `fargate_spot`. AWS forbids mixing Fargate and EC2 providers in one strategy. Defaults to `ec2` if EC2 is enabled, then `fargate`, then `fargate_spot` | `string` | `null` | no |
 
 ### Fargate Capacity Provider
@@ -382,6 +398,14 @@ module "api_service" {
 | private_nlb_dns_name | Private NLB DNS name |
 | private_nlb_zone_id | Private NLB hosted zone ID |
 | private_nlb_arn_suffix | Private NLB ARN suffix |
+
+### Compliance
+
+| Name | Description |
+|------|-------------|
+| log_retention_days | Default CloudWatch Logs retention (days) for services in this cluster to inherit |
+| public_alb_cloudwatch_alarm_arns | Map of public ALB alarm ARNs (empty if disabled) |
+| private_alb_cloudwatch_alarm_arns | Map of private ALB alarm ARNs (empty if disabled) |
 
 ## Architecture
 

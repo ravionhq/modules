@@ -4,17 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.9.3
-  description: >-
-    Replace the load balancer name prefix with a name slug, like every other module. The slug
-    names everything the add-ons create: the shared load balancers and their security groups,
-    the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter
-    interruption queue. It defaults to the cluster name, so existing installations are
-    unchanged; an installation that set the load balancer prefix should set the same value
-    as the name, and expects the roles, bucket, queue and log group to be renamed. Every log the
-    add-ons keep now defaults to a year: Loki and CloudWatch workload logs (previously 30 days)
-    and load balancer access log buckets (previously 90 days), matching the cluster's control
-    plane logs. Existing installations keep the value they set.
+  version: 0.12.0
+  description: Load-balanced EKS pods now receive traffic sooner during rolling deploys. The AWS Load Balancer Controller moves to 3.5.0, and its CRDs are now upgraded with the controller. Fixes the log collector failing to start. Karpenter, External Secrets, Prometheus, Grafana, Alloy, kube-state-metrics, the OpenTelemetry collectors and kubectl move to their latest versions, and unpinned EBS CSI and CloudWatch add-ons now track the newest compatible release.
 module:
   inputs:
     - id: cluster
@@ -390,10 +381,10 @@ module:
       label: Load balancer deletion protection
       type: boolean
     - collapsible: true
-      description: AWS Load Balancer Controller Helm chart version without a leading v, for example 1.14.0. The controller is installed when any shared load balancer is enabled.
+      description: AWS Load Balancer Controller Helm chart version without a leading v, for example 3.5.0. The controller is installed when any shared load balancer is enabled.
       id: aws_load_balancer_controller_chart_version
       label: Load balancer controller chart version
-      placeholder: 1.14.0
+      placeholder: 3.5.0
       type: string
     - description: Provides just-in-time node autoscaling and an optional general-purpose NodePool.
       id: section_karpenter
@@ -403,11 +394,49 @@ module:
       id: karpenter_enabled
       label: Karpenter
       type: boolean
+    - default: true
+      id: karpenter_interruption_queue_alarm_creation_enabled
+      label: Interruption queue age alarm
+      description: Detect stalled interruption processing. Disable if monitored elsewhere. CloudWatch charges apply.
+      type: boolean
+      show_when:
+        karpenter_enabled: true
+    - default: 60
+      id: karpenter_interruption_queue_alarm_age_threshold_seconds
+      label: Oldest message threshold (seconds)
+      description: Triggers when the maximum age over one minute reaches this value. Must be below the queue retention period (300 seconds by default).
+      type: number
+      min: 1
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
+    - id: karpenter_interruption_queue_alarm_actions
+      label: Alert actions
+      description: Invoked when entering ALARM, for example an SNS topic ARN. Empty disables direct notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
+    - id: karpenter_interruption_queue_alarm_ok_actions
+      label: Recovery actions
+      description: Invoked when returning to OK. Empty disables direct recovery notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
     - collapsible: true
-      description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.0.
+      description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.1.
       id: karpenter_chart_version
       label: Chart version
-      placeholder: 1.14.0
+      placeholder: 1.14.1
       show_when:
         karpenter_enabled: true
       type: string
@@ -1008,10 +1037,10 @@ module:
         eso_enabled: true
       type: string_array
     - collapsible: true
-      description: External Secrets Helm chart version without a leading v, for example 2.8.0.
+      description: External Secrets Helm chart version without a leading v, for example 2.11.0.
       id: eso_chart_version
       label: Chart version
-      placeholder: 2.8.0
+      placeholder: 2.11.0
       show_when:
         eso_enabled: true
       type: string
@@ -1036,9 +1065,13 @@ module:
         cluster_name: << module.input.cluster_name >>
         region: << module.input.aws_region >>
         karpenter_enabled: << module.input.karpenter_enabled >>
+        karpenter_interruption_queue_alarm_creation_enabled: '<< module.input.karpenter_interruption_queue_alarm_creation_enabled != nil ? module.input.karpenter_interruption_queue_alarm_creation_enabled : true >>'
+        karpenter_interruption_queue_alarm_age_threshold_seconds: '<< module.input.karpenter_interruption_queue_alarm_age_threshold_seconds != nil ? module.input.karpenter_interruption_queue_alarm_age_threshold_seconds : 60 >>'
+        karpenter_interruption_queue_alarm_actions: '<< module.input.karpenter_interruption_queue_alarm_actions != nil ? module.input.karpenter_interruption_queue_alarm_actions : [] >>'
+        karpenter_interruption_queue_alarm_ok_actions: '<< module.input.karpenter_interruption_queue_alarm_ok_actions != nil ? module.input.karpenter_interruption_queue_alarm_ok_actions : [] >>'
         karpenter_controller_namespace: << module.input.karpenter_controller_namespace || "kube-system" >>
         karpenter_controller_service_account: << module.input.karpenter_controller_service_account || "karpenter" >>
-        karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.0" >>
+        karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.1" >>
         karpenter_helm_values: []
         karpenter_default_node_pool_creation_enabled: '<< module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true >>'
         karpenter_default_node_pool:
@@ -1050,7 +1083,7 @@ module:
         node_subnet_ids: << module.input.node_subnet_ids >>
         cluster_security_group_id: << module.input.cluster_security_group_id >>
         ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
-        aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "1.14.0" >>
+        aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.5.0" >>
         ebs_csi_driver_enabled: << module.input.ebs_csi_driver_enabled >>
         ebs_csi_addon_version: << module.input.ebs_csi_addon_version >>
         # The signal toggle folds into the provider list: off is an empty list, on
@@ -1117,7 +1150,7 @@ module:
         grafana_role_creation_enabled: << module.input.grafana_role_creation_enabled >>
         grafana_enabled: << module.input.grafana_enabled >>
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
-        eso_chart_version: << module.input.eso_chart_version || "2.8.0" >>
+        eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         # Full-cluster Operator mode (the default) manages no specific namespaces,
@@ -1129,7 +1162,7 @@ module:
         # which is only the floor a fresh install starts from: the control plane
         # rolls the agent forward from there and the chart preserves the running
         # image on later applies.
-        ravion_operator_chart_version: 0.5.1
+        ravion_operator_chart_version: 0.5.11
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
@@ -1269,9 +1302,11 @@ module:
 
     EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, and both observability pipelines additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
 
+    Karpenter's **Interruption queue age alarm** is enabled by default. It monitors the oldest unprocessed event with a 60-second threshold over one minute. Empty queues do not trigger it. Configure **Alert actions** and **Recovery actions** for direct notifications; both default to empty. Standard CloudWatch charges apply.
+
     ## Logs and metrics destinations
 
-    Each signal is one multi-select. **The in-cluster log store and Amazon Managed Prometheus are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in. Nothing CloudWatch is installed by default, or as a side effect of anything else.
+    Each signal is one multi-select. **The in-cluster log store and Amazon Managed Prometheus are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in. CloudWatch log and metrics collectors are not installed unless selected. The interruption queue uses native SQS metrics independently of these collectors.
 
     | Logs destination | What runs | In Ravion |
     | ---------------- | --------- | --------- |
@@ -1304,13 +1339,15 @@ module:
 
     **Ravion EKS Management** controls both Operator installation and in-cluster deployments. Deployments follow this toggle, including when upgrading an installation that previously disabled the separate deployments flag. By default, it enables durable executor Jobs, HA Operator and full-cluster management.
 
-    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module pins chart `0.5.1` from `public.ecr.aws/a8z1i1r2/operator`, which bundles its matching verified multiarchitecture image digest as the floor a fresh install starts from. No image digest or chart version needs to be entered. Execution mode customization is available only through **Advanced Terraform variables**. Earlier form-level mode choices are replaced by the managed defaults; preserve custom settings through advanced overrides before upgrading, and drain deployments and remediation before changing modes.
+    Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module targets chart `0.5.11` from `public.ecr.aws/a8z1i1r2/operator` for execution-status watch RBAC and executor image prewarming; it must be published before this module version is released or applied. No image digest or chart version needs to be entered after the required chart is published. Execution mode customization is available only through **Advanced Terraform variables**.
 
     **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas=1` through **Advanced Terraform variables**.
 
-    Each coordinator requests 500m CPU and 1Gi memory; each active executor requests 1 CPU, 2Gi memory and 1Gi ephemeral storage. Nodes still need free resources to schedule the pods. Replica count, placement and executor capacity can be overridden through **Advanced Terraform variables**.
+    Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
-    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. It uses a single retained mutation lane, so only one cluster mutation runs at a time. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` through **Advanced Terraform variables**. Scoped Jobs default to four installation-wide slots for independent namespaces; Kubernetes schedules them against available resources. Drain existing ownership before changing scope or retained capacity. Existing form-level scope, image and HA choices are replaced by these managed defaults; preserve custom settings through advanced overrides before upgrading.
+    For predictable start latency, `ravion_operator_warm_capacity.enabled=true` through **Advanced Terraform variables** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`; configure slot requests, replica count and placement accordingly. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
+
+    **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Different releases deploy in parallel, up to twelve at once by default; two versions of the same release never do, and management commands wait for running deploys. Ravion tunes capacity over the air without a module release. Pin it for this cluster with `ravion_operator_execution_max_concurrent` (1-64) through **Advanced Terraform variables**. Current Operators always serialize per release; namespace lane selection is not supported. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` the same way. Drain existing ownership before changing management scope.
 
     Web, worker and cron modules keep their existing Helm deployment definitions. Ravion selects Operator by the cluster ARN; the addons module passes its stable enrollment ID to the chart as the installation identity.
 
@@ -1371,14 +1408,14 @@ module:
     | ---------------------- | -------- | -------------------- | ------------------------------------------------------ |
     | EKS cluster            | Yes      | -                    | Existing EKS Cluster module                            |
     | Karpenter              | No       | `true`               | Autoscaling end to end (IAM, queue, controller, NodePool) |
-    | Chart version          | No       | `1.14.0`             | Karpenter and karpenter-crd Helm chart version         |
+    | Chart version          | No       | `1.14.1`             | Karpenter and karpenter-crd Helm chart version         |
     | Default NodePool       | No       | `true`               | General-purpose NodePool and EC2NodeClass              |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |
     | CPU limit              | Yes*     | `100`                | Maximum vCPUs provisioned through the default NodePool |
     | Node lifetime          | Yes*     | `720h`               | Maximum age before Karpenter replaces a node           |
-    | Load balancer controller chart version | No | `1.14.0`    | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
+    | Load balancer controller chart version | No | `3.5.0`     | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
     | External Secrets Operator | No    | `true`               | Reference-only secrets, ClusterSecretStores, and a scoped Pod Identity role |
     | Readable secret ARNs   | No       | Account + region     | Scopes which Secrets Manager secrets and SSM parameters the operator may read |
     | EBS CSI driver         | No       | `false`              | EBS persistent volumes add-on and Pod Identity role    |

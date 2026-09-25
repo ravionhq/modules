@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon RDS database. Supports PostgreSQL, MySQL, MariaDB, Oracle, and SQL Server engines.
 
 release:
-  version: 1.2.1
-  description: Allow major engine upgrades while preventing selection of an older major version.
+  version: 1.3.0
+  description: Add configurable read/write IOPS alarms alongside existing free storage monitoring.
 module:
   inputs:
     - id: network
@@ -835,10 +835,28 @@ module:
       type: number
     - collapsible: true
       default: 5
-      description: Displayed in GiB. Ravion converts this to bytes for Terraform.
+      description: Triggers when the primary instance's period average falls below this value.
       id: cloudwatch_alarm_storage_threshold_gib
       label: Free storage alarm threshold (GiB)
       min: 0
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 1000
+      description: Average for the primary instance, in operations per second. Tune to workload capacity.
+      id: cloudwatch_alarm_read_iops_threshold
+      label: Read IOPS alarm threshold
+      min: 1
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      type: number
+    - collapsible: true
+      default: 1000
+      description: Average for the primary instance, in operations per second. Tune to workload capacity.
+      id: cloudwatch_alarm_write_iops_threshold
+      label: Write IOPS alarm threshold
+      min: 1
       show_when:
         cloudwatch_alarms_creation_enabled: true
       type: number
@@ -861,6 +879,7 @@ module:
     - collapsible: true
       default: 300
       id: cloudwatch_alarm_period
+      description: I/O uses at least one minute; other metrics use this value.
       label: Alarm period seconds
       show_when:
         cloudwatch_alarms_creation_enabled: true
@@ -1073,6 +1092,8 @@ module:
         cloudwatch_alarm_cpu_threshold: << module.input.cloudwatch_alarm_cpu_threshold >>
         cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
         cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+        cloudwatch_alarm_read_iops_threshold: '<< module.input.cloudwatch_alarm_read_iops_threshold != null ? module.input.cloudwatch_alarm_read_iops_threshold : 1000 >>'
+        cloudwatch_alarm_write_iops_threshold: '<< module.input.cloudwatch_alarm_write_iops_threshold != null ? module.input.cloudwatch_alarm_write_iops_threshold : 1000 >>'
         cloudwatch_alarm_storage_threshold: '<< module.input.cloudwatch_alarm_storage_threshold_gib != null ? int(module.input.cloudwatch_alarm_storage_threshold_gib * 1073741824) : 5368709120 >>'
         cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions >>
         snapshot_tag_copying_enabled: << module.input.snapshot_tag_copying_enabled >>
@@ -1269,7 +1290,7 @@ module:
 
     Performance insights is enabled by default with 7 days of retention. Enhanced monitoring can be enabled by setting a monitoring interval.
 
-    CloudWatch alarms are optional. When enabled, the module can alarm on CPU utilization, free storage space, and database connections. The free storage alarm threshold is entered in GiB in Ravion and converted to bytes for Terraform. The Ravion UI also shows RDS CloudWatch metrics for CPU, free storage, connections, read IOPS, and write IOPS.
+    CloudWatch alarms are optional. When enabled, the module can alarm on CPU utilization, free storage space, database connections, and read/write IOPS on the primary instance. Tune the default 1000 IOPS thresholds to the workload and storage capacity. IOPS alarm periods are at least 1 minute. Supply alarm action ARNs to receive notifications. The free storage alarm threshold is entered in GiB in Ravion and converted to bytes for Terraform. The Ravion UI also shows RDS CloudWatch metrics for CPU, free storage, connections, read IOPS, and write IOPS.
 
     ## Connection pooling
 
@@ -1301,7 +1322,7 @@ module:
     | Backup retention days | No | 7 | Set to 0 to disable automated backups. |
     | Deletion protection | No | true | Helps prevent accidental deletion. |
     | Performance insights | No | true | Enables AWS Performance Insights. |
-    | CloudWatch alarms | No | true | Adds CPU, free storage, and connection alarms. |
+    | CloudWatch alarms | No | true | Adds CPU, free storage, connection, and read/write IOPS alarms. |
     | Free storage alarm threshold | No | 5 GiB | Converted to bytes before Terraform runs. |
     | RDS Proxy | No | false | Creates an RDS Proxy connection pool in front of the database. Not available for Oracle engines. |
     | Tags | No | Blank | Merged with Ravion standard tags. |

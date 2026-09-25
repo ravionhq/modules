@@ -99,12 +99,14 @@ resource "helm_release" "karpenter_default_node_pool" {
         tags = local.tags
       }
       nodePool = {
-        name               = "default"
-        capacityTypes      = var.karpenter_default_node_pool.capacity_types
-        instanceCategories = var.karpenter_default_node_pool.instance_categories
-        architectures      = var.karpenter_default_node_pool.architectures
-        cpuLimit           = var.karpenter_default_node_pool.cpu_limit
-        expireAfter        = var.karpenter_default_node_pool.expire_after
+        name                = "default"
+        capacityTypes       = var.karpenter_default_node_pool.capacity_types
+        instanceCategories  = var.karpenter_default_node_pool.instance_categories
+        architectures       = var.karpenter_default_node_pool.architectures
+        cpuLimit            = var.karpenter_default_node_pool.cpu_limit
+        expireAfter         = var.karpenter_default_node_pool.expire_after
+        consolidationPolicy = var.karpenter_default_node_pool.consolidation_policy
+        consolidateAfter    = var.karpenter_default_node_pool.consolidate_after
       }
     }),
   ]

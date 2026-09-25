@@ -271,6 +271,9 @@ module:
         field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
     - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-compliance-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-nlb-target-alarm-inputs.yml
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
   stack:
     type: opentofu
@@ -291,6 +294,8 @@ module:
           terraform_variables:
             $merge:
               - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
+              - cloudwatch_alarm_unhealthy_hosts_threshold: << module.input.cloudwatch_alarm_unhealthy_hosts_threshold >>
               - container_port: << module.input.listeners[0].container_port >>
                 health_check_grace_period_seconds: << module.input.health_check_grace_period_seconds >>
                 load_balancer_ingress_cidr_blocks: >-
@@ -614,6 +619,16 @@ module:
 
     The Metrics tab includes common ECS service metrics plus Network Load Balancer target group health metrics for the first listener. Additional listener target groups are available through the stack outputs for external dashboards and alarms.
 
+    ## Compliance
+
+    The Compliance section holds log retention and CloudWatch alarms.
+
+    Log retention (days) defaults to the value configured on the ECS cluster's Compliance section, so one cluster setting keeps every service consistent. Set a value here to override it for this service. Use 0 to retain logs indefinitely.
+
+    CloudWatch alarms are enabled by default for average CPU utilization, average memory utilization, and running task count. Because the service owns its target groups, it also alarms on unhealthy targets in every listener target group. Network Load Balancers themselves have no alarms.
+
+    The running task alarm uses the Container Insights `RunningTaskCount` metric and stays silent when Container Insights is disabled on the cluster. Every alarm treats missing data as not breaching and must breach for the configured number of consecutive periods before it fires. Add SNS topic ARNs as Alarm actions and OK actions to be notified.
+
     ## Configuration
 
     | Field                            | Required | Default                  | Description                                      |
@@ -658,6 +673,13 @@ module:
     | Sidecars                         | No       | []                       | Additional containers in the ECS task            |
     | EFS file system                  | No       | false                    | Mount an EFS file system into the app container |
     | EFS mount path                   | Yes*     | /mnt/efs                 | App container path for the referenced file system |
+    | Log retention (days) | No | Cluster default | Overrides the CloudWatch log retention inherited from the cluster |
+    | Create CloudWatch alarms | No | true | Adds CPU, memory, running task, and unhealthy host alarms |
+    | Unhealthy hosts alarm threshold | No | 0 | Unhealthy targets in any service target group |
+    | CPU alarm threshold (%) | No | 80 | Average service CPU utilization |
+    | Memory alarm threshold (%) | No | 80 | Average service memory utilization |
+    | Minimum running tasks | No | 1 | Alarms when fewer tasks are running |
+    | Alarm actions | No | [] | ARNs notified on ALARM, such as an SNS topic |
     | Tags                             | No       | Standard Ravion tags     | Additional tags applied to resources             |
     | Advanced Terraform variables     | No       | {}                       | Raw lower-level overrides for exceptional cases  |
     | OpenTofu version override        | No       | Ravion default           | Override the OpenTofu version for the stack      |

@@ -40,7 +40,7 @@ module:
       label: Load balancer deletion protection
       type: boolean
     - default: enhanced
-      description: Configures CloudWatch Container Insights for the ECS cluster. Enhanced observability adds detailed task and container metrics and may increase CloudWatch costs.
+      description: Configures CloudWatch Container Insights for the ECS cluster. Enabled by default to satisfy SOC 2 monitoring requirements. Enhanced observability adds detailed task and container metrics and may increase CloudWatch costs. Service running-task alarms depend on Container Insights being enabled.
       id: container_insights
       label: Container insights
       type: string
@@ -51,6 +51,59 @@ module:
           value: enabled
         - label: Disabled
           value: disabled
+    - default: 90
+      description: Inherited by services unless they set their own retention. Never expire keeps logs indefinitely.
+      id: log_retention_days
+      label: Default log retention (days)
+      values:
+        - label: Never expire
+          value: 0
+        - label: 1 day
+          value: 1
+        - label: 3 days
+          value: 3
+        - label: 5 days
+          value: 5
+        - label: 7 days
+          value: 7
+        - label: 14 days
+          value: 14
+        - label: 30 days
+          value: 30
+        - label: 60 days
+          value: 60
+        - label: 90 days
+          value: 90
+        - label: 120 days
+          value: 120
+        - label: 150 days
+          value: 150
+        - label: 180 days
+          value: 180
+        - label: 365 days
+          value: 365
+        - label: 400 days
+          value: 400
+        - label: 545 days
+          value: 545
+        - label: 731 days
+          value: 731
+        - label: 1096 days
+          value: 1096
+        - label: 1827 days
+          value: 1827
+        - label: 2192 days
+          value: 2192
+        - label: 2557 days
+          value: 2557
+        - label: 2922 days
+          value: 2922
+        - label: 3288 days
+          value: 3288
+        - label: 3653 days
+          value: 3653
+      min: 0
+      type: number
     - id: section_capacity
       label: Capacity providers
       type: section
@@ -500,6 +553,17 @@ module:
         private_nlb_enabled: true
         private_nlb_access_logs_enabled: true
       type: string
+    - description: Settings apply to both public and private ALBs.
+      id: section_compliance
+      label: Compliance
+      type: section
+    - default: true
+      description: Keep enabled to detect failed or slow requests on both ALBs. Disable if monitored elsewhere. CloudWatch charges apply; NLBs are excluded.
+      id: cloudwatch_alarms_creation_enabled
+      label: Create load balancer CloudWatch alarms
+      type: boolean
+    - $include: ../../partials/inputs/alb-cloudwatch-alarm-inputs.yml
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -590,6 +654,16 @@ module:
 
     Metrics appear only after tasks are running in the cluster. EC2-specific charts appear only when EC2 capacity exists and the required Container Insights instance metrics are available.
 
+    Container Insights also feeds the service running-task alarms, which use the `RunningTaskCount` metric, so keep it enabled when services alarm on task count.
+
+    Default log retention (days) is exposed as a stack output. Every ECS service that references this cluster inherits it as its log group retention unless the service sets its own value in its Compliance section.
+
+    ## Compliance
+
+    CloudWatch alarms for load balancer 5xx, target 5xx, and target response time are enabled by default on both ALBs. Thresholds, evaluation periods, and SNS actions are shared by both.
+
+    Load balancer alarms cover the ALB-level metrics only. Per-service health, such as unhealthy targets and per-service error rates, is alarmed from each ECS service's own Compliance section. Network Load Balancers have no alarms in this module.
+
     ## Configuration
 
     | Field                 | Required | Default              | Description                                                   |
@@ -597,6 +671,8 @@ module:
     | VPC network           | Yes      | —                    | Existing VPC, subnets, AWS account, and region                |
     | ECS cluster name      | Yes      | `{project}-{env}`    | Name prefix for ECS and load balancer resources               |
     | Container insights    | No       | `enhanced`           | Collect enhanced task, service, cluster, and EC2 metrics in CloudWatch |
+    | Default log retention (days) | No | `90`              | Log retention inherited by ECS services in this cluster        |
+    | Create load balancer CloudWatch alarms | No | `true` | Adds 5xx and response time alarms on both ALBs               |
     | Fargate               | No       | `true`               | Allow services to use Fargate capacity                        |
     | Fargate Spot          | No       | `true`               | Allow services to use lower-cost interruptible Fargate Spot   |
     | EC2 instance type     | No       | —                    | Enables EC2 capacity when selected                            |
@@ -652,6 +728,15 @@ module:
       base_path: compute/ecs_cluster
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        alb_cloudwatch_alarm_elb_5xx_threshold: << module.input.cloudwatch_alarm_elb_5xx_threshold >>
+        alb_cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
+        alb_cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
+        alb_cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
+        cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions || [] >>
+        cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
+        cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+        cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions || [] >>
+        log_retention_days: << module.input.log_retention_days >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
         ec2_ami_id: << module.input.ec2_ami_id >>
         ec2_spot_enabled: << module.input.ec2_spot_enabled >>

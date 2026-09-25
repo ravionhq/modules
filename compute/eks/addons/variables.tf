@@ -60,7 +60,7 @@ variable "topology_aware_routing_enabled" {
 variable "kubectl_image" {
   type        = string
   description = "kubectl image (repository:tag) the kube-dns patch Jobs run. Pinned; override for clusters that must pull from a private mirror."
-  default     = "registry.k8s.io/kubectl:v1.33.12"
+  default     = "registry.k8s.io/kubectl:v1.36.4"
   nullable    = false
 
   validation {
@@ -81,13 +81,13 @@ variable "aws_load_balancer_controller_enabled" {
 
 variable "aws_load_balancer_controller_chart_version" {
   type        = string
-  description = "Version of the aws-load-balancer-controller Helm chart to install."
-  default     = "1.14.0"
+  description = "Version of the aws-load-balancer-controller Helm chart to install. The bundled CRD chart matches the default; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
+  default     = "3.5.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.aws_load_balancer_controller_chart_version))
-    error_message = "The aws_load_balancer_controller_chart_version must be a semantic version like '1.14.0' (no leading 'v')."
+    error_message = "The aws_load_balancer_controller_chart_version must be a semantic version like '3.5.0' (no leading 'v')."
   }
 }
 
@@ -121,7 +121,7 @@ variable "ebs_csi_driver_enabled" {
 
 variable "ebs_csi_addon_version" {
   type        = string
-  description = "Pinned version for the aws-ebs-csi-driver add-on. When null, AWS resolves the most recent compatible version."
+  description = "Pinned version for the aws-ebs-csi-driver add-on. When null, the module tracks the most recent version compatible with the cluster's Kubernetes version and upgrades it in place on apply."
   default     = null
 }
 
@@ -141,7 +141,7 @@ variable "ebs_csi_addon_configuration_values" {
 
 variable "cloudwatch_observability_addon_version" {
   type        = string
-  description = "Pinned version for the amazon-cloudwatch-observability add-on. When null, AWS resolves the most recent compatible version."
+  description = "Pinned version for the amazon-cloudwatch-observability add-on. When null, the module tracks the most recent version compatible with the cluster's Kubernetes version and upgrades it in place on apply."
   default     = null
 }
 
@@ -164,12 +164,12 @@ variable "eso_enabled" {
 variable "eso_chart_version" {
   type        = string
   description = "Version of the external-secrets Helm chart to install."
-  default     = "2.8.0"
+  default     = "2.11.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.eso_chart_version))
-    error_message = "The eso_chart_version must be a semantic version like '2.8.0' (no leading 'v')."
+    error_message = "The eso_chart_version must be a semantic version like '2.11.0' (no leading 'v')."
   }
 }
 
@@ -291,12 +291,12 @@ variable "karpenter_node_role_additional_managed_policy_arns" {
 variable "karpenter_chart_version" {
   type        = string
   description = "Version of the Karpenter Helm chart (and karpenter-crd chart) to install."
-  default     = "1.14.0"
+  default     = "1.14.1"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.karpenter_chart_version))
-    error_message = "The karpenter_chart_version must be a semantic version like '1.14.0' (no leading 'v')."
+    error_message = "The karpenter_chart_version must be a semantic version like '1.14.1' (no leading 'v')."
   }
 }
 
@@ -709,21 +709,33 @@ variable "private_nlb_elastic_ip_allocation_ids" {
 
 variable "karpenter_default_node_pool" {
   type = object({
-    capacity_types      = optional(list(string), ["on-demand", "spot"])
-    instance_categories = optional(list(string), ["c", "m", "r"])
-    architectures       = optional(list(string), ["amd64"])
-    cpu_limit           = optional(number, 100)
-    expire_after        = optional(string, "720h")
-    root_volume_size    = optional(string, "20Gi")
-    root_volume_type    = optional(string, "gp3")
-    ebs_kms_key_arn     = optional(string)
+    capacity_types       = optional(list(string), ["on-demand", "spot"])
+    instance_categories  = optional(list(string), ["c", "m", "r"])
+    architectures        = optional(list(string), ["amd64"])
+    cpu_limit            = optional(number, 100)
+    expire_after         = optional(string, "720h")
+    consolidation_policy = optional(string, "WhenEmptyOrUnderutilized")
+    consolidate_after    = optional(string, "15m")
+    root_volume_size     = optional(string, "20Gi")
+    root_volume_type     = optional(string, "gp3")
+    ebs_kms_key_arn      = optional(string)
   })
-  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
+  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, how eagerly Karpenter consolidates, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
   default     = {}
 
   validation {
     condition     = var.karpenter_default_node_pool.ebs_kms_key_arn == null || can(regex("^arn:aws[a-zA-Z-]*:kms:", var.karpenter_default_node_pool.ebs_kms_key_arn))
     error_message = "The karpenter_default_node_pool.ebs_kms_key_arn must be a KMS key ARN when set."
+  }
+
+  validation {
+    condition     = contains(["WhenEmpty", "WhenEmptyOrUnderutilized"], var.karpenter_default_node_pool.consolidation_policy)
+    error_message = "The karpenter_default_node_pool.consolidation_policy must be WhenEmpty or WhenEmptyOrUnderutilized."
+  }
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.karpenter_default_node_pool.consolidate_after))
+    error_message = "The karpenter_default_node_pool.consolidate_after must be a duration like '30s', '15m' or '1h'."
   }
 
   validation {
@@ -775,7 +787,7 @@ variable "ravion_operator_chart_source" {
 variable "ravion_operator_chart_version" {
   type        = string
   description = "Operator Helm chart version. For executor Jobs, use the chart_version output from the same Operator publishing run as ravion_operator_execution_image. Inline mode preserves the running image unless an image tag is pinned; Job mode pins coordinators and executors to ravion_operator_execution_image. Null tracks latest and is not allowed in Job mode."
-  default     = "0.4.1"
+  default     = "0.5.11"
 
   validation {
     condition     = var.ravion_operator_chart_version == null || can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.ravion_operator_chart_version))
@@ -874,12 +886,54 @@ variable "ravion_operator_execution_image" {
 
 variable "ravion_operator_execution_max_concurrent" {
   type        = number
-  description = "Installation-wide retained executor capacity (1-64), not per coordinator. Null selects 1 for full management's shared mutation lane or 4 for independent namespace lanes. Changing established capacity requires draining executions and migrating the retained capacity Lease. Full management requires 1."
+  description = "Pins how many releases the Operator deploys at once, installation-wide (1-64). Null lets the Ravion control plane decide and retune it without a module release (currently 12)."
   default     = null
 
   validation {
     condition     = var.ravion_operator_execution_max_concurrent == null ? true : (var.ravion_operator_execution_max_concurrent >= 1 && var.ravion_operator_execution_max_concurrent <= 64 && floor(var.ravion_operator_execution_max_concurrent) == var.ravion_operator_execution_max_concurrent)
     error_message = "The ravion_operator_execution_max_concurrent must be an integer from 1 to 64."
+  }
+}
+
+variable "ravion_operator_warm_capacity" {
+  type = object({
+    enabled  = optional(bool, false)
+    replicas = optional(number, 8)
+    requests = optional(object({
+      cpu               = optional(string, "100m")
+      memory            = optional(string, "256Mi")
+      ephemeral_storage = optional(string, "1Gi")
+    }), {})
+    placement = optional(object({
+      node_selector = optional(map(string), {})
+      tolerations = optional(list(object({
+        key      = string
+        operator = string
+        value    = string
+        effect   = string
+      })), [])
+      topology_spread_enabled            = optional(bool, false)
+      topology_spread_max_skew           = optional(number, 1)
+      topology_spread_key                = optional(string, "topology.kubernetes.io/zone")
+      topology_spread_when_unsatisfiable = optional(string, "ScheduleAnyway")
+    }), {})
+  })
+  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. Tune replicas, per-slot requests and placement for actual rollout requirements."
+  default     = {}
+
+  validation {
+    condition     = var.ravion_operator_warm_capacity.replicas >= 1 && floor(var.ravion_operator_warm_capacity.replicas) == var.ravion_operator_warm_capacity.replicas
+    error_message = "The ravion_operator_warm_capacity.replicas must be a positive integer."
+  }
+
+  validation {
+    condition     = var.ravion_operator_warm_capacity.placement.topology_spread_max_skew >= 1 && floor(var.ravion_operator_warm_capacity.placement.topology_spread_max_skew) == var.ravion_operator_warm_capacity.placement.topology_spread_max_skew
+    error_message = "The warm-capacity topology spread max skew must be a positive integer."
+  }
+
+  validation {
+    condition     = contains(["DoNotSchedule", "ScheduleAnyway"], var.ravion_operator_warm_capacity.placement.topology_spread_when_unsatisfiable)
+    error_message = "The warm-capacity topology spread behaviour must be DoNotSchedule or ScheduleAnyway."
   }
 }
 
@@ -1001,12 +1055,12 @@ variable "metrics_additional_allowlist" {
 variable "otel_collector_chart_version" {
   type        = string
   description = "Version of the community opentelemetry-collector Helm chart used to run the collector."
-  default     = "0.169.0"
+  default     = "0.173.1"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.otel_collector_chart_version))
-    error_message = "The otel_collector_chart_version must be a semantic version like '0.169.0' (no leading 'v')."
+    error_message = "The otel_collector_chart_version must be a semantic version like '0.173.1' (no leading 'v')."
   }
 }
 
@@ -1018,7 +1072,7 @@ variable "otel_collector_image_repository" {
 
 variable "otel_collector_image_tag" {
   type        = string
-  description = "Tag of the metrics collector image. When null it follows the image the module chose: v0.49.0 for the AWS Distro, otel_contrib_image_tag for contrib."
+  description = "Tag of the metrics collector image. When null it follows the image the module chose: v0.50.0 for the AWS Distro, otel_contrib_image_tag for contrib."
   default     = null
 }
 
@@ -1064,12 +1118,12 @@ variable "kube_state_metrics_enabled" {
 variable "kube_state_metrics_chart_version" {
   type        = string
   description = "Version of the prometheus-community/kube-state-metrics Helm chart to install."
-  default     = "8.3.0"
+  default     = "8.5.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.kube_state_metrics_chart_version))
-    error_message = "The kube_state_metrics_chart_version must be a semantic version like '8.3.0' (no leading 'v')."
+    error_message = "The kube_state_metrics_chart_version must be a semantic version like '8.5.0' (no leading 'v')."
   }
 }
 
@@ -1185,12 +1239,12 @@ variable "loki_helm_values" {
 variable "alloy_chart_version" {
   type        = string
   description = "Version of the grafana/alloy Helm chart to install."
-  default     = "1.11.1"
+  default     = "1.12.1"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.alloy_chart_version))
-    error_message = "The alloy_chart_version must be a semantic version like '1.11.1' (no leading 'v')."
+    error_message = "The alloy_chart_version must be a semantic version like '1.12.1' (no leading 'v')."
   }
 }
 
@@ -1227,12 +1281,12 @@ variable "grafana_enabled" {
 variable "grafana_chart_version" {
   type        = string
   description = "Version of the grafana Helm chart to install, from the grafana-community repository - the maintained home of this chart since Grafana Labs deprecated their copy in January 2026."
-  default     = "12.10.4"
+  default     = "13.2.5"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.grafana_chart_version))
-    error_message = "The grafana_chart_version must be a semantic version like '12.10.4' (no leading 'v')."
+    error_message = "The grafana_chart_version must be a semantic version like '13.2.5' (no leading 'v')."
   }
 }
 
@@ -1538,7 +1592,7 @@ variable "otel_contrib_image_repository" {
 variable "otel_contrib_image_tag" {
   type        = string
   description = "Tag of the contrib collector image."
-  default     = "0.137.0"
+  default     = "0.161.0"
   nullable    = false
 }
 
@@ -1558,12 +1612,12 @@ variable "otel_contrib_command_name" {
 variable "prometheus_chart_version" {
   type        = string
   description = "Version of the prometheus-community/prometheus Helm chart installed for the in-cluster prometheus provider."
-  default     = "27.44.0"
+  default     = "29.33.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.prometheus_chart_version))
-    error_message = "The prometheus_chart_version must be a semantic version like '27.44.0' (no leading 'v')."
+    error_message = "The prometheus_chart_version must be a semantic version like '29.33.0' (no leading 'v')."
   }
 }
 
@@ -1572,4 +1626,47 @@ variable "prometheus_helm_values" {
   description = "Extra YAML documents merged into the prometheus chart values, after the values this module derives (later entries win). The route to alerting rules, extra scrape jobs, or a private image registry."
   default     = []
   nullable    = false
+}
+
+variable "karpenter_interruption_queue_alarm_creation_enabled" {
+  type        = bool
+  description = "Create a CloudWatch message-age alarm for the Karpenter interruption queue."
+  default     = true
+  nullable    = false
+}
+
+variable "karpenter_interruption_queue_alarm_age_threshold_seconds" {
+  type        = number
+  description = "Maximum oldest-message age in seconds before entering ALARM; evaluated over one 60-second period."
+  default     = 60
+  nullable    = false
+
+  validation {
+    condition     = var.karpenter_interruption_queue_alarm_age_threshold_seconds > 0 && floor(var.karpenter_interruption_queue_alarm_age_threshold_seconds) == var.karpenter_interruption_queue_alarm_age_threshold_seconds
+    error_message = "The threshold must be a positive whole number of seconds."
+  }
+}
+
+variable "karpenter_interruption_queue_alarm_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when the interruption queue enters ALARM. Empty disables direct actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.karpenter_interruption_queue_alarm_actions) <= 5 && alltrue([for arn in var.karpenter_interruption_queue_alarm_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
+variable "karpenter_interruption_queue_alarm_ok_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when the interruption queue returns to OK. Empty disables direct recovery actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.karpenter_interruption_queue_alarm_ok_actions) <= 5 && alltrue([for arn in var.karpenter_interruption_queue_alarm_ok_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
 }

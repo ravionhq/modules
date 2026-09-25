@@ -32,6 +32,12 @@ When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
 
+## Interruption queue monitoring
+
+Karpenter's queue gets an `ApproximateAgeOfOldestMessage` CloudWatch alarm by default, independent of workload metrics providers. The default threshold is 60 seconds, using `Maximum` over one 60-second period and `GreaterThanOrEqualToThreshold`. Missing data is non-breaching. Keep the threshold below queue retention (300 seconds by default). This detects stalled consumption; metric publication and notification delays mean it cannot guarantee a response before a Spot interruption.
+
+Set `karpenter_interruption_queue_alarm_actions` and `karpenter_interruption_queue_alarm_ok_actions` to action ARNs for ALARM and OK transitions. Both default to `[]`, so direct notifications require configuration. Standard CloudWatch charges apply. Set `karpenter_interruption_queue_alarm_creation_enabled = false` to opt out; disabling Karpenter also removes the alarm.
+
 ## Usage
 
 ```hcl
@@ -182,10 +188,10 @@ Each signal is one multi-select. **Loki and Amazon Managed Prometheus are the de
 | `cloudwatch` | OpenTelemetry DaemonSet (`awscloudwatchlogs`) | Log group `/ravion/eks/<cluster>`, one stream per pod as `<namespace>/<pod>/<container>` | **Renders**, and is the fallback when the in-cluster agent is offline |
 | `grafana_cloud` | Alloy (`loki.write` with basic auth) | Your Grafana Cloud Loki endpoint | Ships + "Open in Grafana Cloud" |
 | `datadog` | OpenTelemetry (`datadog`) | Datadog intake for the chosen site | Ships + "Open in Datadog" |
-| `new_relic` | OpenTelemetry (`otlphttp`) | New Relic OTLP, US or EU | Ships + "Open in New Relic" |
+| `new_relic` | OpenTelemetry (`otlp_http`) | New Relic OTLP, US or EU | Ships + "Open in New Relic" |
 | `opensearch` | OpenTelemetry (`opensearch`, SigV4) | An Amazon OpenSearch Service domain | Ships + "Open Dashboards" |
 | `splunk` | OpenTelemetry (`splunk_hec`) | Splunk HTTP Event Collector | Ships |
-| `otlp` | OpenTelemetry (`otlphttp`) | Any OTLP/HTTP receiver | Ships |
+| `otlp` | OpenTelemetry (`otlp_http`) | Any OTLP/HTTP receiver | Ships |
 
 | `metrics_providers` | Exporter | Destination | In Ravion |
 |---|---|---|---|
@@ -194,8 +200,8 @@ Each signal is one multi-select. **Loki and Amazon Managed Prometheus are the de
 | `cloudwatch` | the CloudWatch agent (add-on) | `ContainerInsights` metric namespace | **Renders**, last in the chain |
 | `grafana_cloud` | `prometheusremotewrite` + basic auth | Grafana Cloud Prometheus remote write | Ships + link |
 | `datadog` | `datadog` | Datadog intake | Ships + link |
-| `new_relic` | `otlphttp` | New Relic OTLP | Ships + link |
-| `otlp` | `otlphttp` | Any OTLP/HTTP receiver | Ships |
+| `new_relic` | `otlp_http` | New Relic OTLP | Ships + link |
+| `otlp` | `otlp_http` | Any OTLP/HTTP receiver | Ships |
 
 **Several rendering providers are a fallback chain, never a merge.** `logs_rendering_providers` and `metrics_rendering_providers` publish the selected members of a fixed order — logs `loki → cloudwatch`, metrics `amp → prometheus → cloudwatch` — and the dashboard reads the first store that can answer right now, saying which one it is showing. That turns the in-cluster store's one weakness (no agent, no logs) into a soft failure rather than an empty tab. Merging two stores for the same workload would show every line twice, so it is deliberately not done.
 
@@ -401,6 +407,13 @@ ravion_operator_endpoint = "ws://host.docker.internal:3001/operator/v1/connect"
 
 `ravion_operator_chart_version` is ignored for a filesystem chart. Note that `ravion_operator_chart_source` must stay **publicly pullable** in production: customer clusters cannot pull from Ravion's private ECR.
 
+Before publishing chart `0.5.11`, verify the cross-repository runtime-policy contract against its source directory. The check supplies obsolete raw Helm resource fields and confirms that the final `RVN_OPERATOR_EXECUTION_JOBS` JSON omits them while preserving the independent concurrency configuration:
+
+```bash
+OPERATOR_CHART_PATH=/path/to/ravion/packages/operator/chart/operator \
+  ./tests/test_operator_chart_contract.sh
+```
+
 Pointing credential issuance at a local control plane is no longer a module input — it is `RAVION_BASE_URL`, see below.
 
 #### Applying outside a Ravion pipeline
@@ -455,12 +468,13 @@ With `ravion_operator_self_update_enabled` on (the default), the control plane r
 
 The Ravion form exposes only **Ravion EKS Management** for Operator. Durable
 executor Jobs and workload namespace bootstrap are enabled automatically;
-customization uses **Advanced Terraform variables**. The module automatically pins chart
-`0.5.1`, whose package bundles the matching verified multiarch image digest as the
-floor a fresh install starts from, and enables two-replica HA and full-cluster
-management with Jobs. Self-update stays on in Job mode: Ravion rolls the agent
-forward and the chart preserves the running image on later applies. Direct
-Terraform callers opt in with `ravion_operator_execution_jobs_enabled = true`.
+customization uses **Advanced Terraform variables**. The module targets chart
+`0.5.11` for execution-status watch RBAC and executor image prewarming, and enables
+two-replica HA and full-cluster management with Jobs. Chart `0.5.11` must be
+published before this module version is released or applied.
+Self-update stays on in Job mode: Ravion rolls the agent forward and the chart
+preserves the running image on later applies. Direct Terraform callers opt in with
+`ravion_operator_execution_jobs_enabled = true`.
 
 Direct Terraform callers select a chart from a successful Operator publishing run. Leave the execution image empty to use its bundled digest, or override it with a matching digest-qualified `image_ref`. Publication must finish before applying addons; an unpublished source chart requires an explicit digest.
 
@@ -469,7 +483,7 @@ ravion_operator_enabled                = true
 ravion_operator_deploy_enabled         = true
 ravion_operator_deploy_namespaces      = ["app-prod"]
 ravion_operator_execution_jobs_enabled = true
-ravion_operator_chart_version          = "0.5.1"
+ravion_operator_chart_version          = "0.5.11"
 ravion_operator_coordinator_enabled    = true
 ```
 
@@ -477,7 +491,22 @@ Job mode keeps self-update on (chart 0.5.0+). Only the elected coordinator patch
 
 HA requires a replica-aware gateway and runs a fixed number of coordinators, two by default, placed the way Karpenter places itself: one per node, spread across zones, tolerating a `CriticalAddonsOnly` system node group, at `system-cluster-critical` priority, and never on a node Karpenter provisioned. A coordinator therefore can never hold an autoscaled node hostage, and a replica with no eligible node stays Pending until one appears; nothing sizes the count to the cluster or adds a node. The install needs a node group Karpenter does not manage, which the `compute/eks` system node group provides with two nodes by default. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas = 1`, and with self-update on also `ravion_operator_coordinator_distinct_nodes_enabled = false` so the rollout can surge; with two replicas there the second pod is permanently Pending, the Deployment never settles and a rollout cannot complete. Disabling distinct nodes drops the placement rules and permits custom affinity through `ravion_operator_helm_values`.
 
-Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Each executor requests 1 CPU/2Gi memory/1Gi ephemeral storage and limits at 4 CPU/8Gi/20Gi. Nodes still need enough free resources to schedule the pods; resource overrides use `coordinator.resources` and `executionJobs.resources` in `ravion_operator_helm_values`.
+Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU/128Mi memory/1Gi ephemeral storage and limit at 2 CPU/2Gi/20Gi. Nodes still need enough free resources to schedule the pods. The module never emits executor resources into Helm configuration, so Ravion can retune them without a chart or module release. Existing Jobs remain immutable.
+
+The old raw Helm fields `executionJobs.resources` and `executionJobs.resourcesSource` are accepted as inert upgrade residue but chart `0.5.11` deliberately omits both from `RVN_OPERATOR_EXECUTION_JOBS`; they cannot pin executor sizing. Concurrency remains independent: `executionJobs.maxConcurrent` and `settingsSource` continue to control whether capacity is runtime-managed or locally pinned.
+
+Optional `ravion_operator_warm_capacity` runs low-priority pause placeholders that Karpenter can schedule before a rollout. Its default eight 100m CPU/256Mi/1Gi slots are sized for six executors plus a 100% surge of the default two-pod web service. This is a schedulability guarantee only when placeholders land on nodes eligible for those executors and app pods, and those workloads have priority greater than the placeholder class's `-10`; aggregate capacity elsewhere cannot satisfy placement constraints and equal/lower-priority pods cannot preempt it. Tune slot count, requests, node selectors, tolerations and topology spread to match the workloads that must start immediately. Placeholders terminate with zero grace.
+
+To also keep the executor image cached, enable the Operator chart's `prewarm.enabled` through `ravion_operator_helm_values`. The chart creates a lightweight DaemonSet; the elected coordinator updates only its image to the exact digest it is running, including after self-update. Configure `prewarm.nodeSelector` and `prewarm.tolerations` for eligible executor nodes. This is asynchronous: newly added nodes and a newly updated digest still need their first pull. It requires coordinator mode and an image containing `operator prewarm` (introduced in 0.5.11).
+
+```hcl
+ravion_operator_helm_values = [yamlencode({
+  prewarm = {
+    enabled = true
+    nodeSelector = { "karpenter.sh/nodepool" = "default" }
+  }
+})]
+```
 
 Drain inline deployments and remediation before enabling Jobs. Drain durable executions before changing execution mode, management scope or retained capacity. Preserve the Operator namespace, `rvn-installation` identity, execution records and ownership/capacity Leases during migration. Missing workers or an uncertain mutation are not permission to delete ownership and launch a competing writer.
 
@@ -507,7 +536,7 @@ workload namespace bootstrap. Self-update can be disabled with
 
 The web, worker and cron modules continue to submit their existing Git-sourced Helm definitions through `aws:eks`. The control plane selects the eligible Operator enrolled for the cluster ARN and packages the chart for it. No new deployment discriminator or installation-ID field is supported in that module deploy schema. Provider-neutral prepared deployments are a separate API path, not yet a general-purpose module deployment type.
 
-Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, resources, tolerations — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities.
+Values this module does not surface directly — `portForward.enabled`, `helmInventory.enabled`, `redaction.extraPatterns`, `image.repository`, coordinator resources, tolerations and `prewarm.resources` — go through `ravion_operator_helm_values`. Read the chart's `README.md` before enabling any of the opt-in capabilities. Coordinator resources, image-prewarm pod resources and `ravion_operator_warm_capacity` placeholder resources are independent of executor Job resources and remain locally configurable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` values are ignored; executor Job sizing always comes from Ravion's runtime policy.
 
 The Ravion form uses **Ravion EKS Management** to control both Operator installation and deployments; the deployment flag follows the management toggle, including upgrades from a separately disabled deployments flag. Image/chart selection, executor Jobs, namespace bootstrap, HA and full management are automatic. Execution mode, namespace bootstrap, inline self-update, image/chart, scope, HA, capacity and Helm customization are available through **Advanced Terraform variables**.
 
@@ -558,26 +587,30 @@ failed during initialization have no provider resources to migrate.
 | region | AWS region. When null, the provider's configured region is used. | `string` | `null` | no |
 | tags | Tags applied to created resources and Karpenter-launched instances. | `map(string)` | `{}` | no |
 | topology_aware_routing_enabled | Patch `kube-dns` with `trafficDistribution: PreferClose` so DNS stays zone-local (CoreDNS pods are spread by `compute/eks`). | `bool` | `true` | no |
-| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs. | `string` | `registry.k8s.io/kubectl:v1.33.12` | no |
+| kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
 | aws_load_balancer_controller_enabled | Install the AWS Load Balancer Controller without any shared load balancer (it installs automatically with one). | `bool` | `false` | no |
-| aws_load_balancer_controller_chart_version | aws-load-balancer-controller chart version. | `string` | `"1.14.0"` | no |
+| aws_load_balancer_controller_chart_version | aws-load-balancer-controller chart version. Its CRDs come from the bundled `charts/aws-load-balancer-controller-crds` chart, which matches the default. | `string` | `"3.5.0"` | no |
 | aws_load_balancer_controller_namespace / aws_load_balancer_controller_service_account | Must match the Pod Identity association from `compute/eks`. | `string` | `"kube-system"` / `"aws-load-balancer-controller"` | no |
 | aws_load_balancer_controller_helm_values | Extra YAML docs merged into the chart values. | `list(string)` | `[]` | no |
 | karpenter_controller_namespace | Namespace for the controller and its Pod Identity association. | `string` | `"kube-system"` | no |
 | karpenter_controller_service_account | Service account for the controller and its Pod Identity association. | `string` | `"karpenter"` | no |
-| karpenter_chart_version | Karpenter (and karpenter-crd) chart version. | `string` | `"1.14.0"` | no |
+| karpenter_chart_version | Karpenter (and karpenter-crd) chart version. | `string` | `"1.14.1"` | no |
 | karpenter_node_role_additional_managed_policy_arns | Extra managed policies on the Karpenter node role. | `list(string)` | `[]` | no |
 | karpenter_interruption_queue_name | Override interruption queue name (`karpenter-<cluster>` when null). | `string` | `null` | no |
 | karpenter_interruption_queue_message_retention_seconds | Interruption queue retention. | `number` | `300` | no |
+| karpenter_interruption_queue_alarm_creation_enabled | Create a CloudWatch message-age alarm for the Karpenter interruption queue. | `bool` | `true` | no |
+| karpenter_interruption_queue_alarm_age_threshold_seconds | Maximum oldest-message age in seconds before entering ALARM; evaluated over one 60-second period. | `number` | `60` | no |
+| karpenter_interruption_queue_alarm_actions | Action ARNs invoked when the interruption queue enters ALARM. Empty disables direct actions. | `list(string)` | `[]` | no |
+| karpenter_interruption_queue_alarm_ok_actions | Action ARNs invoked when the interruption queue returns to OK. Empty disables direct recovery actions. | `list(string)` | `[]` | no |
 | karpenter_helm_values | Extra YAML docs merged into the Karpenter chart values. | `list(string)` | `[]` | no |
 | karpenter_default_node_pool_creation_enabled | Create the default NodePool + EC2NodeClass. | `bool` | `true` | no |
 | node_subnet_ids | Private subnets for the default NodePool and internal load balancers. Required when Karpenter's default NodePool, the private ALB, or the private NLB is enabled. | `list(string)` | `null` | no |
 | cluster_security_group_id | Cluster security group for Karpenter nodes and load-balancer-to-pod ingress. Required when Karpenter's default NodePool or any shared load balancer is enabled. | `string` | `null` | no |
-| karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry). | `object` | `{}` | no |
+| karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry, consolidation). | `object` | `{}` | no |
 | eso_enabled | Install the External Secrets Operator, its Pod Identity role, and the Ravion ClusterSecretStores. | `bool` | `true` | no |
-| eso_chart_version | external-secrets chart version. | `string` | `"2.8.0"` | no |
+| eso_chart_version | external-secrets chart version. | `string` | `"2.11.0"` | no |
 | eso_namespace | Namespace the operator is installed into (created if missing). | `string` | `"external-secrets"` | no |
 | eso_service_account | Controller service account; must match the Pod Identity association. | `string` | `"external-secrets"` | no |
 | eso_secret_and_parameter_arns | Secrets Manager / SSM ARNs (wildcards allowed) the operator may read. Empty means account- and region-wide read. | `list(string)` | `[]` | no |
@@ -587,7 +620,7 @@ failed during initialization have no provider resources to migrate.
 | eso_parameter_store_store_name | Name of the cluster-scoped Parameter Store store. | `string` | `"ravion-aws-parameter-store"` | no |
 | eso_helm_values | Extra YAML docs merged into the external-secrets chart values. | `list(string)` | `[]` | no |
 | ebs_csi_driver_enabled | Install the aws-ebs-csi-driver add-on + Pod Identity role. | `bool` | `false` | no |
-| ebs_csi_addon_version / ebs_csi_addon_configuration_values | EBS CSI pin / JSON overrides. | `string` | `null` | no |
+| ebs_csi_addon_version / ebs_csi_addon_configuration_values | EBS CSI pin / JSON overrides. Null tracks the latest version compatible with the cluster. | `string` | `null` | no |
 | logs_providers | Where container logs go: any of `loki`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns logs off. Null falls back to the deprecated `logs_enabled`. | `list(string)` | `["loki"]` | no |
 | metrics_providers | Where metrics go: any of `amp`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns metrics off. Null falls back to the deprecated `metrics_enabled`. | `list(string)` | `["amp"]` | no |
 | observability_namespace | Namespace for the collectors, the log store, and the materialized vendor credentials. Null shares Ravion Operator's namespace, which is what keeps Loki's Service URL stable. | `string` | `null` | no |
@@ -600,26 +633,26 @@ failed during initialization have no provider resources to migrate.
 | logs_opensearch | `{ endpoint, index_prefix }`. The domain endpoint and index; requests are signed with `logs_opensearch_role_arn`. | `object` | `{}` | no |
 | logs_splunk | `{ hec_url, hec_token_secret_arn, index }`. | `object` | `{}` | no |
 | metrics_prometheus | `{ retention_days, storage_size, endpoint }`. `endpoint` points at a Prometheus you already run and skips the install. | `object` | `{}` | no |
-| prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"27.44.0"` / `[]` | no |
+| prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.33.0"` / `[]` | no |
 | logs_otlp / metrics_otlp | `{ endpoint, headers_secret_arn }`. The secret holds the value of an `Authorization` header. | `object` | `{}` | no |
 | metrics_amp | `{ workspace_id, region, alias }`. Falls back to the flat `amp_workspace_id` / `amp_region` / `amp_alias`. | `object` | `{}` | no |
 | metrics_cloudwatch | `{ enhanced_observability_enabled, application_signals_enabled, application_signals_namespaces, addon_version, addon_configuration_values }`. Auto-Monitor stays off unless Application Signals is enabled with no namespace list. | `object` | `{}` | no |
 | otel_logs_collector_service_account / _resources / _helm_values | The log collector's identity, sizing, and value overrides. | mixed | `"ravion-otel-logs-collector"` / requests `100m`/`128Mi`, limit `512Mi` / `[]` | no |
-| otel_contrib_image_repository / otel_contrib_image_tag / otel_contrib_command_name | The upstream contrib collector image, used by the log collector and by the metrics collector when a vendor exporter the AWS Distro lacks is selected. | `string` | `"docker.io/otel/opentelemetry-collector-contrib"` / `"0.137.0"` / `"otelcol-contrib"` | no |
-| cloudwatch_observability_addon_version / cloudwatch_observability_addon_configuration_values | CloudWatch Observability pin / JSON overrides. Fallbacks for the `metrics_cloudwatch` fields of the same name. | `string` | `null` | no |
+| otel_contrib_image_repository / otel_contrib_image_tag / otel_contrib_command_name | The upstream contrib collector image, used by the log collector and by the metrics collector when a vendor exporter the AWS Distro lacks is selected. Overridden tags must be 0.149.0 or newer (ADOT v0.50.0 or newer), because the module uses the current `file_log`, `k8s_attributes` and `otlp_http` component names. | `string` | `"docker.io/otel/opentelemetry-collector-contrib"` / `"0.161.0"` / `"otelcol-contrib"` | no |
+| cloudwatch_observability_addon_version / cloudwatch_observability_addon_configuration_values | CloudWatch Observability pin / JSON overrides; null tracks the latest version compatible with the cluster. Fallbacks for the `metrics_cloudwatch` fields of the same name. | `string` | `null` | no |
 | amp_workspace_id | Existing AMP workspace to write into. Null creates one aliased `ravion-<cluster>`. | `string` | `null` | no |
 | amp_region | Region the AMP workspace lives in. Null uses the cluster's region. | `string` | `null` | no |
 | amp_alias | Alias for the created workspace. Null uses `ravion-<cluster_name>`. | `string` | `null` | no |
 | metrics_namespace | Namespace for the metrics components. Null shares Ravion Operator's namespace. | `string` | `null` | no |
 | scrape_interval_seconds | Scrape interval for every job (15-300). The first cost lever. | `number` | `60` | no |
 | metrics_additional_allowlist | Extra whole-name metric regexes appended to the curated allow-list on every job. | `list(string)` | `[]` | no |
-| otel_collector_chart_version | Community opentelemetry-collector chart version. | `string` | `"0.169.0"` | no |
+| otel_collector_chart_version | Community opentelemetry-collector chart version. | `string` | `"0.173.1"` | no |
 | otel_collector_image_repository / otel_collector_image_tag / otel_collector_command_name | Metrics collector image and entrypoint. Null lets the module choose: the AWS Distro (which ships `sigv4auth`) for an AMP-only selection, contrib when a vendor exporter it lacks is selected. | `string` | `null` | no |
 | otel_collector_service_account | Collector service account; the Pod Identity association binds to this name. | `string` | `"ravion-otel-collector"` | no |
 | otel_collector_resources | Collector requests and limits. A memory limit is set by default because `memory_limiter` sizes itself against it. | `object` | requests `100m`/`256Mi`, limit `512Mi` | no |
 | otel_collector_helm_values | Extra YAML docs merged into the collector chart values. | `list(string)` | `[]` | no |
 | kube_state_metrics_enabled | Install kube-state-metrics alongside the collector (the source of every `kube_*` series). | `bool` | `true` | no |
-| kube_state_metrics_chart_version | prometheus-community/kube-state-metrics chart version. | `string` | `"8.3.0"` | no |
+| kube_state_metrics_chart_version | prometheus-community/kube-state-metrics chart version. | `string` | `"8.5.0"` | no |
 | kube_state_metrics_helm_values | Extra YAML docs merged into the kube-state-metrics chart values. | `list(string)` | `[]` | no |
 | grafana_role_creation_enabled | Create the IAM role Amazon Managed Grafana assumes to read the workspace and log groups. | `bool` | `false` | no |
 | grafana_source_account_id | Account whose Grafana workspaces may assume that role (`aws:SourceAccount`). Null uses this account. | `string` | `null` | no |
@@ -634,18 +667,18 @@ failed during initialization have no provider resources to migrate.
 | loki_persistence_enabled | Give Loki a PVC. Off by default — it needs a working StorageClass (`ebs_csi_driver_enabled`); an `emptyDir` is mounted at `/var/loki` instead. | `bool` | `false` | no |
 | loki_persistence_size | Size of Loki's local working volume — PVC size when persistence is on, `emptyDir` size limit when off. | `string` | `"10Gi"` | no |
 | loki_helm_values | Extra YAML docs merged into the Loki chart values. | `list(string)` | `[]` | no |
-| alloy_chart_version | grafana/alloy chart version. | `string` | `"1.11.1"` | no |
+| alloy_chart_version | grafana/alloy chart version. | `string` | `"1.12.1"` | no |
 | alloy_resources | Per-node Alloy requests and limits (multiplied by node count). | `object` | requests `100m`/`128Mi`, limit `512Mi` | no |
 | alloy_helm_values | Extra YAML docs merged into the Alloy chart values. | `list(string)` | `[]` | no |
 | grafana_enabled | Install Grafana in the cluster, preprovisioned with the AMP and Loki datasources. | `bool` | `false` | no |
-| grafana_chart_version | grafana chart version, from the grafana-community repository. | `string` | `"12.10.4"` | no |
+| grafana_chart_version | grafana chart version, from the grafana-community repository. Chart 13 runs the distroless image with a read-only root filesystem, so `GF_*__FILE` variables and `GF_INSTALL_PLUGINS` passed through `grafana_helm_values` no longer work. | `string` | `"13.2.5"` | no |
 | grafana_namespace | Namespace for the in-cluster Grafana. Null shares Ravion Operator's namespace. | `string` | `null` | no |
 | grafana_service_account | Grafana's service account; the AMP Pod Identity association binds to this name. | `string` | `"ravion-grafana"` | no |
 | grafana_helm_values | Extra YAML docs merged into the Grafana chart values (ingress, persistence, dashboards). | `list(string)` | `[]` | no |
 | ravion_operator_enabled | Mint the cluster's Ravion Operator credential (via the `ravion` provider) and install the Ravion Operator. | `bool` | `false` | no |
 | ravion_operator_endpoint | WebSocket endpoint the agent dials. | `string` | `"wss://websockets.ravion.com/operator/v1/connect"` | no |
 | ravion_operator_chart_source | Public OCI reference, or a filesystem chart path for local testing. | `string` | `"oci://public.ecr.aws/a8z1i1r2/operator"` | no |
-| ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.4.1"` | no |
+| ravion_operator_chart_version | Ravion Operator **chart** version (not the agent version), pinned per module release. Null resolves the latest; ignored for a filesystem chart. | `string` | `"0.5.11"` | no |
 | ravion_operator_namespace | Namespace for the agent and its credential Secret (created if missing). Shared observability components use it by default. | `string` | `"ravion-operator"` | no |
 | ravion_operator_namespaces_creation_enabled | Create missing observation and deployment namespaces before installing Operator RBAC; reuse existing namespaces and retain created namespaces on removal. | `bool` | `true` | no |
 | ravion_operator_namespace_scope | Namespaces the agent may observe. Empty is cluster-wide; non-empty renders namespaced Roles and no observation ClusterRole at all. | `list(string)` | `[]` | no |
@@ -653,7 +686,8 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_deploy_namespaces | Allowed namespaces; falls back to observation scope. Both lists must be empty for full management. | `list(string)` | `[]` | no |
 | ravion_operator_execution_jobs_enabled | Durable isolated executor Jobs. | `bool` | `false` | no |
 | ravion_operator_execution_image | Optional digest-pinned coordinator/executor image override; empty uses the published chart's bundled digest. | `string` | `""` | no |
-| ravion_operator_execution_max_concurrent | Retained installation-wide capacity, 1-64; null selects 1 for full management or 4 for scoped Jobs. | `number` | `null` | no |
+| ravion_operator_execution_max_concurrent | Pins how many releases deploy at once, 1-64. Null lets the Ravion control plane decide (currently 12). | `number` | `null` | no |
+| ravion_operator_warm_capacity | Optional low-priority capacity reservation with configurable slots, requests and placement. | `object` | disabled | no |
 | ravion_operator_coordinator_enabled | Elected HA coordinators; requires Job mode. | `bool` | `false` | no |
 | ravion_operator_coordinator_replicas | Fixed coordinator count, 1-9; use 1 on a single eligible node. | `number` | `2` | no |
 | ravion_operator_coordinator_distinct_nodes_enabled | Karpenter-style placement: one per node, zone spread, never on a Karpenter-provisioned node. | `bool` | `true` | no |
@@ -744,7 +778,7 @@ All outputs are null when the corresponding add-on is disabled.
 - The default NodePool and EC2NodeClass are delivered as a local chart (`charts/karpenter-resources`) because the Helm provider is the only Kubernetes access this stack has.
 - On destroy, the Helm releases are removed before the AWS-side resources, so Karpenter drains and terminates the nodes it launched while its IAM roles and queue still exist.
 - The cluster must have the Pod Identity Agent add-on (the `compute/eks` composite installs it by default); Karpenter's node access entry additionally requires `authentication_mode = API`.
-- The load balancer controller's IAM role and Pod Identity association come from the `compute/eks` composite (`aws_load_balancer_controller_pod_identity_creation_enabled`, on by default); this stack only installs the chart, with `region` and `vpcId` set explicitly so it works under restricted IMDS and on Fargate.
+- The load balancer controller's IAM role and Pod Identity association come from the `compute/eks` composite (`aws_load_balancer_controller_pod_identity_creation_enabled`, on by default); this stack only installs the chart, with `region` and `vpcId` set explicitly so it works under restricted IMDS and on Fargate. Its CRDs are a separate release from the bundled `charts/aws-load-balancer-controller-crds` chart, because Helm never upgrades a chart's `crds/` directory. TargetGroupBindings re-check target health every 2 seconds while a pod waits on its load balancer readiness gate, instead of the controller's 15-second default, so rolling deploys finish as soon as the load balancer reports new pods healthy.
 - For automatic subnet discovery, tag public subnets with `kubernetes.io/role/elb = 1` and private subnets with `kubernetes.io/role/internal-elb = 1`, or specify subnets per Ingress via the `alb.ingress.kubernetes.io/subnets` annotation.
 - Unlike Karpenter, the `external-secrets` chart renders its CRDs as ordinary templates (`installCRDs`, default on), so Helm upgrades them and no separate CRD chart is needed. The `ClusterSecretStore`s are a separate local chart (`charts/external-secrets-resources`) that `depends_on` the operator release, because CRD-kind objects cannot be applied before the operator's CRDs exist and its validating webhook is serving.
 - The External Secrets Operator's `ClusterSecretStore`s carry no `auth` block. The operator resolves credentials through the AWS SDK default credential chain, which the Pod Identity Agent populates from the association this stack creates — so no static AWS credentials exist anywhere in the cluster, and `serviceAccountRef`-style IRSA config is deliberately absent (it conflicts with Pod Identity).

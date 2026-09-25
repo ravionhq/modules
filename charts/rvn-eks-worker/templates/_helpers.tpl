@@ -90,3 +90,16 @@ silently starting the container with the variable unset.
       key: {{ .name }}
 {{- end }}
 {{- end -}}
+
+{{/*
+The lowest number of pods this release can be running: what an HPA may scale
+down to, or the fixed replica count. A PodDisruptionBudget is only safe to
+render above it.
+*/}}
+{{- define "rvn-eks-worker.replicaFloor" -}}
+{{- if .Values.autoscaling.enabled -}}
+{{- .Values.autoscaling.minReplicas -}}
+{{- else -}}
+{{- .Values.replicaCount -}}
+{{- end -}}
+{{- end -}}

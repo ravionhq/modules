@@ -35,6 +35,13 @@ mock_provider "aws" {
       account_id = "123456789012"
     }
   }
+  # aws_eks_addon validates addon_version as a semantic version, which a random
+  # mock string never is.
+  mock_data "aws_eks_addon_version" {
+    defaults = {
+      version = "v6.7.0-eksbuild.1"
+    }
+  }
   # The helm provider is configured from this data source, and its CA is
   # base64-decoded while the provider is configured — a random mock value would
   # fail the decode before any run block executes.
@@ -174,6 +181,11 @@ run "cloudwatch_metrics_provider_pins_auto_monitor_off" {
   }
 
   assert {
+    condition     = aws_eks_addon.cloudwatch_observability[0].addon_version == "v6.7.0-eksbuild.1"
+    error_message = "An unpinned add-on must track the most recent version compatible with the cluster"
+  }
+
+  assert {
     condition     = jsondecode(aws_eks_addon.cloudwatch_observability[0].configuration_values).agent.enabled == true
     error_message = "cloudwatch in metrics_providers must install the metrics agent"
   }
@@ -294,7 +306,7 @@ run "namespace_exclusions_reach_both_collectors" {
   }
 
   assert {
-    condition     = contains(yamldecode(helm_release.otel_logs_collector[0].values[0]).config.receivers.filelog.exclude, "/var/log/pods/kube-system_*/*/*.log")
+    condition     = contains(yamldecode(helm_release.otel_logs_collector[0].values[0]).config.receivers.file_log.exclude, "/var/log/pods/kube-system_*/*/*.log")
     error_message = "The OpenTelemetry collector must never open an excluded namespace's files"
   }
 }
@@ -463,12 +475,12 @@ run "new_relic_and_otlp_are_otlphttp_exporters" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_logs_collector[0].values[0]).config.exporters["otlphttp/new_relic"].endpoint == "https://otlp.eu01.nr-data.net"
+    condition     = yamldecode(helm_release.otel_logs_collector[0].values[0]).config.exporters["otlp_http/new_relic"].endpoint == "https://otlp.eu01.nr-data.net"
     error_message = "New Relic's EU region has its own OTLP endpoint"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlphttp/custom"].endpoint == "https://api.honeycomb.io"
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/custom"].endpoint == "https://api.honeycomb.io"
     error_message = "A custom OTLP endpoint must reach the metrics collector"
   }
 
@@ -630,6 +642,13 @@ run "in_cluster_prometheus_is_a_rendering_provider" {
   assert {
     condition     = contains(yamldecode(helm_release.prometheus[0].values[0]).server.extraFlags, "web.enable-remote-write-receiver")
     error_message = "Prometheus must accept remote writes, which is off by default"
+  }
+
+  # Chart 28+ turns its default scrape jobs on through scrapeConfigs; the
+  # server is a write-only sink, so the map must be deleted, not left default.
+  assert {
+    condition     = contains(keys(yamldecode(helm_release.prometheus[0].values[0])), "scrapeConfigs") && yamldecode(helm_release.prometheus[0].values[0]).scrapeConfigs == null
+    error_message = "Prometheus must not run the chart's default scrape jobs"
   }
 
   assert {

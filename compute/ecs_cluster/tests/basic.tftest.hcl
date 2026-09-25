@@ -1013,3 +1013,119 @@ run "ec2_detailed_monitoring" {
     error_message = "EC2 detailed monitoring should be enabled"
   }
 }
+
+# CloudWatch alarms default on and pass through to both ALBs; explicit opt-outs stay off.
+# Module-internal resources are not addressable from test assertions, so these
+# runs check the cluster outputs; alarm details are covered by networking/alb tests.
+run "alb_cloudwatch_alarms_disabled" {
+  command = plan
+
+  variables {
+    alb_cloudwatch_alarms_creation_enabled = false
+    public_alb_enabled                     = true
+    private_alb_enabled                    = true
+    public_subnet_ids                      = ["subnet-public1", "subnet-public2"]
+  }
+
+  assert {
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 0 && length(output.private_alb_cloudwatch_alarm_arns) == 0
+    error_message = "ALB alarm ARN outputs should be empty when explicitly disabled"
+  }
+}
+
+run "alb_cloudwatch_alarms_enabled" {
+  command = plan
+
+  variables {
+    public_alb_enabled                                  = true
+    private_alb_enabled                                 = true
+    public_subnet_ids                                   = ["subnet-public1", "subnet-public2"]
+    alb_cloudwatch_alarms_creation_enabled              = true
+    alb_cloudwatch_alarm_elb_5xx_threshold              = 5
+    alb_cloudwatch_alarm_target_5xx_threshold           = 15
+    alb_cloudwatch_alarm_target_response_time_threshold = 3
+    cloudwatch_alarm_evaluation_periods                 = 4
+    cloudwatch_alarm_period                             = 60
+    cloudwatch_alarm_actions                            = ["arn:aws:sns:us-east-1:123456789012:alerts"]
+  }
+
+  assert {
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && alltrue([for k in ["elb_5xx", "target_5xx", "target_response_time"] : contains(keys(output.public_alb_cloudwatch_alarm_arns), k)])
+    error_message = "Public ALB should expose the three alarm ARNs when alarms are enabled"
+  }
+
+  assert {
+    condition     = length(output.private_alb_cloudwatch_alarm_arns) == 3 && alltrue([for k in ["elb_5xx", "target_5xx", "target_response_time"] : contains(keys(output.private_alb_cloudwatch_alarm_arns), k)])
+    error_message = "Private ALB should expose the three alarm ARNs when alarms are enabled"
+  }
+}
+
+run "alb_cloudwatch_alarms_only_for_enabled_albs" {
+  command = plan
+
+  variables {
+    public_alb_enabled                     = true
+    public_subnet_ids                      = ["subnet-public1", "subnet-public2"]
+    alb_cloudwatch_alarms_creation_enabled = true
+  }
+
+  assert {
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && length(output.private_alb_cloudwatch_alarm_arns) == 0
+    error_message = "Alarms should only exist for load balancers that are created"
+  }
+}
+
+# Default log retention is exposed for services to inherit
+run "log_retention_output" {
+  command = plan
+
+  variables {
+    log_retention_days = 365
+  }
+
+  assert {
+    condition     = output.log_retention_days == 365
+    error_message = "log_retention_days output should echo the configured retention"
+  }
+}
+
+run "log_retention_rejects_invalid_value" {
+  command = plan
+
+  variables {
+    log_retention_days = 45
+  }
+
+  expect_failures = [var.log_retention_days]
+}
+
+run "alb_cloudwatch_alarms_enabled_by_default" {
+  command = plan
+
+  variables {
+    public_alb_enabled  = true
+    private_alb_enabled = true
+    public_subnet_ids   = ["subnet-public1", "subnet-public2"]
+  }
+
+  assert {
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && length(output.private_alb_cloudwatch_alarm_arns) == 3
+    error_message = "Expected alarms to be enabled by default, including null input"
+  }
+}
+
+run "alb_cloudwatch_alarms_null_uses_default" {
+  command = plan
+
+  variables {
+    public_alb_enabled                     = true
+    private_alb_enabled                    = true
+    public_subnet_ids                      = ["subnet-public1", "subnet-public2"]
+    alb_cloudwatch_alarms_creation_enabled = null
+  }
+
+  assert {
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && length(output.private_alb_cloudwatch_alarm_arns) == 3
+    error_message = "Expected alarms to be enabled by default, including null input"
+  }
+}

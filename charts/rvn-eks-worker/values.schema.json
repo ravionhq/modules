@@ -159,6 +159,21 @@
         }
       }
     },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render a PodDisruptionBudget. Skipped when the replica floor (autoscaling.minReplicas or replicaCount) is not greater than minAvailable, since such a budget would block node drains."
+        },
+        "minAvailable": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pods that must stay available during a voluntary disruption."
+        }
+      }
+    },
     "autoscaling": {
       "type": "object",
       "additionalProperties": false,

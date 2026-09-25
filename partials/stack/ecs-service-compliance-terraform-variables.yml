@@ -1,0 +1,11 @@
+cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions || [] >>
+cloudwatch_alarm_cpu_threshold: << module.input.cloudwatch_alarm_cpu_threshold >>
+cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
+cloudwatch_alarm_memory_threshold: << module.input.cloudwatch_alarm_memory_threshold >>
+cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+cloudwatch_alarm_running_tasks_minimum: << module.input.cloudwatch_alarm_running_tasks_minimum >>
+cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
+cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions || [] >>
+log_retention_days: >-
+  << module.input.log_retention_days != nil ? module.input.log_retention_days :
+  (module.input.cluster_log_retention_days != nil ? module.input.cluster_log_retention_days : 30) >>

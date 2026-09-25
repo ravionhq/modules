@@ -6,7 +6,7 @@
 # This is the second log collector, and it exists because Alloy speaks the Loki
 # protocol and nothing else. Every non-Loki destination — CloudWatch Logs,
 # Datadog, New Relic, a custom OTLP endpoint — is an exporter here, and they all
-# hang off ONE filelog receiver: the node's pod logs are read once however many
+# hang off ONE file_log receiver: the node's pod logs are read once however many
 # vendors the cluster ships to.
 #
 # Chart defaults are removed by setting them to null, which is how Helm deletes
@@ -27,7 +27,7 @@ serviceAccount:
   create: true
   name: ${jsonencode(service_account)}
 
-# k8sattributes resolves a pod's workload from the API server, which is the only
+# k8s_attributes resolves a pod's workload from the API server, which is the only
 # thing here that reads the Kubernetes API at all. Nothing writes.
 clusterRole:
   create: true
@@ -93,7 +93,7 @@ config:
     jaeger: null
     zipkin: null
     otlp: null
-    filelog:
+    file_log:
       include: ["/var/log/pods/*/*/*.log"]
       # The collector's own output, and every namespace the operator asked to
       # keep out. The pod log path is /var/log/pods/<namespace>_<pod>_<uid>/,
@@ -125,7 +125,7 @@ config:
     # The workload a pod belongs to, from the API server. Associated by pod UID
     # because that is what the container operator recovered from the path —
     # there is no pod IP on a log line to match against.
-    k8sattributes:
+    k8s_attributes:
       auth_type: serviceAccount
       passthrough: false
       extract:
@@ -167,10 +167,10 @@ config:
       traces: null
       logs:
         receivers:
-          - filelog
+          - file_log
         processors:
           - memory_limiter
-          - k8sattributes
+          - k8s_attributes
           - transform/ravion
           - batch
         exporters: ${jsonencode(pipeline_exporters)}

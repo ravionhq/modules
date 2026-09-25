@@ -4,8 +4,11 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.2
-  description: Fix the plan of a workload with IAM inline policies, which failed on OpenTofu 1.11 with "Inconsistent conditional result types" before any policy was attached. No change for workloads without inline policies.
+  version: 0.6.0
+  description: >-
+    Default rolling updates to 100% surge so a full replacement set of worker pods can
+    start together when spare capacity is available. Zero-unavailable protection
+    remains enabled, and a new advanced surge setting can limit temporary capacity.
 module:
   inputs:
     - id: section_cluster
@@ -86,6 +89,14 @@ module:
       show_when:
         autoscaling_enabled: false
       default: 1
+    - id: rollout_max_surge_percent
+      label: Maximum rollout surge (%)
+      type: number
+      description: Extra pods Kubernetes may create during a rolling update, as a percentage of the desired count. Use 100 to create a full replacement set at once when the cluster has enough spare capacity. Zero-unavailable rollout protection remains enabled.
+      collapsible: true
+      max: 100
+      min: 1
+      default: 100
     - id: termination_grace_period_seconds
       label: Shutdown grace period (secs)
       type: number
@@ -94,6 +105,22 @@ module:
       max: 3600
       min: 0
       default: 30
+    - id: pod_disruption_budget_enabled
+      label: Disruption budget
+      type: boolean
+      description: Limit how many pods node drains, consolidation and cluster upgrades may evict at once. A worker loses its in-flight work when it is evicted, so draining a fleet all at once loses all of it. Takes effect only while the minimum pod count is above Minimum available pods, since a budget that allows no evictions would block every drain.
+      collapsible: true
+      default: true
+    - id: pod_disruption_budget_min_available
+      label: Minimum available pods
+      type: number
+      description: Pods that must stay running during a node drain or other voluntary disruption.
+      collapsible: true
+      max: 1000
+      min: 1
+      default: 1
+      show_when:
+        pod_disruption_budget_enabled: true
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
@@ -134,6 +161,11 @@ module:
             $merge:
               - ../../partials/deploy/eks-workload-helm-values-common.yml
               - terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                strategy:
+                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%'
+                podDisruptionBudget:
+                  enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
+                  minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
                 replicaCount: >-
                   << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
                   module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
@@ -295,7 +327,7 @@ module:
 
     ## Deployment
 
-    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with the chart's RollingUpdate strategy, which surges 25% and keeps zero pods unavailable.
+    Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable. **Maximum rollout surge (%)** defaults to 100%, allowing a full replacement set to start together when enough matching capacity is already available. Lower this advanced setting to limit temporary capacity. The disruption budget controls voluntary evictions such as node drains, not Deployment rolling updates; shutdown grace still allows old workers to finish in-flight work.
 
     Deployments collapse: if several are queued, only the newest runs.
 
@@ -357,6 +389,7 @@ module:
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
     | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
+    | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
     | Shutdown grace period (secs) | No | 30 | Drain window after SIGTERM |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |

@@ -585,7 +585,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | logging_prefix | Base S3 key prefix for log files. Each distribution logs under `<prefix><key>/`. Only applies when `logging_destination = "s3"`. | `string` | `""` | no |
 | logging_cookies_enabled | Include cookies in access logs. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
 | logging_bucket_creation_enabled | Create a new S3 bucket for logging. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
-| logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `90` | no |
+| logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `365` | no |
 
 ### Origin Access Control
 

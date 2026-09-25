@@ -82,6 +82,9 @@ resource "helm_release" "prometheus" {
             scrape_configs = []
           }
         }
+        # Chart 28+ ships its default scrape jobs in the scrapeConfigs map, on by
+        # default; null deletes it so the empty scrape_configs above is the whole list.
+        scrapeConfigs = null
 
         # Alerting, the pushgateway, and a second copy of the exporters this
         # module already runs — none of which a remote-write sink needs.

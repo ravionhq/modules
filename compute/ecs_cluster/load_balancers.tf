@@ -38,6 +38,16 @@ module "public_alb" {
 
   # WAF
   web_acl_arn = var.public_alb_web_acl_arn
+
+  # CloudWatch alarms
+  cloudwatch_alarms_creation_enabled              = var.alb_cloudwatch_alarms_creation_enabled
+  cloudwatch_alarm_elb_5xx_threshold              = var.alb_cloudwatch_alarm_elb_5xx_threshold
+  cloudwatch_alarm_target_5xx_threshold           = var.alb_cloudwatch_alarm_target_5xx_threshold
+  cloudwatch_alarm_target_response_time_threshold = var.alb_cloudwatch_alarm_target_response_time_threshold
+  cloudwatch_alarm_evaluation_periods             = var.cloudwatch_alarm_evaluation_periods
+  cloudwatch_alarm_period                         = var.cloudwatch_alarm_period
+  cloudwatch_alarm_actions                        = var.cloudwatch_alarm_actions
+  cloudwatch_ok_actions                           = var.cloudwatch_ok_actions
 }
 
 ################################################################################
@@ -77,6 +87,16 @@ module "private_alb" {
   # Access logs
   access_logs_enabled    = var.private_alb_access_logs_enabled
   access_logs_bucket_arn = var.private_alb_access_logs_bucket_arn
+
+  # CloudWatch alarms
+  cloudwatch_alarms_creation_enabled              = var.alb_cloudwatch_alarms_creation_enabled
+  cloudwatch_alarm_elb_5xx_threshold              = var.alb_cloudwatch_alarm_elb_5xx_threshold
+  cloudwatch_alarm_target_5xx_threshold           = var.alb_cloudwatch_alarm_target_5xx_threshold
+  cloudwatch_alarm_target_response_time_threshold = var.alb_cloudwatch_alarm_target_response_time_threshold
+  cloudwatch_alarm_evaluation_periods             = var.cloudwatch_alarm_evaluation_periods
+  cloudwatch_alarm_period                         = var.cloudwatch_alarm_period
+  cloudwatch_alarm_actions                        = var.cloudwatch_alarm_actions
+  cloudwatch_ok_actions                           = var.cloudwatch_ok_actions
 }
 
 ################################################################################

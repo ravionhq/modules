@@ -84,6 +84,18 @@ module "eks" {
 | opentofu/terraform | >= 1.10.0 |
 | aws                | >= 6.0    |
 | tls                | >= 4.0    |
+| external           | >= 2.3, < 3.0 |
+| Python             | >= 3.9    |
+| AWS CLI            | v2        |
+
+Managed node groups preserve their live desired count within the configured
+minimum/maximum bounds. Raising the minimum above that count or lowering the
+maximum below it adjusts desired capacity in the same update, avoiding EKS's
+invalid-scaling-config error. This applies to both the system group and additional
+groups. The read-only capacity lookup uses AWS CLI credentials from the runner
+environment and verifies they match the provider account; see
+[node group capacity updates](modules/eks_node_group/README.md#capacity-updates)
+for credentials and saved-plan behavior.
 
 ## Inputs
 
