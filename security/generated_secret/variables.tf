@@ -7,8 +7,13 @@ variable "name" {
   description = "Name of the SSM parameter or Secrets Manager secret. A leading slash is added for Parameter Store and removed for Secrets Manager."
 
   validation {
-    condition     = can(regex("^/?[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$", var.name)) && length(var.name) <= 512
-    error_message = "The name must be at most 512 characters of letters, numbers, periods, hyphens, underscores, and forward slashes, with no empty path segments."
+    condition     = can(regex("^/?[A-Za-z0-9_.+=@-]+(/[A-Za-z0-9_.+=@-]+)*$", var.name)) && length(var.name) <= 512
+    error_message = "The name must be at most 512 characters of letters, numbers, and . _ - + = @ /, with no empty path segments."
+  }
+
+  validation {
+    condition     = var.store != "parameter_store" || (can(regex("^/?[A-Za-z0-9_./-]+$", var.name)) && !can(regex("^/?(?i)(aws|ssm)", var.name)))
+    error_message = "Parameter Store names may only contain letters, numbers, and . _ - /, and must not start with aws or ssm."
   }
 }
 
@@ -35,7 +40,7 @@ variable "description" {
 
 variable "length" {
   type        = number
-  description = "Number of characters in the generated value."
+  description = "Number of characters in the generated value. Changes take effect on the next rotation."
   default     = 32
 
   validation {
@@ -46,13 +51,13 @@ variable "length" {
 
 variable "special_characters" {
   type        = bool
-  description = "Include special characters in the generated value. Disabled by default so the value is safe in URLs, headers, and connection strings."
+  description = "Include special characters in the generated value. Disabled by default so the value is safe in URLs, headers, and connection strings. Changes take effect on the next rotation."
   default     = false
 }
 
 variable "rotation_version" {
   type        = number
-  description = "Version of the generated value. Change it to generate and store a new value."
+  description = "Version of the generated value. Change it to generate and store a new value using the current length and special_characters."
   default     = 1
 
   validation {

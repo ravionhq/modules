@@ -133,3 +133,37 @@ run "rejects_unknown_store" {
 
   expect_failures = [var.store]
 }
+
+run "rejects_reserved_parameter_prefix" {
+  command = plan
+
+  variables {
+    name = "aws/prod/key"
+  }
+
+  expect_failures = [var.name]
+}
+
+run "allows_secrets_manager_characters" {
+  command = plan
+
+  variables {
+    name  = "app/prod+key=1@x"
+    store = "secrets_manager"
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret.this[0].name == "app/prod+key=1@x"
+    error_message = "Secrets Manager names may contain + = @"
+  }
+}
+
+run "rejects_secrets_manager_characters_in_parameter_store" {
+  command = plan
+
+  variables {
+    name = "app/prod+key"
+  }
+
+  expect_failures = [var.name]
+}

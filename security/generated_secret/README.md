@@ -15,7 +15,7 @@ Generates a random value and stores it in SSM Parameter Store (SecureString) or 
 
 ```hcl
 module "master_key" {
-  source = "git::https://github.com/ravionhq/modules.git//security/generated_secret?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/generated_secret?ref=rvn-aws-generated-secret@0.1.0"
 
   name = "myapp/production/master-key"
 }
@@ -31,7 +31,7 @@ secrets = [{
 
 ```hcl
 module "session_secret" {
-  source = "git::https://github.com/ravionhq/modules.git//security/generated_secret?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//security/generated_secret?ref=rvn-aws-generated-secret@0.1.0"
 
   name   = "myapp/production/session-secret"
   store  = "secrets_manager"
