@@ -43,6 +43,20 @@ resource "aws_eks_cluster" "this" {
   })
 
   lifecycle {
+    # Replacing a cluster deletes every workload and volume on it. With
+    # deletion protection on, refuse any plan that would destroy or replace
+    # the cluster at PLAN time. AWS-side deletion protection alone is not
+    # enough: a replacement fails only when it reaches the cluster, after
+    # every change ordered ahead of it (such as a node group replacement) has
+    # already been applied. To destroy the cluster, turn deletion protection
+    # off first, exactly as AWS requires.
+    prevent_destroy = var.deletion_protection_enabled
+
+    # AWS reads the bootstrap flag only at creation and the provider marks it
+    # ForceNew, so a changed default must not plan a replacement of every
+    # existing cluster.
+    ignore_changes = [access_config[0].bootstrap_cluster_creator_admin_permissions]
+
     precondition {
       condition     = alltrue([for subnet in data.aws_subnet.selected : subnet.vpc_id == var.vpc_id])
       error_message = "All subnet_ids must belong to vpc_id."

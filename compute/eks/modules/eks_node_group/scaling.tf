@@ -1,6 +1,9 @@
 # The native aws_eks_node_group data source fails for a group that does not yet
-# exist. This read-only lookup handles first creation without a plan-time count
-# or a resource dependency cycle. Mutations remain owned by the AWS provider.
+# exist, and cannot find one whose name is generated. This read-only lookup
+# handles first creation without a plan-time count or a resource dependency
+# cycle, and finds the live group by its ravion.com/node-group tag (or, for a
+# group created before names were generated, by its exact name). Mutations
+# remain owned by the AWS provider.
 data "external" "scaling" {
   program = ["python3", "${path.module}/scripts/read_scaling.py"]
   query = {

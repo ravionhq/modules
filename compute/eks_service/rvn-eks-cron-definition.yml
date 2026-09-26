@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.2
-  description: Fix the plan of a workload with IAM inline policies, which failed on OpenTofu 1.11 with "Inconsistent conditional result types" before any policy was attached. No change for workloads without inline policies.
+  version: 0.4.3
+  description: Use the workload's Terraform execution environment for deploys without asking for a separate deploy-time environment.
 module:
   inputs:
     - id: section_cluster

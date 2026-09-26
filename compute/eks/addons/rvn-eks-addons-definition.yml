@@ -4,8 +4,13 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.12.0
-  description: Load-balanced EKS pods now receive traffic sooner during rolling deploys. The AWS Load Balancer Controller moves to 3.5.0, and its CRDs are now upgraded with the controller. Fixes the log collector failing to start. Karpenter, External Secrets, Prometheus, Grafana, Alloy, kube-state-metrics, the OpenTelemetry collectors and kubectl move to their latest versions, and unpinned EBS CSI and CloudWatch add-ons now track the newest compatible release.
+  version: 0.13.0
+  description: >-
+    With the EBS CSI driver on, the cluster gets an encrypted, expandable gp3 StorageClass as its default, and
+    raising a StatefulSet's volume size in a deploy now grows the existing volumes online instead of failing
+    the deploy (Kubernetes 1.36+). Both are on by default and can be turned off. Karpenter and the HA Operator
+    now fit the cluster's system node group: with a single system node, one controller and one coordinator run
+    instead of an extra replica staying Pending and failing upgrades.
 module:
   inputs:
     - id: cluster
@@ -74,6 +79,17 @@ module:
           label: Node subnet IDs
           placeholder: subnet-0123456789abcdef0
           type: string_array
+        - collapsible: true
+          default: << ref.input.system_node_min_size >>
+          description: >-
+            Minimum size of the cluster's system node group. Karpenter's controller and the Ravion Operator's HA
+            coordinators run one per system node, so they are scaled down to fit: with one system node, one of
+            each runs without high availability. Raise the cluster's minimum to 2 or more for high availability.
+          id: system_node_count
+          label: System nodes
+          min: 0
+          required: false
+          type: number
         - add_button_label: Add subnet ID
           collapsible: true
           default: <<ref.stack.output.public_subnet_ids>>
@@ -552,6 +568,23 @@ module:
       show_when:
         ebs_csi_driver_enabled: true
       type: string
+    - default: true
+      description: Create an encrypted gp3 StorageClass named gp3 with volume expansion allowed, and make it the cluster default. Volumes that name no StorageClass use it.
+      id: ebs_default_storage_class_enabled
+      label: Default gp3 storage class
+      show_when:
+        ebs_csi_driver_enabled: true
+      type: boolean
+    - default: true
+      description: >-
+        Grow StatefulSet volumes online when a deploy raises their size. Kubernetes normally rejects
+        that change and the deploy fails. With this on, the deploy goes through and the existing volumes
+        grow while their pods keep running. Needs Kubernetes 1.36 or newer.
+      id: statefulset_volume_expansion_enabled
+      label: Online StatefulSet volume growth
+      show_when:
+        ebs_csi_driver_enabled: true
+      type: boolean
     - id: section_logs
       label: Logs
       type: section
@@ -1081,11 +1114,14 @@ module:
           cpu_limit: '<< module.input.karpenter_default_node_pool_cpu_limit != nil ? module.input.karpenter_default_node_pool_cpu_limit : 100 >>'
           expire_after: '<< module.input.karpenter_default_node_pool_expire_after || "720h" >>'
         node_subnet_ids: << module.input.node_subnet_ids >>
+        system_node_count: << module.input.system_node_count >>
         cluster_security_group_id: << module.input.cluster_security_group_id >>
         ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
         aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.5.0" >>
         ebs_csi_driver_enabled: << module.input.ebs_csi_driver_enabled >>
         ebs_csi_addon_version: << module.input.ebs_csi_addon_version >>
+        ebs_default_storage_class_enabled: '<< module.input.ebs_default_storage_class_enabled != nil ? module.input.ebs_default_storage_class_enabled : true >>'
+        statefulset_volume_expansion_enabled: '<< module.input.statefulset_volume_expansion_enabled != nil ? module.input.statefulset_volume_expansion_enabled : true >>'
         # The signal toggle folds into the provider list: off is an empty list, on
         # with nothing chosen is the default the form shows. The module reads the
         # lists and never the toggles.
@@ -1292,7 +1328,7 @@ module:
     | **Karpenter** | On | Just-in-time node autoscaling: controller and node IAM roles, Pod Identity association, instance profile, SQS interruption queue, EventBridge rules, the controller Helm charts, and an optional default NodePool |
     | **Load balancer controller** | With load balancers | Installed automatically when any shared load balancer is enabled; registers workload pods into their target groups (TargetGroupBinding) via the AWS Load Balancer Controller Helm chart wired to the cluster module's Pod Identity role. Opt in without shared load balancers via advanced Terraform variables to provision ALBs/NLBs directly from Ingress and LoadBalancer resources |
     | **External Secrets Operator** | On | Reference-only secrets: workloads name a Secrets Manager secret or SSM parameter by ARN, and the operator materializes it into a Kubernetes secret using its own scoped Pod Identity role |
-    | **EBS CSI driver** | Off | EBS-backed persistent volumes via the aws-ebs-csi-driver EKS add-on and its Pod Identity role |
+    | **EBS CSI driver** | Off | EBS-backed persistent volumes via the aws-ebs-csi-driver EKS add-on and its Pod Identity role, a default encrypted `gp3` StorageClass, and online growth of StatefulSet volumes |
     | **Logs** | On (in-cluster store) | Container output collected on every node and delivered to the destinations you choose - an in-cluster store on S3 by default, plus CloudWatch Logs or a vendor on request |
     | **Metrics** | On (Amazon Managed Prometheus) | Per-container CPU, memory, network, restart and scaling metrics, delivered to the destinations you choose - Amazon Managed Prometheus by default, plus CloudWatch Container Insights or a vendor on request |
     | **Ravion EKS Management** | On | Registers the cluster with the Ravion control plane and installs Ravion Operator, which reports workload and node state outbound over a single WebSocket and can run Ravion's deploys from inside the cluster |
@@ -1300,7 +1336,7 @@ module:
 
     **Zone-local DNS** is on by default and has no form field: the `kube-dns` Service is patched with `trafficDistribution: PreferClose`, so every DNS lookup goes to the CoreDNS pod in the caller's availability zone (the EKS Cluster module spreads those pods across zones). This removes cross-AZ data transfer charges from DNS, the one call every pod makes. It needs Kubernetes 1.31 or later and is switched off with `topology_aware_routing_enabled: false` under **Advanced Terraform variables**, which also clears the field again.
 
-    EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, and both observability pipelines additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
+    EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, both observability pipelines, and the EBS storage defaults (the `gp3` StorageClass and volume growth) additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
 
     Karpenter's **Interruption queue age alarm** is enabled by default. It monitors the oldest unprocessed event with a 60-second threshold over one minute. Empty queues do not trigger it. Configure **Alert actions** and **Recovery actions** for direct notifications; both default to empty. Standard CloudWatch charges apply.
 
@@ -1341,7 +1377,7 @@ module:
 
     Durable executor Jobs are enabled automatically, isolating deployments in Jobs; self-update stays on, so Ravion keeps the agent current. The module targets chart `0.5.11` from `public.ecr.aws/a8z1i1r2/operator` for execution-status watch RBAC and executor image prewarming; it must be published before this module version is released or applied. No image digest or chart version needs to be entered after the required chart is published. Execution mode customization is available only through **Advanced Terraform variables**.
 
-    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. A cluster with a single eligible node needs `ravion_operator_coordinator_replicas=1` through **Advanced Terraform variables**.
+    **HA Operator** is enabled automatically with executor Jobs and requires a replica-aware gateway. It runs two coordinators placed the way Karpenter places itself: one per node, spread across zones, and never on a node Karpenter provisioned, so a coordinator can never keep an autoscaled node alive. They run on the system node group, which has two nodes by default. A replica with no eligible node stays Pending until one appears; nothing provisions nodes. With fewer system nodes than coordinators, the count is reduced to fit automatically. With a single system node, one coordinator runs without high availability, and so does one Karpenter controller. Set the cluster's system node minimum to 2 or more for high availability.
 
     Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
@@ -1382,6 +1418,27 @@ module:
 
     At rest, the Kubernetes secrets the operator writes are KMS envelope-encrypted in etcd — the EKS Cluster module enables that by default with a dedicated key per cluster.
 
+    ## Persistent volumes
+
+    With the **EBS CSI driver** on, the module also sets up two storage defaults. Each can be turned off in the form.
+
+    **Default gp3 storage class.** The module creates a StorageClass named `gp3` and marks it as the cluster default. A chart that names no StorageClass gets gp3 volumes. EKS stopped creating a default class in Kubernetes 1.30, and without one those volumes stay Pending. The class encrypts volumes, allows them to grow, and creates each volume in the availability zone its pod was scheduled to. If your cluster already has a StorageClass named `gp3` that this module didn't create, the install fails. Delete that class or turn this option off.
+
+    **Online StatefulSet volume growth.** Kubernetes doesn't let a StatefulSet's volume size change after it is created. Raising a chart's volume size, for example `pvc.size` in a NATS chart, normally makes the deploy fail. With this option on:
+
+    1. The deploy goes through. An admission policy accepts a StatefulSet update whose only volume change is a larger size, records the new size on the StatefulSet (`ravion.com/volume-claim-template-sizes`), and leaves the stored template unchanged.
+    2. Within about 30 seconds, an in-cluster resizer grows each existing volume to the new size. It also grows volumes that the StatefulSet creates later, when it scales up.
+    3. The EBS CSI driver resizes the EBS volume and its filesystem while the pod keeps running. Pods aren't restarted and data isn't copied.
+
+    Other volume changes, such as a smaller size, a different StorageClass or a different access mode, are still rejected, and the deploy fails as before. Volumes can only grow. `kubectl get statefulset` keeps showing the original template size. The volumes themselves show the real size.
+
+    Some limits apply:
+
+    - This needs **Kubernetes 1.36** or newer, which is when MutatingAdmissionPolicy became generally available. On older clusters, only the StorageClass is installed.
+    - The volume's StorageClass must allow expansion. The `gp3` class does.
+    - AWS allows one modification per EBS volume every 6 hours. A second size increase within that window is applied once the window ends.
+    - If a deploy that raised the size fails and rolls back, the volumes may already have grown. They keep the larger size, because a volume can't shrink.
+
     ## Shared load balancers
 
     Instead of letting each Ingress provision its own ALB, this module can create up to four shared load balancers (public/private ALB, public/private NLB) with Terraform. Workload modules then create a target group and listener rule, and bind pods to the target group in-cluster with the load balancer controller's `TargetGroupBinding` CRD — so one load balancer is shared across many services, exactly like the ECS Cluster module's shared load balancers.
@@ -1396,7 +1453,7 @@ module:
     ## Prerequisites
 
     - An **EKS Cluster** module.
-    - When a Helm-installed add-on runs (**Karpenter**, the **External Secrets Operator**, **Ravion EKS Management**, or any **shared load balancer** - which installs the **load balancer controller**): a **Terraform execution environment** in the cluster VPC for private endpoints. The add-ons pipeline automatically attaches the cluster's **Ravion Runner security group** for each run. The other add-ons need no cluster connectivity.
+    - When a Helm-installed add-on runs (**Karpenter**, the **External Secrets Operator**, **Ravion EKS Management**, the **EBS CSI driver**'s storage defaults, or any **shared load balancer** - which installs the **load balancer controller**): a **Terraform execution environment** in the cluster VPC for private endpoints. The add-ons pipeline automatically attaches the cluster's **Ravion Runner security group** for each run. The other add-ons need no cluster connectivity.
 
     The Helm installs authenticate by assuming the cluster's **Ravion Runner role** (inherited automatically from the cluster reference) — a stable IAM role the EKS Cluster module registers as an access entry with cluster-admin. Per-run pipeline roles never appear in the cluster's access configuration.
 
@@ -1419,6 +1476,8 @@ module:
     | External Secrets Operator | No    | `true`               | Reference-only secrets, ClusterSecretStores, and a scoped Pod Identity role |
     | Readable secret ARNs   | No       | Account + region     | Scopes which Secrets Manager secrets and SSM parameters the operator may read |
     | EBS CSI driver         | No       | `false`              | EBS persistent volumes add-on and Pod Identity role    |
+    | Default gp3 storage class | No    | `true`               | Encrypted, expandable `gp3` StorageClass as the cluster default (with EBS CSI) |
+    | Online StatefulSet volume growth | No | `true`         | Grow StatefulSet volumes in place when a deploy raises their size (with EBS CSI, Kubernetes 1.36+) |
     | Logs                   | No       | `true`               | Collect container logs at all                          |
     | Logs providers         | No       | In-cluster store     | Any combination of the log destinations above           |
     | Metrics                | No       | `true`               | Collect workload metrics at all                        |

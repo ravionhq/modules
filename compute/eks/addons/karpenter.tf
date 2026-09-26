@@ -25,6 +25,15 @@ resource "helm_release" "karpenter_crd" {
   upgrade_install  = true
 }
 
+locals {
+  # The chart runs two controllers with required per-node anti-affinity and
+  # keeps them off Karpenter-provisioned nodes, so each needs its own system
+  # node. Karpenter cannot provision a node for itself; on a one-node system
+  # group the second replica would stay Pending and every Helm upgrade would
+  # time out waiting for it.
+  karpenter_controller_replicas = var.system_node_count == null ? 2 : max(1, min(2, var.system_node_count))
+}
+
 resource "helm_release" "karpenter" {
   count = var.karpenter_enabled ? 1 : 0
 
@@ -40,6 +49,7 @@ resource "helm_release" "karpenter" {
   values = concat(
     [
       yamlencode({
+        replicas = local.karpenter_controller_replicas
         settings = {
           clusterName       = var.cluster_name
           interruptionQueue = module.karpenter[0].interruption_queue_name
