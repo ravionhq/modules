@@ -1,0 +1,60 @@
+# AWS permissions for an EKS workload: an IAM role the pods assume through EKS
+# Pod Identity, the EKS analogue of the ECS task role. The stack creates the
+# role and binds it to the release's ServiceAccount (the chart names it after
+# the release), and the AWS SDK in the pods picks up short-lived credentials
+# for it with no configuration. Shared by rvn-eks-web, rvn-eks-worker, and
+# rvn-eks-cron.
+- id: section_iam
+  label: AWS permissions
+  type: section
+- id: pod_identity_role_creation_enabled
+  label: Create IAM role
+  type: boolean
+  description: Create an IAM role for this workload and bind it to its pods through EKS Pod Identity, so the AWS SDK obtains short-lived credentials for it without any keys. Leave off for a workload that calls no AWS API as itself. The role ARN is a stack output other modules can pin.
+  default: false
+- id: pod_identity_role_name
+  label: IAM role name
+  type: string
+  description: Name of the workload's IAM role. Leave blank for <service>-task, the ECS task role shape. IAM role names are unique per account, so a service that also runs on ECS, or on another cluster, needs its own name, for example <service>-eks-<environment>.
+  placeholder: web-eks-prod
+  collapsible: true
+  required: false
+  show_when:
+    pod_identity_role_creation_enabled: true
+  patterns:
+    - message: 1-64 characters of letters, digits and + = , . @ _ -
+      pattern: ^[\w+=,.@-]{1,64}$
+- id: pod_identity_managed_policy_arns
+  label: IAM policy ARNs
+  type: string_array
+  description: Managed IAM policy ARNs attached to the workload's role.
+  add_button_label: Add policy ARN
+  placeholder: arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+  collapsible: true
+  required: false
+  default: []
+  show_when:
+    pod_identity_role_creation_enabled: true
+- id: pod_identity_inline_policies
+  label: IAM inline policies
+  type: object
+  description: Inline IAM policy documents attached to the workload's role, keyed by policy name. The same shape as the ECS task role inline policies, so a service moving from ECS can carry its policies over unchanged.
+  collapsible: true
+  required: false
+  show_when:
+    pod_identity_role_creation_enabled: true
+  placeholder: |-
+    {
+      "read-app-bucket": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject"
+            ],
+            "Resource": "arn:aws:s3:::my-app-bucket/*"
+          }
+        ]
+      }
+    }

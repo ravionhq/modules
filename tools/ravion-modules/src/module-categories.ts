@@ -13,7 +13,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Web server",
     description: "For websites, HTTP APIs, and services reached through a browser or web client.",
     sortOrder: 10,
-    definitionTypes: ["rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web"],
+    definitionTypes: ["rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-eks-web"],
   },
   {
     givenId: "tcp-udp-server",
@@ -28,7 +28,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Worker",
     description: "For queue consumers, scheduled jobs, and background processes without public endpoints.",
     sortOrder: 30,
-    definitionTypes: ["rvn-ec2-service", "rvn-ecs-worker"],
+    definitionTypes: ["rvn-ec2-service", "rvn-ecs-worker", "rvn-eks-cron", "rvn-eks-worker"],
   },
   {
     givenId: "function",
@@ -70,7 +70,14 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Cluster",
     description: "For services that share container capacity, load balancers, and placement configuration.",
     sortOrder: 90,
-    definitionTypes: ["rvn-ecs-cluster"],
+    definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons"],
+  },
+  {
+    givenId: "machine-image",
+    name: "Machine image",
+    description: "For AMIs baked from a parent image and distributed to the regions and accounts that launch them.",
+    sortOrder: 95,
+    definitionTypes: ["rvn-aws-ami"],
   },
   {
     givenId: "network",
@@ -98,7 +105,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Security",
     description: "For identity, permissions, encryption keys, and least-privilege access.",
     sortOrder: 130,
-    definitionTypes: ["rvn-aws-iam-policy", "rvn-aws-iam-role", "rvn-aws-kms"],
+    definitionTypes: ["rvn-aws-compliance", "rvn-aws-secret", "rvn-aws-iam-policy", "rvn-aws-iam-role", "rvn-aws-kms"],
   },
   {
     givenId: "iac",

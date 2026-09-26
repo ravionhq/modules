@@ -627,6 +627,58 @@ variable "cloudwatch_alarm_memory_threshold" {
   }
 }
 
+variable "cloudwatch_alarm_storage_threshold" {
+  description = "Minimum remaining Aurora MySQL cluster storage in bytes. Applies to provisioned and Serverless v2 clusters."
+  type        = number
+  default     = 107374182400
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_storage_threshold > 0
+    error_message = "Storage alarm threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_volume_bytes_used_threshold" {
+  description = "Maximum Aurora PostgreSQL cluster storage usage in bytes. Default is 115 TiB; tune below the storage limit supported by the engine version."
+  type        = number
+  default     = 126443837194240
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_volume_bytes_used_threshold > 0
+    error_message = "Storage alarm threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_read_iops_threshold" {
+  description = "Read I/O operations per second threshold. Tune to the workload and instance/storage capacity."
+  type        = number
+  default     = 1000
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_read_iops_threshold > 0
+    error_message = "Read IOPS alarm threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_write_iops_threshold" {
+  description = "Write I/O operations per second threshold. Tune to the workload and instance/storage capacity."
+  type        = number
+  default     = 1000
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_write_iops_threshold > 0
+    error_message = "Write IOPS alarm threshold must be greater than 0."
+  }
+}
+
 variable "cloudwatch_alarm_connections_threshold" {
   description = "The database connections threshold for the CloudWatch alarm."
   type        = number

@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.2.0
-  description: Automatically enable SOCI lazy loading for Fargate builds to reduce task startup time while keeping it disabled for EC2 capacity.
+  version: 1.6.0
+  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
 module:
   inputs:
     - id: section_cluster
@@ -12,7 +12,7 @@ module:
       type: section
     - id: cluster
       immutable: true
-      label: ECS cluster
+      label: Cluster
       type: $ref:rvn-ecs-cluster
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
@@ -223,7 +223,7 @@ module:
       max: 120
       min: 2
       default: 10
-    - id: healthy_threshold
+    - id: health_check_healthy_threshold
       label: Healthy threshold
       type: number
       description: Number of consecutive successful checks required before an unhealthy target is considered healthy.
@@ -231,7 +231,7 @@ module:
       max: 10
       min: 2
       default: 3
-    - id: unhealthy_threshold
+    - id: health_check_unhealthy_threshold
       label: Unhealthy threshold
       type: number
       description: Number of consecutive failed checks required before a target is considered unhealthy.
@@ -266,8 +266,14 @@ module:
       with:
         environment_variables_description: Runtime environment variables passed to the app container. PORT is added automatically from the container port setting.
     - $include: ../../partials/inputs/ecs-service-deploy-command-inputs.yml
+    - $template: ../../partials/templates/ecs-service-early-success-inputs.yml
+      with:
+        field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
     - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-compliance-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-nlb-target-alarm-inputs.yml
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
   stack:
     type: opentofu
@@ -288,6 +294,8 @@ module:
           terraform_variables:
             $merge:
               - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
+              - cloudwatch_alarm_unhealthy_hosts_threshold: << module.input.cloudwatch_alarm_unhealthy_hosts_threshold >>
               - container_port: << module.input.listeners[0].container_port >>
                 health_check_grace_period_seconds: << module.input.health_check_grace_period_seconds >>
                 load_balancer_ingress_cidr_blocks: >-
@@ -311,14 +319,14 @@ module:
                     deregistration_delay: << module.input.deregistration_delay >>
                     health_check:
                       enabled: true
-                      healthy_threshold: << module.input.healthy_threshold >>
+                      healthy_threshold: << module.input.health_check_healthy_threshold >>
                       interval: << module.input.health_check_interval >>
                       matcher: '<< module.input.health_check_protocol == "HTTP" || module.input.health_check_protocol == "HTTPS" ? module.input.health_check_matcher : nil >>'
                       path: '<< module.input.health_check_protocol == "HTTP" || module.input.health_check_protocol == "HTTPS" ? module.input.health_check_path : nil >>'
                       port: traffic-port
                       protocol: << module.input.health_check_protocol >>
                       timeout: << module.input.health_check_timeout >>
-                      unhealthy_threshold: << module.input.unhealthy_threshold >>
+                      unhealthy_threshold: << module.input.health_check_unhealthy_threshold >>
                     port: << module.input.listeners[0].container_port >>
                     protocol: '<< module.input.listeners[0].listener_protocol == "TLS" ? module.input.listeners[0].tls_target_protocol : module.input.listeners[0].listener_protocol >>'
                     stickiness:
@@ -339,6 +347,8 @@ module:
   deploy:
     $merge:
       - ../../partials/deploy/ecs-service-deploy-common.yml
+    strategy:
+      $include: ../../partials/deploy/ecs-service-rolling-strategy.yml
     infrastructure:
       $include: ../../partials/deploy/ecs-service-deploy-infrastructure-common.yml
     task_definition:
@@ -448,6 +458,10 @@ module:
           region: << stack.output.region >>
           statistic: Average
   readme: |
+    ## Rolling deployment success
+
+    Rolling deploys always use AWS early success: by default, 100% of desired new tasks must be healthy and old tasks drain in the background. **Wait for old tasks to drain** selects blocking cleanup. Alarm bake time still applies. The success percentage must be at least **Minimum healthy percent**; lower the availability floor explicitly before choosing a lower threshold. Remaining tasks scale in the background and deployment rollback monitoring ends at ECS success.
+
     Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 
     ## Overview
@@ -489,12 +503,15 @@ module:
     | Railpack                     | Let Ravion detect the app stack and build an image from source with Railpack |
     | Dockerfile                   | Build from a Dockerfile in the selected repository               |
     | Pull from image registry     | Deploy an existing image from Docker Hub, GHCR, ECR, or registry |
+    | Managed ECR repository       | Push an image from a pipeline to the ECR repository managed by Ravion |
 
     For Railpack and Dockerfile builds, provide Git repository, Git branch, and optionally Source base path. Ravion pushes built images to the service ECR repository and deploys by image digest.
 
     Railpack settings let you optionally pin the Railpack version and override install, build, and start commands. Leave them blank to use Railpack defaults and autodetection.
 
     For Pull from image registry, provide the image repository without the tag. At deploy time, provide the tag to use. Use Registry credentials secret ARN for private registries that require ECS repository credentials. Use Start command to override the image default CMD when the image needs a different service command.
+
+    For Managed ECR repository, Ravion creates and manages the service ECR repository. Push the image from a pipeline `build:image` step, then provide its tag or digest at deploy time.
 
     ## Listeners and target groups
 
@@ -590,6 +607,7 @@ module:
     | ---------------------------- | ------------------------------------------------- |
     | Railpack or Dockerfile       | Image digest such as sha256:...                   |
     | Pull from image registry     | Tag for the configured repository, such as latest |
+    | Managed ECR repository       | Tag or digest in the service ECR repository       |
 
     Run pre-deploy command and Run post-deploy command start optional one-off ECS tasks before or after each deployment. These commands use the deployed app image, the app container name, the configured task role and execution role, the selected capacity provider strategy, service subnets, service security groups, runtime environment variables, and runtime secrets. Leave either toggle disabled to skip that hook and hide its settings.
 
@@ -601,15 +619,25 @@ module:
 
     The Metrics tab includes common ECS service metrics plus Network Load Balancer target group health metrics for the first listener. Additional listener target groups are available through the stack outputs for external dashboards and alarms.
 
+    ## Compliance
+
+    The Compliance section holds log retention and CloudWatch alarms.
+
+    Log retention (days) defaults to the value configured on the ECS cluster's Compliance section, so one cluster setting keeps every service consistent. Set a value here to override it for this service. Use 0 to retain logs indefinitely.
+
+    CloudWatch alarms are enabled by default for average CPU utilization, average memory utilization, and running task count. Because the service owns its target groups, it also alarms on unhealthy targets in every listener target group. Network Load Balancers themselves have no alarms.
+
+    The running task alarm uses the Container Insights `RunningTaskCount` metric and stays silent when Container Insights is disabled on the cluster. Every alarm treats missing data as not breaching and must breach for the configured number of consecutive periods before it fires. Add SNS topic ARNs as Alarm actions and OK actions to be notified.
+
     ## Configuration
 
     | Field                            | Required | Default                  | Description                                      |
     | -------------------------------- | -------- | ------------------------ | ------------------------------------------------ |
-    | ECS cluster                      | Yes      | -                        | Existing rvn-ecs-cluster module instance         |
+    | Cluster                          | Yes      | -                        | Existing rvn-ecs-cluster module instance         |
     | Service name                     | Yes      | {project}-{env}-{module} | Name for the ECS service and related resources   |
     | Public network service           | No       | true                     | Use the public NLB; turn off for the private NLB |
     | Run in private subnets           | No       | true                     | Run tasks in private subnets without public IPs  |
-    | Build source                     | Yes      | dockerfile               | Dockerfile, Railpack, or Pull from image registry |
+    | Build source                     | Yes      | dockerfile               | Dockerfile, Railpack, Managed ECR repository, or Pull from image registry |
     | Git repository                   | Yes*     | -                        | Required for Railpack and Dockerfile builds      |
     | Git branch                       | Yes*     | -                        | Required for Railpack and Dockerfile builds      |
     | Source base path                 | No       | .                        | Path from repository root to source code         |
@@ -645,6 +673,13 @@ module:
     | Sidecars                         | No       | []                       | Additional containers in the ECS task            |
     | EFS file system                  | No       | false                    | Mount an EFS file system into the app container |
     | EFS mount path                   | Yes*     | /mnt/efs                 | App container path for the referenced file system |
+    | Log retention (days) | No | Cluster default | Overrides the CloudWatch log retention inherited from the cluster |
+    | Create CloudWatch alarms | No | true | Adds CPU, memory, running task, and unhealthy host alarms |
+    | Unhealthy hosts alarm threshold | No | 0 | Unhealthy targets in any service target group |
+    | CPU alarm threshold (%) | No | 80 | Average service CPU utilization |
+    | Memory alarm threshold (%) | No | 80 | Average service memory utilization |
+    | Minimum running tasks | No | 1 | Alarms when fewer tasks are running |
+    | Alarm actions | No | [] | ARNs notified on ALARM, such as an SNS topic |
     | Tags                             | No       | Standard Ravion tags     | Additional tags applied to resources             |
     | Advanced Terraform variables     | No       | {}                       | Raw lower-level overrides for exceptional cases  |
     | OpenTofu version override        | No       | Ravion default           | Override the OpenTofu version for the stack      |
@@ -660,7 +695,7 @@ module:
     - The first listener supplies the `PORT` environment variable and the target group shown in the built-in healthy and unhealthy host metrics.
     - Tasks default to private subnets even for public network services. The NLB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Health checks default to TCP because the module supports non-HTTP protocols.
-    - Built images are pushed to an ECR repository created with the service stack. Pull from image registry lets teams bring their own image pipeline.
+    - Built images are pushed to an ECR repository created with the service stack. Managed ECR repository lets a pipeline push images to that repository without a module build config. Pull from image registry lets teams bring their own image pipeline.
     - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 

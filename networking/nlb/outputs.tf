@@ -2,6 +2,11 @@
 # Network Load Balancer
 ################################################################################
 
+output "load_balancer_name" {
+  description = "The name of the load balancer, as passed in var.name."
+  value       = aws_lb.this.name
+}
+
 output "nlb_id" {
   description = "The ID of the Network Load Balancer."
   value       = aws_lb.this.id
@@ -30,6 +35,11 @@ output "nlb_zone_id" {
 ################################################################################
 # Security Group
 ################################################################################
+
+output "security_group_name" {
+  description = "The name of the load balancer's security group (<name>-<type>)."
+  value       = module.security_group.security_group_name
+}
 
 output "security_group_id" {
   description = "The ID of the NLB security group."

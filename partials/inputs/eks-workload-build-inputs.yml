@@ -1,0 +1,67 @@
+# Build source selection shared by rvn-eks-web, rvn-eks-worker, and rvn-eks-cron.
+#
+# A port of ./ecs-service-build-inputs.yml with two differences:
+#
+# - There is no nixpacks value. EKS shipped after Railpack replaced Nixpacks,
+#   so there is no legacy service to keep working.
+# - There is no image_registry_credentials_secret_arn. ECS needs a Secrets
+#   Manager ARN in the ECS repositoryCredentials shape; on EKS the equivalent
+#   is image_pull_secret_names in ./eks-workload-image-inputs.yml, which names
+#   kubernetes.io/dockerconfigjson Secrets that already exist in the namespace.
+#
+# The image repository, pull secrets, and start command live in
+# ./eks-workload-image-inputs.yml, which every definition includes alongside
+# this file.
+- id: section_build
+  label: Build config
+  type: section
+- id: build_source
+  label: Build source
+  type: string
+  required: true
+  default: dockerfile
+  values:
+    - description: Bring your own Dockerfile
+      label: Dockerfile
+      value: dockerfile
+    - description: Automatically build an image with Railpack
+      label: Railpack
+      value: railpack
+    - description: Deploy an image from a registry configured on this module. Provide only the tag or digest at deploy time.
+      label: Pull from image registry
+      value: image_registry
+- $template: ./build-git-source.yml
+  with:
+    show_when:
+      build_source:
+        - dockerfile
+        - railpack
+# Build-time environment, gated the way compute/ec2_service gates it. These are
+# available to the builder only; ./eks-workload-runtime-inputs.yml carries the
+# variables the running container sees. The two sets are deliberately separate:
+# a registry token needed to install dependencies has no business being in the
+# pod's environment.
+- $merge:
+    - ./build-environment-variables.yml
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- $template: ./dockerfile-build.yml
+  with:
+    show_when:
+      build_source: dockerfile
+# Already carries show_when: {build_source: dockerfile}, which is exactly the
+# gate this needs, so it is included rather than merged over. Sits after the
+# Dockerfile template so it lands in the Docker section the template opens.
+- $include: ./dockerfile-env-injection.yml
+- $template: ./railpack.yml
+  with:
+    show_when:
+      build_source: railpack
+- id: railpack_start_cmd
+  label: Start command
+  type: string
+  placeholder: Railpack default
+  show_when:
+    build_source: railpack

@@ -2,6 +2,11 @@
 # Application Load Balancer
 ################################################################################
 
+output "load_balancer_name" {
+  description = "The name of the load balancer, as passed in var.name."
+  value       = aws_lb.this.name
+}
+
 output "alb_id" {
   description = "The ID of the Application Load Balancer."
   value       = aws_lb.this.id
@@ -45,6 +50,11 @@ output "https_listener_arn" {
 # Security Group
 ################################################################################
 
+output "security_group_name" {
+  description = "The name of the load balancer's security group (<name>-<type>)."
+  value       = module.security_group.security_group_name
+}
+
 output "security_group_id" {
   description = "The ID of the ALB security group."
   value       = module.security_group.security_group_id
@@ -67,6 +77,19 @@ output "access_logs_bucket_name" {
 output "access_logs_bucket_arn" {
   description = "The ARN of the S3 bucket for access logs (null if access logs disabled or using existing bucket)."
   value       = local.create_access_logs_bucket ? aws_s3_bucket.access_logs[0].arn : null
+}
+
+################################################################################
+# CloudWatch Alarms
+################################################################################
+
+output "cloudwatch_alarm_arns" {
+  description = "Map of CloudWatch alarm ARNs created by this module (empty when alarms are disabled)."
+  value = local.create_cloudwatch_alarms ? {
+    elb_5xx              = aws_cloudwatch_metric_alarm.elb_5xx[0].arn
+    target_5xx           = aws_cloudwatch_metric_alarm.target_5xx[0].arn
+    target_response_time = aws_cloudwatch_metric_alarm.target_response_time[0].arn
+  } : {}
 }
 
 ################################################################################

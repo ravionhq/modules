@@ -3,14 +3,14 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.1.1
-  description: Prevent applies from failing with CloudFront in-use errors when changing a cache policy or disabling a module-managed feature.
+  version: 1.1.3
+  description: Enable CloudFront 5xx error-rate alarms and retain access logs for 365 days by default.
 module:
   build:
     builder: >-
       << module.input.build_source == "dockerfile" ? {type: "dockerfile", dockerfile: module.input.dockerfile
       || "Dockerfile", context: module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
-      module.input.dockerfile_inject_env_variables, output_directory: module.input.output_directory} :
+      module.input.dockerfile_environment_variable_injection_enabled, output_directory: module.input.output_directory} :
       (module.input.build_source == "railpack" || module.input.build_source == "nixpacks") ? {type: "railpack", railpack_version:
       module.input.railpack_version, install_cmd: module.input.railpack_install_cmd,
       build_cmd: module.input.railpack_build_cmd, output_directory: module.input.output_directory} :
@@ -285,6 +285,67 @@ module:
       id: no_cache_paths
       label: No-cache path patterns
       type: string_array
+    - id: section_cloudwatch_alarms
+      label: CloudWatch alarms
+      type: section
+    - id: cloudwatch_alarms_creation_enabled
+      label: Monitor CloudFront error rate
+      type: boolean
+      default: true
+      description: Keep enabled to detect failed requests. Disable if monitored elsewhere. Configure SNS actions or an EventBridge relay for notifications.
+    - id: cloudwatch_alarm_error_rate_threshold
+      label: Error rate threshold (%)
+      description: Average percentage of responses with 5xx status; triggers at or above this value.
+      type: number
+      default: 1
+      min: 1
+      collapsible: true
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      max: 100
+    - id: cloudwatch_alarm_evaluation_periods
+      label: Consecutive alarm periods
+      type: number
+      default: 1
+      min: 1
+      collapsible: true
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+    - id: cloudwatch_alarm_period
+      label: Alarm period (seconds)
+      type: number
+      default: 300
+      min: 60
+      collapsible: true
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+      values:
+        - label: "60"
+          value: 60
+        - label: "300"
+          value: 300
+        - label: "900"
+          value: 900
+        - label: "3600"
+          value: 3600
+    - id: cloudwatch_alarm_actions
+      label: Alarm action ARNs
+      type: string_array
+      default: []
+      add_button_label: Add action ARN
+      collapsible: true
+      description: Use SNS topics in us-east-1.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+    - id: cloudwatch_ok_actions
+      label: Recovery action ARNs
+      type: string_array
+      default: []
+      add_button_label: Add action ARN
+      collapsible: true
+      description: Use SNS topics in us-east-1.
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
     - id: section_logging
       label: Access logging
       type: section
@@ -307,8 +368,8 @@ module:
         - description: Deliver compressed log files to an automatically created S3 bucket. Cheapest for high traffic.
           label: S3 bucket
           value: s3
-    - default: 90
-      description: Days to retain CloudFront access logs in CloudWatch Logs or the automatically created S3 logging bucket.
+    - default: 365
+      description: Days to retain CloudFront access logs in CloudWatch Logs or the automatically created S3 logging bucket. Defaults to 365 days to satisfy SOC 2 one-year log retention.
       id: logging_retention_days
       label: Logging retention days
       min: 1
@@ -464,7 +525,13 @@ module:
     | CloudWatch Logs (default) | CloudFront standard logging v2 delivers access logs to a module-managed CloudWatch Logs group, and the module UI shows them in the Logs panel. Log ingestion costs more than S3 at very high traffic. |
     | S3 bucket | Legacy standard logging delivers compressed log files to an automatically created S3 bucket. Cheapest for high-traffic sites; not viewable in Ravion. |
 
-    Logging retention days defaults to 90 and controls the CloudWatch log group retention or the S3 bucket lifecycle expiry, depending on the destination. CloudWatch retention must be one of the standard CloudWatch Logs retention values (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, and larger).
+    Logging retention days defaults to 365 and controls the CloudWatch log group retention or the S3 bucket lifecycle expiry, depending on the destination. CloudWatch retention must be one of the standard CloudWatch Logs retention values (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, and larger).
+
+    ## Error-rate monitoring
+
+    Every distribution gets a CloudWatch 5xx error-rate alarm by default, including for direct Terraform usage. The default is at least 1% over one 5-minute period; idle sites do not alarm. Tune the threshold and evaluation window or disable the monitoring toggle if another system owns these alarms.
+
+    CloudFront metrics and alarms live in us-east-1 regardless of the S3 bucket region. Provide an SNS action ARN in us-east-1, or an externally managed EventBridge notification relay. Notifications require a configured destination. This module uses CloudFront Functions rather than Lambda; distribution alarms cover viewer-visible 5xx errors from origins and edge processing.
 
     ## Deploy behavior
 
@@ -514,7 +581,7 @@ module:
     | Cache and headers | Managed response headers | No | Security headers | AWS managed header sets; add CORS or CORS with preflight |
     | Access logging | CloudFront access logging | No | true | Delivers logs to CloudWatch Logs or S3 |
     | Access logging | Logging destination | No | CloudWatch Logs | Visible when logging is enabled; CloudWatch shows logs in Ravion |
-    | Access logging | Logging retention days | No | 90 | Visible when logging is enabled; CloudWatch retention or S3 lifecycle expiry |
+    | Access logging | Logging retention days | No | 365 | Visible when logging is enabled; CloudWatch retention or S3 lifecycle expiry |
     | Deploy config | CloudFront invalidation paths | No | [] | Only needed when overwriting an already-promoted S3 directory |
     | Deploy config | Successful deploys to retain | No | 20 | Old S3 deploy prefixes to retain |
     | Terraform settings | Terraform execution environment | No | unset | Override Terraform runner environment |
@@ -562,6 +629,12 @@ module:
               << module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ?
               module.input.distribution_aliases[0] : nil >>
             enabled: true
+        cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
+        cloudwatch_alarm_error_rate_threshold: << module.input.cloudwatch_alarm_error_rate_threshold >>
+        cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+        cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
+        cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions >>
+        cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions >>
         logging_enabled: << module.input.logging_enabled >>
         geo_restriction_locations: << module.input.geo_restriction_locations >>
         geo_restriction_type: << module.input.geo_restriction_type >>

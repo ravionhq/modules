@@ -53,7 +53,7 @@ variable "subnet_ids" {
 
 variable "internal_load_balancer_enabled" {
   type        = bool
-  description = "If true, the ALB will be internal_load_balancer_enabled (not internet-facing)."
+  description = "If true, the ALB will be internal (not internet-facing)."
   default     = false
 }
 
@@ -284,7 +284,7 @@ variable "access_logs_prefix" {
 variable "access_logs_retention_days" {
   type        = number
   description = "The number of days to retain access logs in S3."
-  default     = 90
+  default     = 365
 
   validation {
     condition     = var.access_logs_retention_days >= 1
@@ -328,6 +328,91 @@ variable "web_acl_arn" {
     condition     = var.web_acl_arn == null || can(regex("^arn:aws:wafv2:", var.web_acl_arn))
     error_message = "The web_acl_arn must be a valid WAFv2 Web ACL ARN."
   }
+}
+
+################################################################################
+# CloudWatch Alarms
+################################################################################
+
+variable "cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create CloudWatch alarms for load balancer 5xx responses, target 5xx responses, and target response time."
+  default     = true
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_elb_5xx_threshold" {
+  type        = number
+  description = "Number of load-balancer-generated 5xx responses (HTTPCode_ELB_5XX_Count, summed per period) above which the alarm fires."
+  default     = 10
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_elb_5xx_threshold >= 0
+    error_message = "The cloudwatch_alarm_elb_5xx_threshold must be at least 0."
+  }
+}
+
+variable "cloudwatch_alarm_target_5xx_threshold" {
+  type        = number
+  description = "Number of target-generated 5xx responses (HTTPCode_Target_5XX_Count, summed per period) above which the alarm fires."
+  default     = 10
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_target_5xx_threshold >= 0
+    error_message = "The cloudwatch_alarm_target_5xx_threshold must be at least 0."
+  }
+}
+
+variable "cloudwatch_alarm_target_response_time_threshold" {
+  type        = number
+  description = "Average target response time in seconds (TargetResponseTime) above which the alarm fires."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_target_response_time_threshold > 0
+    error_message = "The cloudwatch_alarm_target_response_time_threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "The number of periods over which data is compared to the threshold."
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1
+    error_message = "The cloudwatch_alarm_evaluation_periods must be at least 1."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "The period in seconds over which the statistic is applied. AWS service metrics are published at one-minute resolution, so 60 is the shortest useful period."
+  default     = 300
+  nullable    = false
+
+  validation {
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "The cloudwatch_alarm_period must be one of: 60, 300, 900, or 3600 seconds. AWS service metrics are published at one-minute resolution, so shorter periods never receive datapoints."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "A list of ARNs to notify when a CloudWatch alarm transitions to ALARM state."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "A list of ARNs to notify when a CloudWatch alarm transitions to OK state."
+  default     = []
+  nullable    = false
 }
 
 variable "region" {

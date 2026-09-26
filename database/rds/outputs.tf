@@ -179,6 +179,8 @@ output "cloudwatch_alarm_arns" {
     cpu_utilization      = aws_cloudwatch_metric_alarm.cpu_utilization[0].arn
     free_storage_space   = aws_cloudwatch_metric_alarm.free_storage_space[0].arn
     database_connections = aws_cloudwatch_metric_alarm.database_connections[0].arn
+    read_iops            = aws_cloudwatch_metric_alarm.read_iops[0].arn
+    write_iops           = aws_cloudwatch_metric_alarm.write_iops[0].arn
   } : {}
 }
 

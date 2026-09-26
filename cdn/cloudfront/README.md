@@ -110,10 +110,12 @@ module "cdn" {
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD"]
     cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
-    trusted_key_groups     = ["K123456789EXAMPLE"]
+    trusted_key_groups     = ["e0d28d26-1487-4059-9792-38defebe52ba"] # key group ID (UUID), not the public key ID
   }
 }
 ```
+
+`trusted_key_groups` takes CloudFront key group IDs, which are UUIDs (CloudFront > Key management > Key groups). Public key IDs such as `K2J0B1MDMN3M4W` are not accepted; put the public key in a key group and reference the key group ID.
 
 For private S3 origins, the bucket policy must allow the CloudFront service principal to read objects, scoped to the distribution ARN. If the bucket is managed by `storage/s3`, use the `cloudfront_oac_read` policy template with `cloudfront_distribution_arns = [module.cdn.distribution_arn]`.
 
@@ -583,7 +585,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | logging_prefix | Base S3 key prefix for log files. Each distribution logs under `<prefix><key>/`. Only applies when `logging_destination = "s3"`. | `string` | `""` | no |
 | logging_cookies_enabled | Include cookies in access logs. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
 | logging_bucket_creation_enabled | Create a new S3 bucket for logging. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
-| logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `90` | no |
+| logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `365` | no |
 
 ### Origin Access Control
 

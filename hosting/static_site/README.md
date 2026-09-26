@@ -428,7 +428,7 @@ No external apply-time tools required.
 | logging_bucket_creation_enabled | Create a new S3 bucket for logs. Only applies when `logging_destination = "s3"`. | `bool` | `false` |
 | logging_bucket_domain_name | Existing logging bucket domain name. Only applies when `logging_destination = "s3"`. | `string` | `null` |
 | logging_prefix | Base prefix for log files. Only applies when `logging_destination = "s3"`. | `string` | `""` |
-| logging_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `90` |
+| logging_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `365` |
 
 ### Deploy Role
 
@@ -488,3 +488,33 @@ No external apply-time tools required.
 - **KVS updates**: only the seed entries are managed via Terraform. Subsequent additions/deletions (preview hosts, `active` flips) belong in CI.
 - **Route53 records**: create externally with [`networking/route53`](../../networking/route53) using the `distribution_domain_names` and `distribution_hosted_zone_ids` outputs.
 - **ACM certificates**: create externally with [`security/acm_certificate`](../../security/acm_certificate) using a `us_east_1` provider alias.
+
+## Default error-rate monitoring
+
+Each CloudFront distribution has a 5xx error-rate alarm enabled by default in both
+Ravion (`rvn-aws-static`) and direct Terraform usage. CloudWatch evaluates
+`AWS/CloudFront` `5xxErrorRate` using `Average`, with `DistributionId` and
+`Region = Global`, in `us-east-1` regardless of the hosting bucket Region.
+The default threshold is >=1% over one 5-minute period; idle sites are non-breaching.
+
+This module uses CloudFront Functions, not Lambda@Edge. The distribution alarm
+monitors viewer-visible server errors from the origin and edge processing. It does
+not create Lambda resources or require additional paid CloudFront metrics.
+
+Set `cloudwatch_alarm_actions` to an SNS topic ARN in `us-east-1`, or configure an
+external EventBridge alarm relay. No notification destination is created automatically.
+Set `cloudwatch_alarms_creation_enabled = false` to opt out. Upgrading an existing
+module creates alarms on its next apply, with normal CloudWatch alarm charges.
+
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| cloudwatch_alarms_creation_enabled | `bool` | `true` | Create one alarm per distribution. |
+| cloudwatch_alarm_error_rate_threshold | `number` | `1` | 5xx percentage threshold, >0 and <=100. |
+| cloudwatch_alarm_period | `number` | `300` | 60, 300, 900, or 3600 seconds. |
+| cloudwatch_alarm_evaluation_periods | `number` | `1` | Consecutive breaching periods, covering at most one day. |
+| cloudwatch_alarm_actions | `list(string)` | `[]` | ALARM notification action ARNs. |
+| cloudwatch_ok_actions | `list(string)` | `[]` | OK notification action ARNs. |
+
+`cloudwatch_alarm_arns` outputs a map of distribution key to alarm ARN.
+
+See [CloudFront monitoring](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/monitoring-using-cloudwatch.html).

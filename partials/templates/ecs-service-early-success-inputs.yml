@@ -1,0 +1,18 @@
+- $merge:
+    - id: deployment_success_healthy_percent
+      label: Healthy tasks required for success (%)
+      type: number
+      description: Percentage of desired tasks that must be running and healthy on the new revision. Must be at least Minimum healthy percent. ECS still requires one healthy task on nonzero services at 0%. Deployment rollback monitoring ends at success; remaining tasks scale in the background.
+      collapsible: true
+      min: '<< module.input.deployment_minimum_healthy_percent >>'
+      max: 100
+      default: 100
+    - $with.field_overrides
+- $merge:
+    - id: deployment_wait_for_drain
+      label: Wait for old tasks to drain
+      type: boolean
+      description: Choose whether old tasks must finish draining before deployment success. Alarm bake time still applies in both modes.
+      collapsible: true
+      default: false
+    - $with.field_overrides
