@@ -1,0 +1,106 @@
+# Install this config as a Ravion pipeline, then pass its ID to the module.
+# Both stages use the SAME stack, workspace, source ref, and variable inputs.
+inputs:
+  - id: repo
+    type: string
+  - id: branch
+    type: string
+    default: main
+  - id: ref
+    type: string
+    required: false
+  - id: base_path
+    type: string
+    default: database/planetscale_vitess
+  - id: terraform_variables
+    type: object
+  - id: environment_variables
+    type: object
+  - id: execution_environment_id
+    type: string
+  - id: stack_id
+    type: string
+  - id: tool
+    type: string
+    default: opentofu
+    values:
+      - value: opentofu
+  - id: tool_version
+    type: string
+  - id: autoapprove
+    type: boolean
+    default: false
+    required: false
+variants:
+  - id: standard
+    name: Standard
+steps:
+  - group: Provision PlanetScale MySQL
+    # Hold the stack lock across BOTH plan/apply pairs, including approvals.
+    # The standard destroy pipeline uses the same organization-scoped key.
+    concurrency:
+      key: << pipeline.input.stack_id >>
+      scope: organization
+      value: 1
+      behavior: queue
+    steps:
+      - id: bootstrap_plan
+        name: Plan main branch
+        type: terraform:plan
+        infrastructure: &infrastructure
+          type: ec2
+          instance_size: t3.medium
+          execution_environment_id: << pipeline.input.execution_environment_id >>
+        tool: << pipeline.input.tool >>
+        version: << pipeline.input.tool_version >>
+        stack_id: << pipeline.input.stack_id >>
+        source: &source
+          type: git
+          repo: << pipeline.input.repo >>
+          branch: << pipeline.input.branch >>
+          ref: << pipeline.input.ref >>
+          base_path: << pipeline.input.base_path >>
+        terraform_variables: << pipeline.input.terraform_variables >>
+        environment_variables:
+          ...defaults: << pipeline.input.environment_variables >>
+          TF_CLI_ARGS_plan: -target=planetscale_vitess_branch.main
+      - id: bootstrap_approve
+        name: Approve main branch
+        type: approval
+        if: << steps.bootstrap_plan.output.has_changes && (!pipeline.input.autoapprove || steps.bootstrap_plan.output.has_destructive_changes == true) >>
+      - id: bootstrap_apply
+        name: Apply main branch
+        type: terraform:apply
+        if: << steps.bootstrap_plan.output.has_changes >>
+        infrastructure: *infrastructure
+        tool: << pipeline.input.tool >>
+        version: << pipeline.input.tool_version >>
+        stack_id: << pipeline.input.stack_id >>
+        source: *source
+        plan_file_uri: << steps.bootstrap_plan.output.plan_file_uri >>
+        environment_variables: << pipeline.input.environment_variables >>
+      - id: plan
+        name: Import default keyspace and plan database configuration
+        type: terraform:plan
+        infrastructure: *infrastructure
+        tool: << pipeline.input.tool >>
+        version: << pipeline.input.tool_version >>
+        stack_id: << pipeline.input.stack_id >>
+        source: *source
+        terraform_variables: << pipeline.input.terraform_variables >>
+        environment_variables: << pipeline.input.environment_variables >>
+      - id: approve
+        name: Approve database configuration
+        type: approval
+        if: << steps.plan.output.has_changes && (!pipeline.input.autoapprove || steps.plan.output.has_destructive_changes == true) >>
+      - id: apply
+        name: Apply database configuration
+        type: terraform:apply
+        if: << steps.plan.output.has_changes >>
+        infrastructure: *infrastructure
+        tool: << pipeline.input.tool >>
+        version: << pipeline.input.tool_version >>
+        stack_id: << pipeline.input.stack_id >>
+        source: *source
+        plan_file_uri: << steps.plan.output.plan_file_uri >>
+        environment_variables: << pipeline.input.environment_variables >>

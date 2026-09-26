@@ -28,6 +28,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `lambda`          | AWS Lambda functions with regional and Lambda@Edge error-rate alarms   | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
+| `database/`   | `planetscale_vitess` | PlanetScale MySQL with two-stage provisioning, application credentials, in-place keyspace resizing, and advanced VTGate/backup controls (includes `rvn-planetscale-vitess` module definition) | Unreleased |
 | `database/`   | `rds`             | AWS RDS instances with free storage and read/write IOPS alarms          | v1.1.0  |
 | `database/`   | `rds-proxy`       | AWS RDS Proxy for connection pooling in front of RDS instances or Aurora clusters (standalone or via the `rds`/`aurora` modules) (includes `rvn-rds-proxy` module definition) | v1.0.0  |
 | `hosting/`    | `static_site`     | Static site hosting with S3, CloudFront Functions, and default CloudFront 5xx alarms | v1.0.0  |
@@ -83,6 +84,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-worker` | EKS Worker | v0.6.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
+| `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |
 | `rvn-rds` | RDS Database | v1.3.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.0.3 | `networking/route53/` |

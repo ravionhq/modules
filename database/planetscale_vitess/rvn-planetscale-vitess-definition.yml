@@ -1,0 +1,208 @@
+definition:
+  type: rvn-planetscale-vitess
+  name: PlanetScale MySQL
+  description: Managed PlanetScale MySQL with application credentials, safe migrations, and in-place cluster resizing.
+release:
+  version: 0.1.0
+  description: Add PlanetScale MySQL databases with application credentials and in-place cluster resizing.
+module:
+  inputs:
+    - id: section_planetscale
+      label: PlanetScale account
+      type: section
+    - id: organization
+      label: Organization
+      description: PlanetScale organization slug, not your Ravion organization.
+      type: string
+      required: true
+      immutable: true
+      placeholder: acme
+    - id: service_token_secret
+      label: Service token secret
+      description: AWS Secrets Manager secret accessible to the runner, containing service_token_id and service_token JSON keys.
+      type: string
+      required: true
+      placeholder: planetscale/service-token
+    - id: section_database
+      label: Database
+      type: section
+    - id: name
+      label: Database name
+      type: string
+      required: true
+      immutable: true
+      default: << project.given_id >>-<< environment.given_id >>-<< module.given_id >>
+      patterns:
+        - pattern: ^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$
+          message: 1-64 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+    - id: region
+      label: Database region
+      description: PlanetScale region slug, such as us-east (AWS N. Virginia) or eu-west (AWS Ireland). Choose a Vitess-supported region near your application.
+      type: string
+      required: true
+      immutable: true
+      placeholder: us-east
+    - id: cluster_size
+      label: Cluster size
+      description: Compute per database instance; the production cluster includes a primary and two replicas. Changes resize in place. Availability and pricing vary by region.
+      type: string
+      required: true
+      default: PS_10
+      values:
+        - label: PS-10 — 1/8 vCPU, 1 GB
+          value: PS_10
+        - label: PS-20 — 1/4 vCPU, 2 GB
+          value: PS_20
+        - label: PS-40 — 1/2 vCPU, 4 GB
+          value: PS_40
+        - label: PS-80 — 1 vCPU, 8 GB
+          value: PS_80
+        - label: PS-160 — 2 vCPU, 16 GB
+          value: PS_160
+        - label: PS-320 — 4 vCPU, 32 GB
+          value: PS_320
+        - label: PS-640 — 8 vCPU, 64 GB
+          value: PS_640
+        - label: PS-1280 — 16 vCPU, 128 GB
+          value: PS_1280
+        - label: PS-2560 — 32 vCPU, 256 GB
+          value: PS_2560
+    - id: deletion_protection_enabled
+      label: Deletion protection
+      description: Disable and apply before destroying the database.
+      type: boolean
+      default: true
+    - id: safe_migrations_enabled
+      label: Safe migrations
+      description: Require PlanetScale deploy requests for schema changes. Disable only when direct DDL on main is intended.
+      type: boolean
+      default: true
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - id: execution_environment_id
+      label: Terraform execution environment
+      description: Runs OpenTofu and reads the service token secret. This does not select the database's cloud account or region.
+      type: string
+      required: true
+      default: << defaults.execution_environment_id >>
+      values: $values:ravion/execution_environments
+    - id: change_pipeline_id
+      label: PlanetScale provisioning pipeline ID
+      description: Install database/planetscale_vitess/pipelines/change.yml once in your Ravion project and enter its pipeline ID. It bootstraps the branch before importing the default keyspace.
+      type: string
+      required: true
+      placeholder: pipe_...
+  stack:
+    type: opentofu
+    ravion_state_backend_workspace: >-
+      << module.input.ravion_state_backend_workspace || project.given_id + "-" + environment.given_id + "-"
+      + module.given_id + "-" + stack.id >>
+    pipelines:
+      defaults:
+        variant: standard
+        input:
+          repo: https://github.com/ravionhq/modules
+          branch: main
+          ref: $local.module_tag
+          base_path: database/planetscale_vitess
+          stack_id: << stack.id >>
+          tool: opentofu
+          tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
+          execution_environment_id: << module.input.execution_environment_id >>
+          environment_variables:
+            PLANETSCALE_SERVICE_TOKEN_ID:
+              from_secrets_manager:
+                key: << module.input.service_token_secret >>
+                json_key: service_token_id
+            PLANETSCALE_SERVICE_TOKEN:
+              from_secrets_manager:
+                key: << module.input.service_token_secret >>
+                json_key: service_token
+          terraform_variables:
+            ...overrides: << module.input.advanced_terraform_variables >>
+            organization: << module.input.organization >>
+            name: << module.input.name >>
+            region: << module.input.region >>
+            cluster_size: << module.input.cluster_size >>
+            deletion_protection_enabled: << module.input.deletion_protection_enabled >>
+            safe_migrations_enabled: << module.input.safe_migrations_enabled >>
+      change:
+        pipeline_id: << module.input.change_pipeline_id >>
+      destroy:
+        pipeline_id: << defaults.destroy_pipeline_id >>
+  ui:
+    links:
+      - name: PlanetScale database
+        href: << stack.output.dashboard_url >>
+  readme: |
+    Managed PlanetScale MySQL with application credentials, safe migrations, and in-place cluster resizing.
+
+    ## Overview
+
+    Creates one Vitess database with a main branch, manages its default keyspace,
+    and generates a read/write application credential. Each module instance owns
+    its database. The initial size is PS-10; safe migrations and deletion protection
+    are enabled. PlanetScale's built-in backups remain in effect.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | MySQL application | Provision the database and consume its connection outputs. |
+    | Growing workload | Resize the default keyspace without replacing the branch. |
+    | Separate Ravion environments | Give each environment its own database and lifecycle. |
+
+    ## Provisioning
+
+    This module uses a dedicated two-stage provisioning pipeline. The first stage
+    creates the branch; the second imports its automatically created default
+    keyspace and applies credentials and other settings. Later runs reuse the same
+    state and resize the keyspace in place. A failed second stage can be retried.
+
+    Ask your project administrator for the PlanetScale provisioning pipeline ID.
+    The source-controlled pipeline is bundled with this module. A standard
+    single-stage change pipeline cannot bootstrap a new database for this module.
+
+    ## Configuration
+
+    | Setting | Behavior |
+    | --- | --- |
+    | Organization | Required PlanetScale organization slug. |
+    | Service token secret | Required AWS Secrets Manager secret with service_token_id and service_token JSON keys. |
+    | Database name | Generated from project, environment and module names. |
+    | Database region | Required PlanetScale region slug, such as us-east; choose a Vitess-supported region near the application. |
+    | Cluster size | PS-10 by default. Region availability and pricing vary. |
+    | Deletion protection | Enabled. Disable and apply before destroying the database. |
+    | Safe migrations | Enabled. Main-branch schema changes require PlanetScale deploy requests. |
+    | Terraform execution environment | Runner location and access to the service token secret; independent of database placement. |
+    | PlanetScale provisioning pipeline ID | Required project pipeline implementing the two-stage workflow. |
+
+    ## Application connections
+
+    Connect with the host, port, database_name, username and sensitive password
+    outputs. A sensitive connection_string is also available. Configure TLS
+    certificate and hostname verification in your MySQL driver; clients use
+    different TLS options. Passwords are stored in Terraform state.
+
+    The application credential has read/write data access. Schema migration
+    credentials and PlanetScale deploy-request workflows are separate concerns.
+
+    ## Advanced configuration
+
+    Advanced Terraform variables can configure additional keyspaces, replicas,
+    passwords and CIDR restrictions, VTGate sizing/autoscaling, and custom backup
+    policies. These options can add charges. Custom backups are optional; built-in
+    backups remain available without them. Metal disk selection, additional
+    branches, VSchema and deploy requests are outside this release's scope.
+
+    ## Design decisions
+
+    Database identity and region are fixed after creation. Compute sizing remains
+    editable. The default keyspace is discovered and imported rather than created
+    twice. No AWS resources are needed for the PlanetScale database itself; AWS is
+    used by the Terraform runner and its secret reference.
+
+    ## Learn more
+
+    - [PlanetScale Terraform provider](https://planetscale.com/docs/terraform)
+    - [Vitess cluster configuration](https://planetscale.com/docs/vitess/cluster-configuration)
+    - [PlanetScale pricing](https://planetscale.com/pricing)
