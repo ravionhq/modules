@@ -38,3 +38,8 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "replica_arns" {
+  description = "Secret ARNs in each replica Region, keyed by Region. Empty for Parameter Store."
+  value       = local.replica_arns
+}

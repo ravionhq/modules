@@ -8,6 +8,7 @@ Generates a random value and stores it in SSM Parameter Store (SecureString) or 
 - Value never in state, plans, or outputs.
 - Rotation by incrementing `rotation_version`.
 - Optional customer managed KMS key.
+- Optional read-only replication to additional AWS Regions for Secrets Manager.
 
 ## Usage
 
@@ -36,6 +37,8 @@ module "session_secret" {
   name   = "myapp/production/session-secret"
   store  = "secrets_manager"
   length = 64
+
+  replica_regions = ["us-west-2", "eu-west-1"]
 }
 ```
 
@@ -68,6 +71,7 @@ module "master_key" {
 | rotation_version | Change to generate and store a new value. | `number` | `1` | no |
 | kms_key_id | KMS key ID, ARN, or alias. Defaults to the AWS managed key. | `string` | `null` | no |
 | recovery_window_in_days | Secrets Manager recovery window (0 or 7-30). | `number` | `30` | no |
+| replica_regions | Additional AWS Regions for read-only Secrets Manager replicas. Ignored for Parameter Store. | `list(string)` | `[]` | no |
 | tags | Additional tags. | `map(string)` | `{}` | no |
 | region | AWS region. Defaults to the provider region. | `string` | `null` | no |
 
@@ -81,3 +85,4 @@ module "master_key" {
 | rotation_version | Version of the stored value. |
 | aws_account_id | AWS account ID. |
 | region | AWS region. |
+| replica_arns | Secret ARNs in each replica Region, keyed by Region. Empty for Parameter Store. |

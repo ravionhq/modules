@@ -87,6 +87,22 @@ variable "recovery_window_in_days" {
   }
 }
 
+variable "replica_regions" {
+  type        = list(string)
+  description = "Additional AWS Regions that receive a read-only copy of the secret. Secrets Manager only; ignored for Parameter Store."
+  default     = []
+
+  validation {
+    condition     = alltrue([for region in var.replica_regions : can(regex("^[a-z]{2}(-gov)?-[a-z]+-\\d$", region))])
+    error_message = "Each replica region must match an AWS Region name such as us-west-2 or us-gov-west-1."
+  }
+
+  validation {
+    condition     = length(distinct(var.replica_regions)) == length(var.replica_regions)
+    error_message = "replica_regions must not contain duplicate Regions."
+  }
+}
+
 ################################################################################
 # Tags and region
 ################################################################################

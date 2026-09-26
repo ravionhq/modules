@@ -110,6 +110,59 @@ run "secrets_manager" {
   }
 }
 
+run "secrets_manager_replicas" {
+  command = plan
+
+  variables {
+    store           = "secrets_manager"
+    replica_regions = ["us-west-2", "eu-west-1"]
+    kms_key_id      = "alias/my-key"
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret.this[0].replica) == 2
+    error_message = "Secrets Manager must create one replica block per replica region"
+  }
+
+  assert {
+    condition     = alltrue([for replica in aws_secretsmanager_secret.this[0].replica : replica.kms_key_id == "alias/my-key"])
+    error_message = "Replica secrets must use an alias KMS key in each replica Region"
+  }
+}
+
+run "secrets_manager_replicas_drop_region_specific_kms_key" {
+  command = plan
+
+  variables {
+    store           = "secrets_manager"
+    replica_regions = ["us-west-2"]
+    kms_key_id      = "arn:aws:kms:us-east-1:123456789012:key/abc"
+  }
+
+  assert {
+    condition     = local.replica_kms_key_id == null
+    error_message = "Region-specific KMS key ARNs must not be used for replica secrets"
+  }
+
+  assert {
+    condition     = alltrue([for replica in aws_secretsmanager_secret.this[0].replica : replica.kms_key_id != var.kms_key_id])
+    error_message = "Region-specific KMS key ARNs must not be passed to replica secrets"
+  }
+}
+
+run "parameter_store_ignores_replicas" {
+  command = plan
+
+  variables {
+    replica_regions = ["us-west-2"]
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret.this) == 0
+    error_message = "Parameter Store must not create a Secrets Manager secret for replicas"
+  }
+}
+
 ################################################################################
 # Validation
 ################################################################################
@@ -166,4 +219,14 @@ run "rejects_secrets_manager_characters_in_parameter_store" {
   }
 
   expect_failures = [var.name]
+}
+
+run "rejects_duplicate_replica_regions" {
+  command = plan
+
+  variables {
+    replica_regions = ["us-west-2", "us-west-2"]
+  }
+
+  expect_failures = [var.replica_regions]
 }
