@@ -3,9 +3,13 @@ allowed_cidr_blocks: << module.input.allowed_cidr_blocks >>
 public_ip_assignment_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
 auto_scaling:
   enabled: << module.input.auto_scaling_enabled >>
-  max_capacity: << module.input.max_capacity >>
-  min_capacity: << module.input.min_capacity >>
-  scheduled: "<< module.input.scheduled_scaling != nil ? module.input.scheduled_scaling : [] >>"
+  max_capacity: << module.input.max_tasks >>
+  min_capacity: << module.input.min_tasks >>
+  scheduled: >-
+    << module.input.scheduled_scaling != nil ? map(module.input.scheduled_scaling,
+    {"name": #.name, "schedule": #.schedule, "min_capacity": #.min_tasks != nil ? #.min_tasks : #.min_capacity,
+    "max_capacity": #.max_tasks != nil ? #.max_tasks : #.max_capacity, "timezone": #.timezone, "start_time": #.start_time,
+    "end_time": #.end_time}) : [] >>
   target_tracking:
     - scale_in_enabled: << module.input.scale_in_enabled >>
       policy_name: cpu
@@ -38,7 +42,7 @@ cluster_arn: << module.input.cluster_arn >>
 deployment_maximum_percent: << module.input.deployment_maximum_percent >>
 deployment_minimum_healthy_percent: << module.input.deployment_minimum_healthy_percent >>
 deployment_type: rolling
-desired_count: "<< module.input.auto_scaling_enabled ? module.input.min_capacity : module.input.desired_count >>"
+desired_count: "<< module.input.auto_scaling_enabled ? module.input.min_tasks : module.input.desired_tasks >>"
 ecr_default_lifecycle_policy_enabled: true
 ecr_force_deletion_enabled: << module.input.ecr_force_deletion_enabled >>
 ecr_repository_name: << module.input.name >>

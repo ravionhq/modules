@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 2.0.0
+  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks. Pre-deploy, post-deploy, and sidecar CPU and memory now use the app task's units (1 CPU = 1 vCPU, 1 memory = 1 GB) instead of ECS CPU units and MiB; re-enter any saved values after upgrading, for example 512 CPU units becomes 0.5.
 module:
   inputs:
     - id: section_cluster
@@ -142,7 +142,13 @@ module:
         (stack.output.container_name), "readonly_root_filesystem": false,
         "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars : []) >>
+        "stop_timeout": 30}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
+        (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
+        (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
+        "environment": #.environment, "secrets": #.secrets, "port_mappings": #.port_mappings,
+        "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
+        #.entry_point, "working_directory": #.working_directory}) : []) >>
   ui:
     logs:
       - id: ecs_worker_logs
@@ -240,7 +246,7 @@ module:
 
     - The module intentionally creates an ECS service without load balancer attachment or primary container port mappings.
     - Sidecar port mappings are allowed for task-local communication, agents, and proxies.
-    - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
+    - The service uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 
     ## Learn more

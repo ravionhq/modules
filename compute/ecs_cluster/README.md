@@ -73,9 +73,9 @@ module "ecs" {
 
   # EC2 capacity provider
   ec2_instance_type    = "t3.medium"
-  ec2_min_size         = 1
-  ec2_max_size         = 10
-  ec2_desired_capacity = 2
+  ec2_min_instances     = 1
+  ec2_max_instances     = 10
+  ec2_desired_instances = 2
 
   # Enable Spot instances
   ec2_spot_enabled             = true
@@ -110,9 +110,9 @@ module "ecs" {
 
   # EC2 for baseline capacity
   ec2_instance_type    = "t3.large"
-  ec2_min_size         = 2
-  ec2_max_size         = 20
-  ec2_desired_capacity = 2
+  ec2_min_instances     = 2
+  ec2_max_instances     = 20
+  ec2_desired_instances = 2
 
   # Both ALBs
   public_alb_enabled           = true
@@ -251,9 +251,9 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 | ec2_instance_type | EC2 instance type (null to disable) | `string` | `null` | no |
 | ec2_ami_id | AMI ID (null for latest ECS-optimized) | `string` | `null` | no |
 | ec2_key_name | EC2 key pair name for SSH | `string` | `null` | no |
-| ec2_min_size | ASG minimum size | `number` | `0` | no |
-| ec2_max_size | ASG maximum size | `number` | `10` | no |
-| ec2_desired_capacity | ASG desired capacity | `number` | `1` | no |
+| ec2_min_instances | Minimum number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count. | `number` | `0` | no |
+| ec2_max_instances | Maximum number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count. | `number` | `10` | no |
+| ec2_desired_instances | Desired number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count. | `number` | `1` | no |
 | ec2_spot_enabled | Enable Spot instances | `bool` | `false` | no |
 | ec2_spot_instance_types | Additional instance types for Spot | `list(string)` | `[]` | no |
 | ec2_on_demand_base_capacity | On-Demand base capacity | `number` | `0` | no |
@@ -476,8 +476,8 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 ║  │ • fargate_enabled            │   │ • fargate_spot_enabled           │   │ • ec2_instance_type                     │  ║
 ║  │ • fargate_weight            │   │ • fargate_spot_weight           │   │ • ec2_ami_id                            │  ║
 ║  │ • fargate_base              │   │ • fargate_spot_base             │   │ • ec2_key_name                          │  ║
-║  └─────────────────────────────┘   └─────────────────────────────────┘   │ • ec2_min_size, ec2_max_size            │  ║
-║                                                                          │ • ec2_desired_capacity                  │  ║
+║  └─────────────────────────────┘   └─────────────────────────────────┘   │ • ec2_min_instances, ec2_max_instances  │  ║
+║                                                                          │ • ec2_desired_instances                 │  ║
 ║                                                                          │ • ec2_spot_enabled                       │  ║
 ║                                                                          │ • ec2_spot_instance_types               │  ║
 ║                                                                          │ • ec2_on_demand_base_capacity           │  ║
@@ -735,8 +735,8 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 ║              │    .ecs_optimized_ami        └────────────┬─────────────┘                                               ║
 ║              │                                           │                                                             ║
 ║              │                                           ▼                                                             ║
-║              │    var.ec2_min/max_size ────►┌──────────────────────────┐                                               ║
-║              │    var.ec2_desired_capacity ►│ module.ecs_autoscaling   │                                               ║
+║              │    var.ec2_min/max_instances ►┌─────────────────────────┐                                               ║
+║              │    var.ec2_desired_instances ►│ module.ecs_autoscaling   │                                               ║
 ║              │    var.ec2_spot_enabled ─────►│ (compute/autoscaling)    │                                               ║
 ║              │    var.private_subnet_ids ──►└────────────┬─────────────┘                                               ║
 ║              │                                           │                                                             ║

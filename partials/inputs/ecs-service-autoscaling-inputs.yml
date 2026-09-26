@@ -7,16 +7,24 @@
   default: true
 - $template: ../templates/autoscaling-capacity-inputs.yml
   with:
-    min_capacity_overrides:
+    min_overrides:
+      id: min_tasks
+      moved_from:
+        - min_capacity
       label: Minimum tasks
       description: Recommend at least 2 for production.
       show_when:
         auto_scaling_enabled: true
-    max_capacity_overrides:
+    max_overrides:
+      id: max_tasks
+      moved_from:
+        - max_capacity
       label: Maximum tasks
       show_when:
         auto_scaling_enabled: true
-- id: desired_count
+- id: desired_tasks
+  moved_from:
+    - desired_count
   label: Desired tasks
   type: number
   description: Number of tasks to keep running when autoscaling is disabled.
@@ -73,7 +81,7 @@
 - id: scheduled_scaling
   label: Scheduled scaling actions
   type: object_array
-  description: Optional Application Auto Scaling scheduled actions for the ECS service desired count. Each action sets a recurring, one-time, or rate-based schedule and may update the minimum capacity, maximum capacity, or both.
+  description: Optional Application Auto Scaling scheduled actions for the ECS service desired tasks. Each action sets a recurring, one-time, or rate-based schedule and may update the minimum tasks, maximum tasks, or both.
   item_inputs:
     - id: name
       label: Action name
@@ -93,17 +101,17 @@
       patterns:
         - message: Use at(...), rate(value minute|minutes|hour|hours|day|days), or cron(...).
           pattern: ^(at\(.+\)|rate\([1-9][0-9]* (minute|minutes|hour|hours|day|days)\)|cron\(.+\))$
-    - id: min_capacity
-      label: Minimum capacity
+    - id: min_tasks
+      label: Minimum tasks
       type: number
-      description: Optional desired-count floor to apply when this action runs. Set minimum capacity, maximum capacity, or both.
+      description: Optional desired-task floor to apply when this action runs. Set minimum tasks, maximum tasks, or both.
       min: 0
       placeholder: "2"
       required: false
-    - id: max_capacity
-      label: Maximum capacity
+    - id: max_tasks
+      label: Maximum tasks
       type: number
-      description: Optional desired-count ceiling to apply when this action runs. Set maximum capacity, minimum capacity, or both.
+      description: Optional desired-task ceiling to apply when this action runs. Set maximum tasks, minimum tasks, or both.
       min: 0
       placeholder: "10"
       required: false

@@ -135,8 +135,8 @@ for credentials and saved-plan behavior.
 | ravion_runner_role_trusted_principal_arns | ArnLike patterns restricting who can assume the Ravion Runner role (empty = Ravion's per-run pipeline runner roles, `role/rvn-ci/rvn-ci-*`, in this account). | `list(string)` | `[]` | no |
 | pod_identity_associations | Extra Pod Identity associations. | `map(object)` | `{}` | no |
 | deletion_protection_enabled | Protect the cluster from API deletion. | `bool` | `true` | no |
-| system_node_group | Default managed node group config. The minimum size is also its initial size. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
-| node_groups | Extra node groups keyed by name. Each group's minimum size is also its initial size. | `map(object)` | `{}` | no |
+| system_node_group | Default managed node group config. The minimum node count is also its initial count. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
+| node_groups | Extra node groups keyed by name. Each group's minimum node count is also its initial count. | `map(object)` | `{}` | no |
 | coredns_addon_version / coredns_addon_configuration_values | CoreDNS pin / JSON overrides. | `string` | `null` | no |
 | topology_aware_routing_enabled | Spread CoreDNS across zones and publish the zone-local routing default for `addons`. | `bool` | `true` | no |
 | fargate_profiles | Fargate profiles keyed by name (`selectors` required). | `map(object)` | `{}` | no |

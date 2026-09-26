@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 2.0.0
+  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks. Pre-deploy, post-deploy, and sidecar CPU and memory now use the app task's units (1 CPU = 1 vCPU, 1 memory = 1 GB) instead of ECS CPU units and MiB; re-enter any saved values after upgrading, for example 512 CPU units becomes 0.5.
 module:
   inputs:
     - id: section_cluster
@@ -501,8 +501,13 @@ module:
         "container_port": (module.input.container_port), "protocol": "tcp"}], "readonly_root_filesystem":
         false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
-        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars
-        : []) >>
+        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
+        (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
+        (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
+        "environment": #.environment, "secrets": #.secrets, "port_mappings": #.port_mappings,
+        "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
+        #.entry_point, "working_directory": #.working_directory}) : []) >>
   ui:
     logs:
       - id: ecs_service_logs
@@ -848,15 +853,15 @@ module:
     | Run pre-deploy command          | No       | false                      | Enable a task before each deployment               |
     | Pre-deploy command arguments    | Yes*     | []                         | Command arguments run before each deployment       |
     | Pre-deploy environment variables| No       | []                         | Extra environment variables for the pre-deploy task |
-    | Pre-deploy CPU units            | No       | App task CPU               | CPU override for the pre-deploy task               |
-    | Pre-deploy memory (MiB)         | No       | App task memory            | Memory override for the pre-deploy task            |
+    | Pre-deploy CPU                  | No       | App task CPU               | CPU override for the pre-deploy task               |
+    | Pre-deploy memory               | No       | App task memory            | Memory override for the pre-deploy task            |
     | Pre-deploy ephemeral storage    | No       | Task definition default    | Ephemeral storage override for the pre-deploy task |
     | Pre-deploy timeout (secs)       | No       | 1800                       | Maximum pre-deploy task wait time                  |
     | Run post-deploy command         | No       | false                      | Enable a task after each successful deployment     |
     | Post-deploy command arguments   | Yes*     | []                         | Command arguments run after each successful deployment |
     | Post-deploy environment variables| No      | []                         | Extra environment variables for the post-deploy task |
-    | Post-deploy CPU units           | No       | App task CPU               | CPU override for the post-deploy task              |
-    | Post-deploy memory (MiB)        | No       | App task memory            | Memory override for the post-deploy task           |
+    | Post-deploy CPU                 | No       | App task CPU               | CPU override for the post-deploy task              |
+    | Post-deploy memory              | No       | App task memory            | Memory override for the post-deploy task           |
     | Post-deploy ephemeral storage   | No       | Task definition default    | Ephemeral storage override for the post-deploy task |
     | Post-deploy timeout (secs)      | No       | 1800                       | Maximum post-deploy task wait time                 |
     | Autoscaling                     | No       | true                       | Enable CPU and optional memory target tracking     |
@@ -885,7 +890,7 @@ module:
     - The module always models an HTTP web service behind an Application Load Balancer. NLB, worker, and service discovery patterns are intentionally outside this module definition.
     - Tasks default to private subnets even for public web services. The ALB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Built images are pushed to an ECR repository created with the service stack. Managed ECR repository lets a pipeline push images to that repository without a module build config. Pull from image registry lets teams bring their own image pipeline.
-    - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
+    - The service uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 
     ## Learn more
