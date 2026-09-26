@@ -22,7 +22,7 @@ jobs:
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
         with:
-          tofu_version: 1.10.0
+          tofu_version: 1.11.5
 
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4

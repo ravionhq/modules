@@ -45,6 +45,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `security/`   | `iam`             | AWS IAM roles and policies                                             | v1.0.0  |
 | `security/`   | `iam_policy`      | Reusable customer-managed AWS IAM policies                             | v1.0.0  |
 | `security/`   | `kms`             | AWS KMS keys (symmetric or asymmetric: signing, encryption, MAC, key agreement) (includes the `rvn-aws-kms` module definition) | v1.0.0  |
+| `security/`   | `secret` | Random values generated into SSM Parameter Store or Secrets Manager without touching Terraform state (includes the `rvn-aws-secret` module definition) | v0.1.0 |
 | `security/`   | `secrets-manager` | AWS Secrets Manager secrets                                            | Planned |
 | `stack/`      | `terraform`       | Ravion Terraform/OpenTofu stack workflows with git triggers and managed state (includes `rvn-stack` module definition) | v1.2.3  |
 | `storage/`    | `ebs`             | AWS EBS volumes                                                        | Planned |
@@ -69,6 +70,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
+| `rvn-aws-secret` | AWS Secret | v1.0.0 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.1.3 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.2 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v1.6.1 | `compute/ec2_service/` |
