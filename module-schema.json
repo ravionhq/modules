@@ -11,9 +11,10 @@
       "description": "Array of input property definitions. Each item is an object with exactly one key (the property name) mapping to an InputProperty.",
       "items": { "$ref": "#/$defs/PropertyDefinition" }
     },
-    "output": {
-      "$ref": "#/$defs/ModuleOutput",
-      "description": "Optional output configuration mapping variable names to values."
+    "outputs": {
+      "type": "array",
+      "description": "Optional declared stack outputs.",
+      "items": { "$ref": "#/$defs/OutputProperty" }
     },
     "ui": {
       "$ref": "#/$defs/ModuleUI",
@@ -279,15 +280,22 @@
         "required": { "type": "boolean", "default": false }
       }
     },
-    "ModuleOutput": {
+    "OutputProperty": {
       "type": "object",
-      "description": "Record mapping output variable names to values (string, boolean, or string[]).",
-      "additionalProperties": {
-        "anyOf": [
-          { "type": "string" },
-          { "type": "boolean" },
-          { "type": "array", "items": { "type": "string" } }
-        ]
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "number", "boolean", "string_array", "object", "array"]
+        },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "sensitive": { "type": "boolean" }
       }
     },
     "ModuleUI": {
