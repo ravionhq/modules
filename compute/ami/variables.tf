@@ -295,8 +295,13 @@ variable "distribution_regions" {
   default     = []
 }
 
-variable "public_sharing_enabled" {
-  description = "Allow public AMI sharing in the build region and every distribution region, so a deploy that publishes can grant launch permission all"
-  type        = bool
-  default     = false
+variable "image_block_public_access" {
+  description = "Block public access for AMIs in the build region and every distribution region: unblocked or block-new-sharing. Null leaves the account's state unchanged"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.image_block_public_access == null || contains(["unblocked", "block-new-sharing"], var.image_block_public_access)
+    error_message = "image_block_public_access must be unblocked or block-new-sharing."
+  }
 }

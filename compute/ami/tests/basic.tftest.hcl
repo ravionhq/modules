@@ -851,33 +851,58 @@ run "a_log_prefix_is_granted_and_written_under" {
 }
 
 # ------------------------------------------------------------------------------
-# Public AMI sharing — off unless asked for, then every region a release lands in
+# Block public access for AMIs — unchanged unless set, then every region a
+# release lands in takes the chosen state
 # ------------------------------------------------------------------------------
 
-run "public_sharing_stays_blocked_by_default" {
+run "block_public_access_is_left_unchanged_by_default" {
   command = plan
 
   assert {
     condition     = length(aws_ec2_image_block_public_access.this) == 0
-    error_message = "Public AMI sharing must stay blocked unless the module allows it"
+    error_message = "The module must not manage block public access for AMIs unless it is set"
   }
 }
 
-run "public_sharing_unblocks_every_release_region_once" {
+run "block_public_access_unblocked_covers_every_release_region_once" {
   command = plan
 
   variables {
-    public_sharing_enabled = true
-    distribution_regions   = ["us-east-1", "us-west-2", "us-east-2"]
+    image_block_public_access = "unblocked"
+    distribution_regions      = ["us-east-1", "us-west-2", "us-east-2"]
   }
 
   assert {
     condition     = toset(keys(aws_ec2_image_block_public_access.this)) == toset(["us-west-2", "us-east-1", "us-east-2"])
-    error_message = "The build region and each distribution region must be unblocked once, got ${join(", ", keys(aws_ec2_image_block_public_access.this))}"
+    error_message = "The build region and each distribution region must be set once, got ${join(", ", keys(aws_ec2_image_block_public_access.this))}"
   }
 
   assert {
     condition     = alltrue([for region, setting in aws_ec2_image_block_public_access.this : setting.state == "unblocked" && setting.region == region])
     error_message = "Each region's setting must be unblocked, in that region"
   }
+}
+
+run "block_public_access_block_new_sharing_turns_the_block_back_on" {
+  command = plan
+
+  variables {
+    image_block_public_access = "block-new-sharing"
+    distribution_regions      = ["us-east-1"]
+  }
+
+  assert {
+    condition     = alltrue([for region, setting in aws_ec2_image_block_public_access.this : setting.state == "block-new-sharing" && setting.region == region]) && length(aws_ec2_image_block_public_access.this) == 2
+    error_message = "The build region and each distribution region must block new sharing"
+  }
+}
+
+run "block_public_access_rejects_other_states" {
+  command = plan
+
+  variables {
+    image_block_public_access = "blocked"
+  }
+
+  expect_failures = [var.image_block_public_access]
 }
