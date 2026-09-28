@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.6.1
+  version: 0.7.1
   description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   inputs:
