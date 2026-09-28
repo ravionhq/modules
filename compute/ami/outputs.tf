@@ -37,3 +37,8 @@ output "instance_role_name" {
   description = "The name of the build instance's IAM role, for attaching further policies."
   value       = aws_iam_role.instance.name
 }
+
+output "module_instance_id" {
+  description = "Id of the Ravion module instance these resources belong to, for a reference that names this module."
+  value       = var.module_instance_id
+}

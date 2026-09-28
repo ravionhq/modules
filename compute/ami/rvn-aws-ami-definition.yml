@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
 release:
-  version: 0.2.0
-  description: Adds Block public access for AMIs, which sets AWS's block on public AMI sharing in the build region and every additional region. unblocked lets a deploy with Publish on make its AMIs public.
+  version: 0.2.1
+  description: Adds the module_instance_id output, the id of this module, for references that name the module.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -938,6 +938,7 @@ module:
         instance_types: << module.input.instance_types >>
         log_bucket: << module.input.log_bucket || nil >>
         log_prefix: << module.input.log_prefix >>
+        module_instance_id: << module.id >>
         name: << module.input.name >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
         parent_image_lookup: >-

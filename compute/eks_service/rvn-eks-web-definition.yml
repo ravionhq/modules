@@ -5,7 +5,7 @@ definition:
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 1.4.1
-  description: Explains that build environment variables reach only the build and never the running app.
+  description: Clarifies that build environment variables are only available during the build.
 module:
   inputs:
     - id: section_cluster

@@ -6,7 +6,7 @@ definition:
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 0.4.3
-  description: Explains that build environment variables reach only the build and never the running app.
+  description: Clarifies that build environment variables are only available during the build.
 module:
   inputs:
     - id: section_cluster

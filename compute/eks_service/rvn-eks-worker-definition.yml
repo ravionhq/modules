@@ -5,7 +5,7 @@ definition:
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
   version: 0.7.1
-  description: Explains that build environment variables reach only the build and never the running app.
+  description: Clarifies that build environment variables are only available during the build.
 module:
   inputs:
     - id: section_cluster
