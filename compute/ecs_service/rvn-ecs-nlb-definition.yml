@@ -3,7 +3,7 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.7.1
+  version: 1.7.3
   description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   inputs:

@@ -3,7 +3,7 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.2.1
+  version: 1.2.2
   description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   build:
@@ -140,6 +140,7 @@ module:
             - nixpacks
     - $merge:
         - ../../partials/inputs/build-environment-variables.yml
+      description: "Only available during the build. Anything built into the site is public, so don't use secrets."
       show_when:
         build_source:
           - dockerfile

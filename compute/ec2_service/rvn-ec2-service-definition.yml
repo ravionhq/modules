@@ -3,7 +3,7 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.7.1
+  version: 1.7.3
   description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   inputs:
@@ -617,7 +617,10 @@ module:
     - id: secrets
       label: Runtime secrets
       type: array
-      description: Secret environment variables as {name, value_from} objects fetched on each instance.
+      description: Secret environment variables fetched on each instance, as an array of objects with `name` and `value_from` keys (snake_case, not `valueFrom`). value_from is a Secrets Manager secret ARN, an SSM parameter ARN, or a bare SSM parameter name.
+      placeholder: |-
+        - name: DATABASE_URL
+          value_from: arn:aws:ssm:us-east-1:123456789012:parameter/my-app/database-url
     - id: section_networking
       label: Networking
       type: section
