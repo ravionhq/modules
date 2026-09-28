@@ -231,7 +231,7 @@ at the bucket root.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name of the configurations, and the prefix of every other resource this module creates | `string` | n/a | yes |
-| module_instance_id | Id of the Ravion module instance these resources belong to. Ravion sets it | `string` | n/a | yes |
+| module_instance_id | Id of the Ravion module instance these resources belong to. Ravion sets it; null outside Ravion | `string` | `null` | no |
 | components | Components each build runs, in order. Each sets `source` (`steps`, `document` or `arn`) and the fields it names: `build_steps`/`validate_steps`/`test_steps` and `parameter_definitions`, `data`, or `arn`. Optional `description`, `platform`, `parameters` | `list(object)` | n/a | yes |
 | description | Description stored on the infrastructure and distribution configurations | `string` | `null` | no |
 | region | Region images are built in | `string` | provider region | no |

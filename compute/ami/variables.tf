@@ -308,5 +308,6 @@ variable "image_block_public_access" {
 
 variable "module_instance_id" {
   type        = string
-  description = "Id of the Ravion module instance these resources belong to"
+  description = "Id of the Ravion module instance these resources belong to. Null outside Ravion"
+  default     = null
 }

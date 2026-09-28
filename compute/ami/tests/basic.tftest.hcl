@@ -920,3 +920,16 @@ run "module_instance_id_is_output_as_given" {
     error_message = "module_instance_id must be output as given, got ${output.module_instance_id}"
   }
 }
+
+run "module_instance_id_is_null_outside_ravion" {
+  command = plan
+
+  variables {
+    module_instance_id = null
+  }
+
+  assert {
+    condition     = output.module_instance_id == null
+    error_message = "module_instance_id must be null when no module instance is given"
+  }
+}
