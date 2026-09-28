@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.7.1
-  description: Name the Runtime secrets item keys explicitly as `name` and `value_from`, and add a placeholder example.
+  version: 1.7.2
+  description: Clarifies that build environment variables are only available during the build.
 module:
   inputs:
     - id: network
