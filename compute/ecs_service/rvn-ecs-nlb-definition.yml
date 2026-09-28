@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.7.0
-  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
+  version: 1.7.1
+  description: Name the Runtime secrets and FireLens secrets item keys explicitly as `name` and `value_from`, and fix placeholders that showed `valueFrom`.
 module:
   inputs:
     - id: section_cluster
