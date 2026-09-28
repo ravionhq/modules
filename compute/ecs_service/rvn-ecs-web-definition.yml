@@ -3,7 +3,7 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.6.1
+  version: 1.7.1
   description: Name the Runtime secrets and FireLens secrets item keys explicitly as `name` and `value_from`, and fix placeholders that showed `valueFrom`.
 module:
   inputs:

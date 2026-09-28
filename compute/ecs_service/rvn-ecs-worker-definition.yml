@@ -3,7 +3,7 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.6.1
+  version: 1.7.1
   description: Name the Runtime secrets and FireLens secrets item keys explicitly as `name` and `value_from`, and fix placeholders that showed `valueFrom`.
 module:
   inputs:
