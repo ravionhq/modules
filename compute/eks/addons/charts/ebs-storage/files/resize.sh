@@ -3,7 +3,7 @@
 # requested-sizes annotation written by the admission policy.
 #
 # Each pass lists annotated StatefulSets and all PVCs once, works out which
-# bound PVCs of ordinals 0..replicas-1 are smaller than the requested size,
+# bound PVCs of ordinals start..start+replicas-1 are smaller than the requested size,
 # and patches their storage request. The EBS CSI driver expands the volume and
 # the kubelet grows the filesystem while the pod keeps running. The patch only
 # ever raises a request, and a pass that finds nothing to do changes nothing,
@@ -17,7 +17,9 @@ WORK="${TMPDIR:-/tmp}"
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*"; }
 
 pass() {
-  kubectl get statefulsets --all-namespaces -o go-template='{{range .items}}{{$s := .}}{{with .metadata.annotations}}{{with index . "'"${ANNOTATION}"'"}}{{$s.metadata.namespace}} {{$s.metadata.name}} {{$s.spec.replicas}} {{.}}{{"\n"}}{{end}}{{end}}{{end}}' \
+  # %q keeps untrusted annotation newlines and whitespace from becoming new
+  # records (or replacing the namespace used for a PVC patch).
+  kubectl get statefulsets --all-namespaces -o go-template='{{range .items}}{{$s := .}}{{with .metadata.annotations}}{{with index . "'"${ANNOTATION}"'"}}{{$s.metadata.namespace}} {{$s.metadata.name}} {{$s.spec.replicas}} {{if $s.spec.ordinals}}{{$s.spec.ordinals.start}}{{else}}0{{end}} {{printf "%q" .}}{{"\n"}}{{end}}{{end}}{{end}}' \
     >"${WORK}/statefulsets" || return 1
   [ -s "${WORK}/statefulsets" ] || return 0
 
@@ -40,13 +42,17 @@ pass() {
     }
     FNR == NR { phase[$1 "/" $2] = $3; size[$1 "/" $2] = $4; next }
     {
-      namespace = $1; statefulset = $2; replicas = $3 + 0
-      count = split($4, pairs, ",")
+      # A valid annotation is a single quoted, whitespace-free token. Escaped
+      # control characters and malformed records cannot become patch arguments.
+      if (NF != 5 || $5 !~ /^"[a-zA-Z0-9.,=_-]+"$/) next
+      namespace = $1; statefulset = $2; replicas = $3 + 0; start = $4 + 0
+      count = split(substr($5, 2, length($5) - 2), pairs, ",")
       for (p = 1; p <= count; p++) {
-        if (split(pairs[p], kv, "=") != 2) continue
+        if (split(pairs[p], kv, "=") != 2 || kv[1] !~ /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/ ||
+            kv[2] !~ /^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E|m)?$/) continue
         want = bytes(kv[2])
         if (want < 0) { print "skip " namespace " " statefulset " unparseable size " kv[2] > "/dev/stderr"; continue }
-        for (i = 0; i < replicas; i++) {
+        for (i = start; i < start + replicas; i++) {
           key = namespace "/" kv[1] "-" statefulset "-" i
           if (!(key in phase) || phase[key] != "Bound") continue
           have = bytes(size[key])

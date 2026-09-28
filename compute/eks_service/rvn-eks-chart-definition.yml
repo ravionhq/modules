@@ -5,7 +5,7 @@ definition:
   description: Install any third-party Helm chart from an HTTP Helm repository or an OCI registry onto an EKS cluster, with full control over the chart's values.
 release:
   version: 0.1.2
-  description: Use the configured chart version and Terraform execution environment for deploys, and omit empty credentials for public charts.
+  description: Use the configured chart version and execution environment for deploys, and require encrypted transport for Helm repositories.
 module:
   inputs:
     - id: section_cluster
@@ -42,14 +42,14 @@ module:
     - id: chart_repository_url
       label: Repository URL
       type: string
-      description: URL of the Helm repository, the same URL you would pass to helm repo add.
+      description: HTTPS URL of the Helm repository, the same URL you would pass to helm repo add. HTTPS protects private repository credentials in transit.
       placeholder: https://nats-io.github.io/k8s/helm/charts/
       required: true
       show_when:
         chart_source_type: http
       patterns:
-        - message: An http:// or https:// URL.
-          pattern: ^https?://\S+$
+        - message: An https:// URL.
+          pattern: ^https://\S+$
     - id: chart_name
       label: Chart name
       type: string
@@ -303,7 +303,7 @@ module:
 
     Chart version pins the release to one chart version. If you leave it blank, each deploy installs whatever the repository marks as latest, so a redeploy can upgrade the chart without warning. Pin a version for anything you run in production. You can also override the version for a single deploy.
 
-    For a private repository or registry, set **Registry credentials** to a username and password pair. Each one is a reference to Parameter Store (`from_parameter_store`) or Secrets Manager (`from_secrets_manager`), never the value itself. Ravion resolves them on the deploy runner.
+    For a private HTTPS repository or OCI registry, set **Registry credentials** to a username and password pair. Each one is a reference to Parameter Store (`from_parameter_store`) or Secrets Manager (`from_secrets_manager`), never the value itself. Ravion resolves them on the deploy runner.
 
     ## Chart values
 
@@ -345,7 +345,7 @@ module:
     | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
     | Create namespace | No | true | Create the namespace if it does not exist |
     | Chart source | Yes | Helm repository | Helm repository or OCI registry |
-    | Repository URL | Yes* | - | Helm repository URL, for Helm repository sources |
+    | Repository URL | Yes* | - | HTTPS Helm repository URL, for Helm repository sources |
     | Chart name | Yes* | - | Chart name within the repository, for Helm repository sources |
     | Chart URL | Yes* | - | `oci://` chart reference, for OCI registry sources |
     | Chart version | No | Latest | Chart version to install |

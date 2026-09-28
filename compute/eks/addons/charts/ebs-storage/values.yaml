@@ -11,7 +11,10 @@ storageClass:
 # -- Online expansion of StatefulSet volumes. A MutatingAdmissionPolicy lets
 # a StatefulSet update through when the only volumeClaimTemplate change is a
 # larger storage request, and a resizer grows the existing
-# PersistentVolumeClaims to match. Needs Kubernetes 1.36+.
+# PersistentVolumeClaims to match. Only templates explicitly naming the
+# StorageClass managed by this chart qualify; other classes (including an
+# implicit default) retain Kubernetes' normal rejection of template changes.
+# Needs Kubernetes 1.36+.
 volumeExpansion:
   enabled: true
   # -- Seconds between resizer passes.

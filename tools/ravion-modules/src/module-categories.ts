@@ -70,7 +70,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Cluster",
     description: "For services that share container capacity, load balancers, and placement configuration.",
     sortOrder: 90,
-    definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons"],
+    definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons", "rvn-eks-chart"],
   },
   {
     givenId: "machine-image",

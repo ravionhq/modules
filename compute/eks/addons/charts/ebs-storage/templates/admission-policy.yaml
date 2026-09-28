@@ -8,8 +8,11 @@ value so the rest of the update goes through. Mutating admission runs before
 the StatefulSet's update validation, so the reverted object is valid.
 
 The resizer Deployment then grows each existing PersistentVolumeClaim to the
-recorded size. The EBS CSI driver expands the volume and its filesystem while
-the pod keeps running.
+recorded size. Only templates explicitly using this chart's expansion-enabled
+StorageClass qualify; unknown classes cannot be checked by CEL at admission
+time and must fail the StatefulSet update rather than silently stay small.
+The EBS CSI driver expands the volume and its filesystem while the pod keeps
+running.
 
 Any other template change (a different class, access mode, label, a smaller
 size) does not match, and the API server rejects the update as before.
@@ -37,6 +40,16 @@ spec:
         has(object.spec.volumeClaimTemplates) && has(oldObject.spec.volumeClaimTemplates) &&
         size(object.spec.volumeClaimTemplates) > 0 &&
         size(object.spec.volumeClaimTemplates) == size(oldObject.spec.volumeClaimTemplates)
+    - name: expandable-storage-class
+      expression: >-
+        {{- if .Values.storageClass.enabled }}
+        object.spec.volumeClaimTemplates.all(t,
+          has(t.spec.storageClassName) && t.spec.storageClassName == {{ .Values.storageClass.name | quote }}) &&
+        oldObject.spec.volumeClaimTemplates.all(t,
+          has(t.spec.storageClassName) && t.spec.storageClassName == {{ .Values.storageClass.name | quote }})
+        {{- else }}
+        false
+        {{- end }}
     - name: only-storage-grew
       expression: >-
         object.spec.volumeClaimTemplates.all(t,

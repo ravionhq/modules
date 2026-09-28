@@ -34,7 +34,7 @@ updates the bounds and the clamped desired count together. New groups use
 `desired_size`, clamped to the configured bounds. The node group keeps its existing
 Terraform resource address; upgrading does not replace it.
 
-The read-only lookup needs `eks:DescribeNodegroup` and `sts:GetCallerIdentity` via
+The read-only lookup needs `eks:ListNodegroups`, `eks:DescribeNodegroup`, and `sts:GetCallerIdentity` via
 the AWS CLI. Its environment must have credentials for the same account as the
 Terraform AWS provider (including any assumed role); provider-only credentials or
 role assumption are not inherited by external programs. The provider's region is
