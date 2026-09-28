@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.2.0
-  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
+  version: 1.2.1
+  description: Explains that build environment variables reach only the build and never the running app.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -395,6 +395,7 @@ module:
       type: section
     - $merge:
         - ../../partials/inputs/build-environment-variables.yml
+      description: Available only during the build; the running function never sees them. Put values the function reads at runtime, such as API keys and database URLs, in the runtime environment variables. Values can be plain strings or references loaded from Parameter Store or Secrets Manager.
       show_when:
         build_source:
           - nixpacks

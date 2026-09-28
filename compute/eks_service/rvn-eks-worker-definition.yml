@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.7.0
-  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
+  version: 0.7.1
+  description: Explains that build environment variables reach only the build and never the running app.
 module:
   inputs:
     - id: section_cluster

@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.2.0
-  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
+  version: 1.2.1
+  description: Explains that build environment variables reach only the build and that values the build writes into the site are public.
 module:
   build:
     builder: >-
@@ -140,6 +140,7 @@ module:
             - nixpacks
     - $merge:
         - ../../partials/inputs/build-environment-variables.yml
+      description: Available only during the build. Anything the build writes into the site's files is public, so never embed secrets that way. Values can be plain strings or references loaded from Parameter Store or Secrets Manager.
       show_when:
         build_source:
           - dockerfile

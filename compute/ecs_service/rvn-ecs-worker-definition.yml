@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.7.0
-  description: Adds a sandbox microVM on the execution environment's host pool as a build capacity type.
+  version: 1.7.1
+  description: Explains that build environment variables reach only the build and never the running app.
 module:
   inputs:
     - id: section_cluster
