@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.7.0
-  description: Add an optional recovery path for EC2 service group replacements without changing existing groups by default.
+  version: 1.8.0
+  description: Let new EC2 services use replaceable instance group names without changing existing groups on upgrade.
 module:
   inputs:
     - id: network
@@ -598,7 +598,7 @@ module:
     - id: autoscaling_group_generated_name_enabled
       label: Generated Auto Scaling Group name
       type: boolean
-      description: Allow replacement of a tainted group without a name collision. Enabling this on an existing service replaces its instances and local volumes; leave off to keep the current group and deploy document unchanged.
+      description: Choose only before the first deploy to avoid group-name collisions. Changing this on a live service can replace every instance before its release reaches the new group; arrange a separate migration instead.
       default: false
       collapsible: true
     - id: section_app_config
@@ -911,7 +911,7 @@ module:
 
     Ravion provisions the launch template, Auto Scaling Group, instance role and security group, SSM deploy document, app log group, and optional target group and listener rule. Web services can attach to a standalone Application Load Balancer or reuse the public or private ALB from an ECS cluster. The selected network and load balancer must use the same AWS account, region, and VPC.
 
-    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and optional data volumes. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). **Generated Auto Scaling Group name defaults to off for new and existing services alike.** New services must explicitly enable it; upgrading existing services without enabling it preserves their group and SSM document names. Turning it on for an existing service replaces its group and instances; new instances do not inherit the old local volumes or deployed release. Back up critical data off-instance before enabling it, restore it to the new instances as needed, and ensure sufficient EC2 capacity and vCPU quota for both groups to coexist during replacement. A tainted fixed-name group requires explicit opt-in or controlled state recovery.
+    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and optional data volumes. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). **Generated Auto Scaling Group name defaults to off for new and existing services alike.** Choose it before the first deploy if the service needs a generated group name. Upgrading an existing service without changing this setting preserves its fixed group and SSM document names. The deploy manager stores the previous group name with the last successful release and does not automatically retarget a newly named group, even if generated names prevent a name collision. A live group replacement can therefore interrupt the app and delete instance-local volumes. Repair tainted state under operator supervision if the existing group is healthy, or coordinate release migration and backups before any replacement. Do not switch naming on a running service without a separate release migration plan.
 
     Terraform source: [ravionhq/modules/compute/ec2_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ec2_service)
 
@@ -1085,7 +1085,7 @@ module:
     | You terminate or recycle the instance | Deliberate operator action, typically to roll out a launch template change such as a new AMI | Only when you choose to |
     | The group scales in | CPU autoscaling scales down, or you lower Minimum/Desired instances | Never with a fixed one-instance group and autoscaling off |
     | The Auto Scaling health check fails | The instance fails its EC2 status checks | Rare |
-    | The group is replaced | You enable Generated Auto Scaling Group name or a generated-name group is tainted | Only when you opt in or replacement is required; back up first |
+    | The group is replaced | A generated-name group is tainted or changed in a way that requires replacement | Back up local data and verify release recovery before replacement |
 
     The default `EC2` health check reflects the AWS instance and system status checks: the instance is unreachable, its network or boot state is broken, or the underlying host has failed. It says nothing about your application. A crashed app process does not fail it, because supervisord restarts the process on the same instance, and a failing HTTP health check does not fail it either.
 
@@ -1129,7 +1129,7 @@ module:
     | CPU autoscaling | No | false | Target-tracking scaling on average EC2 CPU utilization |
     | CPU target (%) | No | 70 | CPU target used when autoscaling is enabled |
     | Desired instances | No | - | Initial target when CPU autoscaling is off; blank starts at the minimum |
-    | Generated Auto Scaling Group name | No | false | Opt in to replaceable group names; enabling it replaces an existing group and its instances |
+    | Generated Auto Scaling Group name | No | false | Choose before first deploy; changing it on a live service needs a separate migration plan |
     | Instance health check grace period (secs) | No | 300 | Startup window before Auto Scaling health checks apply |
     | SSH key pair name | No | - | Optional SSH key; Session Manager does not require one |
     | Custom AMI ID | No | Latest AL2023 | AMI for future instances; must support the module bootstrap |

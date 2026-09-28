@@ -15,7 +15,7 @@ Container workloads that need to orchestrate sibling containers can enable `dock
 
 `autoscaling_group_generated_name_enabled` defaults to `false` for **both new and existing services**. A new service uses a fixed group name unless you explicitly enable this setting. Upgrading an existing service without enabling it keeps its group and SSM deploy document names; there is no automatic migration.
 
-Enable it when creating a new service if you want future group replacements to avoid fixed-name collisions. Enabling it later replaces the existing group and instances, changes the deploy document name to follow the new physical group name, and does not preserve instance-local volumes. Back up local data and check EC2 capacity and vCPU quota before opting in. Recovering a tainted fixed-name group requires this explicit opt-in or a controlled state repair.
+Choose it before the first deploy if you want future group replacements to avoid fixed-name collisions. **Do not switch it on a running service as part of a routine update.** Generated naming solves only the **name collision**, not release readiness: the deploy manager's last successful release still points at the old group and cannot automatically catch up a newly named group's instances before the old group is removed. This applies to later taint replacements of generated-name groups as well as toggling the setting on a running service. Either can interrupt web traffic or workers and lose instance-local volumes. Repair tainted state under operator supervision if the existing group is healthy; otherwise, a live migration needs a separate, coordinated release plan and backups. Check EC2 capacity and vCPU quota before any planned group replacement.
 
 ## How deploys work
 
@@ -156,7 +156,7 @@ aws ssm send-command \
 ## Storage and durability
 
 - The root volume and optional data volume are per-instance EBS. They are durable for the life of the instance: routine deploys, restarts, and in-place stack updates retain local files such as an embedded database.
-- They are deleted when an instance is terminated or recycled, the group scales in, it fails its Auto Scaling health check, or the entire group is replaced. Merely upgrading this module does not replace a fixed-name group or its SSM document. Enabling generated names on an existing service does replace its group and instances: back up critical data off-instance before opting in and restore it to new instances as needed. A replacement group can run alongside the old group, but its new instances do not inherit the old instances' local disks or deployed release.
+- They are deleted when an instance is terminated or recycled, the group scales in, it fails its Auto Scaling health check, or the entire group is replaced. Merely upgrading this module does not replace a fixed-name group or its SSM document. A planned group replacement creates new instances without the old instances' local disks or deployed release; back up critical data off-instance and coordinate release recovery before replacing a live group.
 - `health_check_type` defaults to `EC2`, which is the AWS instance/system status check — unreachable instance, broken boot or network state, failed underlying host. It ignores application state: a crashed app is restarted in place by supervisord, and a failing HTTP health check never replaces an instance. So health-driven replacement is rare and tied to hardware or hypervisor failure. Setting `health_check_type = "ELB"` makes load balancer health replace instances instead, which also breaks in-place deploys (they briefly deregister the instance).
 - Mount an EFS file system (`efs_*` variables) when several instances must share the same files, or when a replacement instance must find data already in place; it is mounted on every instance and, for the container runtime, bind-mounted into the app container.
 - When `docker_socket_mount_enabled` is enabled, the data volume and EFS host paths are mapped identically inside the app container. This lets sibling containers started through the host Docker socket resolve those same host-path binds correctly.
@@ -176,7 +176,7 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name prefix for all resources (1-28 chars) | `string` | n/a | yes |
-| autoscaling_group_generated_name_enabled | Opt in to a generated ASG name for create-before-destroy replacement; replaces an existing group on enablement | `bool` | `false` | no |
+| autoscaling_group_generated_name_enabled | Opt in before first deploy to generated ASG names; live migration requires a separate release plan | `bool` | `false` | no |
 | tags | Tags for all resources | `map(string)` | `{}` | no |
 | region | AWS region (null = provider region) | `string` | `null` | no |
 | vpc_id | VPC for the instances | `string` | n/a | yes |

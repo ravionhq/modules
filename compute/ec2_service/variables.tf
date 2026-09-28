@@ -14,7 +14,7 @@ variable "name" {
 
 variable "autoscaling_group_generated_name_enabled" {
   type        = bool
-  description = "Use a generated physical Auto Scaling Group name so a tainted group can be replaced without a name collision. Enabling this on an existing fixed-name service replaces its group and instances."
+  description = "Use a generated physical Auto Scaling Group name so a tainted group can be replaced without a name collision. Choose before the first deploy; enabling on a running service replaces its instances before their release can be caught up."
   default     = false
 }
 
