@@ -395,7 +395,7 @@ module:
       type: section
     - $merge:
         - ../../partials/inputs/build-environment-variables.yml
-      description: Available only during the build; the running function never sees them. Put values the function reads at runtime, such as API keys and database URLs, in the runtime environment variables. Values can be plain strings or references loaded from Parameter Store or Secrets Manager.
+      description: Only available during the build, not at runtime. Use environment variables for runtime values.
       show_when:
         build_source:
           - nixpacks

@@ -1,4 +1,4 @@
-description: Available only during the build; the running app never sees them. Put values the app reads at runtime, such as API keys and database URLs, in the runtime environment variables or secrets. Values can be plain strings or references loaded from Parameter Store or Secrets Manager.
+description: Only available during the build, not at runtime. Use environment variables or secrets for runtime values.
 id: build_environment_variables
 label: Build environment variables
 placeholder: |-

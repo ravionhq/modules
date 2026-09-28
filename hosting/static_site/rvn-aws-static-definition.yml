@@ -140,7 +140,7 @@ module:
             - nixpacks
     - $merge:
         - ../../partials/inputs/build-environment-variables.yml
-      description: Available only during the build. Anything the build writes into the site's files is public, so never embed secrets that way. Values can be plain strings or references loaded from Parameter Store or Secrets Manager.
+      description: "Only available during the build. Anything built into the site is public, so don't use secrets."
       show_when:
         build_source:
           - dockerfile
