@@ -310,7 +310,7 @@ module:
     - id: request_count_target_value
       label: Requests per task target
       type: number
-      description: Target average number of load balancer requests per task per minute (ALBRequestCountPerTarget). Leave blank to disable request-count autoscaling.
+      description: Target average number of load balancer requests per task per minute (ALBRequestCountPerTarget). Applies only with the Rolling deployment strategy, because blue/green, linear, and canary deployments move production traffic between target groups. Leave blank to disable request-count autoscaling.
       collapsible: true
       min: 1
       required: false
@@ -347,8 +347,8 @@ module:
               - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
                 with:
                   load_balancer_target_tracking: >-
-                    ...<< module.input.request_count_target_value ? [{policy_name: "request_count", predefined_metric:
-                    "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
+                    ...<< module.input.request_count_target_value != nil && module.input.deployment_strategy == "rolling" ?
+                    [{policy_name: "request_count", predefined_metric: "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
                     scale_in_cooldown: module.input.scale_in_cooldown, scale_out_cooldown:
                     module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
                     >>
@@ -724,7 +724,7 @@ module:
     | Desired tasks            | 1       | Running tasks when autoscaling is disabled     |
     | CPU target (%)           | 70      | Average CPU utilization target                 |
     | Memory target (%)        | 80      | Average memory utilization target              |
-    | Requests per task target | blank   | Average ALB requests per task per minute       |
+    | Requests per task target | blank   | Average ALB requests per task per minute (Rolling deployments only) |
     | Scale-in cooldown (secs) | 300     | Delay before another scale-in action           |
     | Scale-out cooldown (secs)| 300     | Delay before another scale-out action          |
     | Scale-in disabled        | false   | Prevents autoscaling from reducing task count  |

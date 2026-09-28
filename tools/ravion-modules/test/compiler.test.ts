@@ -720,6 +720,7 @@ describe("compiler", () => {
       const stopTimeout = findInput(getModuleInputs(compiled.module), "stop_timeout");
       assert.equal(stopTimeout.default, 30);
       assert.equal(stopTimeout.max, 120);
+      assert.equal(stopTimeout.min, 2);
 
       const serialized = JSON.stringify(compiled.module);
       if (file !== "rvn-ecs-web-definition.yml") {
@@ -740,7 +741,7 @@ describe("compiler", () => {
     assert.ok(Array.isArray(targetTracking));
     const requestCountPolicy = targetTracking.find((entry) => typeof entry === "string" && entry.includes("ALBRequestCountPerTarget"));
     assert.ok(requestCountPolicy, "expected an ALBRequestCountPerTarget policy");
-    assert.match(requestCountPolicy, /^\.\.\.<< module\.input\.request_count_target_value \? \[\{policy_name: "request_count"/);
+    assert.match(requestCountPolicy, /^\.\.\.<< module\.input\.request_count_target_value != nil && module\.input\.deployment_strategy == "rolling" \?\s+\[\{policy_name: "request_count"/);
     assert.match(requestCountPolicy, /: \[\] >>$/);
   });
 

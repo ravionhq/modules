@@ -140,10 +140,10 @@
 - id: stop_timeout
   label: Stop timeout (secs)
   type: number
-  description: Seconds ECS waits after sending SIGTERM to the app container before forcing it to stop with SIGKILL. Raise it so in-flight requests or jobs can finish during deploys and scale-in. Fargate allows up to 120 secs.
+  description: Seconds ECS waits after sending SIGTERM to the app container before forcing it to stop with SIGKILL. Raise it so in-flight requests or jobs can finish during deploys and scale-in. Fargate allows 2-120 secs.
   collapsible: true
   max: 120
-  min: 0
+  min: 2
   default: 30
 - id: security_group_ids
   label: Additional security groups
