@@ -305,3 +305,9 @@ variable "image_block_public_access" {
     error_message = "image_block_public_access must be unblocked or block-new-sharing."
   }
 }
+
+variable "module_instance_id" {
+  type        = string
+  description = "Id of the Ravion module instance these resources belong to. Null outside Ravion"
+  default     = null
+}

@@ -50,8 +50,9 @@ mock_provider "aws" {
 }
 
 variables {
-  name         = "test-image"
-  parent_image = "ami-0123456789abcdef0"
+  name               = "test-image"
+  module_instance_id = "minst_test"
+  parent_image       = "ami-0123456789abcdef0"
   components = [
     {
       name = "provision"
@@ -905,4 +906,30 @@ run "block_public_access_rejects_other_states" {
   }
 
   expect_failures = [var.image_block_public_access]
+}
+
+# ------------------------------------------------------------------------------
+# Module instance id — output as given, for references that name this module
+# ------------------------------------------------------------------------------
+
+run "module_instance_id_is_output_as_given" {
+  command = plan
+
+  assert {
+    condition     = output.module_instance_id == "minst_test"
+    error_message = "module_instance_id must be output as given, got ${output.module_instance_id}"
+  }
+}
+
+run "module_instance_id_is_null_outside_ravion" {
+  command = plan
+
+  variables {
+    module_instance_id = null
+  }
+
+  assert {
+    condition     = output.module_instance_id == null
+    error_message = "module_instance_id must be null when no module instance is given"
+  }
 }
