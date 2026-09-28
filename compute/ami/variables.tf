@@ -288,3 +288,15 @@ variable "ami_tags" {
   description = "Tags written on each image built, in the build region. Tags are visible only to the owning account, even on a public image."
   default     = {}
 }
+
+variable "distribution_regions" {
+  description = "Regions each deploy copies the finished image to, beyond the build region"
+  type        = list(string)
+  default     = []
+}
+
+variable "public_sharing_enabled" {
+  description = "Allow public AMI sharing in the build region and every distribution region, so a deploy that publishes can grant launch permission all"
+  type        = bool
+  default     = false
+}

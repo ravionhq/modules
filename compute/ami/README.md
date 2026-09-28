@@ -249,6 +249,8 @@ at the bucket root.
 | ami_name | Image name. Must contain `{{ imagebuilder:buildDate }}` or `{{ imagebuilder:buildVersion }}` | `string` | `<name>-{{ imagebuilder:buildDate }}` | no |
 | ami_description | Description stored on each image built, in the build region | `string` | `null` | no |
 | ami_tags | Tags written on each image built, in the build region | `map(string)` | `{}` | no |
+| distribution_regions | Regions each deploy copies the finished image to, beyond the build region | `list(string)` | `[]` | no |
+| public_sharing_enabled | Allow public AMI sharing in the build region and every distribution region | `bool` | `false` | no |
 
 ## Outputs
 

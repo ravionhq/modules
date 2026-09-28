@@ -849,3 +849,35 @@ run "a_log_prefix_is_granted_and_written_under" {
     error_message = "Image Builder must write under the prefix the policy grants"
   }
 }
+
+# ------------------------------------------------------------------------------
+# Public AMI sharing — off unless asked for, then every region a release lands in
+# ------------------------------------------------------------------------------
+
+run "public_sharing_stays_blocked_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_ec2_image_block_public_access.this) == 0
+    error_message = "Public AMI sharing must stay blocked unless the module allows it"
+  }
+}
+
+run "public_sharing_unblocks_every_release_region_once" {
+  command = plan
+
+  variables {
+    public_sharing_enabled = true
+    distribution_regions   = ["us-east-1", "us-west-2", "us-east-2"]
+  }
+
+  assert {
+    condition     = toset(keys(aws_ec2_image_block_public_access.this)) == toset(["us-west-2", "us-east-1", "us-east-2"])
+    error_message = "The build region and each distribution region must be unblocked once, got ${join(", ", keys(aws_ec2_image_block_public_access.this))}"
+  }
+
+  assert {
+    condition     = alltrue([for region, setting in aws_ec2_image_block_public_access.this : setting.state == "unblocked" && setting.region == region])
+    error_message = "Each region's setting must be unblocked, in that region"
+  }
+}
