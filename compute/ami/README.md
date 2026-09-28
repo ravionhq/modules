@@ -231,6 +231,7 @@ at the bucket root.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name of the configurations, and the prefix of every other resource this module creates | `string` | n/a | yes |
+| module_instance_id | Id of the Ravion module instance these resources belong to. Ravion sets it | `string` | n/a | yes |
 | components | Components each build runs, in order. Each sets `source` (`steps`, `document` or `arn`) and the fields it names: `build_steps`/`validate_steps`/`test_steps` and `parameter_definitions`, `data`, or `arn`. Optional `description`, `platform`, `parameters` | `list(object)` | n/a | yes |
 | description | Description stored on the infrastructure and distribution configurations | `string` | `null` | no |
 | region | Region images are built in | `string` | provider region | no |
@@ -263,6 +264,7 @@ at the bucket root.
 | image_builder_distribution_configuration_arn | The ARN of the build-region distribution configuration |
 | instance_role_arn | The ARN of the build instance's IAM role |
 | instance_role_name | The name of the build instance's IAM role |
+| module_instance_id | Id of the Ravion module instance these resources belong to, for a reference that names this module |
 
 ## Testing
 
