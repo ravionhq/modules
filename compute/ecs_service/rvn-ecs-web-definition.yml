@@ -4,7 +4,7 @@ definition:
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
   version: 1.7.0
-  description: Add a Requests per task target autoscaling input that tracks ALBRequestCountPerTarget, add a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs, and show value_from in runtime and FireLens secret placeholders.
+  description: Add a Requests per task target autoscaling input that tracks ALBRequestCountPerTarget and a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs.
 module:
   inputs:
     - id: section_cluster
@@ -344,7 +344,14 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: >-
+                    ...<< module.input.request_count_target_value ? [{policy_name: "request_count", predefined_metric:
+                    "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
+                    scale_in_cooldown: module.input.scale_in_cooldown, scale_out_cooldown:
+                    module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
+                    >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
                 cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>

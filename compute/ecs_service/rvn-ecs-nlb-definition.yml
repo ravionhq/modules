@@ -4,7 +4,7 @@ definition:
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
   version: 1.7.0
-  description: Add a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs, and show value_from in runtime and FireLens secret placeholders.
+  description: Add a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs.
 module:
   inputs:
     - id: section_cluster
@@ -293,7 +293,9 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: ...<< [] >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - cloudwatch_alarm_unhealthy_hosts_threshold: << module.input.cloudwatch_alarm_unhealthy_hosts_threshold >>
               - container_port: << module.input.listeners[0].container_port >>

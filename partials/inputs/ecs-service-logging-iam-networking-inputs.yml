@@ -61,7 +61,7 @@
   description: Secrets injected into the log router sidecar as an array of {name, value_from} objects. Use these for API keys or tokens stored in SSM Parameter Store or Secrets Manager.
   placeholder: |-
     - name: DD_API_KEY
-      value_from: arn:aws:ssm:us-east-1:123456789012:parameter/datadog-api-key
+      valueFrom: arn:aws:ssm:us-east-1:123456789012:parameter/datadog-api-key
   required: false
   show_when:
     firelens_enabled: true

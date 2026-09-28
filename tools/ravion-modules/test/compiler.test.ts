@@ -722,9 +722,11 @@ describe("compiler", () => {
       assert.equal(stopTimeout.max, 120);
 
       const serialized = JSON.stringify(compiled.module);
+      if (file !== "rvn-ecs-web-definition.yml") {
+        assert.doesNotMatch(serialized, /request_count_target_value/);
+      }
       assert.doesNotMatch(serialized, /"stop_timeout\\?": 30\}/);
       assert.equal(serialized.match(/"stop_timeout\\?": \(module\.input\.stop_timeout != nil \? module\.input\.stop_timeout : 30\)/g)?.length, 2, file);
-      assert.doesNotMatch(serialized, /valueFrom/);
     }
 
     const web = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"));
