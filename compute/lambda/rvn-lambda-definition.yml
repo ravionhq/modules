@@ -395,7 +395,7 @@ module:
       type: section
     - $merge:
         - ../../partials/inputs/build-environment-variables.yml
-      description: Only available during the build, not at runtime. Use environment variables for runtime values.
+      description: Only available during the build, not at runtime.
       show_when:
         build_source:
           - nixpacks
