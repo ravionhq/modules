@@ -18,8 +18,8 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
 | `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
-| `compute/`    | `autoscaling`     | AWS Auto Scaling groups                                                | v1.0.0  |
-| `compute/`    | `ec2_service`     | Supervised EC2 workloads with configurable rolling deploys, standalone or ECS-cluster ALB routing, target tuning, and deployment-scoped CloudWatch logs | v1.0.0  |
+| `compute/`    | `autoscaling`     | AWS Auto Scaling groups with optional generated names for safe replacement | v1.0.0  |
+| `compute/`    | `ec2_service`     | Supervised EC2 workloads with opt-in replaceable Auto Scaling groups, configurable rolling deploys, ALB routing, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
 | `compute/`    | `ecs_service`     | AWS ECS services with task definitions, task IAM policies, load balancing, auto scaling, and alarms enabled by default | v1.0.0  |
 | `compute/`    | `eks`             | Composite EKS stack: cluster, system node group, CoreDNS, and optional Fargate profiles; Pod Identity defaults, opt-in IRSA/VPC controller permissions and node SSM access, and pull-only node ECR access (includes `rvn-eks-cluster` module definition) | Unreleased |
@@ -73,7 +73,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-secret` | AWS Secret | v1.0.1 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.2.1 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.2 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v1.7.2 | `compute/ec2_service/` |
+| `rvn-ec2-service` | EC2 Service | v1.8.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v1.1.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v1.7.2 | `compute/ecs_service/` |
 | `rvn-ecs-web` | ECS Web Service | v1.7.2 | `compute/ecs_service/` |
