@@ -64,7 +64,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.3.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
-| `rvn-aws-ami` | AMI | v0.2.0 | `compute/ami/` |
+| `rvn-aws-ami` | AMI | v0.2.1 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
