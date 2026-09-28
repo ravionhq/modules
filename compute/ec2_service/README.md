@@ -7,13 +7,19 @@ Two runtimes are supported:
 - **container** — each deploy pulls an image and runs the attached Docker process under supervisord.
 - **manual** — deploys can check out an authenticated Git source, run release preparation commands, then start the configured long-lived command under supervisord.
 
-Instances install the prerequisites for both runtimes at launch, so `runtime` can switch between `container` and `manual` without replacing the instance group. Supervisord owns the app in both modes and restarts it after an unexpected exit.
+Instances install the prerequisites for both runtimes at launch, so `runtime` can switch between `container` and `manual` without replacing the instance group. Supervisord owns the app in both modes and restarts it after an unexpected exit. By default the group and SSM document keep their existing fixed names. Set `autoscaling_group_generated_name_enabled` only when the group needs a unique physical name to permit create-before-destroy replacement, such as recovery from a taint.
 
 Container workloads that need to orchestrate sibling containers can enable `docker_socket_mount_enabled`. The deploy runner then bind-mounts `/var/run/docker.sock` at the identical path inside the app container and adds the host `docker` group's GID at container-start time. The image must include a `docker` CLI. This is Docker-outside-of-Docker: mounting the host Docker socket grants the container root-equivalent control of the instance, including the ability to start privileged containers, read the host filesystem, and use the instance role. Leave it disabled unless this level of access is required.
 
+## Auto Scaling Group naming
+
+`autoscaling_group_generated_name_enabled` defaults to `false` for **both new and existing services**. A new service uses a fixed group name unless you explicitly enable this setting. Upgrading an existing service without enabling it keeps its group and SSM deploy document names; there is no automatic migration.
+
+Enable it when creating a new service if you want future group replacements to avoid fixed-name collisions. Enabling it later replaces the existing group and instances, changes the deploy document name to follow the new physical group name, and does not preserve instance-local volumes. Back up local data and check EC2 capacity and vCPU quota before opting in. Recovering a tainted fixed-name group requires this explicit opt-in or a controlled state repair.
+
 ## How deploys work
 
-For the **container** runtime the module creates an SSM Command document (`<name>-deploy` — the name is a platform contract derived from the group name) that encodes the whole in-place deploy for one instance:
+For the **container** runtime the module creates an SSM Command document (`<autoscaling_group_name>-deploy` — a platform contract derived from the physical group name) that encodes the whole in-place deploy for one instance:
 
 1. Rebuild the app env file: Terraform-rendered plain values, plus secret values fetched on the instance from Secrets Manager / SSM Parameter Store.
 2. Drain: deregister the instance from the target group and wait (skipped in worker mode, and when the instance is the only registered target — with nothing to shift traffic to, draining only lengthens the outage).
@@ -30,7 +36,7 @@ An orchestrator (the Ravion deploy manager) runs this document against the Auto 
 
 The module definition exposes the rolling deployment batch and failure limits. It defaults to one instance at a time and stops after the first failure. The SSM script timeout applies per instance; the module deployment has a separate 24-hour overall safety limit.
 
-For the **manual** runtime the document (same `<name>-deploy` name) takes a `commands` parameter and an optional Git source. When source is present, the instance fetches a temporary credential from SSM Parameter Store, performs a clean checkout under `/srv/ravion/<name>/source`, and runs both the preparation commands and `manual_start_command` from the selected base path. When source is absent, commands keep their existing working-directory behavior. Any failure stops the deploy. The start command must remain in the foreground rather than daemonizing. Draining and health checking are up to the preparation commands.
+For the **manual** runtime the document (same `<autoscaling_group_name>-deploy` naming contract) takes a `commands` parameter and an optional Git source. When source is present, the instance fetches a temporary credential from SSM Parameter Store, performs a clean checkout under `/srv/ravion/<name>/source`, and runs both the preparation commands and `manual_start_command` from the selected base path. When source is absent, commands keep their existing working-directory behavior. Any failure stops the deploy. The start command must remain in the foreground rather than daemonizing. Draining and health checking are up to the preparation commands.
 
 App stdout and stderr are shipped to `/ravion/ec2/<name>`. Streams use `deployment/<deployId>/instance/<instance-id>`, which keeps every deployment and EC2 instance separate. The SSM deploy script tees its stdout and stderr into the same instance stream while preserving the native SSM command output.
 
@@ -142,15 +148,15 @@ Deploys then run your release preparation commands on every instance, with the a
 
 ```sh
 aws ssm send-command \
-  --document-name my-worker-deploy \
-  --targets Key=tag:aws:autoscaling:groupName,Values=my-worker \
+  --document-name '<ssm_document_name output>' \
+  --targets 'Key=tag:aws:autoscaling:groupName,Values=<autoscaling_group_name output>' \
   --parameters commands='["cd /srv/app && git pull","cd /srv/app && ./bin/migrate"]'
 ```
 
 ## Storage and durability
 
-- The root volume and optional data volume are per-instance EBS. They are durable for the life of the instance: deploys, restarts, and stack updates never replace an instance, so local files such as an embedded database stay in place at local-disk latency, exactly as on an EC2 instance you launch yourself.
-- They are deleted with the instance, which happens for exactly three reasons: you terminate or recycle it (for example to roll out a new AMI), the group scales in, or it fails its Auto Scaling health check. Keep backups (EBS snapshots, dumps to S3) for critical data instead of avoiding local storage.
+- The root volume and optional data volume are per-instance EBS. They are durable for the life of the instance: routine deploys, restarts, and in-place stack updates retain local files such as an embedded database.
+- They are deleted when an instance is terminated or recycled, the group scales in, it fails its Auto Scaling health check, or the entire group is replaced. Merely upgrading this module does not replace a fixed-name group or its SSM document. Enabling generated names on an existing service does replace its group and instances: back up critical data off-instance before opting in and restore it to new instances as needed. A replacement group can run alongside the old group, but its new instances do not inherit the old instances' local disks or deployed release.
 - `health_check_type` defaults to `EC2`, which is the AWS instance/system status check — unreachable instance, broken boot or network state, failed underlying host. It ignores application state: a crashed app is restarted in place by supervisord, and a failing HTTP health check never replaces an instance. So health-driven replacement is rare and tied to hardware or hypervisor failure. Setting `health_check_type = "ELB"` makes load balancer health replace instances instead, which also breaks in-place deploys (they briefly deregister the instance).
 - Mount an EFS file system (`efs_*` variables) when several instances must share the same files, or when a replacement instance must find data already in place; it is mounted on every instance and, for the container runtime, bind-mounted into the app container.
 - When `docker_socket_mount_enabled` is enabled, the data volume and EFS host paths are mapped identically inside the app container. This lets sibling containers started through the host Docker socket resolve those same host-path binds correctly.
@@ -170,6 +176,7 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name prefix for all resources (1-28 chars) | `string` | n/a | yes |
+| autoscaling_group_generated_name_enabled | Opt in to a generated ASG name for create-before-destroy replacement; replaces an existing group on enablement | `bool` | `false` | no |
 | tags | Tags for all resources | `map(string)` | `{}` | no |
 | region | AWS region (null = provider region) | `string` | `null` | no |
 | vpc_id | VPC for the instances | `string` | n/a | yes |

@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.6.1
-  description: Document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 1.7.0
+  description: Add an optional recovery path for EC2 service group replacements without changing existing groups by default.
 module:
   inputs:
     - id: network
@@ -30,7 +30,7 @@ module:
       immutable: true
       label: Service name
       type: string
-      description: Name for the instance group and related resources.
+      description: Stable service name used to prefix the instance group and name related resources.
       required: true
       default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
       patterns:
@@ -495,7 +495,7 @@ module:
     - id: root_volume_size
       label: Root volume size (GB)
       type: number
-      description: Required encrypted boot disk for the operating system, Docker, and local files. Its contents persist across deploys, restarts, and stack updates, and are deleted only if the instance itself is replaced.
+      description: Required encrypted boot disk for the operating system, Docker, and local files. Its contents persist across deploys, restarts, and in-place stack updates, but not instance or group replacement.
       collapsible: true
       max: 16384
       min: 8
@@ -595,6 +595,12 @@ module:
       required: false
       show_when:
         cpu_autoscaling_enabled: false
+    - id: autoscaling_group_generated_name_enabled
+      label: Generated Auto Scaling Group name
+      type: boolean
+      description: Allow replacement of a tainted group without a name collision. Enabling this on an existing service replaces its instances and local volumes; leave off to keep the current group and deploy document unchanged.
+      default: false
+      collapsible: true
     - id: section_app_config
       label: Environment variables
       type: section
@@ -714,6 +720,7 @@ module:
         ...overrides: << module.input.advanced_terraform_variables >>
         additional_security_group_ids: << module.input.additional_security_group_ids || [] >>
         additional_user_data: << module.input.additional_user_data || "" >>
+        autoscaling_group_generated_name_enabled: << module.input.autoscaling_group_generated_name_enabled || false >>
         direct_access_cidr_blocks: "<< module.input.http_traffic_enabled ? (module.input.direct_access_cidr_blocks || []) : [] >>"
         ami_id: << module.input.ami_id || nil >>
         app_port: "<< module.input.http_traffic_enabled ? module.input.app_port : nil >>"
@@ -904,7 +911,7 @@ module:
 
     Ravion provisions the launch template, Auto Scaling Group, instance role and security group, SSM deploy document, app log group, and optional target group and listener rule. Web services can attach to a standalone Application Load Balancer or reuse the public or private ALB from an ECS cluster. The selected network and load balancer must use the same AWS account, region, and VPC.
 
-    Instances are as stable as an EC2 instance you launch yourself in the AWS console. Deploys, app restarts, and stack updates do not replace them, so each instance keeps its root and optional data volume, and everything on those disks, for its whole life. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, for example to roll out that new AMI, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). Replacement is what destroys the volumes, so take regular EBS snapshots or back up off-instance if critical data lives on the disk.
+    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and optional data volumes. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). **Generated Auto Scaling Group name defaults to off for new and existing services alike.** New services must explicitly enable it; upgrading existing services without enabling it preserves their group and SSM document names. Turning it on for an existing service replaces its group and instances; new instances do not inherit the old local volumes or deployed release. Back up critical data off-instance before enabling it, restore it to the new instances as needed, and ensure sufficient EC2 capacity and vCPU quota for both groups to coexist during replacement. A tainted fixed-name group requires explicit opt-in or controlled state recovery.
 
     Terraform source: [ravionhq/modules/compute/ec2_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ec2_service)
 
@@ -1057,27 +1064,28 @@ module:
 
     ## Storage and durability
 
-    | Storage | Survives deploys, restarts, and stack updates | Survives instance replacement |
+    | Storage | Survives deploys, restarts, and in-place stack updates | Survives instance or group replacement |
     | --- | --- | --- |
     | Root volume | Yes | No |
     | Data volume | Yes | No |
     | EFS file system | Yes | Yes |
 
-    Root and Data volumes are encrypted gp3 EBS volumes attached to the instance. They are durable for the life of the instance: nothing in the normal deploy or update path replaces an instance, so files written to disk stay there, at local-disk latency. This is the same durability model as an EC2 instance you create yourself in the AWS console.
+    Root and Data volumes are encrypted gp3 EBS volumes attached to the instance. They are durable for the life of the instance: normal in-place deploys and updates do not replace it, so files written to disk stay there at local-disk latency. Replacing the Auto Scaling Group does replace its instances and volumes.
 
-    Both volumes are deleted with the instance, which only happens for the three reasons in Instance replacement below. Keep backups of critical data on the disk — an EBS snapshot schedule, database dumps to S3, or a periodic sync — rather than avoiding local storage.
+    Both volumes are deleted with the instance. Keep backups of critical data on the disk — an EBS snapshot schedule, database dumps to S3, or a periodic sync — rather than avoiding local storage.
 
     Enable EFS and select a Ravion EFS module when several instances must share the same files, or when a replacement instance must find the data already in place. The service mounts the file system through its access point when present and attaches the EFS client security group to each instance. Container mode bind-mounts the Data and EFS host paths into the app container at the same paths. EFS is a network file system, so latency-sensitive local state such as an embedded database is usually better on the instance's own volume with backups.
 
     ## Instance replacement
 
-    Only three things replace a running instance. Everything else — deploys, app crashes and restarts, configuration changes, stack updates — leaves the instance and its disks in place.
+    Deploys, app crashes and restarts, and routine in-place stack updates leave instances and their disks in place. The following events replace an instance:
 
     | Trigger | When it happens | How often to expect it |
     | --- | --- | --- |
     | You terminate or recycle the instance | Deliberate operator action, typically to roll out a launch template change such as a new AMI | Only when you choose to |
     | The group scales in | CPU autoscaling scales down, or you lower Minimum/Desired instances | Never with a fixed one-instance group and autoscaling off |
     | The Auto Scaling health check fails | The instance fails its EC2 status checks | Rare |
+    | The group is replaced | You enable Generated Auto Scaling Group name or a generated-name group is tainted | Only when you opt in or replacement is required; back up first |
 
     The default `EC2` health check reflects the AWS instance and system status checks: the instance is unreachable, its network or boot state is broken, or the underlying host has failed. It says nothing about your application. A crashed app process does not fail it, because supervisord restarts the process on the same instance, and a failing HTTP health check does not fail it either.
 
@@ -1089,7 +1097,7 @@ module:
 
     Minimum instances and Maximum instances bound the group. Enable CPU autoscaling to target average EC2 CPU utilization. When autoscaling is off, Desired instances sets the initial group size; later external scaling changes are preserved. Instance health check grace period controls how long new instances have before Auto Scaling begins health evaluation.
 
-    Launch template changes such as a new AMI, instance type, volume setting, or Additional user data apply to newly launched instances only. The module does not perform an instance refresh, so a stack update alone never rolls a new AMI onto running instances; recycle them deliberately when a host-level change must go out. Recycling replaces the instance, which deletes its root and data volumes, so restore from a snapshot or backup afterwards if the instance held state you need.
+    Launch template changes such as a new AMI, instance type, volume setting, or Additional user data apply to newly launched instances only. The module does not perform an instance refresh, so an in-place stack update does not roll a new AMI onto running instances; recycle them deliberately when a host-level change must go out. Recycling replaces the instance, which deletes its root and data volumes, so restore from a snapshot or backup afterwards if the instance held state you need.
 
     ## Application configuration
 
@@ -1106,7 +1114,7 @@ module:
     | Field | Required | Default | Description |
     | --- | --- | --- | --- |
     | VPC network | Yes | - | Existing network supplying account, region, VPC, and subnets |
-    | Service name | Yes | {project}-{env}-{module} | Name for the instance group and related resources |
+    | Service name | Yes | {project}-{env}-{module} | Stable service name and instance group prefix when generated names are enabled |
     | Deploy type | Yes | container | Switchable Container or Manual in-place deployment |
     | Deploy commands | Yes* | - | Root-level, per-instance preparation commands for Manual mode |
     | Start command | Yes* | - | Foreground Manual-mode process managed by supervisord |
@@ -1121,6 +1129,7 @@ module:
     | CPU autoscaling | No | false | Target-tracking scaling on average EC2 CPU utilization |
     | CPU target (%) | No | 70 | CPU target used when autoscaling is enabled |
     | Desired instances | No | - | Initial target when CPU autoscaling is off; blank starts at the minimum |
+    | Generated Auto Scaling Group name | No | false | Opt in to replaceable group names; enabling it replaces an existing group and its instances |
     | Instance health check grace period (secs) | No | 300 | Startup window before Auto Scaling health checks apply |
     | SSH key pair name | No | - | Optional SSH key; Session Manager does not require one |
     | Custom AMI ID | No | Latest AL2023 | AMI for future instances; must support the module bootstrap |

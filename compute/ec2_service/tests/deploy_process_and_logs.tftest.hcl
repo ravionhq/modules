@@ -59,6 +59,40 @@ variables {
   ami_id        = "ami-12345678"
 }
 
+run "existing_group_and_document_names_remain_unchanged" {
+  command = plan
+
+  variables {
+    runtime = "container"
+  }
+
+  assert {
+    condition     = output.autoscaling_group_name == "supervised-app" && aws_ssm_document.deploy.name == "supervised-app-deploy"
+    error_message = "An ordinary upgrade must preserve the existing group and deploy document names."
+  }
+}
+
+run "deploy_document_follows_the_generated_group_name" {
+  command = plan
+
+  variables {
+    runtime                                  = "container"
+    autoscaling_group_generated_name_enabled = true
+  }
+
+  override_resource {
+    target = module.autoscaling.aws_autoscaling_group.this
+    values = {
+      name = "supervised-app-unique-suffix"
+    }
+  }
+
+  assert {
+    condition     = aws_ssm_document.deploy.name == "${output.autoscaling_group_name}-deploy" && aws_ssm_document.deploy.name == "supervised-app-unique-suffix-deploy"
+    error_message = "The deploy document must use the generated group name rather than the stable service name."
+  }
+}
+
 run "container_is_supervised_and_logs_per_deployment" {
   command = plan
 

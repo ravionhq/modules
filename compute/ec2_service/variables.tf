@@ -12,6 +12,12 @@ variable "name" {
   }
 }
 
+variable "autoscaling_group_generated_name_enabled" {
+  type        = bool
+  description = "Use a generated physical Auto Scaling Group name so a tainted group can be replaced without a name collision. Enabling this on an existing fixed-name service replaces its group and instances."
+  default     = false
+}
+
 variable "tags" {
   type        = map(string)
   description = "A map of tags to assign to all resources."
