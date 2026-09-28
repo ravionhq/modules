@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 1.7.0
+  description: Add a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs, and show value_from in runtime and FireLens secret placeholders.
 module:
   inputs:
     - id: section_cluster
@@ -109,7 +109,7 @@ module:
         "name": (stack.output.container_name), "readonly_root_filesystem": false, "repository_credentials":
         (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -142,7 +142,7 @@ module:
         (stack.output.container_name), "readonly_root_filesystem": false,
         "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars : []) >>
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? module.input.sidecars : []) >>
   ui:
     logs:
       - id: ecs_worker_logs
@@ -226,6 +226,7 @@ module:
     | Custom metric scaling policies | No | [] | Queue/backlog-oriented target tracking policies |
     | Runtime environment variables | No | - | Environment variables passed to the worker container |
     | Runtime secrets | No | - | Secrets injected from SSM Parameter Store or Secrets Manager |
+    | Stop timeout (secs) | No | 30 | Seconds between SIGTERM and SIGKILL when a worker task stops; Fargate allows up to 120 |
     | Sidecars | No | [] | Additional containers in the worker task |
     | EFS file system | No | false | Mount an EFS file system into the worker container |
     | EFS mount path | Yes* | /mnt/efs | Worker container path for the referenced file system |

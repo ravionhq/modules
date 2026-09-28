@@ -20,6 +20,12 @@ auto_scaling:
       module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
       >>
     - >-
+      ...<< module.input.request_count_target_value ? [{policy_name: "request_count", predefined_metric:
+      "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
+      scale_in_cooldown: module.input.scale_in_cooldown, scale_out_cooldown:
+      module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
+      >>
+    - >-
       ...<< module.input.custom_metric_scaling_policies != nil ?
       module.input.custom_metric_scaling_policies : [] >>
 capacity_provider_strategies:

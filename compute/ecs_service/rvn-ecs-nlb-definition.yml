@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 1.7.0
+  description: Add a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs, and show value_from in runtime and FireLens secret placeholders.
 module:
   inputs:
     - id: section_cluster
@@ -376,7 +376,7 @@ module:
         (#.listener_protocol == "UDP" ? "udp" : "tcp")}), "readonly_root_filesystem": false,
         "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -413,7 +413,7 @@ module:
         #.container_port, "protocol": (#.listener_protocol == "UDP" ? "udp" : "tcp")}),
         "readonly_root_filesystem": false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
-        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars
+        (module.input.secrets), "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? module.input.sidecars
         : []) >>
   ui:
     logs:
@@ -586,6 +586,8 @@ module:
     Use Runtime environment variables for plain container environment values. Ravion also sets PORT from the first listener's Container port.
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
+
+    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 
