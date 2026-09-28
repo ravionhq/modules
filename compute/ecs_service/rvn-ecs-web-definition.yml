@@ -3,7 +3,7 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.7.0
+  version: 1.8.0
   description: Add a Requests per task target autoscaling input that tracks ALBRequestCountPerTarget and a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs.
 module:
   inputs:

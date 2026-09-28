@@ -3,7 +3,7 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 1.7.0
+  version: 1.8.0
   description: Add a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs.
 module:
   inputs:
