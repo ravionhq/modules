@@ -5,10 +5,10 @@ placeholder: |-
   {
     "NODE_ENV": "production",
     "API_URL": {
-      "fromParameterStore": "my-secret"
+      "from_parameter_store": "my-secret"
     },
     "NPM_TOKEN": {
-      "fromSecretManager": "arn:..."
+      "from_secrets_manager": "arn:..."
     }
   }
 required: false

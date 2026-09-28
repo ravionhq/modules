@@ -1057,6 +1057,24 @@ describe("compiler", () => {
         "Repository containing the application source for Dockerfile or Railpack builds.",
         `${definition.type} should include shared Git source guidance`,
       );
+      const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
+      assert.deepEqual(
+        JSON.parse(assertString(buildEnvironmentVariables.placeholder)),
+        {
+          NODE_ENV: "production",
+          API_URL: { from_parameter_store: "my-secret" },
+          NPM_TOKEN: { from_secrets_manager: "arn:..." },
+        },
+        `${definition.type} should demonstrate the supported build secret reference keys`,
+      );
+      if (definition.type === "rvn-ecs-web") {
+        const build = getModuleBuild(definition.module);
+        assert.equal(build.environment_variables, "<< module.input.build_environment_variables >>");
+        assert.match(
+          assertString(build.builder),
+          /inject_env_variables_in_dockerfile:\s+module\.input\.dockerfile_environment_variable_injection_enabled/,
+        );
+      }
 
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
