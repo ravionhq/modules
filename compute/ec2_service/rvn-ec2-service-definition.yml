@@ -4,7 +4,7 @@ definition:
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
   version: 1.8.0
-  description: Let new EC2 services use replaceable instance group names without changing existing groups on upgrade.
+  description: Allow advanced EC2 services to avoid group name collisions without changing existing groups on upgrade.
 module:
   inputs:
     - id: network
@@ -595,12 +595,6 @@ module:
       required: false
       show_when:
         cpu_autoscaling_enabled: false
-    - id: autoscaling_group_generated_name_enabled
-      label: Generated Auto Scaling Group name
-      type: boolean
-      description: Choose only before the first deploy to avoid group-name collisions. Changing this on a live service can replace every instance before its release reaches the new group; arrange a separate migration instead.
-      default: false
-      collapsible: true
     - id: section_app_config
       label: Environment variables
       type: section
@@ -720,7 +714,6 @@ module:
         ...overrides: << module.input.advanced_terraform_variables >>
         additional_security_group_ids: << module.input.additional_security_group_ids || [] >>
         additional_user_data: << module.input.additional_user_data || "" >>
-        autoscaling_group_generated_name_enabled: << module.input.autoscaling_group_generated_name_enabled || false >>
         direct_access_cidr_blocks: "<< module.input.http_traffic_enabled ? (module.input.direct_access_cidr_blocks || []) : [] >>"
         ami_id: << module.input.ami_id || nil >>
         app_port: "<< module.input.http_traffic_enabled ? module.input.app_port : nil >>"
@@ -911,7 +904,7 @@ module:
 
     Ravion provisions the launch template, Auto Scaling Group, instance role and security group, SSM deploy document, app log group, and optional target group and listener rule. Web services can attach to a standalone Application Load Balancer or reuse the public or private ALB from an ECS cluster. The selected network and load balancer must use the same AWS account, region, and VPC.
 
-    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and optional data volumes. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). **Generated Auto Scaling Group name defaults to off for new and existing services alike.** Choose it before the first deploy if the service needs a generated group name. Upgrading an existing service without changing this setting preserves its fixed group and SSM document names. The deploy manager stores the previous group name with the last successful release and does not automatically retarget a newly named group, even if generated names prevent a name collision. A live group replacement can therefore interrupt the app and delete instance-local volumes. Repair tainted state under operator supervision if the existing group is healthy, or coordinate release migration and backups before any replacement. Do not switch naming on a running service without a separate release migration plan.
+    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and optional data volumes. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). Group naming is fixed by default for new and existing services, and routine upgrades preserve the group and SSM document names. For a service that has **not yet deployed a release**, an advanced operator can set `{"autoscaling_group_generated_name_enabled": true}` in Advanced Terraform variables to avoid a name collision on replacement. This is not a zero-downtime migration: the deploy manager stores the old group name with the last successful release and does not automatically retarget a newly named group. Enabling or disabling the variable on a running service, or replacing a generated-name group after deployment, can interrupt the app and delete instance-local volumes. Repair tainted state under operator supervision if the existing group is healthy. Otherwise, arrange a separate release migration, backups, and enough EC2 capacity before replacing a live group.
 
     Terraform source: [ravionhq/modules/compute/ec2_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ec2_service)
 
@@ -1129,7 +1122,6 @@ module:
     | CPU autoscaling | No | false | Target-tracking scaling on average EC2 CPU utilization |
     | CPU target (%) | No | 70 | CPU target used when autoscaling is enabled |
     | Desired instances | No | - | Initial target when CPU autoscaling is off; blank starts at the minimum |
-    | Generated Auto Scaling Group name | No | false | Choose before first deploy; changing it on a live service needs a separate migration plan |
     | Instance health check grace period (secs) | No | 300 | Startup window before Auto Scaling health checks apply |
     | SSH key pair name | No | - | Optional SSH key; Session Manager does not require one |
     | Custom AMI ID | No | Latest AL2023 | AMI for future instances; must support the module bootstrap |
