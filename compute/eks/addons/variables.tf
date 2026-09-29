@@ -59,7 +59,7 @@ variable "topology_aware_routing_enabled" {
 
 variable "kubectl_image" {
   type        = string
-  description = "kubectl image (repository:tag) the kube-dns patch Jobs run. Pinned; override for clusters that must pull from a private mirror."
+  description = "kubectl image (repository:tag) the kube-dns patch Jobs and the volume resizer run. Pinned; override for clusters that must pull from a private mirror."
   default     = "registry.k8s.io/kubectl:v1.36.4"
   nullable    = false
 
@@ -129,6 +129,32 @@ variable "ebs_csi_addon_configuration_values" {
   type        = string
   description = "JSON string of add-on configuration overrides for aws-ebs-csi-driver."
   default     = null
+}
+
+variable "ebs_default_storage_class_enabled" {
+  type        = bool
+  description = "Create an encrypted gp3 StorageClass named `gp3` with volume expansion allowed, and make it the cluster default. Requires ebs_csi_driver_enabled. Fails to install if a StorageClass named `gp3` already exists and was not created by this module."
+  default     = true
+  nullable    = false
+}
+
+variable "statefulset_volume_expansion_enabled" {
+  type        = bool
+  description = "Let a StatefulSet update through when the only volumeClaimTemplate change is a larger storage request, and grow the existing PersistentVolumeClaims online to match. Without it, the API server rejects the update and the deploy fails. Requires ebs_csi_driver_enabled and Kubernetes 1.36+ (MutatingAdmissionPolicy); on older clusters it is skipped with a warning."
+  default     = true
+  nullable    = false
+}
+
+variable "busybox_image" {
+  type        = string
+  description = "Statically linked busybox image (repository:tag) that supplies a shell to the volume resizer, which otherwise runs the kubectl image. Pinned; override for clusters that must pull from a private mirror."
+  default     = "public.ecr.aws/docker/library/busybox:1.37.0-musl"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^(.*):([^:/]+)$", var.busybox_image))
+    error_message = "busybox_image must be a repository:tag reference."
+  }
 }
 
 ################################################################################
@@ -934,6 +960,17 @@ variable "ravion_operator_warm_capacity" {
   validation {
     condition     = contains(["DoNotSchedule", "ScheduleAnyway"], var.ravion_operator_warm_capacity.placement.topology_spread_when_unsatisfiable)
     error_message = "The warm-capacity topology spread behaviour must be DoNotSchedule or ScheduleAnyway."
+  }
+}
+
+variable "system_node_count" {
+  type        = number
+  description = "Nodes guaranteed to exist that Karpenter does not manage: the minimum size of the cluster's system node group. Karpenter's controller and the HA coordinators run only on such nodes, one per node, so their replica counts are capped to it (Karpenter at 2, coordinators at ravion_operator_coordinator_replicas). With a single node, one of each runs without HA instead of a second replica staying Pending and failing Helm upgrades. Null applies no cap."
+  default     = null
+
+  validation {
+    condition     = var.system_node_count == null || (try(var.system_node_count >= 0 && floor(var.system_node_count) == var.system_node_count, false))
+    error_message = "The system_node_count must be a whole number of nodes, or null."
   }
 }
 

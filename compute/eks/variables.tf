@@ -196,7 +196,7 @@ variable "cluster_security_group_additional_referenced_security_group_ingress_ru
 
 variable "bootstrap_cluster_creator_admin_permissions_enabled" {
   type        = bool
-  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation. The plan fails if this, the Ravion Runner role and access_entries would all leave the cluster without an administrator."
+  description = "Whether to grant the IAM principal that creates the cluster a permanent cluster-admin access entry. Off by default: Ravion deploys use the Ravion Runner role and people get explicit access_entries, so the ephemeral creating principal never needs to stay an admin. Only evaluated at cluster creation: later changes are ignored, since AWS cannot change it on an existing cluster. The plan fails if this, the Ravion Runner role and access_entries would all leave the cluster without an administrator."
   default     = false
 }
 
@@ -327,7 +327,7 @@ variable "pod_identity_associations" {
 
 variable "deletion_protection_enabled" {
   type        = bool
-  description = "If true, the cluster cannot be deleted via the AWS API until this is set to false."
+  description = "If true, the cluster cannot be deleted via the AWS API until this is set to false, and any plan that would destroy or replace the cluster fails at plan time, before other changes are applied."
   default     = true
 }
 
@@ -432,6 +432,25 @@ variable "node_groups" {
 ################################################################################
 # Post-compute Add-ons
 ################################################################################
+
+variable "metrics_server_enabled" {
+  type        = bool
+  description = "Install the AWS-managed EKS Metrics Server community add-on for HPAs and kubectl top. Enabled by default. Set false if another manager already installs Metrics Server, or while removing an existing Helm release before migration."
+  default     = true
+  nullable    = false
+}
+
+variable "metrics_server_addon_version" {
+  type        = string
+  description = "Pinned version for the metrics-server EKS community add-on. When null, EKS selects a compatible version on creation; updates require an explicit version change."
+  default     = null
+}
+
+variable "metrics_server_addon_configuration_values" {
+  type        = string
+  description = "JSON string of EKS add-on configuration overrides for metrics-server."
+  default     = null
+}
 
 variable "coredns_addon_version" {
   type        = string

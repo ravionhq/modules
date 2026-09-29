@@ -1,0 +1,4 @@
+# A cluster older than Kubernetes 1.36: the StorageClass without the
+# MutatingAdmissionPolicy-based volume expansion.
+volumeExpansion:
+  enabled: false

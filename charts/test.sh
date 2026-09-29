@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -39,7 +39,7 @@ done
 # module carries its own charts and they are tested from here too.
 chart_path() {
   case "$1" in
-    karpenter-resources | warm-capacity) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    karpenter-resources | warm-capacity | ebs-storage) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -632,6 +632,43 @@ test_warm_capacity() {
 }
 
 ################################################################################
+# ebs-storage (compute/eks/addons)
+################################################################################
+
+test_ebs_storage() {
+  local chart="ebs-storage"
+  local default class_only sc map dep ctr
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  class_only="$(render "${chart}" class-only --values "$(chart_path "${chart}")/ci/storage-class-only-values.yaml")"
+  sc='.[] | select(.kind == "StorageClass")'
+  map='.[] | select(.kind == "MutatingAdmissionPolicy")'
+  dep='.[] | select(.kind == "Deployment")'
+  ctr="${dep} | .spec.template.spec.containers[0]"
+
+  assert_eq "${chart}: gp3 is the default class and allows volume expansion" \
+    "gp3 true true gp3 true WaitForFirstConsumer" \
+    "$(q "${default}" "${sc} | [.metadata.name, .metadata.annotations.\"storageclass.kubernetes.io/is-default-class\", .allowVolumeExpansion, .parameters.type, .parameters.encrypted, .volumeBindingMode] | join(\" \")")"
+  assert_eq "${chart}: expansion policy and binding render by default" \
+    "1 1 Ignore" \
+    "$(count "${default}" MutatingAdmissionPolicy) $(count "${default}" MutatingAdmissionPolicyBinding) $(q "${default}" "${map} | .spec.failurePolicy")"
+  assert_eq "${chart}: policy only matches StatefulSet updates" \
+    "apps statefulsets UPDATE" \
+    "$(q "${default}" "${map} | .spec.matchConstraints.resourceRules[0] | [.apiGroups[0], .resources[0], .operations[0]] | join(\" \")")"
+  assert_eq "${chart}: requested sizes are recorded before the templates are reverted" \
+    "ApplyConfiguration JSONPatch" \
+    "$(q "${default}" "${map} | [.spec.mutations[].patchType] | join(\" \")")"
+  assert_eq "${chart}: resizer runs kubectl with a busybox shell" \
+    "registry.k8s.io/kubectl:v1.36.4 /tools/sh public.ecr.aws/docker/library/busybox:1.37.0-musl" \
+    "$(q "${default}" "${ctr} | .image") $(q "${default}" "${ctr} | .command[0]") $(q "${default}" "${dep} | .spec.template.spec.initContainers[0].image")"
+  assert_eq "${chart}: resizer may only list StatefulSets and grow claims" \
+    "list get,list,patch" \
+    "$(q "${default}" '.[] | select(.kind == "ClusterRole") | .rules[0].verbs | join(",")') $(q "${default}" '.[] | select(.kind == "ClusterRole") | .rules[1].verbs | join(",")')"
+  assert_eq "${chart}: class-only values render the StorageClass alone" \
+    "1 0 0" \
+    "$(count "${class_only}" StorageClass) $(count "${class_only}" MutatingAdmissionPolicy) $(count "${class_only}" Deployment)"
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -642,6 +679,7 @@ for chart in "${CHARTS[@]}"; do
     rvn-eks-cron) test_rvn_eks_cron ;;
     karpenter-resources) test_karpenter_resources ;;
     warm-capacity) test_warm_capacity ;;
+    ebs-storage) test_ebs_storage ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.4.2
-  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
+  version: 1.4.3
+  description: Use the workload's execution environment for deploys and clarify supported build secret references.
 module:
   inputs:
     - id: section_cluster

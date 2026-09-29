@@ -26,6 +26,16 @@ output "ebs_csi_role_arn" {
   value       = var.ebs_csi_driver_enabled ? module.ebs_csi_role[0].role_arn : null
 }
 
+output "default_storage_class_name" {
+  description = "Name of the default gp3 StorageClass this module creates (null if not created)."
+  value       = local.ebs_default_storage_class_enabled ? "gp3" : null
+}
+
+output "statefulset_volume_expansion_enabled" {
+  description = "Whether online StatefulSet volume growth is installed. False when disabled, when the EBS CSI driver is off, or when the cluster runs Kubernetes older than 1.36."
+  value       = local.statefulset_volume_expansion_enabled
+}
+
 ################################################################################
 # CloudWatch Observability
 ################################################################################
