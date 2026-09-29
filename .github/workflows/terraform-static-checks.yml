@@ -61,6 +61,13 @@ jobs:
           tofu -chdir=compute/eks init -backend=false
           tofu -chdir=compute/eks test -filter=tests/node_group_scaling.tftest.hcl
 
+      - name: Test EKS load balancer controller CRD upgrades
+        run: |
+          tofu -chdir=compute/eks/addons init -backend=false
+          tofu -chdir=compute/eks/addons validate
+          tofu -chdir=compute/eks/addons test -filter=tests/lb_controller.tftest.hcl
+          python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_helm_dependencies.py' -v
+
       - name: Test EC2 Auto Scaling Group naming
         run: |
           tofu -chdir=compute/autoscaling init -backend=false
