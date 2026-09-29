@@ -55,6 +55,11 @@ jobs:
       - name: Test CloudFront viewer-request function
         run: node --test cdn/cloudfront/functions/viewer_request.test.js
 
+      - name: Test OpenTelemetry collector module
+        run: |
+          tofu -chdir=monitoring/otel_collector init -backend=false
+          tofu -chdir=monitoring/otel_collector test
+
       - name: Test EKS capacity reconciliation
         run: |
           python3 -m unittest discover -s compute/eks/tests -p 'test_*.py' -v
