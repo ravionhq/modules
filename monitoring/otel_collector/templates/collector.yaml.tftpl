@@ -1,0 +1,52 @@
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:${health_check_port}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:${otlp_grpc_port}
+      http:
+        endpoint: 0.0.0.0:${otlp_http_port}
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  batch/traces:
+    timeout: 1s
+    send_batch_size: 50
+%{ if metrics_enabled ~}
+  batch/metrics:
+    timeout: 60s
+%{ endif ~}
+
+exporters:
+  awsxray:
+    region: ${region}
+%{ if metrics_enabled ~}
+  awsemf:
+    region: ${region}
+    log_group_name: ${metrics_log_group_name}
+    log_stream_name: collector
+    dimension_rollup_option: NoDimensionRollup
+%{ if metrics_namespace != null ~}
+    namespace: ${jsonencode(metrics_namespace)}
+%{ endif ~}
+%{ endif ~}
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch/traces]
+      exporters: [awsxray]
+%{ if metrics_enabled ~}
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch/metrics]
+      exporters: [awsemf]
+%{ endif ~}

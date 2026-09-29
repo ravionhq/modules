@@ -34,6 +34,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `messaging/`  | `sns`             | AWS SNS topics and subscriptions                                       | Planned |
 | `messaging/`  | `sqs`             | AWS SQS queues                                                         | Planned |
 | `monitoring/` | `cloudwatch`      | AWS CloudWatch alarms and dashboards                                   | Planned |
+| `monitoring/` | `otel_collector`  | OpenTelemetry collector on ECS Fargate that receives OTLP inside a VPC at a private Cloud Map hostname and sends traces to AWS X-Ray, with optional CloudWatch metrics (includes `rvn-aws-otel-collector` module definition) | Unreleased |
 | `networking/` | `alb`             | Standalone AWS Application Load Balancer with shared HTTP/HTTPS listeners and alarms enabled by default | v1.0.0  |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
