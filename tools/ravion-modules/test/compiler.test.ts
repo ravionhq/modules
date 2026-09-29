@@ -420,6 +420,20 @@ describe("compiler", () => {
     );
   });
 
+  it("enables Metrics Server on managed EKS clusters unless advanced Terraform variables disable it", async () => {
+    const cluster = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"),
+    );
+    const addons = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
+    );
+    assert.equal(getModuleInputs(cluster.module).some((input) => input.id === "metrics_server_enabled"), false);
+    assert.equal(getTerraformVariable(cluster.module, "metrics_server_enabled"), true);
+    assert.equal(getTerraformVariable(cluster.module, "...overrides"), "<< module.input.advanced_terraform_variables >>");
+    assert.equal(getTerraformVariable(addons.module, "metrics_server_enabled"), undefined);
+    assert.equal(getTerraformVariable(addons.module, "metrics_server_chart_version"), undefined);
+  });
+
   it("compiles concise EKS add-on guidance and input constraints", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
@@ -757,6 +771,37 @@ describe("compiler", () => {
     );
   });
 
+  it("wires ECS stop timeout and web request-count autoscaling", async () => {
+    for (const file of ["rvn-ecs-web-definition.yml", "rvn-ecs-worker-definition.yml", "rvn-ecs-nlb-definition.yml"]) {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", file));
+      const stopTimeout = findInput(getModuleInputs(compiled.module), "stop_timeout");
+      assert.equal(stopTimeout.default, 30);
+      assert.equal(stopTimeout.max, 120);
+      assert.equal(stopTimeout.min, 2);
+
+      const serialized = JSON.stringify(compiled.module);
+      if (file !== "rvn-ecs-web-definition.yml") {
+        assert.doesNotMatch(serialized, /request_count_target_value/);
+      }
+      assert.doesNotMatch(serialized, /"stop_timeout\\?": 30\}/);
+      assert.equal(serialized.match(/"stop_timeout\\?": \(module\.input\.stop_timeout != nil \? module\.input\.stop_timeout : 30\)/g)?.length, 2, file);
+    }
+
+    const web = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"));
+    const requestCount = findInput(getModuleInputs(web.module), "request_count_target_value");
+    assert.equal(requestCount.required, false);
+    assert.equal(requestCount.default, undefined);
+    assert.deepEqual(requestCount.show_when, {auto_scaling_enabled: true});
+
+    const autoScaling = assertRecord(getTerraformVariable(web.module, "auto_scaling"), "auto_scaling");
+    const targetTracking = autoScaling.target_tracking;
+    assert.ok(Array.isArray(targetTracking));
+    const requestCountPolicy = targetTracking.find((entry) => typeof entry === "string" && entry.includes("ALBRequestCountPerTarget"));
+    assert.ok(requestCountPolicy, "expected an ALBRequestCountPerTarget policy");
+    assert.match(requestCountPolicy, /^\.\.\.<< module\.input\.request_count_target_value != nil && module\.input\.deployment_strategy == "rolling" \?\s+\[\{policy_name: "request_count"/);
+    assert.match(requestCountPolicy, /: \[\] >>$/);
+  });
+
   it("gates the Lambda ECR repository on build source and seeds image-registry creates from an initial ref", async () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "compute", "lambda", "rvn-lambda-definition.yml"));
     const inputs = getModuleInputs(compiled.module);
@@ -938,6 +983,9 @@ describe("compiler", () => {
     assert.equal(findInput(inputs, "max_instances").label, "Maximum instances");
     assert.equal(getTerraformVariable(compiled.module, "min_size"), "<< module.input.min_instances >>");
     assert.equal(getTerraformVariable(compiled.module, "max_size"), "<< module.input.max_instances >>");
+    assert.equal(inputs.some((input) => input.id === "autoscaling_group_generated_name_enabled"), false);
+    assert.equal(getTerraformVariable(compiled.module, "autoscaling_group_generated_name_enabled"), undefined);
+    assert.equal(getTerraformVariable(compiled.module, "...overrides"), "<< module.input.advanced_terraform_variables >>");
 
     const imageRef = findInput(getDeployInputs(compiled.module), "image_ref");
     assert.deepEqual(imageRef.patterns, [
@@ -1100,11 +1148,29 @@ describe("compiler", () => {
         "Repository containing the application source for Dockerfile or Railpack builds.",
         `${definition.type} should include shared Git source guidance`,
       );
+      const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
+      assert.deepEqual(
+        JSON.parse(assertString(buildEnvironmentVariables.placeholder)),
+        {
+          NODE_ENV: "production",
+          API_URL: { from_parameter_store: "my-secret" },
+          NPM_TOKEN: { from_secrets_manager: "arn:..." },
+        },
+        `${definition.type} should demonstrate the supported build secret reference keys`,
+      );
+      if (definition.type === "rvn-ecs-web") {
+        const build = getModuleBuild(definition.module);
+        assert.equal(build.environment_variables, "<< module.input.build_environment_variables >>");
+        assert.match(
+          assertString(build.builder),
+          /inject_env_variables_in_dockerfile:\s+module\.input\.dockerfile_environment_variable_injection_enabled/,
+        );
+      }
 
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
         builderType.description,
-        "Use on-demand EC2 for predictable availability or EC2 Spot for lower cost with possible capacity delays or interruption.",
+        "Use on-demand EC2 for predictable availability, EC2 Spot for lower cost with possible capacity delays or interruption, or a sandbox microVM on the execution environment's pool for the fastest start. Sandbox is in preview. Contact support to enable it for your organization.",
         `${definition.type} should include shared builder guidance`,
       );
       const builderOptions = builderType.values;
@@ -1112,11 +1178,16 @@ describe("compiler", () => {
       assert.deepEqual(
         builderOptions.map((option) => {
           const value = assertRecord(option, `${definition.type} builder option`);
-          return [value.value, value.description];
+          return [value.value, value.label, value.description];
         }),
         [
-          ["ec2", "Use on-demand capacity for predictable availability without Spot interruption."],
-          ["ec2-spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
+          ["ec2", "EC2", "Use on-demand capacity for predictable availability without Spot interruption."],
+          ["ec2-spot", "EC2 spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
+          [
+            "sandbox",
+            "Sandbox (preview)",
+            "In preview, available on request. Contact support to enable it for your organization. Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds.",
+          ],
         ],
       );
       for (const removedInputId of [

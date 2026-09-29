@@ -231,6 +231,7 @@ at the bucket root.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name of the configurations, and the prefix of every other resource this module creates | `string` | n/a | yes |
+| module_instance_id | Id of the Ravion module instance these resources belong to. Ravion sets it; null outside Ravion | `string` | `null` | no |
 | components | Components each build runs, in order. Each sets `source` (`steps`, `document` or `arn`) and the fields it names: `build_steps`/`validate_steps`/`test_steps` and `parameter_definitions`, `data`, or `arn`. Optional `description`, `platform`, `parameters` | `list(object)` | n/a | yes |
 | description | Description stored on the infrastructure and distribution configurations | `string` | `null` | no |
 | region | Region images are built in | `string` | provider region | no |
@@ -249,6 +250,8 @@ at the bucket root.
 | ami_name | Image name. Must contain `{{ imagebuilder:buildDate }}` or `{{ imagebuilder:buildVersion }}` | `string` | `<name>-{{ imagebuilder:buildDate }}` | no |
 | ami_description | Description stored on each image built, in the build region | `string` | `null` | no |
 | ami_tags | Tags written on each image built, in the build region | `map(string)` | `{}` | no |
+| distribution_regions | Regions each deploy copies the finished image to, beyond the build region | `list(string)` | `[]` | no |
+| image_block_public_access | Block public access for AMIs in the build region and every distribution region: unblocked or block-new-sharing. Null leaves the account's state unchanged | `string` | `null` | no |
 
 ## Outputs
 
@@ -261,6 +264,7 @@ at the bucket root.
 | image_builder_distribution_configuration_arn | The ARN of the build-region distribution configuration |
 | instance_role_arn | The ARN of the build instance's IAM role |
 | instance_role_name | The name of the build instance's IAM role |
+| module_instance_id | Id of the Ravion module instance these resources belong to, for a reference that names this module |
 
 ## Testing
 

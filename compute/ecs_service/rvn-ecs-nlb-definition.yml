@@ -293,7 +293,9 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: ...<< [] >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - cloudwatch_alarm_unhealthy_hosts_threshold: << module.input.cloudwatch_alarm_unhealthy_hosts_threshold >>
               - container_port: << module.input.listeners[0].container_port >>
@@ -376,7 +378,7 @@ module:
         (#.listener_protocol == "UDP" ? "udp" : "tcp")}), "readonly_root_filesystem": false,
         "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -413,7 +415,7 @@ module:
         #.container_port, "protocol": (#.listener_protocol == "UDP" ? "udp" : "tcp")}),
         "readonly_root_filesystem": false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
-        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        (module.input.secrets), "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
         "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
         (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
         (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
@@ -591,6 +593,8 @@ module:
     Use Runtime environment variables for plain container environment values. Ravion also sets PORT from the first listener's Container port.
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
+
+    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 

@@ -751,6 +751,11 @@ variable "auto_scaling" {
   })
   description = "Auto scaling configuration for the service."
   default     = null
+
+  validation {
+    condition     = try(length(distinct([for policy in var.auto_scaling.target_tracking : policy.policy_name])) == length(var.auto_scaling.target_tracking), true)
+    error_message = "auto_scaling.target_tracking policy_name values must be unique."
+  }
 }
 
 ################################################################################

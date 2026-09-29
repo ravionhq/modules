@@ -58,10 +58,10 @@
 - id: firelens_secrets
   label: FireLens secrets
   type: array
-  description: Secrets injected into the log router sidecar as an array of {name, value_from} objects. Use these for API keys or tokens stored in SSM Parameter Store or Secrets Manager.
+  description: Secrets injected into the log router sidecar, as an array of objects with `name` and `value_from` keys (snake_case, not `valueFrom`). Use these for API keys or tokens stored in SSM Parameter Store or Secrets Manager.
   placeholder: |-
     - name: DD_API_KEY
-      valueFrom: arn:aws:ssm:us-east-1:123456789012:parameter/datadog-api-key
+      value_from: arn:aws:ssm:us-east-1:123456789012:parameter/datadog-api-key
   required: false
   show_when:
     firelens_enabled: true
@@ -137,6 +137,14 @@
   max: 400
   min: 100
   default: 200
+- id: stop_timeout
+  label: Stop timeout (secs)
+  type: number
+  description: Seconds ECS waits after sending SIGTERM to the app container before forcing it to stop with SIGKILL. Raise it so in-flight requests or jobs can finish during deploys and scale-in. Fargate allows 2-120 secs.
+  collapsible: true
+  max: 120
+  min: 2
+  default: 30
 - id: security_group_ids
   label: Additional security groups
   type: string_array

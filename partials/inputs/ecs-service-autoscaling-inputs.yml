@@ -156,7 +156,7 @@
     - id: policy_name
       label: Policy name
       type: string
-      description: Application Auto Scaling policy name. Terraform/AWS require 1-255 characters and this name must be unique for the scalable target.
+      description: Application Auto Scaling policy name. Terraform/AWS require 1-255 characters and this name must be unique for the scalable target. The names cpu, memory, and request_count are used by the built-in policies.
       placeholder: queue-depth
       required: true
       patterns:

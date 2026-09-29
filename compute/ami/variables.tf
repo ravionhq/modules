@@ -288,3 +288,26 @@ variable "ami_tags" {
   description = "Tags written on each image built, in the build region. Tags are visible only to the owning account, even on a public image."
   default     = {}
 }
+
+variable "distribution_regions" {
+  description = "Regions each deploy copies the finished image to, beyond the build region"
+  type        = list(string)
+  default     = []
+}
+
+variable "image_block_public_access" {
+  description = "Block public access for AMIs in the build region and every distribution region: unblocked or block-new-sharing. Null leaves the account's state unchanged"
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.image_block_public_access == null || contains(["unblocked", "block-new-sharing"], var.image_block_public_access)
+    error_message = "image_block_public_access must be unblocked or block-new-sharing."
+  }
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "Id of the Ravion module instance these resources belong to. Null outside Ravion"
+  default     = null
+}

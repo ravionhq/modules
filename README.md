@@ -18,13 +18,13 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
 | `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
-| `compute/`    | `autoscaling`     | AWS Auto Scaling groups                                                | v1.0.0  |
-| `compute/`    | `ec2_service`     | Supervised EC2 workloads with configurable rolling deploys, standalone or ECS-cluster ALB routing, target tuning, and deployment-scoped CloudWatch logs | v1.0.0  |
+| `compute/`    | `autoscaling`     | AWS Auto Scaling groups with optional generated names for safe replacement | v1.0.0  |
+| `compute/`    | `ec2_service`     | Supervised EC2 workloads with opt-in replaceable Auto Scaling groups, configurable rolling deploys, ALB routing, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
 | `compute/`    | `ecs_service`     | AWS ECS services with task definitions, task IAM policies, load balancing, auto scaling, and alarms enabled by default | v1.0.0  |
-| `compute/`    | `eks`             | Composite EKS stack: cluster, system node group, CoreDNS, and optional Fargate profiles; Pod Identity defaults, opt-in IRSA/VPC controller permissions and node SSM access, and pull-only node ECR access (includes `rvn-eks-cluster` module definition) | Unreleased |
-| `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, shared observability, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI (includes `rvn-eks-addons` module definition) | Unreleased |
-| `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, and `rvn-eks-cron` module definitions) | Unreleased |
+| `compute/`    | `eks`             | Composite EKS stack: cluster, system node group, CoreDNS, default-on AWS-managed Metrics Server, and optional Fargate profiles; Pod Identity defaults, opt-in IRSA/VPC controller permissions and node SSM access, and pull-only node ECR access (includes `rvn-eks-cluster` module definition) | Unreleased |
+| `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, shared observability, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI with a default gp3 StorageClass and online StatefulSet volume growth (includes `rvn-eks-addons` module definition) | Unreleased |
+| `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, `rvn-eks-cron`, and `rvn-eks-chart` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions with regional and Lambda@Edge error-rate alarms   | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
@@ -45,6 +45,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `security/`   | `iam`             | AWS IAM roles and policies                                             | v1.0.0  |
 | `security/`   | `iam_policy`      | Reusable customer-managed AWS IAM policies                             | v1.0.0  |
 | `security/`   | `kms`             | AWS KMS keys (symmetric or asymmetric: signing, encryption, MAC, key agreement) (includes the `rvn-aws-kms` module definition) | v1.0.0  |
+| `security/`   | `secret` | Random values generated into SSM Parameter Store or Secrets Manager without touching Terraform state (includes the `rvn-aws-secret` module definition) | v0.1.0 |
 | `security/`   | `secrets-manager` | AWS Secrets Manager secrets                                            | Planned |
 | `stack/`      | `terraform`       | Ravion Terraform/OpenTofu stack workflows with git triggers and managed state (includes `rvn-stack` module definition) | v1.2.3  |
 | `storage/`    | `ebs`             | AWS EBS volumes                                                        | Planned |
@@ -63,13 +64,14 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.0.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.3.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.1.0 | `networking/alb/` |
-| `rvn-aws-ami` | AMI | v0.1.0 | `compute/ami/` |
+| `rvn-aws-ami` | AMI | v0.2.1 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.1.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
-| `rvn-aws-static` | Static Hosting | v1.1.3 | `hosting/static_site/` |
+| `rvn-aws-secret` | AWS Secret | v1.0.1 | `security/secret/` |
+| `rvn-aws-static` | Static Hosting | v1.2.2 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.2 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.0.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.0.0 | `compute/ecs_cluster/` |
@@ -77,12 +79,13 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v2.0.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.0.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.12.0 | `compute/eks/addons/` |
-| `rvn-eks-cluster` | EKS Cluster | v0.4.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.3.1 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.6.0 | `compute/eks_service/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.13.0 | `compute/eks/addons/` |
+| `rvn-eks-chart` | EKS Helm Chart | v0.1.2 | `compute/eks_service/` |
+| `rvn-eks-cluster` | EKS Cluster | v0.5.0 | `compute/eks/` |
+| `rvn-eks-web` | EKS Web Service | v1.4.3 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.7.3 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.0.1 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v1.1.2 | `compute/lambda/` |
+| `rvn-lambda` | Lambda Function | v1.2.2 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.3.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.1.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.0.3 | `networking/route53/` |

@@ -68,7 +68,9 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: ...<< [] >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - container_port: 3000
                 load_balancer_attachment: null
@@ -109,7 +111,7 @@ module:
         "name": (stack.output.container_name), "readonly_root_filesystem": false, "repository_credentials":
         (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -142,7 +144,7 @@ module:
         (stack.output.container_name), "readonly_root_filesystem": false,
         "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
         "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
         (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
         (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
@@ -232,6 +234,7 @@ module:
     | Custom metric scaling policies | No | [] | Queue/backlog-oriented target tracking policies |
     | Runtime environment variables | No | - | Environment variables passed to the worker container |
     | Runtime secrets | No | - | Secrets injected from SSM Parameter Store or Secrets Manager |
+    | Stop timeout (secs) | No | 30 | Seconds between SIGTERM and SIGKILL when a worker task stops; Fargate allows up to 120 |
     | Sidecars | No | [] | Additional containers in the worker task |
     | EFS file system | No | false | Mount an EFS file system into the worker container |
     | EFS mount path | Yes* | /mnt/efs | Worker container path for the referenced file system |

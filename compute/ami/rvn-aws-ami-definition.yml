@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
 release:
-  version: 0.1.0
-  description: First release. Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI in the module's region, copies it to every additional region, tags it, publishes it when asked, and retires older images past the public and private counts each region keeps.
+  version: 0.2.1
+  description: Adds the module_instance_id output, the id of this module, for references that name the module.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -883,6 +883,18 @@ module:
       placeholder: Select a region
       type: string_array
       values: $values:aws/regions
+    - collapsible: true
+      description: AWS's block on public AMI sharing in the build region and every additional region. It is an account setting and covers every AMI the account owns in those regions. Unset, the module leaves it unchanged, and clearing it keeps the last state.
+      id: image_block_public_access
+      label: Block public access for AMIs
+      type: string
+      values:
+        - description: Allows public sharing, so a deploy with Publish on can grant launch permission all.
+          label: unblocked
+          value: unblocked
+        - description: Blocks new public sharing. Images that are already public stay public.
+          label: block-new-sharing
+          value: block-new-sharing
     - id: section_retention
       label: Retention
       type: section
@@ -919,11 +931,14 @@ module:
         ami_tags: << module.input.ami_tags || {} >>
         components: << module.input.components || [] >>
         description: << module.input.description || nil >>
+        distribution_regions: << module.input.distribution_regions || [] >>
+        image_block_public_access: << module.input.image_block_public_access || nil >>
         instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
         instance_policy_json: << module.input.instance_policy_json || nil >>
         instance_types: << module.input.instance_types >>
         log_bucket: << module.input.log_bucket || nil >>
         log_prefix: << module.input.log_prefix >>
+        module_instance_id: << module.id >>
         name: << module.input.name >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
         parent_image_lookup: >-
@@ -1069,7 +1084,7 @@ module:
 
     ## Public images
 
-    New AWS accounts block public AMI sharing in every region, and a deploy with Publish on fails in a region that still blocks it. Turning the block off is a change to the account rather than to one image: it covers every image the account owns in that region. Turn it off per region with `aws ec2 disable-image-block-public-access --region <region>`.
+    New AWS accounts block public AMI sharing in every region, and a deploy with Publish on fails in a region that still blocks it. Turning the block off is a change to the account rather than to one image: it covers every image the account owns in that region. Set Block public access for AMIs to `unblocked` to turn it off in the build region and every additional region, or turn it off per region with `aws ec2 disable-image-block-public-access --region <region>`. Set it to `block-new-sharing` to turn the block back on. Clearing the setting or deleting the module leaves each region's block as it last was.
 
     A public image cannot be backed by an encrypted snapshot. Publish images built on an unencrypted parent image, in regions where EBS encryption by default is off.
 
