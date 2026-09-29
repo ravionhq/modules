@@ -81,7 +81,7 @@ variable "aws_load_balancer_controller_enabled" {
 
 variable "aws_load_balancer_controller_chart_version" {
   type        = string
-  description = "Version of the aws-load-balancer-controller Helm chart to install. The bundled CRD chart matches the default; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
+  description = "Version of the aws-load-balancer-controller Helm chart to install. CRDs are upgraded from the same version and retained on uninstall; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
   default     = "3.5.0"
   nullable    = false
 

@@ -22,11 +22,25 @@ locals {
   )
 }
 
-# CRDs ship from a local chart because Helm never upgrades a chart's crds/
-# directory, which would leave an upgraded controller on the CRDs of whichever
-# version first installed it. The chart is a verbatim copy of the upstream
-# crds/crds.yaml for the default controller version. take_ownership adopts CRDs
-# an earlier controller install created outside any release.
+# Read CRDs from the selected upstream chart, including version overrides.
+# Rendering is client-only; it does not install anything or contact Kubernetes.
+data "helm_template" "lb_controller" {
+  count = local.lb_controller_install ? 1 : 0
+
+  name       = "aws-load-balancer-controller"
+  namespace  = var.aws_load_balancer_controller_namespace
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  version    = var.aws_load_balancer_controller_chart_version
+
+  include_crds = true
+  values       = [yamlencode({ clusterName = var.cluster_name })]
+}
+
+# Helm never upgrades a chart's crds/ directory. This wrapper installs the
+# selected chart's CRDs as templates with helm.sh/resource-policy: keep, so
+# upgrades work but disabling/destroying the add-on preserves workload bindings.
+# take_ownership adopts CRDs created by an earlier controller installation.
 resource "helm_release" "lb_controller_crds" {
   count = local.lb_controller_install ? 1 : 0
 
@@ -37,6 +51,8 @@ resource "helm_release" "lb_controller_crds" {
   create_namespace = true
   upgrade_install  = true
   take_ownership   = true
+
+  values = [yamlencode({ crds = data.helm_template.lb_controller[0].crds })]
 }
 
 resource "helm_release" "lb_controller" {
