@@ -926,6 +926,9 @@ describe("compiler", () => {
     assert.equal(findInput(inputs, "max_capacity").label, "Maximum instances");
     assert.equal(getTerraformVariable(compiled.module, "min_size"), "<< module.input.min_capacity >>");
     assert.equal(getTerraformVariable(compiled.module, "max_size"), "<< module.input.max_capacity >>");
+    assert.equal(inputs.some((input) => input.id === "autoscaling_group_generated_name_enabled"), false);
+    assert.equal(getTerraformVariable(compiled.module, "autoscaling_group_generated_name_enabled"), undefined);
+    assert.equal(getTerraformVariable(compiled.module, "...overrides"), "<< module.input.advanced_terraform_variables >>");
 
     const imageRef = findInput(getDeployInputs(compiled.module), "image_ref");
     assert.deepEqual(imageRef.patterns, [
@@ -1088,6 +1091,24 @@ describe("compiler", () => {
         "Repository containing the application source for Dockerfile or Railpack builds.",
         `${definition.type} should include shared Git source guidance`,
       );
+      const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
+      assert.deepEqual(
+        JSON.parse(assertString(buildEnvironmentVariables.placeholder)),
+        {
+          NODE_ENV: "production",
+          API_URL: { from_parameter_store: "my-secret" },
+          NPM_TOKEN: { from_secrets_manager: "arn:..." },
+        },
+        `${definition.type} should demonstrate the supported build secret reference keys`,
+      );
+      if (definition.type === "rvn-ecs-web") {
+        const build = getModuleBuild(definition.module);
+        assert.equal(build.environment_variables, "<< module.input.build_environment_variables >>");
+        assert.match(
+          assertString(build.builder),
+          /inject_env_variables_in_dockerfile:\s+module\.input\.dockerfile_environment_variable_injection_enabled/,
+        );
+      }
 
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
