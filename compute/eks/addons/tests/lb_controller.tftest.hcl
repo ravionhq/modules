@@ -71,6 +71,10 @@ run "adopt_existing_crds_before_upgrading_the_controller" {
     condition     = tolist(yamldecode(helm_release.lb_controller_crds[0].values[0]).crds) == data.helm_template.lb_controller[0].crds
     error_message = "The CRD wrapper must receive the upstream CRD files, not a fixed bundled version."
   }
+  assert {
+    condition     = helm_release.lb_controller_crds[0].version == yamldecode(file("charts/aws-load-balancer-controller-crds/Chart.yaml")).version
+    error_message = "The CRD release must pin the wrapper chart version so plans pick up wrapper version bumps."
+  }
 }
 
 run "custom_version_pin_also_selects_its_crds" {
