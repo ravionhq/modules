@@ -404,6 +404,18 @@ describe("compiler", () => {
     );
   });
 
+  it("enables Metrics Server on managed EKS clusters unless advanced Terraform variables disable it", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+    assert.equal(inputs.some((input) => input.id === "metrics_server_enabled"), false);
+    assert.equal(inputs.some((input) => input.id === "metrics_server_chart_version"), false);
+    assert.equal(getTerraformVariable(compiled.module, "metrics_server_enabled"), true);
+    assert.equal(getTerraformVariable(compiled.module, "metrics_server_chart_version"), undefined);
+    assert.equal(getTerraformVariable(compiled.module, "...overrides"), "<< module.input.advanced_terraform_variables >>");
+  });
+
   it("compiles concise EKS add-on guidance and input constraints", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
