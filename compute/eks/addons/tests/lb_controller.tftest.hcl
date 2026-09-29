@@ -64,6 +64,10 @@ run "adopt_existing_crds_before_upgrading_the_controller" {
     error_message = "CRDs must come from the exact same upstream chart and version as the controller."
   }
   assert {
+    condition     = data.helm_template.lb_controller[0].include_crds
+    error_message = "The upstream chart render must explicitly include CRDs."
+  }
+  assert {
     condition     = tolist(yamldecode(helm_release.lb_controller_crds[0].values[0]).crds) == data.helm_template.lb_controller[0].crds
     error_message = "The CRD wrapper must receive the upstream CRD files, not a fixed bundled version."
   }

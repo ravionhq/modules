@@ -33,7 +33,8 @@ data "helm_template" "lb_controller" {
   chart      = "aws-load-balancer-controller"
   version    = var.aws_load_balancer_controller_chart_version
 
-  values = [yamlencode({ clusterName = var.cluster_name })]
+  include_crds = true
+  values       = [yamlencode({ clusterName = var.cluster_name })]
 }
 
 # Helm never upgrades a chart's crds/ directory. This wrapper installs the
