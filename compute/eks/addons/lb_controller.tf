@@ -47,6 +47,10 @@ resource "helm_release" "lb_controller_crds" {
   name      = "aws-load-balancer-controller-crds"
   namespace = var.aws_load_balancer_controller_namespace
   chart     = "${path.module}/charts/aws-load-balancer-controller-crds"
+  # The Helm provider does not read a local chart's version at plan time, so a
+  # wrapper version bump planned the old version and failed the apply with an
+  # inconsistent result. Pin it to Chart.yaml so the plan sees the bump.
+  version = yamldecode(file("${path.module}/charts/aws-load-balancer-controller-crds/Chart.yaml")).version
 
   create_namespace = true
   upgrade_install  = true

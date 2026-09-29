@@ -4,10 +4,10 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.13.1
+  version: 0.13.2
   description: >-
-    Preserve load balancer workload bindings when disabling or removing the controller, and keep its CRDs
-    aligned with the selected controller chart version, including custom version pins.
+    Prevent applies from failing with an inconsistent result when the load balancer controller CRDs are
+    upgraded.
 module:
   inputs:
     - id: cluster
