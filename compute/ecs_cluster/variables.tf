@@ -235,36 +235,36 @@ variable "ec2_key_name" {
   default     = null
 }
 
-variable "ec2_min_size" {
+variable "ec2_min_instances" {
   type        = number
-  description = "The minimum number of EC2 instances in the Auto Scaling Group."
+  description = "Minimum number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count."
   default     = 0
 
   validation {
-    condition     = var.ec2_min_size >= 0
-    error_message = "The ec2_min_size must be 0 or greater."
+    condition     = var.ec2_min_instances >= 0
+    error_message = "The ec2_min_instances must be 0 or greater."
   }
 }
 
-variable "ec2_max_size" {
+variable "ec2_max_instances" {
   type        = number
-  description = "The maximum number of EC2 instances in the Auto Scaling Group."
+  description = "Maximum number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count."
   default     = 10
 
   validation {
-    condition     = var.ec2_max_size >= 1
-    error_message = "The ec2_max_size must be at least 1."
+    condition     = var.ec2_max_instances >= 1
+    error_message = "The ec2_max_instances must be at least 1."
   }
 }
 
-variable "ec2_desired_capacity" {
+variable "ec2_desired_instances" {
   type        = number
-  description = "The desired number of EC2 instances in the Auto Scaling Group."
+  description = "Desired number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count."
   default     = 1
 
   validation {
-    condition     = var.ec2_desired_capacity >= 0
-    error_message = "The ec2_desired_capacity must be 0 or greater."
+    condition     = var.ec2_desired_instances >= 0
+    error_message = "The ec2_desired_instances must be 0 or greater."
   }
 }
 
