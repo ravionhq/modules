@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.7.2
-  description: Clarifies that build environment variables are only available during the build.
+  version: 1.7.3
+  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   inputs:
     - id: section_cluster

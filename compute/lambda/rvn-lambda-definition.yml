@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.2.1
-  description: Clarifies that build environment variables are only available during the build.
+  version: 1.2.2
+  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

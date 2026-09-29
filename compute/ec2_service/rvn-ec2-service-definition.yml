@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 1.8.0
-  description: Allow advanced EC2 services to avoid group name collisions without changing existing groups on upgrade.
+  version: 1.8.1
+  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   inputs:
     - id: network
