@@ -895,6 +895,9 @@ describe("compiler", () => {
     assert.equal(findInput(inputs, "max_capacity").label, "Maximum instances");
     assert.equal(getTerraformVariable(compiled.module, "min_size"), "<< module.input.min_capacity >>");
     assert.equal(getTerraformVariable(compiled.module, "max_size"), "<< module.input.max_capacity >>");
+    assert.equal(inputs.some((input) => input.id === "autoscaling_group_generated_name_enabled"), false);
+    assert.equal(getTerraformVariable(compiled.module, "autoscaling_group_generated_name_enabled"), undefined);
+    assert.equal(getTerraformVariable(compiled.module, "...overrides"), "<< module.input.advanced_terraform_variables >>");
 
     const imageRef = findInput(getDeployInputs(compiled.module), "image_ref");
     assert.deepEqual(imageRef.patterns, [

@@ -61,6 +61,14 @@ jobs:
           tofu -chdir=compute/eks init -backend=false
           tofu -chdir=compute/eks test -filter=tests/node_group_scaling.tftest.hcl
 
+      - name: Test EC2 Auto Scaling Group naming
+        run: |
+          tofu -chdir=compute/autoscaling init -backend=false
+          tofu -chdir=compute/autoscaling test -filter=tests/group_naming.tftest.hcl
+          bash compute/autoscaling/tests/check_group_replacement.sh
+          tofu -chdir=compute/ec2_service init -backend=false
+          tofu -chdir=compute/ec2_service test -filter=tests/deploy_process_and_logs.tftest.hcl
+
       - name: Lint modules
         run: tflint --recursive
 
