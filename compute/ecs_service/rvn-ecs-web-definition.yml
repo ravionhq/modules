@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.7.3
-  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
+  version: 1.8.0
+  description: Add a Requests per task target autoscaling input that tracks ALBRequestCountPerTarget and a Stop timeout (secs) input so the app container's SIGTERM-to-SIGKILL grace period is configurable instead of fixed at 30 secs.
 module:
   inputs:
     - id: section_cluster
@@ -307,6 +307,15 @@ module:
         field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-capacity-inputs.yml
     - $include: ../../partials/inputs/ecs-service-autoscaling-inputs.yml
+    - id: request_count_target_value
+      label: Requests per task target
+      type: number
+      description: Target average number of load balancer requests per task per minute (ALBRequestCountPerTarget). Applies only with the Rolling deployment strategy, because blue/green, linear, and canary deployments move production traffic between target groups. Leave blank to disable request-count autoscaling.
+      collapsible: true
+      min: 1
+      required: false
+      show_when:
+        auto_scaling_enabled: true
     - $template: ../../partials/templates/ecs-service-runtime-env-inputs.yml
       with:
         environment_variables_description: Runtime environment variables passed to the app container. PORT is added automatically from the container port setting.
@@ -335,7 +344,14 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: >-
+                    ...<< module.input.request_count_target_value != nil && module.input.deployment_strategy == "rolling" ?
+                    [{policy_name: "request_count", predefined_metric: "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
+                    scale_in_cooldown: module.input.scale_in_cooldown, scale_out_cooldown:
+                    module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
+                    >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
                 cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
@@ -464,7 +480,7 @@ module:
         "protocol": "tcp"}], "readonly_root_filesystem": false, "repository_credentials":
         (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -501,7 +517,7 @@ module:
         "container_port": (module.input.container_port), "protocol": "tcp"}], "readonly_root_filesystem":
         false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
-        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars
+        (module.input.secrets), "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? module.input.sidecars
         : []) >>
   ui:
     logs:
@@ -708,6 +724,7 @@ module:
     | Desired tasks            | 1       | Running tasks when autoscaling is disabled     |
     | CPU target (%)           | 70      | Average CPU utilization target                 |
     | Memory target (%)        | 80      | Average memory utilization target              |
+    | Requests per task target | blank   | Average ALB requests per task per minute (Rolling deployments only) |
     | Scale-in cooldown (secs) | 300     | Delay before another scale-in action           |
     | Scale-out cooldown (secs)| 300     | Delay before another scale-out action          |
     | Scale-in disabled        | false   | Prevents autoscaling from reducing task count  |
@@ -717,6 +734,8 @@ module:
     Use Runtime environment variables for plain container environment values. Ravion also sets PORT from Container port.
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
+
+    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 

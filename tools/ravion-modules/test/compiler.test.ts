@@ -728,6 +728,37 @@ describe("compiler", () => {
     );
   });
 
+  it("wires ECS stop timeout and web request-count autoscaling", async () => {
+    for (const file of ["rvn-ecs-web-definition.yml", "rvn-ecs-worker-definition.yml", "rvn-ecs-nlb-definition.yml"]) {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", file));
+      const stopTimeout = findInput(getModuleInputs(compiled.module), "stop_timeout");
+      assert.equal(stopTimeout.default, 30);
+      assert.equal(stopTimeout.max, 120);
+      assert.equal(stopTimeout.min, 2);
+
+      const serialized = JSON.stringify(compiled.module);
+      if (file !== "rvn-ecs-web-definition.yml") {
+        assert.doesNotMatch(serialized, /request_count_target_value/);
+      }
+      assert.doesNotMatch(serialized, /"stop_timeout\\?": 30\}/);
+      assert.equal(serialized.match(/"stop_timeout\\?": \(module\.input\.stop_timeout != nil \? module\.input\.stop_timeout : 30\)/g)?.length, 2, file);
+    }
+
+    const web = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"));
+    const requestCount = findInput(getModuleInputs(web.module), "request_count_target_value");
+    assert.equal(requestCount.required, false);
+    assert.equal(requestCount.default, undefined);
+    assert.deepEqual(requestCount.show_when, {auto_scaling_enabled: true});
+
+    const autoScaling = assertRecord(getTerraformVariable(web.module, "auto_scaling"), "auto_scaling");
+    const targetTracking = autoScaling.target_tracking;
+    assert.ok(Array.isArray(targetTracking));
+    const requestCountPolicy = targetTracking.find((entry) => typeof entry === "string" && entry.includes("ALBRequestCountPerTarget"));
+    assert.ok(requestCountPolicy, "expected an ALBRequestCountPerTarget policy");
+    assert.match(requestCountPolicy, /^\.\.\.<< module\.input\.request_count_target_value != nil && module\.input\.deployment_strategy == "rolling" \?\s+\[\{policy_name: "request_count"/);
+    assert.match(requestCountPolicy, /: \[\] >>$/);
+  });
+
   it("gates the Lambda ECR repository on build source and seeds image-registry creates from an initial ref", async () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "compute", "lambda", "rvn-lambda-definition.yml"));
     const inputs = getModuleInputs(compiled.module);
