@@ -101,6 +101,13 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     definitionTypes: ["rvn-cloudfront"],
   },
   {
+    givenId: "observability",
+    name: "Observability",
+    description: "For collecting traces and metrics from services and sending them to a monitoring backend.",
+    sortOrder: 125,
+    definitionTypes: ["rvn-aws-otel-collector"],
+  },
+  {
     givenId: "security",
     name: "Security",
     description: "For identity, permissions, encryption keys, and least-privilege access.",

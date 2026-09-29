@@ -1,0 +1,329 @@
+definition:
+  type: rvn-aws-otel-collector
+  name: OpenTelemetry Collector
+  description: Runs an OpenTelemetry collector on ECS Fargate that receives OTLP inside a VPC and sends traces to AWS X-Ray.
+release:
+  version: 0.1.0
+  description: Receive OTLP traces from services in a VPC at one private address and view them in AWS X-Ray, with optional CloudWatch metrics.
+module:
+  inputs:
+    - id: network
+      immutable: true
+      label: VPC network
+      mapped_inputs:
+        - id: section_aws
+          label: AWS account & region
+          type: section
+        - default: << ref.input.aws_account_id >>
+          id: aws_account_id
+          immutable: true
+          label: AWS account
+          type: string
+          values: $values:ravion/aws_accounts
+        - default: << ref.input.aws_region >>
+          description: AWS region the collector runs in and sends traces to.
+          id: aws_region
+          immutable: true
+          label: Region
+          type: string
+          values: $values:aws/regions
+        - collapsible: true
+          default: << ref.input.execution_environment_id >>
+          description: Override the VPC, subnet, and security group for Terraform runners. Must use the same AWS account as selected above.
+          id: execution_environment_id
+          label: Terraform execution environment
+          type: string
+          values: $values:ravion/execution_environments
+        - id: section_vpc
+          label: VPC
+          type: section
+        - default: <<ref.stack.output.vpc_id>>
+          description: Only this VPC resolves the collector's hostname.
+          id: vpc_id
+          immutable: true
+          label: VPC ID
+          placeholder: vpc-0123456789abcdef0
+          required: true
+          type: string
+        - add_button_label: Add private subnet ID
+          default: <<ref.stack.output.private_subnet_ids>>
+          description: Subnets the collector tasks run in. They need a NAT gateway or VPC endpoints to reach X-Ray, CloudWatch Logs, and the image registry.
+          id: subnet_ids
+          immutable: true
+          label: Private subnet IDs
+          placeholder: subnet-0123456789abcdef0
+          required: true
+          type: string_array
+      required: true
+      type: $ref:rvn-aws-network
+    - id: section_collector
+      label: Collector
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Name of the collector's ECS cluster and service. The collector is reachable at otlp.<name>.internal.
+      id: name
+      immutable: true
+      label: Name
+      patterns:
+        - message: 1-54 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,52}[a-z0-9])?$
+      required: true
+      type: string
+    - default: 1
+      description: Run two or more to keep accepting telemetry while a task is replaced or an Availability Zone fails.
+      id: desired_count
+      label: Tasks
+      min: 1
+      required: true
+      type: number
+    - default:
+        memory_gb: 1
+        vcpu: 0.5
+      description: CPU and memory for each collector task. The collector refuses new data once it uses 80% of its memory.
+      fields:
+        - vcpu
+        - memory_gb
+      id: fargate_size
+      label: Task size
+      required: true
+      type: compound
+      values: $values:aws/fargate/sizes?region=<<module.input.aws_region>>&cpuArchitecture=<<module.input.cpu_architecture>>&operatingSystem=linux&capacityProvider=fargate
+    - collapsible: true
+      default: ARM64
+      id: cpu_architecture
+      label: CPU architecture
+      required: true
+      type: string
+      values:
+        - description: Lower cost. The default collector image supports ARM64.
+          label: ARM64 - lower cost
+          value: ARM64
+        - description: Use when a custom collector image is built for x86 only.
+          label: x86_64
+          value: X86_64
+    - collapsible: true
+      default: public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0
+      description: An AWS Distro for OpenTelemetry collector image. Change the tag to upgrade the collector, or point at a mirror of the image.
+      id: image
+      label: Collector image
+      required: true
+      type: string
+    - id: section_access
+      label: Access
+      type: section
+    - add_button_label: Add security group ID
+      description: Security groups of the services that send telemetry. Only their members can reach the collector on ports 4317 (OTLP/gRPC) and 4318 (OTLP/HTTP).
+      id: allowed_security_group_ids
+      label: Allowed security groups
+      patterns:
+        - message: Security group ID must start with sg-.
+          pattern: ^sg-.+
+      placeholder: sg-...
+      type: string_array
+    - id: section_metrics
+      label: Metrics
+      type: section
+    - default: false
+      description: Accept OTLP metrics and publish them to CloudWatch. Every metric your services emit becomes a billed CloudWatch custom metric. While off, the collector rejects metric exports.
+      id: metrics_enabled
+      label: CloudWatch metrics
+      type: boolean
+    - collapsible: true
+      description: CloudWatch namespace for all metrics. Leave blank to name it after each service's service.namespace and service.name resource attributes.
+      id: metrics_namespace
+      label: Metrics namespace
+      placeholder: MyApp
+      show_when:
+        metrics_enabled: true
+      type: string
+    - id: section_logs
+      label: Logs
+      type: section
+    - default: 30
+      description: Applies to the collector's own logs and, when CloudWatch metrics are on, to the metric logs.
+      id: log_retention_days
+      label: Log retention (days)
+      required: true
+      type: number
+      values:
+        - label: Never expire
+          value: 0
+        - label: 1 day
+          value: 1
+        - label: 3 days
+          value: 3
+        - label: 5 days
+          value: 5
+        - label: 7 days
+          value: 7
+        - label: 14 days
+          value: 14
+        - label: 30 days
+          value: 30
+        - label: 60 days
+          value: 60
+        - label: 90 days
+          value: 90
+        - label: 120 days
+          value: 120
+        - label: 150 days
+          value: 150
+        - label: 180 days
+          value: 180
+        - label: 365 days
+          value: 365
+        - label: 400 days
+          value: 400
+        - label: 545 days
+          value: 545
+        - label: 731 days
+          value: 731
+        - label: 1096 days
+          value: 1096
+        - label: 1827 days
+          value: 1827
+        - label: 2192 days
+          value: 2192
+        - label: 2557 days
+          value: 2557
+        - label: 2922 days
+          value: 2922
+        - label: 3288 days
+          value: 3288
+        - label: 3653 days
+          value: 3653
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: monitoring/otel_collector
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        allowed_security_group_ids: << module.input.allowed_security_group_ids >>
+        cpu_architecture: << module.input.cpu_architecture >>
+        desired_count: << module.input.desired_count >>
+        image: << module.input.image >>
+        log_retention_days: << module.input.log_retention_days >>
+        metrics_enabled: << module.input.metrics_enabled >>
+        metrics_namespace: << module.input.metrics_namespace >>
+        name: << module.input.name >>
+        region: << module.input.aws_region >>
+        subnet_ids: << module.input.subnet_ids >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        task_cpu: '<< module.input.fargate_size != nil ? int(float(module.input.fargate_size.vcpu) * 1024) : 512 >>'
+        task_memory: '<< module.input.fargate_size != nil ? int(float(module.input.fargate_size.memory_gb) * 1024) : 1024 >>'
+        vpc_id: << module.input.vpc_id >>
+  ui:
+    logs:
+      - id: collector_logs
+        name: Collector logs
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << stack.output.region >>
+          log_group: << stack.output.log_group_name >>
+          log_stream_prefix: << stack.output.log_stream_prefix >>
+    metrics:
+      - id: cpu_utilization
+        name: CPU utilization
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          dimensions:
+            ClusterName: << stack.output.cluster_name >>
+            ServiceName: << stack.output.service_name >>
+          name: CPUUtilization
+          namespace: AWS/ECS
+          region: << stack.output.region >>
+          statistic: Average
+      - id: memory_utilization
+        name: Memory utilization
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          dimensions:
+            ClusterName: << stack.output.cluster_name >>
+            ServiceName: << stack.output.service_name >>
+          name: MemoryUtilization
+          namespace: AWS/ECS
+          region: << stack.output.region >>
+          statistic: Average
+  readme: |-
+    Runs an OpenTelemetry collector on ECS Fargate that receives OTLP inside a VPC and sends traces to AWS X-Ray.
+
+    ## Overview
+
+    Services instrumented with OpenTelemetry export traces over OTLP to a collector, which batches them and forwards them to a tracing backend. This module runs the [AWS Distro for OpenTelemetry](https://aws-otel.github.io/) collector as an ECS service on Fargate in a selected Ravion VPC network, and sends every trace it receives to AWS X-Ray. Traces show up in the X-Ray and CloudWatch trace views without running a tracing backend of your own.
+
+    The collector gets a stable private hostname, `otlp.<name>.internal`, that only the selected VPC can resolve. Services point their OTLP exporter at it and keep working while collector tasks are replaced.
+
+    Terraform source: [ravionhq/modules/monitoring/otel_collector](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/otel_collector)
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Tracing for ECS, EKS, and EC2 services | One collector per VPC receives OTLP from every service, so no service runs a sidecar. |
+    | X-Ray without the X-Ray SDK | Services keep the vendor-neutral OpenTelemetry SDK and W3C trace context. The collector translates spans to X-Ray segments. |
+    | CloudWatch metrics from OpenTelemetry | Turn on CloudWatch metrics to publish the same services' OTLP metrics as CloudWatch custom metrics. |
+
+    ## Sending telemetry
+
+    After the first deploy, the module outputs the collector's endpoints:
+
+    | Output | Value | Use |
+    | --- | --- | --- |
+    | `otlp_grpc_endpoint` | `http://otlp.<name>.internal:4317` | `OTEL_EXPORTER_OTLP_ENDPOINT` with `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` |
+    | `otlp_http_endpoint` | `http://otlp.<name>.internal:4318` | `OTEL_EXPORTER_OTLP_ENDPOINT` with `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` |
+    | `hostname` | `otlp.<name>.internal` | Exporters configured with a host and port |
+
+    The collector accepts plain-text OTLP inside the VPC. Traffic never leaves the VPC on the way to the collector, and the collector reaches X-Ray over HTTPS.
+
+    Trace IDs do not need an X-Ray timestamp prefix. The collector accepts the random W3C trace IDs that OpenTelemetry SDKs generate by default.
+
+    ## Networking and access
+
+    Select a VPC network first. Ravion maps its AWS account, region, VPC ID, and private subnet IDs into this module. The collector tasks run in those private subnets without public IP addresses, so the subnets need a NAT gateway or VPC endpoints for X-Ray, CloudWatch Logs, and Amazon ECR Public.
+
+    The collector's security group accepts OTLP on ports 4317 and 4318 only from the allowed security groups. Add the security group of every service that sends telemetry. Nothing else can reach the collector, and it is never exposed to the internet. Its only outbound traffic is HTTPS.
+
+    ## Metrics
+
+    CloudWatch metrics are off by default, and the collector rejects OTLP metric exports while they are off. Turn them on to publish OTLP metrics to CloudWatch through embedded metric format logs. Every distinct metric and attribute combination becomes a billed CloudWatch custom metric, so check what your services emit before enabling it. Leave the metrics namespace blank to group each service's metrics under its own `service.namespace` and `service.name`.
+
+    ## Configuration
+
+    | Field | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | VPC network | Yes | None | Supplies AWS account, region, VPC ID, and private subnet IDs. |
+    | Name | Yes | Project, environment, and module given IDs | Names the ECS cluster and service. The hostname is `otlp.<name>.internal`. |
+    | Tasks | Yes | 1 | Use two or more for production so the collector keeps accepting telemetry during a task replacement or an Availability Zone failure. |
+    | Task size | Yes | 0.5 vCPU, 1 GB | Fargate CPU and memory for each task. |
+    | CPU architecture | Yes | ARM64 | ARM64 costs less on Fargate. |
+    | Collector image | Yes | AWS Distro for OpenTelemetry collector v0.50.0 | Change the tag to upgrade the collector. |
+    | Allowed security groups | No | None | Security groups allowed to send OTLP. |
+    | CloudWatch metrics | No | false | Publishes OTLP metrics as CloudWatch custom metrics. |
+    | Metrics namespace | No | Derived from each service | Only shown when CloudWatch metrics are on. |
+    | Log retention (days) | Yes | 30 | Applies to the collector's logs and the metric logs. |
+    | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
+    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
+
+    ## Design decisions
+
+    - The collector runs in its own Fargate cluster, so it needs no ECS cluster module and its capacity never competes with application services.
+    - The collector configuration is generated from the module's settings. A setting change deploys a new task definition revision, and a revision the collector cannot start with rolls back to the last one that ran.
+    - The task role can only write to X-Ray and, when CloudWatch metrics are on, to the module's own metric log group.
+    - Each task reports its container health check to AWS Cloud Map, so an unhealthy task drops out of the hostname's DNS records.
+
+    ## Learn more
+
+    - [AWS Distro for OpenTelemetry collector](https://aws-otel.github.io/docs/getting-started/collector)
+    - [Sending traces to X-Ray with OpenTelemetry](https://docs.aws.amazon.com/xray/latest/devguide/xray-instrumenting-your-app.html)
+    - [OTLP exporter configuration](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/)
+    - [CloudWatch embedded metric format](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/otel_collector)
