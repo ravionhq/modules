@@ -26,10 +26,6 @@ resource "aws_service_discovery_service" "this" {
     }
   }
 
-  # ECS reports each task's container health check result to Cloud Map, so an
-  # unhealthy task drops out of DNS.
-  health_check_custom_config {}
-
   # ECS deregisters tasks asynchronously; without this a destroy can race it.
   force_destroy = true
 

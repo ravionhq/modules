@@ -9,7 +9,7 @@ Runs the [AWS Distro for OpenTelemetry](https://aws-otel.github.io/) collector a
 - Optional metrics pipeline (`metrics_enabled`) to the `awsemf` exporter, off by default.
 - A least-privilege task role: `xray:PutTraceSegments` and `xray:PutTelemetryRecords`, plus stream creation and writes to the module's own metric log group while metrics are enabled.
 - Collector configuration rendered from `templates/collector.yaml.tftpl` and passed through `AOT_CONFIG_CONTENT`. A configuration change is a new task definition revision.
-- A container health check through the image's `/healthcheck` binary. Cloud Map drops unhealthy tasks from DNS, and the deployment circuit breaker rolls back a revision the collector cannot start with.
+- A container health check through the image's `/healthcheck` binary. ECS replaces a task that fails it, and a task's DNS record is removed when the task stops. The deployment circuit breaker rolls back a revision the collector cannot start with.
 - A dedicated Fargate cluster, and a CloudWatch log group for the collector's own logs with configurable retention.
 
 ## Usage

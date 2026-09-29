@@ -318,7 +318,7 @@ module:
     - The collector runs in its own Fargate cluster, so it needs no ECS cluster module and its capacity never competes with application services.
     - The collector configuration is generated from the module's settings. A setting change deploys a new task definition revision, and a revision the collector cannot start with rolls back to the last one that ran.
     - The task role can only write to X-Ray and, when CloudWatch metrics are on, to the module's own metric log group.
-    - Each task reports its container health check to AWS Cloud Map, so an unhealthy task drops out of the hostname's DNS records.
+    - ECS adds each running task to the hostname's DNS records and removes the record when the task stops. A task that fails its container health check is stopped and replaced.
 
     ## Learn more
 
