@@ -23,7 +23,7 @@ module:
       type: section
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
-        name_description: Name of the Helm release. Charts usually prefix the Kubernetes objects they create with it.
+        name_description: Charts usually prefix the Kubernetes objects they create with this name.
     - id: section_chart
       label: Chart
       type: section
@@ -33,16 +33,16 @@ module:
       required: true
       default: http
       values:
-        - description: A classic Helm repository served over HTTP(S), the kind added with helm repo add
+        - description: Chart index served over HTTPS, as with helm repo add
           label: Helm repository
           value: http
-        - description: A chart published to an OCI registry, such as ECR, GHCR or Docker Hub
+        - description: Chart stored in a container registry such as ECR, GHCR or Docker Hub
           label: OCI registry
           value: oci
     - id: chart_repository_url
       label: Repository URL
       type: string
-      description: HTTPS URL of the Helm repository, the same URL you would pass to helm repo add. HTTPS protects private repository credentials in transit.
+      description: HTTPS protects private repository credentials in transit.
       placeholder: https://nats-io.github.io/k8s/helm/charts/
       required: true
       show_when:
@@ -53,7 +53,7 @@ module:
     - id: chart_name
       label: Chart name
       type: string
-      description: Name of the chart within the repository.
+      description: Omit the repository prefix (nats, not nats/nats).
       placeholder: nats
       required: true
       show_when:
@@ -64,7 +64,7 @@ module:
     - id: chart_url
       label: Chart URL
       type: string
-      description: Full OCI reference of the chart, without a version tag.
+      description: Include the oci:// prefix; omit the version tag.
       placeholder: oci://registry-1.docker.io/bitnamicharts/redis
       required: true
       show_when:
@@ -75,21 +75,13 @@ module:
     - id: chart_version
       label: Chart version
       type: string
-      description: >-
-        Version of the Helm chart to install. This is the chart's own version, not the version of the
-        app it installs. To list versions, run helm search repo <repo>/<chart> --versions for a Helm
-        repository, or helm show chart <chart URL> for an OCI registry. You can also look the chart
-        up on artifacthub.io. Pin an exact version so that deploys are reproducible. If you leave it
-        blank, each deploy installs whatever the repository marks as latest.
+      description: Pin the chart version (not appVersion) for repeatable deploys. Blank uses the latest version on each deploy.
       placeholder: 2.15.0
       required: false
     - id: chart_registry_credentials
       label: Registry credentials
       type: object
-      description: >-
-        Credentials for a private Helm repository or OCI registry, as username and password references
-        to Parameter Store or Secrets Manager. Ravion resolves them on the deploy runner and never
-        stores their values. Leave blank for public charts.
+      description: Username and password references in Parameter Store or Secrets Manager, resolved on the deploy runner. Leave blank for public sources.
       collapsible: true
       required: false
       placeholder: |-
@@ -110,10 +102,7 @@ module:
     - id: values
       label: Values
       type: object
-      description: >-
-        Helm values for the chart, written as JSON. This is the same document you would pass with
-        --values, merged over the chart's defaults. Any value the chart supports can be set here,
-        including nested keys and lists. The top-level key ravion is reserved.
+      description: JSON merged over the chart's defaults. The top-level ravion key is reserved; do not include secrets because Helm stores values in the release.
       required: false
       default: {}
       placeholder: |-
@@ -134,18 +123,12 @@ module:
     - id: pod_identity_role_creation_enabled
       label: Create IAM role
       type: boolean
-      description: >-
-        Create an IAM role and bind it through EKS Pod Identity to a ServiceAccount the chart creates.
-        The AWS SDK in those pods then gets short-lived credentials for the role without any keys.
-        Leave this off if the chart does not call AWS APIs.
+      description: Gives chart pods short-lived AWS credentials through EKS Pod Identity. Requires the pod-identity-agent add-on; leave off if the chart does not call AWS APIs.
       default: false
     - id: pod_identity_service_account_name
       label: ServiceAccount name
       type: string
-      description: >-
-        Name of the ServiceAccount the chart creates in the release namespace. The role is bound to
-        this ServiceAccount. Leave blank to use the release name, which many charts use by default.
-        Check the chart's serviceAccount.name value to be sure.
+      description: Must match the chart's ServiceAccount (often serviceAccount.name). Blank uses the release name.
       required: false
       show_when:
         pod_identity_role_creation_enabled: true
@@ -155,7 +138,7 @@ module:
     - id: pod_identity_role_name
       label: IAM role name
       type: string
-      description: Name of the IAM role. Leave blank to use <release name>-task. IAM role names must be unique within an account.
+      description: Blank uses <release name>-task. Must be unique within the AWS account.
       collapsible: true
       required: false
       show_when:
@@ -166,7 +149,7 @@ module:
     - id: pod_identity_managed_policy_arns
       label: IAM policy ARNs
       type: string_array
-      description: Managed IAM policy ARNs to attach to the role.
+      description: Attached to the generated Pod Identity role.
       add_button_label: Add policy ARN
       placeholder: arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
       collapsible: true
@@ -177,7 +160,7 @@ module:
     - id: pod_identity_inline_policies
       label: IAM inline policies
       type: object
-      description: Inline IAM policy documents to attach to the role, keyed by policy name.
+      description: Keyed by policy name and attached to the generated role.
       collapsible: true
       required: false
       show_when:

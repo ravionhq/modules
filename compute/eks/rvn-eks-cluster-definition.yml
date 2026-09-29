@@ -91,7 +91,7 @@ module:
       type: string
       values: $values:aws/eks-versions?region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
     - default: true
-      description: Prevent the cluster from being deleted via the AWS API, and fail any plan that would destroy or replace the cluster before anything is applied. Must be turned off before this module can be destroyed.
+      description: Destroy and replacement plans fail until this is turned off.
       id: deletion_protection_enabled
       label: Deletion protection
       type: boolean
@@ -238,7 +238,7 @@ module:
       item_title:
         template: "{key}"
       key:
-        description: Unique EKS managed node group name. EKS names the group with this name plus a generated suffix, so the group can be replaced without downtime.
+        description: EKS appends a suffix so replacements can start before the old group is removed.
         label: Node group name
         patterns:
           - message: 1-36 letters, numbers, hyphens, and underscores. Start with a letter or number.

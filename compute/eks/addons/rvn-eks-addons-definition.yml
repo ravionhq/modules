@@ -81,10 +81,7 @@ module:
           type: string_array
         - collapsible: true
           default: << ref.input.system_node_min_size >>
-          description: >-
-            Minimum size of the cluster's system node group. Karpenter's controller and the Ravion Operator's HA
-            coordinators run one per system node, so they are scaled down to fit: with one system node, one of
-            each runs without high availability. Raise the cluster's minimum to 2 or more for high availability.
+          description: Karpenter and Operator replicas scale down to fit. One system node runs one of each without high availability; use 2 or more for HA.
           id: system_node_count
           label: System nodes
           min: 0
@@ -569,17 +566,14 @@ module:
         ebs_csi_driver_enabled: true
       type: string
     - default: true
-      description: Create an encrypted gp3 StorageClass named gp3 with volume expansion allowed, and make it the cluster default. Volumes that name no StorageClass use it.
+      description: Encrypts volumes and allows expansion. Claims without an explicit class use gp3; installation fails if gp3 is managed elsewhere.
       id: ebs_default_storage_class_enabled
       label: Default gp3 storage class
       show_when:
         ebs_csi_driver_enabled: true
       type: boolean
     - default: true
-      description: >-
-        Grow StatefulSet volumes online when a deploy raises their size. Kubernetes normally rejects
-        that change and the deploy fails. With this on, the deploy goes through and the existing volumes
-        grow while their pods keep running. Needs Kubernetes 1.36 or newer.
+      description: Allows larger claims without restarting pods when templates explicitly name the managed gp3 class. Other classes still fail. Requires Kubernetes 1.36+.
       id: statefulset_volume_expansion_enabled
       label: Online StatefulSet volume growth
       show_when:
