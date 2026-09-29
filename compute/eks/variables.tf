@@ -433,6 +433,25 @@ variable "node_groups" {
 # Post-compute Add-ons
 ################################################################################
 
+variable "metrics_server_enabled" {
+  type        = bool
+  description = "Install the AWS-managed EKS Metrics Server community add-on for HPAs and kubectl top. Enabled by default. Set false if another manager already installs Metrics Server, or while removing an existing Helm release before migration."
+  default     = true
+  nullable    = false
+}
+
+variable "metrics_server_addon_version" {
+  type        = string
+  description = "Pinned version for the metrics-server EKS community add-on. When null, EKS selects a compatible version on creation; updates require an explicit version change."
+  default     = null
+}
+
+variable "metrics_server_addon_configuration_values" {
+  type        = string
+  description = "JSON string of EKS add-on configuration overrides for metrics-server."
+  default     = null
+}
+
 variable "coredns_addon_version" {
   type        = string
   description = "Pinned version for the coredns add-on. When null, AWS resolves the most recent compatible version."

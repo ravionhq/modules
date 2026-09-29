@@ -68,6 +68,26 @@ run "coredns_spread_across_zones_by_default" {
   }
 }
 
+run "metrics_server_enabled_with_default_capacity" {
+  command = plan
+
+  assert {
+    condition     = var.metrics_server_enabled && output.metrics_server_addon_arn != null
+    error_message = "A new EKS cluster must provision Metrics Server alongside CoreDNS after the system node group"
+  }
+}
+
+run "metrics_server_can_be_disabled_for_an_existing_installation" {
+  command = plan
+  variables {
+    metrics_server_enabled = false
+  }
+  assert {
+    condition     = output.metrics_server_addon_arn == null && output.metrics_server_addon_version == null
+    error_message = "The cluster must omit Metrics Server when the user disables it"
+  }
+}
+
 run "explicit_coredns_configuration_wins" {
   command = plan
   variables {

@@ -158,36 +158,6 @@ variable "busybox_image" {
 }
 
 ################################################################################
-# Kubernetes Metrics Server (resource metrics API for HPA and kubectl top)
-################################################################################
-
-variable "metrics_server_enabled" {
-  type        = bool
-  description = "Install Kubernetes Metrics Server to provide metrics.k8s.io for kubectl top and CPU/memory HorizontalPodAutoscalers. Independent of metrics_providers, which controls telemetry destinations. Set false if the cluster already runs a Metrics Server."
-  default     = true
-  nullable    = false
-}
-
-variable "metrics_server_chart_version" {
-  type        = string
-  description = "Version of the kubernetes-sigs/metrics-server Helm chart to install."
-  default     = "3.14.0"
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.metrics_server_chart_version))
-    error_message = "The metrics_server_chart_version must be a semantic version like '3.14.0' (no leading 'v')."
-  }
-}
-
-variable "metrics_server_helm_values" {
-  type        = list(string)
-  description = "Extra YAML documents merged into the metrics-server chart values (later entries win), for example node placement or kubelet TLS configuration."
-  default     = []
-  nullable    = false
-}
-
-################################################################################
 # CloudWatch Observability (Container Insights)
 #
 # CloudWatch is a provider in logs_providers / metrics_providers now, not a

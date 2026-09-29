@@ -93,74 +93,12 @@ variables {
 # add-on is left exactly as it was before this feature existed.
 ################################################################################
 
-run "metrics_server_is_on_by_default_independent_of_telemetry_destinations" {
-  command = plan
-
-  assert {
-    condition     = length(helm_release.metrics_server) == 1 && helm_release.metrics_server[0].name == "metrics-server" && helm_release.metrics_server[0].namespace == "kube-system"
-    error_message = "Metrics Server must install in kube-system even with no telemetry destinations"
-  }
-
-  assert {
-    condition     = helm_release.metrics_server[0].repository == "https://kubernetes-sigs.github.io/metrics-server/" && helm_release.metrics_server[0].chart == "metrics-server" && helm_release.metrics_server[0].version == "3.14.0" && !helm_release.metrics_server[0].upgrade_install
-    error_message = "Metrics Server must use the pinned upstream Helm chart"
-  }
-
-  assert {
-    condition     = length(helm_release.otel_collector) == 0 && length(helm_release.kube_state_metrics) == 0 && length(aws_prometheus_workspace.this) == 0
-    error_message = "Metrics Server alone must not install the telemetry pipeline"
-  }
-
-  assert {
-    condition     = output.metrics_server_chart_version == "3.14.0" && output.metrics_server_namespace == "kube-system"
-    error_message = "Metrics Server outputs must reflect the installed release"
-  }
-}
-
-run "metrics_server_version_and_helm_values_can_be_overridden" {
-  command = plan
-
-  variables {
-    metrics_server_chart_version = "3.13.0"
-    metrics_server_helm_values   = ["replicas: 2"]
-    metrics_providers            = ["amp"]
-  }
-
-  assert {
-    condition     = helm_release.metrics_server[0].version == "3.13.0" && helm_release.metrics_server[0].values == tolist(["replicas: 2"])
-    error_message = "Metrics Server chart version and extra values must be configurable"
-  }
-
-  assert {
-    condition     = length(helm_release.otel_collector) == 1
-    error_message = "Installing Metrics Server must not disable the separate telemetry collector"
-  }
-}
-
-run "metrics_server_can_be_disabled" {
-  command = plan
-
-  variables {
-    metrics_server_enabled = false
-  }
-
-  assert {
-    condition     = length(helm_release.metrics_server) == 0 && output.metrics_server_chart_version == null && output.metrics_server_namespace == null
-    error_message = "Explicitly disabling Metrics Server must remove its Helm release and clear its outputs"
-  }
-}
-
 run "metrics_disabled_renders_nothing" {
   command = plan
 
   assert {
     condition     = length(aws_prometheus_workspace.this) == 0
     error_message = "No AMP workspace may be created while metrics_enabled is false"
-  }
-
-  assert {
-    condition     = length(helm_release.metrics_server) == 1 && output.metrics_server_chart_version == "3.14.0"
-    error_message = "Disabling telemetry must not disable the default Kubernetes resource metrics API"
   }
 
   assert {

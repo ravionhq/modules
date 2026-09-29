@@ -10,8 +10,7 @@ release:
     raising a StatefulSet's volume size in a deploy now grows the existing volumes online instead of failing
     the deploy (Kubernetes 1.36+). Both are on by default and can be turned off. Karpenter and the HA Operator
     now fit the cluster's system node group: with a single system node, one controller and one coordinator run
-    instead of an extra replica staying Pending and failing upgrades. Managed clusters now get Kubernetes Metrics
-    Server for resource-based autoscaling and kubectl top, independently of telemetry destinations.
+    instead of an extra replica staying Pending and failing upgrades.
 module:
   inputs:
     - id: cluster
@@ -1123,7 +1122,6 @@ module:
         ebs_csi_addon_version: << module.input.ebs_csi_addon_version >>
         ebs_default_storage_class_enabled: '<< module.input.ebs_default_storage_class_enabled != nil ? module.input.ebs_default_storage_class_enabled : true >>'
         statefulset_volume_expansion_enabled: '<< module.input.statefulset_volume_expansion_enabled != nil ? module.input.statefulset_volume_expansion_enabled : true >>'
-        metrics_server_enabled: true
         # The signal toggle folds into the provider list: off is an empty list, on
         # with nothing chosen is the default the form shows. The module reads the
         # lists and never the toggles.
@@ -1331,7 +1329,6 @@ module:
     | **Load balancer controller** | With load balancers | Installed automatically when any shared load balancer is enabled; registers workload pods into their target groups (TargetGroupBinding) via the AWS Load Balancer Controller Helm chart wired to the cluster module's Pod Identity role. Opt in without shared load balancers via advanced Terraform variables to provision ALBs/NLBs directly from Ingress and LoadBalancer resources |
     | **External Secrets Operator** | On | Reference-only secrets: workloads name a Secrets Manager secret or SSM parameter by ARN, and the operator materializes it into a Kubernetes secret using its own scoped Pod Identity role |
     | **EBS CSI driver** | Off | EBS-backed persistent volumes via the aws-ebs-csi-driver EKS add-on and its Pod Identity role, a default encrypted `gp3` StorageClass, and online growth of StatefulSet volumes |
-    | **Kubernetes Metrics Server** | On | Cluster resource metrics API for CPU/memory HorizontalPodAutoscalers and `kubectl top`; no telemetry destination |
     | **Logs** | On (in-cluster store) | Container output collected on every node and delivered to the destinations you choose - an in-cluster store on S3 by default, plus CloudWatch Logs or a vendor on request |
     | **Metrics** | On (Amazon Managed Prometheus) | Per-container CPU, memory, network, restart and scaling metrics, delivered to the destinations you choose - Amazon Managed Prometheus by default, plus CloudWatch Container Insights or a vendor on request |
     | **Ravion EKS Management** | On | Registers the cluster with the Ravion control plane and installs Ravion Operator, which reports workload and node state outbound over a single WebSocket and can run Ravion's deploys from inside the cluster |
@@ -1339,11 +1336,9 @@ module:
 
     **Zone-local DNS** is on by default and has no form field: the `kube-dns` Service is patched with `trafficDistribution: PreferClose`, so every DNS lookup goes to the CoreDNS pod in the caller's availability zone (the EKS Cluster module spreads those pods across zones). This removes cross-AZ data transfer charges from DNS, the one call every pod makes. It needs Kubernetes 1.31 or later and is switched off with `topology_aware_routing_enabled: false` under **Advanced Terraform variables**, which also clears the field again.
 
-    EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, Kubernetes Metrics Server, both observability pipelines, and the EBS storage defaults (the `gp3` StorageClass and volume growth) additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
+    EBS CSI and the CloudWatch Observability add-on are native EKS add-ons installed purely through the AWS API. Karpenter, the load balancer controller, the External Secrets Operator, Ravion EKS Management, both observability pipelines, and the EBS storage defaults (the `gp3` StorageClass and volume growth) additionally install Helm charts into the cluster, which are the only parts that need Kubernetes API connectivity.
 
     Karpenter's **Interruption queue age alarm** is enabled by default. It monitors the oldest unprocessed event with a 60-second threshold over one minute. Empty queues do not trigger it. Configure **Alert actions** and **Recovery actions** for direct notifications; both default to empty. Standard CloudWatch charges apply.
-
-    **Kubernetes Metrics Server** is installed automatically for CPU/memory HorizontalPodAutoscalers and `kubectl top`. It does not send data to the Ravion Metrics tab, AMP, or CloudWatch; the **Metrics** destinations below are independent. If your cluster already has a Metrics Server, set `metrics_server_enabled=false` in **Advanced Terraform variables** to avoid competing for the single `metrics.k8s.io` API. It runs in `kube-system` with a pinned chart version. A private cluster needs the control plane to reach the Metrics Server pods, and Metrics Server needs to reach kubelets on their node addresses.
 
     ## Logs and metrics destinations
 
@@ -1458,7 +1453,7 @@ module:
     ## Prerequisites
 
     - An **EKS Cluster** module.
-    - When a Helm-installed add-on runs (**Karpenter**, the **External Secrets Operator**, **Ravion EKS Management**, **Kubernetes Metrics Server**, the **EBS CSI driver**'s storage defaults, or any **shared load balancer** - which installs the **load balancer controller**): a **Terraform execution environment** in the cluster VPC for private endpoints. The add-ons pipeline automatically attaches the cluster's **Ravion Runner security group** for each run. The other add-ons need no cluster connectivity.
+    - When a Helm-installed add-on runs (**Karpenter**, the **External Secrets Operator**, **Ravion EKS Management**, the **EBS CSI driver**'s storage defaults, or any **shared load balancer** - which installs the **load balancer controller**): a **Terraform execution environment** in the cluster VPC for private endpoints. The add-ons pipeline automatically attaches the cluster's **Ravion Runner security group** for each run. The other add-ons need no cluster connectivity.
 
     The Helm installs authenticate by assuming the cluster's **Ravion Runner role** (inherited automatically from the cluster reference) — a stable IAM role the EKS Cluster module registers as an access entry with cluster-admin. Per-run pipeline roles never appear in the cluster's access configuration.
 
@@ -1513,7 +1508,6 @@ module:
     - [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) - Ingress and Service load balancing
     - [External Secrets Operator](https://external-secrets.io/) - Referencing AWS secrets from Kubernetes workloads
     - [Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) - Persistent volumes on EKS
-    - [Metrics Server](https://github.com/kubernetes-sigs/metrics-server) - Kubernetes resource metrics for autoscaling and kubectl top
     - [Container Insights](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ContainerInsights.html) - Cluster observability in CloudWatch
     - [CloudWatch Application Signals](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Application-Signals-Enable-EKS.html) - What auto-instrumentation does to a workload
     - [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) - The collector carrying every non-Loki destination

@@ -8,16 +8,24 @@ into a single hosting unit with enforced provisioning order:
 2. **Default capacity node group** (`system_node_group`, using
    `modules/eks_node_group`) — required compute for cluster components, add-ons,
    and workloads without stricter placement
-3. **Post-compute add-ons** (`modules/eks_addons`) — CoreDNS
-   (deadlock without step 2)
+3. **Post-compute add-ons** (`modules/eks_addons`) — CoreDNS and the AWS-managed
+   Metrics Server community add-on (both need step 2)
 4. **Optional Fargate** (`modules/eks_fargate_profile`) — after add-ons are
    healthy
 
 This stack talks only to the AWS API, so it provisions in a single apply with
-no connectivity to the cluster's Kubernetes endpoint. Optional extensions —
-Karpenter autoscaling, the AWS Load Balancer Controller, the External Secrets
-Operator, the EBS CSI driver, and Container Insights — live in
-the separate [`compute/eks/addons`](addons/) stack as selectable add-ons, so
+no connectivity to the cluster's Kubernetes endpoint. Metrics Server is enabled
+by default and provides resource metrics to HPAs and `kubectl top`; it is not
+an observability destination. Set `metrics_server_enabled = false` (in Ravion,
+use **Advanced Terraform variables**) if the cluster already has Metrics Server.
+The EKS community add-on uses port 10251 for its server (including on Fargate),
+and still needs network access to kubelets on port 10250. If a previous
+EKS Add-ons stack installed it through Helm, uninstall that Helm release first
+before enabling the cluster add-on; the two cannot own `metrics.k8s.io` together.
+
+Optional extensions — Karpenter autoscaling, the AWS Load Balancer Controller,
+the External Secrets Operator, the EBS CSI driver, and Container Insights — live
+in the separate [`compute/eks/addons`](addons/) stack as selectable add-ons, so
 clusters only carry what they use.
 
 System and additional managed node groups do not grant Systems Manager access
@@ -161,6 +169,9 @@ for credentials and saved-plan behavior.
 | system_node_group | Default managed node group config. The minimum size is also its initial size. | `object` | `{}` (defaults: name=`system`, 2-10 ON_DEMAND t3.medium) | no |
 | node_groups | Extra node groups keyed by name. Each group's minimum size is also its initial size. | `map(object)` | `{}` | no |
 | coredns_addon_version / coredns_addon_configuration_values | CoreDNS pin / JSON overrides. | `string` | `null` | no |
+| metrics_server_enabled | Install AWS-managed Metrics Server for HPAs and `kubectl top`. | `bool` | `true` | no |
+| metrics_server_addon_version | Pin the EKS community add-on version; null lets EKS choose a compatible version on creation. | `string` | `null` | no |
+| metrics_server_addon_configuration_values | JSON configuration overrides for the Metrics Server EKS add-on. | `string` | `null` | no |
 | topology_aware_routing_enabled | Spread CoreDNS across zones and publish the zone-local routing default for `addons`. | `bool` | `true` | no |
 | fargate_profiles | Fargate profiles keyed by name (`selectors` required). | `map(object)` | `{}` | no |
 
@@ -182,6 +193,7 @@ for credentials and saved-plan behavior.
 | secrets_kms_key_arn | Secrets KMS key (null if disabled). |
 | lb_controller_role_arn | LB Controller Pod Identity role. |
 | topology_aware_routing_enabled | Zone-local routing default (consumed by `addons`). |
+| metrics_server_addon_arn / metrics_server_addon_version | AWS-managed Metrics Server add-on ARN and version; null if disabled. |
 | system_node_group_name / system_node_group_arn | System node group identifiers. The name is `system-<generated suffix>`. |
 | additional_node_group_names | Map of additional node group key -> name. |
 | fargate_profile_names | Map of Fargate profile key -> name. |
@@ -194,8 +206,8 @@ for credentials and saved-plan behavior.
   `trafficDistribution: PreferClose`) needs Kubernetes API access and lives in
   `addons`. An explicit `coredns_addon_configuration_values` replaces the
   spread document rather than merging with it.
-- Ordering is intentional: CoreDNS is a Deployment and hangs `DEGRADED` for
-  ~20 minutes when no compute exists. The composite `depends_on` chain
+- Ordering is intentional: CoreDNS and Metrics Server are Deployments and can
+  hang `DEGRADED` for ~20 minutes when no compute exists. The composite `depends_on` chain
   prevents that deadlock.
 - This module creates no optional add-ons. Karpenter autoscaling, the External
   Secrets Operator, the EBS CSI driver, and Container Insights are selectable

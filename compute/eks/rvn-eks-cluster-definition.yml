@@ -11,6 +11,7 @@ release:
     now fails before anything is applied. Managed node groups are now replaced blue/green, so changing instance types or
     moving onto the hardened launch template brings up new nodes before the old ones are removed. Each node group is
     replaced once on upgrade, with no loss of capacity. Node group names are now limited to 36 characters.
+    Managed clusters now include the Metrics Server EKS add-on for resource-based autoscaling and kubectl top.
 module:
   inputs:
     - id: network
@@ -490,6 +491,7 @@ module:
         public_access_cidrs: << module.input.endpoint_public_access_cidrs || ["0.0.0.0/0"] >>
         ravion_runner_role_creation_enabled: << module.input.ravion_runner_role_creation_enabled >>
         network_policy_enabled: '<< module.input.network_policy_enabled != nil ? module.input.network_policy_enabled : true >>'
+        metrics_server_enabled: true
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>
           capacity_type: << module.input.system_node_capacity_type >>
@@ -604,12 +606,16 @@ module:
 
     1. **Cluster** - control plane, secrets encryption, VPC CNI, kube-proxy, Pod Identity Agent, and the AWS Load Balancer Controller IAM role; optional OIDC provider for IRSA workloads
     2. **Default capacity** - a managed node group for cluster components, add-ons, and workloads without stricter placement
-    3. **CoreDNS** - installed only after compute exists so it starts healthy
+    3. **CoreDNS and Metrics Server** - installed as EKS add-ons only after compute exists so their pods start healthy
     4. **Optional compute** - additional managed node groups and Fargate profiles
 
-    This module talks only to the AWS API, so it provisions in a single apply. Optional extensions - Karpenter autoscaling, the AWS Load Balancer Controller, the EBS CSI driver, and Container Insights - are added by the separate **EKS Add-ons** module, so clusters only carry what they use.
+    This module talks only to the AWS API, so it provisions in a single apply. It installs the Metrics Server EKS community add-on by default for CPU/memory autoscaling and `kubectl top`. Metrics Server is independent of the observability destinations in the separate **EKS Add-ons** module. Optional extensions - Karpenter autoscaling, the AWS Load Balancer Controller, the EBS CSI driver, and Container Insights - are added by that module.
 
     Terraform source: [ravionhq/modules/compute/eks](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/eks)
+
+    **Metrics Server** provides the Kubernetes `metrics.k8s.io` resource metrics API used by CPU/memory HorizontalPodAutoscalers and `kubectl top`. The AWS-managed community add-on is on by default and uses port 10251 for its server to avoid Fargate's port 10250 conflict; it still needs access to kubelets on port 10250. To use an existing Metrics Server instead, set `metrics_server_enabled: false` under **Advanced Terraform variables**. You can also set `metrics_server_addon_version` there to pin a tested EKS add-on version; without a pin, EKS selects a compatible version when the add-on is created, not on every apply.
+
+    **Migration from the earlier Helm release:** If a previous EKS Add-ons module installed Metrics Server through Helm, first apply that stack using a version that still manages the Helm release with `metrics_server_enabled: false`. Confirm the Helm release is removed, then apply this cluster version to install the EKS add-on. Do not install both managers at once; both would claim the same `metrics.k8s.io` API. Existing clusters without the Helm release can upgrade normally.
 
     ## Use cases
 

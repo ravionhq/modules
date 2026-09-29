@@ -337,16 +337,6 @@ output "otel_collector_chart_version" {
   value       = local.otel_metrics_enabled ? helm_release.otel_collector[0].version : null
 }
 
-output "metrics_server_chart_version" {
-  description = "Installed version of the Kubernetes Metrics Server Helm chart (null if disabled)."
-  value       = var.metrics_server_enabled ? helm_release.metrics_server[0].version : null
-}
-
-output "metrics_server_namespace" {
-  description = "Namespace of the Kubernetes Metrics Server (null if disabled)."
-  value       = var.metrics_server_enabled ? helm_release.metrics_server[0].namespace : null
-}
-
 output "kube_state_metrics_chart_version" {
   description = "Installed version of the kube-state-metrics Helm chart (null if not installed)."
   value       = local.kube_state_metrics_install ? helm_release.kube_state_metrics[0].version : null

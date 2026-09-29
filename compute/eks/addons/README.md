@@ -9,7 +9,6 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 | **External Secrets Operator** | `eso_enabled` | `true` | `external-secrets` Helm chart + Pod Identity role scoped to Secrets Manager / Parameter Store reads, plus the cluster-scoped `ravion-aws` and `ravion-aws-parameter-store` `ClusterSecretStore`s |
 | **EBS CSI driver** | `ebs_csi_driver_enabled` | `false` | `aws-ebs-csi-driver` EKS add-on + Pod Identity role, plus the local `charts/ebs-storage`: a default encrypted `gp3` StorageClass with volume expansion (`ebs_default_storage_class_enabled`) and online StatefulSet volume growth (`statefulset_volume_expansion_enabled`, Kubernetes 1.36+). See [EBS storage defaults](#ebs-storage-defaults) |
 | **Workload logs** | `logs_providers` | `["loki"]` | Per destination. `loki`: an S3 bucket with a retention lifecycle rule, a Pod Identity role scoped to it, Loki in single-binary mode, and Grafana Alloy as a collection DaemonSet. `cloudwatch` and every vendor: an OpenTelemetry contrib DaemonSet with one exporter each. `[]` installs nothing |
-| **Kubernetes Metrics Server** | `metrics_server_enabled` | `true` | The `metrics.k8s.io` API for CPU/memory HorizontalPodAutoscalers and `kubectl top`. Installed via a pinned Helm chart in `kube-system`, independently of workload telemetry destinations. Disable if the cluster already runs Metrics Server |
 | **Workload metrics** | `metrics_providers` | `["amp"]` | Per destination. `amp`: an Amazon Managed Prometheus workspace, a Pod Identity role scoped to `aps:RemoteWrite` on it, `kube-state-metrics`, and an OpenTelemetry collector scraping a curated allow-list. Vendors: one more exporter on the same collector. `cloudwatch`: the `amazon-cloudwatch-observability` add-on. `[]` installs nothing |
 | **CloudWatch (Container Insights)** | `cloudwatch` in either provider list | not selected | `amazon-cloudwatch-observability` EKS add-on + Pod Identity role, with **Auto-Monitor off**: the Fluent Bit half only when it is a logs destination, the metrics agent only when it is a metrics destination |
 | **Vendor credentials** | any vendor provider | not selected | One `ExternalSecret` per vendor (local `charts/observability-secrets`), materializing a Secrets Manager secret into a Kubernetes Secret the collectors read as environment variables |
@@ -32,10 +31,6 @@ replacing nodes, unless explicitly included in
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
-
-## Kubernetes Metrics Server
-
-The pinned kubernetes-sigs Metrics Server chart installs by default in `kube-system`, providing resource metrics to the Kubernetes autoscaler and `kubectl top`. It does not send metrics to AMP, CloudWatch or the Ravion dashboard; `metrics_providers` controls those destinations independently. Set `metrics_server_enabled = false` (in Ravion, use **Advanced Terraform variables**) when the cluster already runs a Metrics Server, since only one `v1beta1.metrics.k8s.io` APIService can serve resource metrics. The control plane must reach the Metrics Server pods, and Metrics Server must reach kubelets at their node addresses. Override `metrics_server_chart_version` to pin another chart release or `metrics_server_helm_values` to configure node placement or kubelet connectivity.
 
 ## EBS storage defaults
 
@@ -671,9 +666,6 @@ failed during initialization have no provider resources to migrate.
 | otel_collector_service_account | Collector service account; the Pod Identity association binds to this name. | `string` | `"ravion-otel-collector"` | no |
 | otel_collector_resources | Collector requests and limits. A memory limit is set by default because `memory_limiter` sizes itself against it. | `object` | requests `100m`/`256Mi`, limit `512Mi` | no |
 | otel_collector_helm_values | Extra YAML docs merged into the collector chart values. | `list(string)` | `[]` | no |
-| metrics_server_enabled | Install Kubernetes Metrics Server for HPAs and `kubectl top`, independently of metrics_providers. | `bool` | `true` | no |
-| metrics_server_chart_version | kubernetes-sigs/metrics-server chart version. | `string` | `"3.14.0"` | no |
-| metrics_server_helm_values | Extra YAML docs merged into the metrics-server chart values. | `list(string)` | `[]` | no |
 | kube_state_metrics_enabled | Install kube-state-metrics alongside the collector (the source of every `kube_*` series). | `bool` | `true` | no |
 | kube_state_metrics_chart_version | prometheus-community/kube-state-metrics chart version. | `string` | `"8.5.0"` | no |
 | kube_state_metrics_helm_values | Extra YAML docs merged into the kube-state-metrics chart values. | `list(string)` | `[]` | no |
@@ -775,7 +767,6 @@ All outputs are null when the corresponding add-on is disabled.
 | amp_remote_write_role_arn | Collector Pod Identity role, scoped to `aps:RemoteWrite` on that one workspace. |
 | metrics_namespace | Namespace the metrics components are installed into. |
 | otel_collector_chart_version / kube_state_metrics_chart_version | Installed chart versions for the metrics pipeline. |
-| metrics_server_chart_version / metrics_server_namespace | Installed Metrics Server chart version and namespace; null if disabled. |
 | grafana_role_arn | Role Amazon Managed Grafana assumes to query the AMP workspace. |
 | loki_endpoint | In-cluster base URL of Loki. Reachable only from inside the cluster — it is what Ravion Operator's proxy allowlist names. |
 | loki_namespace | Namespace Loki and Alloy are installed into. |
