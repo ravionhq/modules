@@ -12,6 +12,7 @@ release:
     moving onto the hardened launch template brings up new nodes before the old ones are removed. Each node group is
     replaced once on upgrade, with no loss of capacity. Node group names are now limited to 36 characters.
     Managed clusters now include the Metrics Server EKS add-on for resource-based autoscaling and kubectl top.
+    Requires OpenTofu 1.12 or newer.
 module:
   inputs:
     - id: network
