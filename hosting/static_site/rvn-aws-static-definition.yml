@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.2.1
-  description: Explains that build environment variables reach only the build and that values the build writes into the site are public.
+  version: 1.2.2
+  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
 module:
   build:
     builder: >-

@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.3.1
-  description: Fix managed node group capacity changes when the new minimum exceeds the current desired count or the new maximum is below it. Preserve autoscaler-owned capacity within the configured bounds and update all three scaling values together.
+  version: 0.5.0
+  description: Rename default node count inputs to system_node_min_nodes and system_node_max_nodes to make clear they count EC2 nodes.
 module:
   inputs:
     - id: network
@@ -85,7 +85,7 @@ module:
       type: string
       values: $values:aws/eks-versions?region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
     - default: true
-      description: Prevent the cluster from being deleted via the AWS API. Must be turned off before this module can be destroyed.
+      description: Destroy and replacement plans fail until this is turned off.
       id: deletion_protection_enabled
       label: Deletion protection
       type: boolean
@@ -130,15 +130,19 @@ module:
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
     - collapsible: true
       default: 2
-      description: Minimum nodes in the default managed node group. Set it high enough to run cluster components and leave spare capacity for workloads and rolling node updates.
-      id: system_node_min_size
+      description: Minimum EC2 nodes in the default managed node group. Set it high enough to run cluster components and leave spare capacity for workloads and rolling node updates.
+      id: system_node_min_nodes
+      moved_from:
+        - system_node_min_size
       label: Minimum nodes
       min: 1
       type: number
     - collapsible: true
       default: 4
-      description: Maximum nodes in the default managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
-      id: system_node_max_size
+      description: Maximum EC2 nodes in the default managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
+      id: system_node_max_nodes
+      moved_from:
+        - system_node_max_size
       label: Maximum nodes
       min: 1
       type: number
@@ -232,11 +236,11 @@ module:
       item_title:
         template: "{key}"
       key:
-        description: Unique EKS managed node group name.
+        description: EKS appends a suffix so replacements can start before the old group is removed.
         label: Node group name
         patterns:
-          - message: 1-63 letters, numbers, hyphens, and underscores. Start with a letter or number.
-            pattern: ^[0-9A-Za-z][A-Za-z0-9-_]{0,62}$
+          - message: 1-36 letters, numbers, hyphens, and underscores. Start with a letter or number.
+            pattern: ^[0-9A-Za-z][A-Za-z0-9-_]{0,35}$
         placeholder: applications-spot
       label: Additional node groups
       required: false
@@ -485,11 +489,12 @@ module:
         public_access_cidrs: << module.input.endpoint_public_access_cidrs || ["0.0.0.0/0"] >>
         ravion_runner_role_creation_enabled: << module.input.ravion_runner_role_creation_enabled >>
         network_policy_enabled: '<< module.input.network_policy_enabled != nil ? module.input.network_policy_enabled : true >>'
+        metrics_server_enabled: true
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>
           capacity_type: << module.input.system_node_capacity_type >>
-          min_size: << module.input.system_node_min_size >>
-          max_size: << module.input.system_node_max_size >>
+          min_size: << module.input.system_node_min_nodes >>
+          max_size: << module.input.system_node_max_nodes >>
           disk_size: << module.input.system_node_disk_size >>
         node_groups: << module.input.node_groups || {} >>
         fargate_profiles: << module.input.fargate_profiles || {} >>
@@ -599,12 +604,16 @@ module:
 
     1. **Cluster** - control plane, secrets encryption, VPC CNI, kube-proxy, Pod Identity Agent, and the AWS Load Balancer Controller IAM role; optional OIDC provider for IRSA workloads
     2. **Default capacity** - a managed node group for cluster components, add-ons, and workloads without stricter placement
-    3. **CoreDNS** - installed only after compute exists so it starts healthy
+    3. **CoreDNS and Metrics Server** - installed as EKS add-ons only after compute exists so their pods start healthy
     4. **Optional compute** - additional managed node groups and Fargate profiles
 
-    This module talks only to the AWS API, so it provisions in a single apply. Optional extensions - Karpenter autoscaling, the AWS Load Balancer Controller, the EBS CSI driver, and Container Insights - are added by the separate **EKS Add-ons** module, so clusters only carry what they use.
+    This module talks only to the AWS API, so it provisions in a single apply. It installs the Metrics Server EKS community add-on by default for CPU/memory autoscaling and `kubectl top`. Metrics Server is independent of the observability destinations in the separate **EKS Add-ons** module. Optional extensions - Karpenter autoscaling, the AWS Load Balancer Controller, the EBS CSI driver, and Container Insights - are added by that module.
 
     Terraform source: [ravionhq/modules/compute/eks](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/eks)
+
+    **Metrics Server** provides the Kubernetes `metrics.k8s.io` resource metrics API used by CPU/memory HorizontalPodAutoscalers and `kubectl top`. The AWS-managed community add-on is on by default and uses port 10251 for its server to avoid Fargate's port 10250 conflict; it still needs access to kubelets on port 10250. To use an existing Metrics Server instead, set `metrics_server_enabled: false` under **Advanced Terraform variables**. You can also set `metrics_server_addon_version` there to pin a tested EKS add-on version; without a pin, EKS selects a compatible version when the add-on is created, not on every apply.
+
+    **Migration from the earlier Helm release:** If a previous EKS Add-ons module installed Metrics Server through Helm, first apply that stack using a version that still manages the Helm release with `metrics_server_enabled: false`. Confirm the Helm release is removed, then apply this cluster version to install the EKS add-on. Do not install both managers at once; both would claim the same `metrics.k8s.io` API. Existing clusters without the Helm release can upgrade normally.
 
     ## Use cases
 
@@ -702,7 +711,8 @@ module:
     - **Hardened nodes:** managed nodes launch with an encrypted root volume (AWS-managed key unless you supply one) and IMDSv2 with a hop limit of 1, so pods cannot read the node's instance credentials; workloads get AWS access through Pod Identity instead
     - **NetworkPolicy enforced:** the VPC CNI's network policy agent is on, so the ingress allow-list on EKS Web services actually restricts traffic
     - **Least-privilege access:** Ravion's cluster-admin runner role trusts only Ravion's per-run pipeline runner roles, and the principal that creates the cluster keeps no admin access; people are granted access through explicit access entries
-    - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, preventing accidental destroys
+    - **Deletion protection on:** the cluster cannot be deleted until protection is turned off, and any plan that would destroy or replace the cluster fails before anything is applied, so an upgrade can never take the cluster or its nodes away partway through
+    - **Node groups replaced without downtime:** a change AWS can only make by recreating a node group (instance types, capacity type, AMI type, subnets) brings the new group up before the old one is drained and deleted
     - **Autoscaler-friendly sizing:** Terraform sets the initial node count but never fights an autoscaler over the running count
     - **Pod Identity over IRSA:** add-on IAM roles use EKS Pod Identity associations; creating an IAM OIDC provider for IRSA workloads is opt-in
     - **Zone-local by default:** CoreDNS is spread across availability zones and, together with the EKS Add-ons and workload modules, Service traffic prefers same-zone endpoints, so multi-AZ resilience does not come with cross-AZ data transfer charges on every request

@@ -30,23 +30,29 @@
   required: false
   default: []
 - id: pre_deploy_cpu
-  label: Pre-deploy CPU units
-  type: number
-  description: Optional CPU units for the pre-deploy task. Leave blank to use the app task CPU setting.
+  label: Pre-deploy CPU
+  type: string
+  description: Optional CPU for the pre-deploy task, where 1 is one vCPU. Leave blank to use the app task CPU.
+  placeholder: "0.5"
   collapsible: true
   show_when:
     pre_deploy_enabled: true
-  min: 1
   required: false
+  patterns:
+    - message: Enter a CPU value in vCPU, such as 0.5, 1, or 2.
+      pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
 - id: pre_deploy_memory
-  label: Pre-deploy memory (MiB)
-  type: number
-  description: Optional memory in MiB for the pre-deploy task. Leave blank to use the app task memory setting.
+  label: Pre-deploy memory
+  type: string
+  description: Optional memory for the pre-deploy task, where 1 is 1 GB. Leave blank to use the app task memory.
+  placeholder: "1"
   collapsible: true
   show_when:
     pre_deploy_enabled: true
-  min: 1
   required: false
+  patterns:
+    - message: Enter a memory value in GB, such as 0.5, 1, or 4.
+      pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
 - id: pre_deploy_ephemeral_storage_size_gib
   label: Pre-deploy ephemeral storage (GiB)
   type: number
@@ -94,23 +100,29 @@
   required: false
   default: []
 - id: post_deploy_cpu
-  label: Post-deploy CPU units
-  type: number
-  description: Optional CPU units for the post-deploy task. Leave blank to use the app task CPU setting.
+  label: Post-deploy CPU
+  type: string
+  description: Optional CPU for the post-deploy task, where 1 is one vCPU. Leave blank to use the app task CPU.
+  placeholder: "0.5"
   collapsible: true
   show_when:
     post_deploy_enabled: true
-  min: 1
   required: false
+  patterns:
+    - message: Enter a CPU value in vCPU, such as 0.5, 1, or 2.
+      pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
 - id: post_deploy_memory
-  label: Post-deploy memory (MiB)
-  type: number
-  description: Optional memory in MiB for the post-deploy task. Leave blank to use the app task memory setting.
+  label: Post-deploy memory
+  type: string
+  description: Optional memory for the post-deploy task, where 1 is 1 GB. Leave blank to use the app task memory.
+  placeholder: "1"
   collapsible: true
   show_when:
     post_deploy_enabled: true
-  min: 1
   required: false
+  patterns:
+    - message: Enter a memory value in GB, such as 0.5, 1, or 4.
+      pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
 - id: post_deploy_ephemeral_storage_size_gib
   label: Post-deploy ephemeral storage (GiB)
   type: number

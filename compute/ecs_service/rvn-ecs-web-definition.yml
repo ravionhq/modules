@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.7.2
-  description: Clarifies that build environment variables are only available during the build.
+  version: 2.0.0
+  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks. Pre-deploy, post-deploy, and sidecar CPU and memory now use the app task's units (1 CPU = 1 vCPU, 1 memory = 1 GB) instead of ECS CPU units and MiB; re-enter any saved values after upgrading, for example 512 CPU units becomes 0.5.
 module:
   inputs:
     - id: section_cluster
@@ -307,6 +307,15 @@ module:
         field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-capacity-inputs.yml
     - $include: ../../partials/inputs/ecs-service-autoscaling-inputs.yml
+    - id: request_count_target_value
+      label: Requests per task target
+      type: number
+      description: Target average number of load balancer requests per task per minute (ALBRequestCountPerTarget). Applies only with the Rolling deployment strategy, because blue/green, linear, and canary deployments move production traffic between target groups. Leave blank to disable request-count autoscaling.
+      collapsible: true
+      min: 1
+      required: false
+      show_when:
+        auto_scaling_enabled: true
     - $template: ../../partials/templates/ecs-service-runtime-env-inputs.yml
       with:
         environment_variables_description: Runtime environment variables passed to the app container. PORT is added automatically from the container port setting.
@@ -335,7 +344,14 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: >-
+                    ...<< module.input.request_count_target_value != nil && module.input.deployment_strategy == "rolling" ?
+                    [{policy_name: "request_count", predefined_metric: "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
+                    scale_in_cooldown: module.input.scale_in_cooldown, scale_out_cooldown:
+                    module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
+                    >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
                 cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
@@ -464,7 +480,7 @@ module:
         "protocol": "tcp"}], "readonly_root_filesystem": false, "repository_credentials":
         (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -501,8 +517,13 @@ module:
         "container_port": (module.input.container_port), "protocol": "tcp"}], "readonly_root_filesystem":
         false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
-        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars
-        : []) >>
+        (module.input.secrets), "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
+        (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
+        (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
+        "environment": #.environment, "secrets": #.secrets, "port_mappings": #.port_mappings,
+        "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
+        #.entry_point, "working_directory": #.working_directory}) : []) >>
   ui:
     logs:
       - id: ecs_service_logs
@@ -708,6 +729,7 @@ module:
     | Desired tasks            | 1       | Running tasks when autoscaling is disabled     |
     | CPU target (%)           | 70      | Average CPU utilization target                 |
     | Memory target (%)        | 80      | Average memory utilization target              |
+    | Requests per task target | blank   | Average ALB requests per task per minute (Rolling deployments only) |
     | Scale-in cooldown (secs) | 300     | Delay before another scale-in action           |
     | Scale-out cooldown (secs)| 300     | Delay before another scale-out action          |
     | Scale-in disabled        | false   | Prevents autoscaling from reducing task count  |
@@ -717,6 +739,8 @@ module:
     Use Runtime environment variables for plain container environment values. Ravion also sets PORT from Container port.
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
+
+    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 
@@ -848,15 +872,15 @@ module:
     | Run pre-deploy command          | No       | false                      | Enable a task before each deployment               |
     | Pre-deploy command arguments    | Yes*     | []                         | Command arguments run before each deployment       |
     | Pre-deploy environment variables| No       | []                         | Extra environment variables for the pre-deploy task |
-    | Pre-deploy CPU units            | No       | App task CPU               | CPU override for the pre-deploy task               |
-    | Pre-deploy memory (MiB)         | No       | App task memory            | Memory override for the pre-deploy task            |
+    | Pre-deploy CPU                  | No       | App task CPU               | CPU override for the pre-deploy task               |
+    | Pre-deploy memory               | No       | App task memory            | Memory override for the pre-deploy task            |
     | Pre-deploy ephemeral storage    | No       | Task definition default    | Ephemeral storage override for the pre-deploy task |
     | Pre-deploy timeout (secs)       | No       | 1800                       | Maximum pre-deploy task wait time                  |
     | Run post-deploy command         | No       | false                      | Enable a task after each successful deployment     |
     | Post-deploy command arguments   | Yes*     | []                         | Command arguments run after each successful deployment |
     | Post-deploy environment variables| No      | []                         | Extra environment variables for the post-deploy task |
-    | Post-deploy CPU units           | No       | App task CPU               | CPU override for the post-deploy task              |
-    | Post-deploy memory (MiB)        | No       | App task memory            | Memory override for the post-deploy task           |
+    | Post-deploy CPU                 | No       | App task CPU               | CPU override for the post-deploy task              |
+    | Post-deploy memory              | No       | App task memory            | Memory override for the post-deploy task           |
     | Post-deploy ephemeral storage   | No       | Task definition default    | Ephemeral storage override for the post-deploy task |
     | Post-deploy timeout (secs)      | No       | 1800                       | Maximum post-deploy task wait time                 |
     | Autoscaling                     | No       | true                       | Enable CPU and optional memory target tracking     |
@@ -885,7 +909,7 @@ module:
     - The module always models an HTTP web service behind an Application Load Balancer. NLB, worker, and service discovery patterns are intentionally outside this module definition.
     - Tasks default to private subnets even for public web services. The ALB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Built images are pushed to an ECR repository created with the service stack. Managed ECR repository lets a pipeline push images to that repository without a module build config. Pull from image registry lets teams bring their own image pipeline.
-    - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
+    - The service uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 
     ## Learn more

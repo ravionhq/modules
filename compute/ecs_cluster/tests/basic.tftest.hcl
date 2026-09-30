@@ -449,10 +449,10 @@ run "ec2_asg_settings" {
   command = plan
 
   variables {
-    ec2_instance_type    = "t3.medium"
-    ec2_min_size         = 1
-    ec2_max_size         = 5
-    ec2_desired_capacity = 2
+    ec2_instance_type     = "t3.medium"
+    ec2_min_instances     = 1
+    ec2_max_instances     = 5
+    ec2_desired_instances = 2
   }
 
   assert {
@@ -818,13 +818,13 @@ run "full_configuration" {
   command = plan
 
   variables {
-    container_insights   = "enhanced"
-    fargate_enabled      = true
-    fargate_spot_enabled = true
-    ec2_instance_type    = "t3.medium"
-    ec2_min_size         = 0
-    ec2_max_size         = 10
-    ec2_desired_capacity = 2
+    container_insights    = "enhanced"
+    fargate_enabled       = true
+    fargate_spot_enabled  = true
+    ec2_instance_type     = "t3.medium"
+    ec2_min_instances     = 0
+    ec2_max_instances     = 10
+    ec2_desired_instances = 2
   }
 
   assert {
