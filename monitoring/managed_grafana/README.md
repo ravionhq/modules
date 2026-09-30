@@ -1,13 +1,14 @@
 # Managed Grafana Module
 
-Creates an [Amazon Managed Grafana](https://aws.amazon.com/grafana/) workspace, the IAM role it reads AWS data with, and its AWS X-Ray, CloudWatch and Amazon Managed Service for Prometheus data sources. Users sign in through IAM Identity Center or a SAML 2.0 identity provider.
+Creates an [Amazon Managed Grafana](https://aws.amazon.com/grafana/) workspace, the IAM role it reads AWS data with, and its AWS X-Ray, CloudWatch, Amazon Managed Service for Prometheus and Loki data sources, optionally connected to a VPC for data sources reachable only inside it. Users sign in through IAM Identity Center or a SAML 2.0 identity provider.
 
 ## Features
 
 - A workspace on a chosen Grafana version with unified alerting on, reading its own account through a customer managed role.
 - The X-Ray data source plugin installed from the workspace's plugin catalog. Amazon Managed Grafana installs catalog plugins only while plugin management is on, so `xray_enabled` turns it on.
 - IAM Identity Center sign-in with Admin, Editor and Viewer roles assigned by user and group name, or SAML sign-in with role values.
-- Data sources with fixed UIDs (`aws-xray`, `aws-cloudwatch`, `amazon-prometheus`), kept in line with the module's settings on every apply that changes them.
+- Data sources with fixed UIDs (`aws-xray`, `aws-cloudwatch`, `amazon-prometheus`, `loki`), kept in line with the module's settings on every apply that changes them.
+- An optional VPC connection with a security group of its own that lets HTTPS out. AWS routes every query through the VPC once connected, AWS data sources included, so its private subnets need a NAT gateway or VPC endpoints.
 - A read-only role: CloudWatch metrics and logs and X-Ray traces while those data sources are on, and `aps:QueryMetrics`, `aps:GetSeries`, `aps:GetLabels` and `aps:GetMetricMetadata` on the one Prometheus workspace.
 
 ## Usage
@@ -77,6 +78,10 @@ IAM Identity Center sign-in needs IAM Identity Center enabled in the AWS organiz
 | cloudwatch_default_log_group_names | Log groups CloudWatch selects by default. | `list(string)` | `[]` | no |
 | prometheus_query_url | Query URL of a Prometheus workspace to add. | `string` | `null` | no |
 | prometheus_workspace_arn | ARN of that Prometheus workspace. | `string` | `null` | no |
+| loki_query_url | Base URL of a Loki query API to add, reached from the VPC connection. | `string` | `null` | no |
+| vpc_id | VPC to connect the workspace to. Null connects none. | `string` | `null` | no |
+| vpc_subnet_ids | Private subnets in at least two Availability Zones for the VPC connection. | `list(string)` | `[]` | no |
+| vpc_security_group_ids | Security groups the VPC connection carries beside the module's own, at most four. | `list(string)` | `[]` | no |
 | region | AWS region. Defaults to the provider region. | `string` | `null` | no |
 | tags | Additional tags. | `map(string)` | `{}` | no |
 
@@ -92,6 +97,7 @@ IAM Identity Center sign-in needs IAM Identity Center enabled in the AWS organiz
 | role_name | The role's name, for attaching further read policies. |
 | data_source_uids | UIDs of the data sources the module manages. |
 | region | The region the workspace is in. |
+| security_group_id | The workspace's security group on its VPC connection, or null without one. |
 
 ## Testing
 

@@ -205,11 +205,22 @@ module:
     - id: section_data_sources
       label: Data sources
       type: section
-    - default: false
-      description: Read an OpenTelemetry collector's traces and OTLP logs. The X-Ray and CloudWatch data sources default to the collector's region, and CloudWatch selects its OTLP log group.
-      id: otel_collector_enabled
-      label: OpenTelemetry collector
-      type: boolean
+    - default: none
+      description: Where the workspace reads your telemetry from. The X-Ray and CloudWatch data sources default to its region.
+      id: telemetry_source
+      label: Telemetry source
+      required: true
+      type: string
+      values:
+        - description: Read X-Ray, CloudWatch, and any Prometheus workspace below in the workspace's region.
+          label: None
+          value: none
+        - description: Read an OpenTelemetry collector's traces from X-Ray and its OTLP logs from CloudWatch Logs, with a log line linking to its trace.
+          label: OpenTelemetry collector
+          value: otel_collector
+        - description: Read an EKS cluster's workload traces from X-Ray, its metrics from the add-ons' Amazon Managed Prometheus workspace, and its logs from the add-ons' Loki.
+          label: EKS add-ons
+          value: eks_addons
     - description: The collector whose telemetry the workspace reads.
       id: otel_collector
       label: OpenTelemetry collector
@@ -225,8 +236,41 @@ module:
           type: string
       required: true
       show_when:
-        otel_collector_enabled: true
+        telemetry_source: otel_collector
       type: $ref:rvn-aws-otel-collector
+    - description: The EKS Add-ons module whose telemetry the workspace reads. Traces need its Receive OTLP from workloads setting, and Loki needs its Query endpoint in the VPC setting and the VPC connection below.
+      id: eks_addons
+      label: EKS add-ons
+      mapped_inputs:
+        - default: <<ref.stack.output.xray_region>>
+          id: eks_xray_region
+          label: X-Ray region
+          required: false
+          type: string
+        - default: <<ref.stack.output.amp_query_endpoint>>
+          id: eks_prometheus_query_url
+          label: Prometheus query URL
+          required: false
+          type: string
+        - default: <<ref.stack.output.amp_workspace_arn>>
+          id: eks_prometheus_workspace_arn
+          label: Prometheus workspace ARN
+          required: false
+          type: string
+        - default: <<ref.stack.output.loki_vpc_query_url>>
+          id: eks_loki_query_url
+          label: Loki query URL
+          required: false
+          type: string
+        - default: <<ref.stack.output.loki_client_security_group_id>>
+          id: eks_loki_client_security_group_id
+          label: Loki client security group ID
+          required: false
+          type: string
+      required: true
+      show_when:
+        telemetry_source: eks_addons
+      type: $ref:rvn-eks-addons
     - default: true
       description: Add an AWS X-Ray data source for traces.
       id: xray_enabled
@@ -238,9 +282,12 @@ module:
       label: CloudWatch
       type: boolean
     - default: false
-      description: Add an Amazon Managed Service for Prometheus data source for PromQL metrics.
+      description: Add an Amazon Managed Service for Prometheus data source for PromQL metrics. With EKS add-ons as the telemetry source, the add-ons' workspace is added instead.
       id: prometheus_enabled
       label: Prometheus
+      show_when:
+        telemetry_source:
+          not: eks_addons
       type: boolean
     - description: The Prometheus workspace the workspace queries. The workspace may read this Prometheus workspace only.
       id: prometheus
@@ -257,7 +304,39 @@ module:
       required: true
       show_when:
         prometheus_enabled: true
+        telemetry_source:
+          not: eks_addons
       type: $ref:rvn-aws-prometheus
+    - id: section_vpc_connection
+      label: VPC connection
+      type: section
+    - default: false
+      description: Connect the workspace to a VPC to query data sources reachable only inside it, such as an EKS cluster's Loki. Every query then leaves from the VPC, so its private subnets need a NAT gateway or VPC endpoints to reach X-Ray, CloudWatch, and Prometheus.
+      id: vpc_connection_enabled
+      label: Connect to a VPC
+      type: boolean
+    - description: The VPC the workspace connects to.
+      id: network
+      label: VPC network
+      mapped_inputs:
+        - default: <<ref.stack.output.vpc_id>>
+          id: vpc_id
+          label: VPC ID
+          placeholder: vpc-0123456789abcdef0
+          required: true
+          type: string
+        - add_button_label: Add private subnet ID
+          default: <<ref.stack.output.private_subnet_ids>>
+          description: Private subnets in at least two Availability Zones, each with at least 15 free IP addresses.
+          id: vpc_subnet_ids
+          label: Private subnet IDs
+          placeholder: subnet-0123456789abcdef0
+          required: true
+          type: string_array
+      required: true
+      show_when:
+        vpc_connection_enabled: true
+      type: $ref:rvn-aws-network
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -273,17 +352,24 @@ module:
         admin_group_names: << module.input.admin_group_names || [] >>
         admin_user_names: << module.input.admin_user_names || [] >>
         authentication: << module.input.authentication >>
-        cloudwatch_default_log_group_names: '<< module.input.otel_collector_enabled && module.input.otlp_log_group_name ? [module.input.otlp_log_group_name] : [] >>'
+        cloudwatch_default_log_group_names: '<< module.input.telemetry_source == "otel_collector" && module.input.otlp_log_group_name ? [module.input.otlp_log_group_name] : [] >>'
         cloudwatch_enabled: << module.input.cloudwatch_enabled >>
-        data_source_region: '<< module.input.otel_collector_enabled ? module.input.data_source_region : module.input.aws_region >>'
+        data_source_region: >-
+          << module.input.telemetry_source == "otel_collector" ? module.input.data_source_region :
+          (module.input.telemetry_source == "eks_addons" && module.input.eks_xray_region ? module.input.eks_xray_region : module.input.aws_region) >>
         editor_group_names: << module.input.editor_group_names || [] >>
         editor_user_names: << module.input.editor_user_names || [] >>
         grafana_version: << module.input.grafana_version >>
         identity_center_region: << module.input.identity_center_region >>
         name: << module.input.name >>
         plugin_admin_enabled: << module.input.plugin_admin_enabled >>
-        prometheus_query_url: '<< module.input.prometheus_enabled ? module.input.prometheus_query_url : nil >>'
-        prometheus_workspace_arn: '<< module.input.prometheus_enabled ? module.input.prometheus_workspace_arn : nil >>'
+        loki_query_url: '<< module.input.telemetry_source == "eks_addons" ? module.input.eks_loki_query_url : nil >>'
+        prometheus_query_url: >-
+          << module.input.telemetry_source == "eks_addons" ? module.input.eks_prometheus_query_url :
+          (module.input.prometheus_enabled ? module.input.prometheus_query_url : nil) >>
+        prometheus_workspace_arn: >-
+          << module.input.telemetry_source == "eks_addons" ? module.input.eks_prometheus_workspace_arn :
+          (module.input.prometheus_enabled ? module.input.prometheus_workspace_arn : nil) >>
         region: << module.input.aws_region >>
         saml_admin_role_values: << module.input.saml_admin_role_values || [] >>
         saml_allowed_organizations: << module.input.saml_allowed_organizations || [] >>
@@ -299,6 +385,11 @@ module:
         tags:
           $include: ../../partials/stack/ravion-tags.yml
         viewer_group_names: << module.input.viewer_group_names || [] >>
+        vpc_id: '<< module.input.vpc_connection_enabled ? module.input.vpc_id : nil >>'
+        vpc_security_group_ids: >-
+          << module.input.vpc_connection_enabled && module.input.telemetry_source == "eks_addons" && module.input.eks_loki_client_security_group_id ?
+          [module.input.eks_loki_client_security_group_id] : [] >>
+        vpc_subnet_ids: '<< module.input.vpc_connection_enabled ? module.input.vpc_subnet_ids : [] >>'
         viewer_user_names: << module.input.viewer_user_names || [] >>
         xray_enabled: << module.input.xray_enabled >>
   ui:
@@ -315,7 +406,7 @@ module:
 
     [Amazon Managed Grafana](https://aws.amazon.com/grafana/) runs Grafana for you: AWS patches, scales, and backs it up, and users sign in with your organization's identities. This module creates a workspace, the role it reads AWS data with, and the data sources that point at your telemetry, so dashboards work as soon as the first deploy finishes.
 
-    Select an OpenTelemetry collector and a Prometheus workspace, and the module reads their outputs directly: traces from X-Ray, metrics from Prometheus, and the collector's OTLP logs from CloudWatch Logs, with a log line linking to its trace.
+    Pick a telemetry source and the module reads its outputs directly. With an OpenTelemetry collector: traces from X-Ray, metrics from a Prometheus workspace, and the collector's OTLP logs from CloudWatch Logs, with a log line linking to its trace. With an EKS Add-ons module: workload traces from X-Ray, metrics from the add-ons' Amazon Managed Prometheus workspace, and logs from the add-ons' Loki through a VPC connection.
 
     Terraform source: [ravionhq/modules/monitoring/managed_grafana](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/managed_grafana)
 
@@ -324,6 +415,7 @@ module:
     | Scenario | Benefit |
     | --- | --- |
     | OpenTelemetry end to end | Services send OTLP to the collector; Grafana shows the traces, metrics, and logs without further setup. |
+    | EKS cluster observability | Workloads send OTLP to the add-ons' in-cluster collector; Grafana shows their traces, the cluster's metrics, and pod logs from Loki. |
     | AWS service dashboards | The CloudWatch data source charts any CloudWatch metric and queries any log group in the account. |
     | Team access through SSO | Users sign in with IAM Identity Center or SAML; there are no Grafana passwords to manage. |
 
@@ -339,9 +431,16 @@ module:
     | --- | --- | --- |
     | AWS X-Ray | `aws-xray` | Traces and the service map, in the collector's region or the workspace's |
     | CloudWatch | `aws-cloudwatch` | Metrics and logs in the same region, with the collector's OTLP log group selected and trace IDs linked to X-Ray |
-    | Amazon Managed Service for Prometheus | `amazon-prometheus` | The selected Prometheus workspace, with PromQL |
+    | Amazon Managed Service for Prometheus | `amazon-prometheus` | The selected Prometheus workspace, or the EKS add-ons' one, with PromQL |
+    | Loki | `loki` | The EKS add-ons' pod logs, with LogQL, through the VPC connection |
 
     The module owns these data sources and keeps them in line with its settings: turning one off removes it from the workspace. Dashboards can reference them by UID. Data sources you add yourself are left alone.
+
+    **Loki needs two settings on the EKS Add-ons module and one here.** Turn on **Query endpoint in the VPC** there, which puts Loki's query API behind an internal load balancer, and **Connect to a VPC** here with the cluster's VPC. The connection carries the add-ons' Loki client security group, the only group the load balancer admits.
+
+    ## VPC connection
+
+    Connecting to a VPC lets the workspace query data sources reachable only inside it. AWS then routes every query through the VPC, the AWS data sources included, so the private subnets need a NAT gateway or VPC endpoints to reach X-Ray, CloudWatch, and Prometheus. The module gives the connection a security group of its own that lets HTTPS out. Pick private subnets in at least two Availability Zones, each with at least 15 free IP addresses. Signing in to the workspace is unaffected.
 
     The workspace reads with a role the module creates. The role can read CloudWatch metrics and logs and X-Ray traces while those data sources are on, and the one selected Prometheus workspace. It cannot write anything.
 
@@ -357,10 +456,11 @@ module:
     | Sign-in method | Yes | IAM Identity Center | IAM Identity Center or SAML. |
     | Admin, Editor, and Viewer users and groups | No | None | IAM Identity Center names. |
     | SAML settings | When signing in with SAML | None | Metadata, role attribute, and role values. |
-    | OpenTelemetry collector | No | Off | Sets the data source region and the default log group. |
+    | Telemetry source | Yes | None | An OpenTelemetry collector sets the data source region and the default log group. EKS add-ons sets the region and adds its Prometheus workspace and Loki. |
     | AWS X-Ray | No | On | Adds the X-Ray data source. |
     | CloudWatch | No | On | Adds the CloudWatch data source. |
-    | Prometheus | No | Off | Adds a Prometheus workspace as a data source. |
+    | Prometheus | No | Off | Adds a Prometheus workspace as a data source. Hidden with EKS add-ons, which bring their own. |
+    | Connect to a VPC | No | Off | Connects the workspace to a VPC's private subnets. Needed for Loki. |
     | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
     | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
 

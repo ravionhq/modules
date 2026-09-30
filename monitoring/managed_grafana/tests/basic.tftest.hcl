@@ -273,6 +273,93 @@ run "disabled_data_sources_are_left_out" {
 # Validation
 ################################################################################
 
+################################################################################
+# VPC connection and Loki
+################################################################################
+
+run "no_vpc_connection_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_grafana_workspace.this.vpc_configuration) == 0 && length(module.security_group) == 0
+    error_message = "Without a VPC ID the workspace should connect to no VPC and create no security group."
+  }
+}
+
+run "loki_through_the_vpc_connection" {
+  command = plan
+
+  variables {
+    vpc_id                 = "vpc-0123456789abcdef0"
+    vpc_subnet_ids         = ["subnet-0a", "subnet-0b", ""]
+    vpc_security_group_ids = ["sg-0lokiclient", ""]
+    loki_query_url         = "http://internal-loki-123.elb.us-west-2.amazonaws.com:3100/"
+  }
+
+  assert {
+    condition     = aws_grafana_workspace.this.vpc_configuration[0].subnet_ids == toset(["subnet-0a", "subnet-0b"])
+    error_message = "The VPC connection should use the given subnets, leaving out the blanks a form sends."
+  }
+
+  assert {
+    condition     = contains(aws_grafana_workspace.this.vpc_configuration[0].security_group_ids, "sg-0lokiclient") && length(aws_grafana_workspace.this.vpc_configuration[0].security_group_ids) == 2
+    error_message = "The VPC connection should carry the module's security group and the Loki client group."
+  }
+
+  assert {
+    condition     = output.security_group_id == module.security_group[0].security_group_id
+    error_message = "The module's own security group should be published for allowing the workspace into private data sources."
+  }
+
+  assert {
+    condition     = terraform_data.data_sources.input[2].uid == "loki" && terraform_data.data_sources.input[2].type == "loki" && terraform_data.data_sources.input[2].url == "http://internal-loki-123.elb.us-west-2.amazonaws.com:3100"
+    error_message = "Loki should be a data source on its query URL without a trailing slash."
+  }
+}
+
+run "rejects_loki_without_a_vpc_connection" {
+  command = plan
+
+  variables {
+    loki_query_url = "http://internal-loki-123.elb.us-west-2.amazonaws.com:3100"
+  }
+
+  expect_failures = [aws_grafana_workspace.this]
+}
+
+run "rejects_a_vpc_connection_in_one_subnet" {
+  command = plan
+
+  variables {
+    vpc_id         = "vpc-0123456789abcdef0"
+    vpc_subnet_ids = ["subnet-0a"]
+  }
+
+  expect_failures = [aws_grafana_workspace.this]
+}
+
+run "rejects_subnets_without_a_vpc" {
+  command = plan
+
+  variables {
+    vpc_subnet_ids = ["subnet-0a", "subnet-0b"]
+  }
+
+  expect_failures = [aws_grafana_workspace.this]
+}
+
+run "rejects_more_than_four_extra_security_groups" {
+  command = plan
+
+  variables {
+    vpc_id                 = "vpc-0123456789abcdef0"
+    vpc_subnet_ids         = ["subnet-0a", "subnet-0b"]
+    vpc_security_group_ids = ["sg-01", "sg-02", "sg-03", "sg-04", "sg-05"]
+  }
+
+  expect_failures = [aws_grafana_workspace.this]
+}
+
 run "rejects_invalid_name" {
   command = plan
 

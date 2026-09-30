@@ -21,6 +21,11 @@ locals {
   prometheus_enabled       = local.prometheus_query_url != null && local.prometheus_workspace_arn != null
   prometheus_region        = local.prometheus_enabled ? regex("^https://aps-workspaces\\.([a-z0-9-]+)\\.amazonaws\\.com/", local.prometheus_query_url)[0] : null
   data_source_region       = try(trimspace(var.data_source_region), "") == "" ? local.region : trimspace(var.data_source_region)
+  loki_query_url           = try(trimspace(var.loki_query_url), "") == "" ? null : trimsuffix(trimspace(var.loki_query_url), "/")
+
+  vpc_enabled            = try(trimspace(var.vpc_id), "") != ""
+  vpc_subnet_ids         = distinct([for id in var.vpc_subnet_ids : trimspace(id) if trimspace(id) != ""])
+  vpc_security_group_ids = distinct([for id in var.vpc_security_group_ids : trimspace(id) if trimspace(id) != ""])
 
   roles = {
     ADMIN  = { users = var.admin_user_names, groups = var.admin_group_names }
@@ -95,11 +100,21 @@ locals {
         sigV4Region   = local.prometheus_region
       }
     }] : [],
+    local.loki_query_url != null ? [{
+      uid    = "loki"
+      name   = "Loki"
+      type   = "loki"
+      access = "proxy"
+      url    = local.loki_query_url
+      jsonData = {
+        maxLines = 1000
+      }
+    }] : [],
   )
 
   service_account_name = "${var.name}-data-sources"
 
-  managed_data_source_uids = ["aws-xray", "aws-cloudwatch", "amazon-prometheus"]
+  managed_data_source_uids = ["aws-xray", "aws-cloudwatch", "amazon-prometheus", "loki"]
 
   # Plugins the data sources need that are not part of Grafana itself. Amazon
   # Managed Grafana installs them only while plugin management is on.

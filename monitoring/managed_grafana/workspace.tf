@@ -16,6 +16,15 @@ resource "aws_grafana_workspace" "this" {
     unifiedAlerting = { enabled = true }
   })
 
+  dynamic "vpc_configuration" {
+    for_each = local.vpc_enabled ? [1] : []
+
+    content {
+      subnet_ids         = local.vpc_subnet_ids
+      security_group_ids = concat([module.security_group[0].security_group_id], local.vpc_security_group_ids)
+    }
+  }
+
   tags = local.tags
 
   lifecycle {
@@ -42,6 +51,26 @@ resource "aws_grafana_workspace" "this" {
     precondition {
       condition     = !local.prometheus_enabled || can(regex("^https://aps-workspaces\\.[a-z0-9-]+\\.amazonaws\\.com/workspaces/ws-[a-z0-9-]+$", local.prometheus_query_url))
       error_message = "The Prometheus query URL must be an Amazon Managed Service for Prometheus workspace endpoint, https://aps-workspaces.<region>.amazonaws.com/workspaces/<workspace id>."
+    }
+
+    precondition {
+      condition     = !local.vpc_enabled || length(local.vpc_subnet_ids) >= 2
+      error_message = "A VPC connection needs private subnets in at least two Availability Zones."
+    }
+
+    precondition {
+      condition     = local.vpc_enabled || length(local.vpc_subnet_ids) + length(local.vpc_security_group_ids) == 0
+      error_message = "VPC subnets and security groups need the VPC ID they belong to."
+    }
+
+    precondition {
+      condition     = length(local.vpc_security_group_ids) <= 4
+      error_message = "A VPC connection carries at most five security groups, and the module adds one of its own, so at most four can be passed in."
+    }
+
+    precondition {
+      condition     = local.loki_query_url == null || local.vpc_enabled
+      error_message = "The Loki query URL is reachable only from inside its VPC. Connect the workspace to that VPC."
     }
   }
 }

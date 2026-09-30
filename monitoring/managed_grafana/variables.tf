@@ -230,3 +230,33 @@ variable "prometheus_workspace_arn" {
   description = "ARN of the Prometheus workspace behind prometheus_query_url. The workspace may read metrics from this Prometheus workspace only."
   default     = null
 }
+
+variable "loki_query_url" {
+  type        = string
+  description = "Base URL of a Loki query API to add as a data source, such as an EKS Add-ons module's loki_vpc_query_url. It is reached from the VPC connection. Null adds none."
+  default     = null
+}
+
+################################################################################
+# VPC connection
+################################################################################
+
+variable "vpc_id" {
+  type        = string
+  description = "VPC the workspace connects to, for data sources reachable only inside it. Once connected, every query leaves from the VPC. Null connects none."
+  default     = null
+}
+
+variable "vpc_subnet_ids" {
+  type        = list(string)
+  description = "Private subnets in at least two Availability Zones the VPC connection uses. AWS data sources are then reached from them too, so they need a NAT gateway or VPC endpoints."
+  default     = []
+  nullable    = false
+}
+
+variable "vpc_security_group_ids" {
+  type        = list(string)
+  description = "Security groups the VPC connection carries beside the module's own, such as the Loki client security group of an EKS Add-ons module. At most four."
+  default     = []
+  nullable    = false
+}

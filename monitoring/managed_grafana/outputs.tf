@@ -41,3 +41,8 @@ output "region" {
   description = "The AWS region the workspace is in."
   value       = local.region
 }
+
+output "security_group_id" {
+  description = "The workspace's own security group on its VPC connection, for allowing it into private data sources (null without a VPC connection)."
+  value       = local.vpc_enabled ? module.security_group[0].security_group_id : null
+}
