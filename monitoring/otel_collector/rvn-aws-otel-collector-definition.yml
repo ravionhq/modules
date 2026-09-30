@@ -3,8 +3,8 @@ definition:
   name: OpenTelemetry Collector
   description: Runs an OpenTelemetry collector on ECS Fargate that receives OTLP inside a VPC and sends traces to AWS X-Ray.
 release:
-  version: 0.1.0
-  description: Receive OTLP traces from services in a VPC at one private address and view them in AWS X-Ray, with optional CloudWatch metrics.
+  version: 0.2.0
+  description: Send the collector's OTLP metrics to an Amazon Managed Service for Prometheus workspace as well as to CloudWatch.
 module:
   inputs:
     - id: network
@@ -124,16 +124,49 @@ module:
       label: Metrics
       type: section
     - default: false
-      description: Accept OTLP metrics and publish them to CloudWatch. Every metric your services emit becomes a billed CloudWatch custom metric. While off, the collector rejects metric exports.
+      description: Accept OTLP metrics and publish them to the chosen destination. While off, the collector rejects metric exports.
       id: metrics_enabled
-      label: CloudWatch metrics
+      label: Metrics
       type: boolean
+    - default: cloudwatch
+      description: Where the collector publishes metrics.
+      id: metrics_destination
+      label: Metrics destination
+      required: true
+      show_when:
+        metrics_enabled: true
+      type: string
+      values:
+        - description: Embedded metric format logs. Every metric your services emit becomes a billed CloudWatch custom metric.
+          label: CloudWatch
+          value: cloudwatch
+        - description: Remote write to an Amazon Managed Service for Prometheus workspace, queryable with PromQL.
+          label: Amazon Managed Service for Prometheus
+          value: prometheus
+    - description: The workspace the collector remote-writes metrics to. Its task role may write to this workspace only.
+      id: prometheus
+      label: Prometheus workspace
+      mapped_inputs:
+        - default: <<ref.stack.output.remote_write_url>>
+          id: prometheus_remote_write_url
+          label: Remote write URL
+          type: string
+        - default: <<ref.stack.output.workspace_arn>>
+          id: prometheus_workspace_arn
+          label: Workspace ARN
+          type: string
+      required: true
+      show_when:
+        metrics_destination: prometheus
+        metrics_enabled: true
+      type: $ref:rvn-aws-prometheus
     - collapsible: true
       description: CloudWatch namespace for all metrics. Leave blank to name it after each service's service.namespace and service.name resource attributes.
       id: metrics_namespace
       label: Metrics namespace
       placeholder: MyApp
       show_when:
+        metrics_destination: cloudwatch
         metrics_enabled: true
       type: string
     - id: section_logs
@@ -145,7 +178,7 @@ module:
       label: OTLP logs
       type: boolean
     - default: 30
-      description: Applies to the collector's own logs, the OTLP logs, and, when CloudWatch metrics are on, the metric logs.
+      description: Applies to the collector's own logs, the OTLP logs, and, when metrics go to CloudWatch, the metric logs.
       id: log_retention_days
       label: Log retention (days)
       required: true
@@ -212,9 +245,12 @@ module:
         image: << module.input.image >>
         log_retention_days: << module.input.log_retention_days >>
         logs_enabled: << module.input.logs_enabled >>
+        metrics_destination: << module.input.metrics_destination >>
         metrics_enabled: << module.input.metrics_enabled >>
         metrics_namespace: << module.input.metrics_namespace >>
         name: << module.input.name >>
+        prometheus_remote_write_url: << module.input.prometheus_remote_write_url >>
+        prometheus_workspace_arn: << module.input.prometheus_workspace_arn >>
         region: << module.input.aws_region >>
         subnet_ids: << module.input.subnet_ids >>
         tags:
@@ -276,7 +312,7 @@ module:
     | --- | --- |
     | Tracing for ECS, EKS, and EC2 services | One collector per VPC receives OTLP from every service, so no service runs a sidecar. |
     | X-Ray without the X-Ray SDK | Services keep the vendor-neutral OpenTelemetry SDK and W3C trace context. The collector translates spans to X-Ray segments. |
-    | CloudWatch metrics from OpenTelemetry | Turn on CloudWatch metrics to publish the same services' OTLP metrics as CloudWatch custom metrics. |
+    | Metrics from OpenTelemetry | Publish the same services' OTLP metrics as CloudWatch custom metrics, or remote-write them to an Amazon Managed Service for Prometheus workspace for PromQL and Grafana. |
 
     ## Sending telemetry
 
@@ -301,7 +337,14 @@ module:
 
     ## Metrics
 
-    CloudWatch metrics are off by default, and the collector rejects OTLP metric exports while they are off. Turn them on to publish OTLP metrics to CloudWatch through embedded metric format logs. Every distinct metric and attribute combination becomes a billed CloudWatch custom metric, so check what your services emit before enabling it. Leave the metrics namespace blank to group each service's metrics under its own `service.namespace` and `service.name`.
+    Metrics are off by default, and the collector rejects OTLP metric exports while they are off. Turn them on and choose where they go:
+
+    | Destination | What happens | Cost |
+    | --- | --- | --- |
+    | CloudWatch | Published as embedded metric format logs. Leave the metrics namespace blank to group each service's metrics under its own `service.namespace` and `service.name`. | Every distinct metric and attribute combination is a billed CloudWatch custom metric. |
+    | Amazon Managed Service for Prometheus | Remote-written, signed with SigV4, to the Prometheus Workspace module you select, and queryable with PromQL from Grafana. The task role may write to that workspace only. | Billed per sample ingested and stored. Every distinct metric and label combination is a separate series. |
+
+    Check what your services emit before enabling metrics.
 
     ## Logs
 
@@ -318,9 +361,11 @@ module:
     | CPU architecture | Yes | ARM64 | ARM64 costs less on Fargate. |
     | Collector image | Yes | AWS Distro for OpenTelemetry collector v0.50.0 | Change the tag to upgrade the collector. |
     | Allowed security groups | No | None | Security groups allowed to send OTLP. |
-    | CloudWatch metrics | No | false | Publishes OTLP metrics as CloudWatch custom metrics. |
+    | Metrics | No | false | Accepts OTLP metrics. |
+    | Metrics destination | When metrics are on | CloudWatch | CloudWatch or Amazon Managed Service for Prometheus. |
+    | Prometheus workspace | When the destination is Prometheus | None | A Prometheus Workspace module whose remote write URL and ARN are mapped in. |
     | OTLP logs | No | false | Writes OTLP log records to a CloudWatch log group. |
-    | Metrics namespace | No | Derived from each service | Only shown when CloudWatch metrics are on. |
+    | Metrics namespace | No | Derived from each service | Only shown when metrics go to CloudWatch. |
     | Log retention (days) | Yes | 30 | Applies to the collector's logs, the OTLP logs, and the metric logs. |
     | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
     | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
@@ -329,7 +374,7 @@ module:
 
     - The collector runs in its own Fargate cluster, so it needs no ECS cluster module and its capacity never competes with application services.
     - The collector configuration is generated from the module's settings. A setting change deploys a new task definition revision, and a revision the collector cannot start with rolls back to the last one that ran.
-    - The task role can only write to X-Ray and, when they are on, to the module's own metric and OTLP log groups.
+    - The task role can only write to X-Ray and, when they are on, to the module's own metric and OTLP log groups or the selected Prometheus workspace.
     - Senders reach the collector by attaching its client security group, so the collector never has to list the services that send to it.
     - ECS adds each running task to the hostname's DNS records and removes the record when the task stops. A task that fails its container health check is stopped and replaced.
 
