@@ -5,6 +5,7 @@ Creates an [Amazon Managed Grafana](https://aws.amazon.com/grafana/) workspace, 
 ## Features
 
 - A workspace on a chosen Grafana version with unified alerting on, reading its own account through a customer managed role.
+- The X-Ray data source plugin installed from the workspace's plugin catalog. Amazon Managed Grafana installs catalog plugins only while plugin management is on, so `xray_enabled` turns it on.
 - IAM Identity Center sign-in with Admin, Editor and Viewer roles assigned by user and group name, or SAML sign-in with role values.
 - Data sources with fixed UIDs (`aws-xray`, `aws-cloudwatch`, `amazon-prometheus`), kept in line with the module's settings on every apply that changes them.
 - A read-only role: CloudWatch metrics and logs and X-Ray traces while those data sources are on, and `aps:QueryMetrics`, `aps:GetSeries`, `aps:GetLabels` and `aps:GetMetricMetadata` on the one Prometheus workspace.
@@ -59,7 +60,7 @@ IAM Identity Center sign-in needs IAM Identity Center enabled in the AWS organiz
 | name | Workspace name. 1-55 letters, digits, periods, underscores, tildes or hyphens. | `string` | n/a | yes |
 | description | Workspace description. | `string` | `null` | no |
 | grafana_version | Grafana version. | `string` | `"12.4"` | no |
-| plugin_admin_enabled | Let admins manage plugins. | `bool` | `false` | no |
+| plugin_admin_enabled | Let admins manage plugins. Always on while `xray_enabled` is true. | `bool` | `false` | no |
 | authentication | `iam_identity_center` or `saml`. | `string` | `"iam_identity_center"` | no |
 | identity_center_region | Region of the IAM Identity Center instance. Null uses the workspace's region. | `string` | `null` | no |
 | admin_user_names, editor_user_names, viewer_user_names | IAM Identity Center user names per Grafana role. | `list(string)` | `[]` | no |

@@ -98,4 +98,9 @@ locals {
   )
 
   managed_data_source_uids = ["aws-xray", "aws-cloudwatch", "amazon-prometheus"]
+
+  # Plugins the data sources need that are not part of Grafana itself. Amazon
+  # Managed Grafana installs them only while plugin management is on.
+  plugin_ids           = var.xray_enabled ? ["grafana-x-ray-datasource"] : []
+  plugin_admin_enabled = var.plugin_admin_enabled || length(local.plugin_ids) > 0
 }

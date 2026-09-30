@@ -12,7 +12,7 @@ resource "aws_grafana_workspace" "this" {
   role_arn                 = aws_iam_role.this.arn
 
   configuration = jsonencode({
-    plugins         = { pluginAdminEnabled = var.plugin_admin_enabled }
+    plugins         = { pluginAdminEnabled = local.plugin_admin_enabled }
     unifiedAlerting = { enabled = true }
   })
 

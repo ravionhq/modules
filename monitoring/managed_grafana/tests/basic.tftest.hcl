@@ -76,8 +76,8 @@ run "identity_center_workspace_with_xray_and_cloudwatch_by_default" {
   }
 
   assert {
-    condition     = jsondecode(aws_grafana_workspace.this.configuration) == { plugins = { pluginAdminEnabled = false }, unifiedAlerting = { enabled = true } }
-    error_message = "Plugin administration should be off and unified alerting on by default."
+    condition     = jsondecode(aws_grafana_workspace.this.configuration) == { plugins = { pluginAdminEnabled = true }, unifiedAlerting = { enabled = true } }
+    error_message = "Plugin management should be on for the X-Ray plugin, and unified alerting on, by default."
   }
 
   assert {
@@ -261,6 +261,11 @@ run "disabled_data_sources_are_left_out" {
   assert {
     condition     = length(aws_iam_role_policy.cloudwatch) == 0 && length(aws_iam_role_policy.xray) == 0
     error_message = "The role should read nothing."
+  }
+
+  assert {
+    condition     = jsondecode(aws_grafana_workspace.this.configuration).plugins.pluginAdminEnabled == false && terraform_data.data_sources.triggers_replace.plugins == ""
+    error_message = "Without X-Ray, no plugin should be installed and plugin management should stay off."
   }
 }
 

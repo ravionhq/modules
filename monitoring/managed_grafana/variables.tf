@@ -48,7 +48,7 @@ variable "grafana_version" {
 
 variable "plugin_admin_enabled" {
   type        = bool
-  description = "Let workspace admins install, update and remove plugins from the Grafana plugin catalog."
+  description = "Let workspace admins install, update and remove plugins from the Grafana plugin catalog. Always on while xray_enabled is true: the X-Ray data source is a catalog plugin, which Amazon Managed Grafana installs only while plugin management is on."
   default     = false
   nullable    = false
 }

@@ -37,7 +37,7 @@ module:
           value: "9.4"
     - collapsible: true
       default: false
-      description: Let workspace admins install, update, and remove plugins from the Grafana plugin catalog.
+      description: Let workspace admins install, update, and remove plugins from the Grafana plugin catalog. Always on while the AWS X-Ray data source is on, because Amazon Managed Grafana installs the X-Ray plugin only with plugin management on.
       id: plugin_admin_enabled
       label: Plugin management
       type: boolean
@@ -353,7 +353,7 @@ module:
     | Region | Yes | None | Region the workspace is created in. |
     | Name | Yes | Project, environment, and module given IDs | Workspace name. |
     | Grafana version | Yes | 12.4 | Upgrades happen in place. |
-    | Plugin management | No | false | Lets admins install plugins from the Grafana catalog. |
+    | Plugin management | No | false | Lets admins install plugins from the Grafana catalog. Always on while AWS X-Ray is on. |
     | Sign-in method | Yes | IAM Identity Center | IAM Identity Center or SAML. |
     | Admin, Editor, and Viewer users and groups | No | None | IAM Identity Center names. |
     | SAML settings | When signing in with SAML | None | Metadata, role attribute, and role values. |
@@ -369,6 +369,7 @@ module:
     - Amazon Managed Grafana has no AWS API for data sources, so the module writes them through the workspace's Grafana API during apply. Each run mints a Grafana service account token that expires in 15 minutes and deletes it when done; no token is stored.
     - Data sources have fixed UIDs, so dashboards that reference them keep working across redeploys.
     - The workspace uses a role the module owns rather than AWS's service-managed permissions, so the role grants exactly the reads the enabled data sources need.
+    - The X-Ray data source is a Grafana catalog plugin, not part of Grafana itself. Amazon Managed Grafana installs catalog plugins only while plugin management is on, so the module turns plugin management on while X-Ray is on and installs the plugin before writing the data source.
     - The Terraform runner needs the AWS CLI and Python 3 to write the data sources.
 
     ## Costs
