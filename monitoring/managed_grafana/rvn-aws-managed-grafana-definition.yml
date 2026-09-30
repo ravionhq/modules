@@ -1,0 +1,382 @@
+definition:
+  type: rvn-aws-managed-grafana
+  name: Managed Grafana
+  description: Creates an Amazon Managed Grafana workspace with AWS X-Ray, CloudWatch, and Prometheus data sources already connected.
+release:
+  version: 0.1.0
+  description: View traces, metrics, and logs in an Amazon Managed Grafana workspace that signs users in through IAM Identity Center or SAML.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_workspace
+      label: Workspace
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Name of the Grafana workspace.
+      id: name
+      immutable: true
+      label: Name
+      patterns:
+        - message: 1-55 letters, numbers, periods, underscores, tildes, or hyphens. Start with a letter or number.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._~-]{0,54}$
+      required: true
+      type: string
+    - default: "12.4"
+      description: Grafana version. Upgrades happen in place; AWS does not allow downgrades.
+      id: grafana_version
+      label: Grafana version
+      required: true
+      type: string
+      values:
+        - label: "12.4"
+          value: "12.4"
+        - label: "10.4"
+          value: "10.4"
+        - label: "9.4"
+          value: "9.4"
+    - collapsible: true
+      default: false
+      description: Let workspace admins install, update, and remove plugins from the Grafana plugin catalog.
+      id: plugin_admin_enabled
+      label: Plugin management
+      type: boolean
+    - id: section_sign_in
+      label: Sign-in
+      type: section
+    - default: iam_identity_center
+      description: How users sign in to the workspace.
+      id: authentication
+      label: Sign-in method
+      required: true
+      type: string
+      values:
+        - description: Users sign in with their organization's IAM Identity Center accounts.
+          label: IAM Identity Center
+          value: iam_identity_center
+        - description: Users sign in through a SAML 2.0 identity provider such as Okta, Microsoft Entra ID, or Google Workspace.
+          label: SAML
+          value: saml
+    - description: Region of your organization's IAM Identity Center instance. Leave blank when it is in the workspace's region.
+      id: identity_center_region
+      label: IAM Identity Center region
+      show_when:
+        authentication: iam_identity_center
+      type: string
+      values: $values:aws/regions
+    - add_button_label: Add user name
+      default: []
+      description: IAM Identity Center user names that are Grafana Admins. Admins manage data sources, users, and dashboards.
+      id: admin_user_names
+      label: Admin users
+      placeholder: jane@example.com
+      show_when:
+        authentication: iam_identity_center
+      type: string_array
+    - add_button_label: Add user name
+      default: []
+      description: IAM Identity Center user names that are Grafana Editors. Editors create and edit dashboards.
+      id: editor_user_names
+      label: Editor users
+      placeholder: jane@example.com
+      show_when:
+        authentication: iam_identity_center
+      type: string_array
+    - add_button_label: Add user name
+      default: []
+      description: IAM Identity Center user names that are Grafana Viewers.
+      id: viewer_user_names
+      label: Viewer users
+      placeholder: jane@example.com
+      show_when:
+        authentication: iam_identity_center
+      type: string_array
+    - add_button_label: Add group name
+      collapsible: true
+      default: []
+      description: IAM Identity Center groups whose members are Grafana Admins.
+      id: admin_group_names
+      label: Admin groups
+      show_when:
+        authentication: iam_identity_center
+      type: string_array
+    - add_button_label: Add group name
+      collapsible: true
+      default: []
+      description: IAM Identity Center groups whose members are Grafana Editors.
+      id: editor_group_names
+      label: Editor groups
+      show_when:
+        authentication: iam_identity_center
+      type: string_array
+    - add_button_label: Add group name
+      collapsible: true
+      default: []
+      description: IAM Identity Center groups whose members are Grafana Viewers.
+      id: viewer_group_names
+      label: Viewer groups
+      show_when:
+        authentication: iam_identity_center
+      type: string_array
+    - description: URL of your identity provider's SAML metadata. Set this or the metadata document.
+      id: saml_idp_metadata_url
+      label: Identity provider metadata URL
+      placeholder: https://idp.example.com/app/metadata
+      show_when:
+        authentication: saml
+      type: string
+    - collapsible: true
+      description: Your identity provider's SAML metadata document, when it has no metadata URL.
+      id: saml_idp_metadata_xml
+      label: Identity provider metadata document
+      show_when:
+        authentication: saml
+      type: text
+    - default: role
+      description: SAML assertion attribute that carries each user's roles.
+      id: saml_role_assertion
+      label: Role attribute
+      required: true
+      show_when:
+        authentication: saml
+      type: string
+    - add_button_label: Add role value
+      default: []
+      description: Role attribute values that make a user a Grafana Admin.
+      id: saml_admin_role_values
+      label: Admin role values
+      show_when:
+        authentication: saml
+      type: string_array
+    - add_button_label: Add role value
+      default: []
+      description: Role attribute values that make a user a Grafana Editor. Everyone else is a Viewer.
+      id: saml_editor_role_values
+      label: Editor role values
+      show_when:
+        authentication: saml
+      type: string_array
+    - collapsible: true
+      description: SAML assertion attribute used as the Grafana login. Leave blank for the identity provider's default.
+      id: saml_login_assertion
+      label: Login attribute
+      show_when:
+        authentication: saml
+      type: string
+    - collapsible: true
+      description: SAML assertion attribute used as the user's email. Leave blank for the identity provider's default.
+      id: saml_email_assertion
+      label: Email attribute
+      show_when:
+        authentication: saml
+      type: string
+    - collapsible: true
+      description: SAML assertion attribute used as the user's display name. Leave blank for the identity provider's default.
+      id: saml_name_assertion
+      label: Name attribute
+      show_when:
+        authentication: saml
+      type: string
+    - add_button_label: Add organization
+      collapsible: true
+      default: []
+      description: Identity provider organizations whose users may sign in. Leave empty to allow every user the identity provider signs in.
+      id: saml_allowed_organizations
+      label: Allowed organizations
+      show_when:
+        authentication: saml
+      type: string_array
+    - collapsible: true
+      description: SAML assertion attribute that carries the user's organization.
+      id: saml_org_assertion
+      label: Organization attribute
+      show_when:
+        authentication: saml
+      type: string
+    - collapsible: true
+      default: 1440
+      description: Minutes a SAML sign-in stays valid.
+      id: saml_login_validity_minutes
+      label: Sign-in validity (minutes)
+      min: 1
+      show_when:
+        authentication: saml
+      type: number
+    - id: section_data_sources
+      label: Data sources
+      type: section
+    - default: false
+      description: Read an OpenTelemetry collector's traces and OTLP logs. The X-Ray and CloudWatch data sources default to the collector's region, and CloudWatch selects its OTLP log group.
+      id: otel_collector_enabled
+      label: OpenTelemetry collector
+      type: boolean
+    - description: The collector whose telemetry the workspace reads.
+      id: otel_collector
+      label: OpenTelemetry collector
+      mapped_inputs:
+        - default: <<ref.stack.output.region>>
+          id: data_source_region
+          label: Data source region
+          type: string
+        - default: <<ref.stack.output.otlp_log_group_name>>
+          id: otlp_log_group_name
+          label: OTLP log group
+          required: false
+          type: string
+      required: true
+      show_when:
+        otel_collector_enabled: true
+      type: $ref:rvn-aws-otel-collector
+    - default: true
+      description: Add an AWS X-Ray data source for traces.
+      id: xray_enabled
+      label: AWS X-Ray
+      type: boolean
+    - default: true
+      description: Add a CloudWatch data source for metrics and logs.
+      id: cloudwatch_enabled
+      label: CloudWatch
+      type: boolean
+    - default: false
+      description: Add an Amazon Managed Service for Prometheus data source for PromQL metrics.
+      id: prometheus_enabled
+      label: Prometheus
+      type: boolean
+    - description: The Prometheus workspace the workspace queries. The workspace may read this Prometheus workspace only.
+      id: prometheus
+      label: Prometheus workspace
+      mapped_inputs:
+        - default: <<ref.stack.output.query_url>>
+          id: prometheus_query_url
+          label: Query URL
+          type: string
+        - default: <<ref.stack.output.workspace_arn>>
+          id: prometheus_workspace_arn
+          label: Workspace ARN
+          type: string
+      required: true
+      show_when:
+        prometheus_enabled: true
+      type: $ref:rvn-aws-prometheus
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: monitoring/managed_grafana
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        admin_group_names: << module.input.admin_group_names || [] >>
+        admin_user_names: << module.input.admin_user_names || [] >>
+        authentication: << module.input.authentication >>
+        cloudwatch_default_log_group_names: '<< module.input.otel_collector_enabled && module.input.otlp_log_group_name ? [module.input.otlp_log_group_name] : [] >>'
+        cloudwatch_enabled: << module.input.cloudwatch_enabled >>
+        data_source_region: '<< module.input.otel_collector_enabled ? module.input.data_source_region : module.input.aws_region >>'
+        editor_group_names: << module.input.editor_group_names || [] >>
+        editor_user_names: << module.input.editor_user_names || [] >>
+        grafana_version: << module.input.grafana_version >>
+        identity_center_region: << module.input.identity_center_region >>
+        name: << module.input.name >>
+        plugin_admin_enabled: << module.input.plugin_admin_enabled >>
+        prometheus_query_url: '<< module.input.prometheus_enabled ? module.input.prometheus_query_url : nil >>'
+        prometheus_workspace_arn: '<< module.input.prometheus_enabled ? module.input.prometheus_workspace_arn : nil >>'
+        region: << module.input.aws_region >>
+        saml_admin_role_values: << module.input.saml_admin_role_values || [] >>
+        saml_allowed_organizations: << module.input.saml_allowed_organizations || [] >>
+        saml_editor_role_values: << module.input.saml_editor_role_values || [] >>
+        saml_email_assertion: << module.input.saml_email_assertion >>
+        saml_idp_metadata_url: << module.input.saml_idp_metadata_url >>
+        saml_idp_metadata_xml: << module.input.saml_idp_metadata_xml >>
+        saml_login_assertion: << module.input.saml_login_assertion >>
+        saml_login_validity_minutes: << module.input.saml_login_validity_minutes >>
+        saml_name_assertion: << module.input.saml_name_assertion >>
+        saml_org_assertion: << module.input.saml_org_assertion >>
+        saml_role_assertion: << module.input.saml_role_assertion >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        viewer_group_names: << module.input.viewer_group_names || [] >>
+        viewer_user_names: << module.input.viewer_user_names || [] >>
+        xray_enabled: << module.input.xray_enabled >>
+  ui:
+    links: |-
+      <<
+      stack.output.url && stack.output.workspace_id && stack.output.region ?
+      [{"name":"Grafana","href":stack.output.url},{"name":"Grafana workspace in AWS","href":"https://" + stack.output.region + ".console.aws.amazon.com/grafana/home?region=" + stack.output.region + "#/workspaces/" + stack.output.workspace_id}] :
+      []
+      >>
+  readme: |-
+    Creates an Amazon Managed Grafana workspace with AWS X-Ray, CloudWatch, and Prometheus data sources already connected.
+
+    ## Overview
+
+    [Amazon Managed Grafana](https://aws.amazon.com/grafana/) runs Grafana for you: AWS patches, scales, and backs it up, and users sign in with your organization's identities. This module creates a workspace, the role it reads AWS data with, and the data sources that point at your telemetry, so dashboards work as soon as the first deploy finishes.
+
+    Select an OpenTelemetry collector and a Prometheus workspace, and the module reads their outputs directly: traces from X-Ray, metrics from Prometheus, and the collector's OTLP logs from CloudWatch Logs, with a log line linking to its trace.
+
+    Terraform source: [ravionhq/modules/monitoring/managed_grafana](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/managed_grafana)
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | OpenTelemetry end to end | Services send OTLP to the collector; Grafana shows the traces, metrics, and logs without further setup. |
+    | AWS service dashboards | The CloudWatch data source charts any CloudWatch metric and queries any log group in the account. |
+    | Team access through SSO | Users sign in with IAM Identity Center or SAML; there are no Grafana passwords to manage. |
+
+    ## Sign-in
+
+    **IAM Identity Center.** Your AWS organization's IAM Identity Center must be enabled in its management account. List the user names and group names to make Admins, Editors, and Viewers; the module looks them up in Identity Center and fails the plan if one does not exist. Set the IAM Identity Center region when Identity Center is in a different region from the workspace.
+
+    **SAML.** Give the identity provider's metadata URL or document, the assertion attribute that carries roles, and the role values that make a user an Admin or Editor. Everyone else who signs in is a Viewer. In your identity provider, create a SAML application whose single sign-on URL and audience are the workspace's, shown in the AWS console once the workspace exists.
+
+    ## Data sources
+
+    | Data source | UID | Reads |
+    | --- | --- | --- |
+    | AWS X-Ray | `aws-xray` | Traces and the service map, in the collector's region or the workspace's |
+    | CloudWatch | `aws-cloudwatch` | Metrics and logs in the same region, with the collector's OTLP log group selected and trace IDs linked to X-Ray |
+    | Amazon Managed Service for Prometheus | `amazon-prometheus` | The selected Prometheus workspace, with PromQL |
+
+    The module owns these data sources and keeps them in line with its settings: turning one off removes it from the workspace. Dashboards can reference them by UID. Data sources you add yourself are left alone.
+
+    The workspace reads with a role the module creates. The role can read CloudWatch metrics and logs and X-Ray traces while those data sources are on, and the one selected Prometheus workspace. It cannot write anything.
+
+    ## Configuration
+
+    | Field | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | Account the workspace is created in and reads. |
+    | Region | Yes | None | Region the workspace is created in. |
+    | Name | Yes | Project, environment, and module given IDs | Workspace name. |
+    | Grafana version | Yes | 12.4 | Upgrades happen in place. |
+    | Plugin management | No | false | Lets admins install plugins from the Grafana catalog. |
+    | Sign-in method | Yes | IAM Identity Center | IAM Identity Center or SAML. |
+    | Admin, Editor, and Viewer users and groups | No | None | IAM Identity Center names. |
+    | SAML settings | When signing in with SAML | None | Metadata, role attribute, and role values. |
+    | OpenTelemetry collector | No | Off | Sets the data source region and the default log group. |
+    | AWS X-Ray | No | On | Adds the X-Ray data source. |
+    | CloudWatch | No | On | Adds the CloudWatch data source. |
+    | Prometheus | No | Off | Adds a Prometheus workspace as a data source. |
+    | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
+    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
+
+    ## Design decisions
+
+    - Amazon Managed Grafana has no AWS API for data sources, so the module writes them through the workspace's Grafana API during apply. Each run mints a Grafana service account token that expires in 15 minutes and deletes it when done; no token is stored.
+    - Data sources have fixed UIDs, so dashboards that reference them keep working across redeploys.
+    - The workspace uses a role the module owns rather than AWS's service-managed permissions, so the role grants exactly the reads the enabled data sources need.
+    - The Terraform runner needs the AWS CLI and Python 3 to write the data sources.
+
+    ## Costs
+
+    Amazon Managed Grafana bills per active user each month, with Editor and Admin users costing more than Viewers. There is no charge for a workspace nobody signs in to. The data it reads is billed by the services that hold it: CloudWatch, X-Ray, and Amazon Managed Service for Prometheus queries.
+
+    ## Learn more
+
+    - [Amazon Managed Grafana user guide](https://docs.aws.amazon.com/grafana/latest/userguide/what-is-Amazon-Managed-Service-Grafana.html)
+    - [Authentication in Amazon Managed Grafana](https://docs.aws.amazon.com/grafana/latest/userguide/authentication-in-AMG.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/managed_grafana)

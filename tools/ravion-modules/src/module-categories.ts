@@ -105,7 +105,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Observability",
     description: "For collecting traces, metrics and logs from services, storing them, and viewing them in dashboards.",
     sortOrder: 125,
-    definitionTypes: ["rvn-aws-otel-collector", "rvn-aws-prometheus"],
+    definitionTypes: ["rvn-aws-otel-collector", "rvn-aws-prometheus", "rvn-aws-managed-grafana"],
   },
   {
     givenId: "security",
