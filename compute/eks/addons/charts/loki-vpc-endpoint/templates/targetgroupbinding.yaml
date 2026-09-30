@@ -1,0 +1,13 @@
+# The AWS Load Balancer Controller registers the Loki pods behind this Service
+# into the target group Terraform created. No networking block: the security
+# group rules the path needs are Terraform's, not the controller's.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ .Values.serviceName }}-vpc-endpoint
+spec:
+  serviceRef:
+    name: {{ .Values.serviceName | quote }}
+    port: {{ .Values.servicePort }}
+  targetGroupARN: {{ required "targetGroupArn is required" .Values.targetGroupArn | quote }}
+  targetType: ip

@@ -1391,6 +1391,20 @@ variable "metrics_providers" {
   }
 }
 
+variable "loki_vpc_endpoint_enabled" {
+  type        = bool
+  description = "Put Loki's query API behind an internal Network Load Balancer, for clients outside the cluster such as an Amazon Managed Grafana workspace with a VPC connection. Only members of the Loki client security group (the loki_client_security_group_id output) can reach it. Needs loki in logs_providers."
+  default     = false
+  nullable    = false
+}
+
+variable "otlp_receiver_enabled" {
+  type        = bool
+  description = "Let workloads send OpenTelemetry to the metrics collector over OTLP (gRPC on 4317, HTTP on 4318) at an in-cluster Service. Traces go to AWS X-Ray in the cluster's region; metrics go to the same metrics_providers as the scraped metrics, without the scrape allow-list, so every series a workload emits is billed. Needs metrics on, which is when the collector runs."
+  default     = false
+  nullable    = false
+}
+
 variable "observability_namespace" {
   type        = string
   description = "Kubernetes namespace the collectors, kube-state-metrics, the log store and the materialized vendor credentials are installed into. When null, Ravion Operator's namespace is used, so Ravion's in-cluster components share one namespace — and, importantly, Loki keeps the Service URL the control plane already defaults to. Created if it does not exist."

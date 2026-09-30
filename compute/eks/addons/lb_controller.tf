@@ -18,7 +18,8 @@ locals {
     var.public_alb_creation_enabled ||
     var.private_alb_creation_enabled ||
     var.public_nlb_creation_enabled ||
-    var.private_nlb_creation_enabled
+    var.private_nlb_creation_enabled ||
+    local.loki_vpc_endpoint_enabled
   )
 }
 

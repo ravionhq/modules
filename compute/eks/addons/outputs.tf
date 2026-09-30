@@ -337,6 +337,36 @@ output "otel_collector_chart_version" {
   value       = local.otel_metrics_enabled ? helm_release.otel_collector[0].version : null
 }
 
+output "otlp_host" {
+  description = "Hostname of the in-cluster OTLP Service, for senders that take the host and port separately; gRPC is on 4317 and HTTP on 4318 (null unless otlp_receiver_enabled and metrics are on)."
+  value       = local.otlp_enabled ? local.otlp_service_host : null
+}
+
+output "otlp_grpc_endpoint" {
+  description = "In-cluster OTLP/gRPC endpoint workloads send traces and metrics to, for OTEL_EXPORTER_OTLP_ENDPOINT with the grpc protocol (null unless otlp_receiver_enabled and metrics are on)."
+  value       = local.otlp_grpc_endpoint
+}
+
+output "otlp_http_endpoint" {
+  description = "In-cluster OTLP/HTTP base URL workloads send traces and metrics to; SDKs append /v1/traces or /v1/metrics (null unless otlp_receiver_enabled and metrics are on)."
+  value       = local.otlp_http_endpoint
+}
+
+output "loki_vpc_query_url" {
+  description = "Loki's query base URL on the internal load balancer, for a Grafana Loki data source inside the VPC (null unless loki_vpc_endpoint_enabled with Loki selected)."
+  value       = local.loki_vpc_endpoint_enabled ? "http://${module.loki_nlb[0].nlb_dns_name}:${local.loki_http_port}" : null
+}
+
+output "loki_client_security_group_id" {
+  description = "Security group a client attaches to query Loki through its internal load balancer (null unless loki_vpc_endpoint_enabled with Loki selected)."
+  value       = local.loki_vpc_endpoint_enabled ? module.loki_client_security_group[0].security_group_id : null
+}
+
+output "xray_region" {
+  description = "Region OTLP traces are written to in AWS X-Ray (null unless otlp_receiver_enabled and metrics are on)."
+  value       = local.otlp_enabled ? local.xray_region : null
+}
+
 output "kube_state_metrics_chart_version" {
   description = "Installed version of the kube-state-metrics Helm chart (null if not installed)."
   value       = local.kube_state_metrics_install ? helm_release.kube_state_metrics[0].version : null

@@ -1,0 +1,4 @@
+# Set by loki_vpc_endpoint.tf.
+serviceName: ""
+servicePort: 3100
+targetGroupArn: ""

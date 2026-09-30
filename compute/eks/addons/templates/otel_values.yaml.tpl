@@ -41,16 +41,17 @@ clusterRole:
 
 resources: ${jsonencode(resources)}
 
-# Nothing sends telemetry to this collector — it pulls. No Service, and none of
-# the chart's default receiver ports.
+# The collector pulls its scrape targets. Workloads send to it only while the
+# OTLP receiver is on: then a ClusterIP Service carries the two OTLP ports, and
+# none of the chart's other default receiver ports.
 service:
-  enabled: false
+  enabled: ${otlp_enabled}
 
 ports:
   otlp:
-    enabled: false
+    enabled: ${otlp_enabled}
   otlp-http:
-    enabled: false
+    enabled: ${otlp_enabled}
   jaeger-compact:
     enabled: false
   jaeger-thrift:
@@ -66,7 +67,18 @@ config:
   receivers:
     jaeger: null
     zipkin: null
+%{ if otlp_enabled ~}
+    # The pod IP, the chart's own default: the Service targets it, and nothing
+    # on the node's other interfaces can reach the receiver.
+    otlp:
+      protocols:
+        grpc:
+          endpoint: $${env:MY_POD_IP}:4317
+        http:
+          endpoint: $${env:MY_POD_IP}:4318
+%{ else ~}
     otlp: null
+%{ endif ~}
     prometheus:
       config:
         scrape_configs:
@@ -179,7 +191,27 @@ config:
     extensions: ${jsonencode(service_extensions)}
     pipelines:
       logs: null
+%{ if otlp_enabled ~}
+      # Workload traces, to X-Ray.
+      traces:
+        receivers:
+          - otlp
+        processors:
+          - memory_limiter
+          - batch
+        exporters: ${jsonencode(traces_pipeline_exporters)}
+      # Workload metrics, to the same destinations as the scraped ones. They
+      # skip the scrape allow-list: a workload's own metrics are its choice.
+      metrics/otlp:
+        receivers:
+          - otlp
+        processors:
+          - memory_limiter
+          - batch
+        exporters: ${jsonencode(pipeline_exporters)}
+%{ else ~}
       traces: null
+%{ endif ~}
       metrics:
         receivers:
           - prometheus

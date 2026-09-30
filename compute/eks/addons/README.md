@@ -638,6 +638,8 @@ failed during initialization have no provider resources to migrate.
 | busybox_image | Static busybox image that supplies a shell to the volume resizer. | `string` | `"public.ecr.aws/docker/library/busybox:1.37.0-musl"` | no |
 | logs_providers | Where container logs go: any of `loki`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns logs off. Null falls back to the deprecated `logs_enabled`. | `list(string)` | `["loki"]` | no |
 | metrics_providers | Where metrics go: any of `amp`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns metrics off. Null falls back to the deprecated `metrics_enabled`. | `list(string)` | `["amp"]` | no |
+| otlp_receiver_enabled | Accept OTLP from workloads on the metrics collector: traces to AWS X-Ray, metrics to `metrics_providers` without the scrape allow-list. Needs metrics on. | `bool` | `false` | no |
+| loki_vpc_endpoint_enabled | Put Loki's query API behind an internal NLB for clients outside the cluster; only the Loki client security group reaches it. Needs `loki` in `logs_providers`. | `bool` | `false` | no |
 | observability_namespace | Namespace for the collectors, the log store, and the materialized vendor credentials. Null shares Ravion Operator's namespace, which is what keeps Loki's Service URL stable. | `string` | `null` | no |
 | logs_excluded_namespaces | Namespaces no log collector reads from, for every destination. | `list(string)` | `["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"]` | no |
 | logs_loki | `{ retention_days, s3_bucket_name, persistence_enabled, persistence_size }`. Falls back to the flat `log_retention_days` / `loki_s3_bucket_name` / `loki_persistence_*`. | `object` | `{}` | no |
@@ -767,6 +769,10 @@ All outputs are null when the corresponding add-on is disabled.
 | amp_remote_write_role_arn | Collector Pod Identity role, scoped to `aps:RemoteWrite` on that one workspace. |
 | metrics_namespace | Namespace the metrics components are installed into. |
 | otel_collector_chart_version / kube_state_metrics_chart_version | Installed chart versions for the metrics pipeline. |
+| loki_vpc_query_url / loki_client_security_group_id | Loki's query URL on the internal load balancer and the security group a client attaches to reach it, or null while the endpoint is off. |
+| otlp_host | Hostname of the in-cluster OTLP Service, for senders that take host and port separately, or null while the OTLP receiver is off. |
+| otlp_grpc_endpoint / otlp_http_endpoint | In-cluster OTLP endpoints workloads send to (`http://host:4317`, `http://host:4318`), or null while the OTLP receiver is off. |
+| xray_region | Region OTLP traces are written to in AWS X-Ray, or null while the OTLP receiver is off. |
 | grafana_role_arn | Role Amazon Managed Grafana assumes to query the AMP workspace. |
 | loki_endpoint | In-cluster base URL of Loki. Reachable only from inside the cluster — it is what Ravion Operator's proxy allowlist names. |
 | loki_namespace | Namespace Loki and Alloy are installed into. |

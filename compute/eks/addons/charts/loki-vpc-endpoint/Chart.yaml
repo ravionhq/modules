@@ -1,0 +1,5 @@
+apiVersion: v2
+name: loki-vpc-endpoint
+description: Binds the in-cluster Loki Service to the add-ons' internal Loki load balancer target group.
+type: application
+version: 0.1.0
