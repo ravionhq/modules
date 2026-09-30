@@ -335,6 +335,21 @@ run "rejects_unknown_metrics_destination" {
   expect_failures = [var.metrics_destination]
 }
 
+run "null_settings_fall_back_to_their_defaults" {
+  command = plan
+
+  variables {
+    metrics_enabled     = null
+    metrics_destination = null
+    logs_enabled        = null
+  }
+
+  assert {
+    condition     = keys(yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).service.pipelines) == ["traces"]
+    error_message = "An instance created before these settings existed should keep only the traces pipeline."
+  }
+}
+
 ################################################################################
 # Logs
 ################################################################################

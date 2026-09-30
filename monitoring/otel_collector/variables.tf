@@ -119,12 +119,14 @@ variable "desired_count" {
 
 variable "metrics_enabled" {
   type        = bool
+  nullable    = false
   description = "Accept OTLP metrics and publish them to metrics_destination. While off, the collector rejects metric exports."
   default     = false
 }
 
 variable "metrics_destination" {
   type        = string
+  nullable    = false
   description = "Where metrics go while metrics_enabled is true: cloudwatch publishes them as embedded metric format logs, each metric becoming a billed CloudWatch custom metric; prometheus remote-writes them to an Amazon Managed Service for Prometheus workspace."
   default     = "cloudwatch"
 
@@ -168,6 +170,7 @@ variable "prometheus_workspace_arn" {
 
 variable "logs_enabled" {
   type        = bool
+  nullable    = false
   description = "Accept OTLP logs and write each log record, with its trace and span IDs, to a CloudWatch log group the module owns. While off, the collector rejects log exports."
   default     = false
 }
