@@ -1,0 +1,38 @@
+- id: section_opentelemetry
+  label: OpenTelemetry
+  type: section
+- id: otel_enabled
+  label: Send telemetry to the cluster's collector
+  type: boolean
+  description: Point the app's OpenTelemetry SDK at the EKS Add-ons module's in-cluster collector. Sets OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_SERVICE_NAME, and OTEL_RESOURCE_ATTRIBUTES on the app container. The add-ons module must have Receive OTLP from workloads on.
+  default: false
+- id: otel_protocol
+  label: OTLP protocol
+  type: string
+  description: The protocol the app's OpenTelemetry SDK exports with. Most SDKs default to HTTP/protobuf.
+  default: http/protobuf
+  required: true
+  show_when:
+    otel_enabled: true
+  values:
+    - label: HTTP/protobuf
+      value: http/protobuf
+    - label: gRPC
+      value: grpc
+- id: otel_service_name
+  label: Service name
+  type: string
+  description: The service.name every span, metric, and log from this workload carries.
+  default: <<module.given_id>>
+  required: true
+  show_when:
+    otel_enabled: true
+- id: otel_resource_attributes
+  label: Resource attributes
+  type: string
+  collapsible: true
+  description: Comma-separated key=value pairs added to every span, metric, and log, as OTEL_RESOURCE_ATTRIBUTES.
+  default: deployment.environment.name=<<environment.given_id>>
+  placeholder: deployment.environment.name=production,team=payments
+  show_when:
+    otel_enabled: true

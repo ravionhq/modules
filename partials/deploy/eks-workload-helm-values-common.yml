@@ -17,7 +17,13 @@ imagePullSecrets: >-
   << module.input.image_pull_secret_names != nil ? map(module.input.image_pull_secret_names, ({"name": #})) : [] >>
 command: '<< module.input.start_command != nil ? module.input.start_command : [] >>'
 args: '<< module.input.start_command_args != nil ? module.input.start_command_args : [] >>'
-env: '<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>'
+env: >-
+  << (module.input.otel_enabled ? [{"name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": (module.input.otel_protocol == "grpc" ?
+  module.input.otel_otlp_grpc_endpoint : module.input.otel_otlp_http_endpoint)}, {"name": "OTEL_EXPORTER_OTLP_PROTOCOL",
+  "value": module.input.otel_protocol}, {"name": "OTEL_SERVICE_NAME", "value": module.input.otel_service_name}] |
+  concat(module.input.otel_resource_attributes ? [{"name": "OTEL_RESOURCE_ATTRIBUTES", "value":
+  module.input.otel_resource_attributes}] : []) : []) | concat(module.input.environment_variables != nil ?
+  module.input.environment_variables : []) >>
 resources:
   requests:
     cpu: << module.input.cpu_request >>

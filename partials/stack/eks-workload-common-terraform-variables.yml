@@ -41,3 +41,9 @@ pod_identity_role_creation_enabled: << module.input.pod_identity_role_creation_e
 pod_identity_role_name: << module.input.pod_identity_role_name >>
 pod_identity_managed_policy_arns: '<< module.input.pod_identity_managed_policy_arns != nil ? module.input.pod_identity_managed_policy_arns : [] >>'
 pod_identity_inline_policies: '<< module.input.pod_identity_inline_policies != nil ? module.input.pod_identity_inline_policies : {} >>'
+# OpenTelemetry: the deploy sets the environment variables; the stack only
+# refuses a workload that turns it on against add-ons that do not receive OTLP.
+otel_enabled: << module.input.otel_enabled == true >>
+otel_collector_endpoint: >-
+  << module.input.otel_enabled == true ? (module.input.otel_protocol == "grpc" ? module.input.otel_otlp_grpc_endpoint :
+  module.input.otel_otlp_http_endpoint) : nil >>

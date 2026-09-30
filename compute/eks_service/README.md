@@ -153,6 +153,8 @@ while those still exist.
 | pod_identity_service_account_name | ServiceAccount the association targets; defaults to `release_name`, which the charts use via `fullnameOverride` | `string` | `null` | no |
 | pod_identity_managed_policy_arns | Managed IAM policy ARNs attached to the Pod Identity role | `list(string)` | `[]` | no |
 | pod_identity_inline_policies | Inline policy documents keyed by name, the `compute/ecs_service` task role shape | `any` | `{}` | no |
+| otel_enabled | Whether the workload sends OpenTelemetry to its EKS Add-ons module's collector; the deploy sets the `OTEL_*` variables | `bool` | `false` | no |
+| otel_collector_endpoint | The add-ons module's OTLP endpoint for the workload's protocol; required, and not blank, while `otel_enabled` | `string` | `null` | no |
 | workload_release_helm_version | Helm downloaded for the uninstall when none is on PATH | `string` | `"v4.2.4"` | no |
 | workload_release_uninstall_timeout | `helm uninstall --wait` timeout | `string` | `"10m"` | no |
 | container_port | Port the application container listens on | `number` | `8080` | no |

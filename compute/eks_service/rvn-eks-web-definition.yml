@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.4.3
-  description: Use the workload's execution environment for deploys and clarify supported build secret references.
+  version: 1.5.0
+  description: Send the app's OpenTelemetry traces and metrics to the EKS Add-ons module's in-cluster collector.
 module:
   inputs:
     - id: section_cluster
@@ -394,6 +394,7 @@ module:
         pod_disruption_budget_enabled: true
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-otel-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -876,6 +877,10 @@ module:
 
     Turning a signal off on the add-ons module empties the matching tab here.
 
+    ## OpenTelemetry
+
+    Turn on **Send telemetry to the cluster's collector** and the app container gets `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` pointing at the EKS Add-ons module's in-cluster collector, `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES`, which OpenTelemetry SDKs and auto-instrumentation agents read without code changes. Traces go to AWS X-Ray and metrics go to the add-ons module's metrics destinations. The add-ons module must have **Receive OTLP from workloads** on; the {'web': 'service', 'worker': 'worker', 'cron': 'job'}'s stack refuses to apply otherwise. Choose the OTLP protocol your SDK exports with; most default to HTTP/protobuf.
+
     ## Configuration
 
     | Field | Required | Default | Description |
@@ -944,6 +949,10 @@ module:
     | Scan images on push | No | true | ECR basic vulnerability scan on every push |
     | Force delete image repository | No | false | Allow destroying the repository while it holds images |
     | Tags | No | Standard Ravion tags | Additional tags applied to the load balancer and ECR resources |
+    | Send telemetry to the cluster's collector | No | false | Set the OTEL_* variables to the add-ons module's in-cluster collector |
+    | OTLP protocol | No | http/protobuf | `http/protobuf` or `grpc`, whichever the app's SDK exports with |
+    | Service name (OpenTelemetry) | No | module ID | The service.name on every span, metric, and log |
+    | Resource attributes | No | deployment.environment.name={env} | Extra OTEL_RESOURCE_ATTRIBUTES pairs |
     | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
     | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
     | Ravion Terraform workspace name | No | {project}-{env}-{module} | Override the state backend workspace name |

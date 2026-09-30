@@ -90,6 +90,25 @@
   placeholder: '[{"provider":"datadog","name":"Datadog","href_prefix":"https://app.datadoghq.com/metric/explorer?query="}]'
   required: false
   default: <<ref.stack.output.metrics_external_links>>
+# The collector's OTLP endpoints, for a workload whose OpenTelemetry section
+# is on. Both are empty while the add-ons module does not receive OTLP, which
+# the stack refuses rather than letting the SDK export nowhere.
+- id: otel_otlp_grpc_endpoint
+  label: OTLP/gRPC endpoint
+  type: string
+  description: The cluster's in-cluster OpenTelemetry collector over OTLP/gRPC. Inherited from the selected add-ons module; empty until it applies with Receive OTLP from workloads on.
+  collapsible: true
+  placeholder: http://ravion-otel-collector.ravion-operator.svc.cluster.local:4317
+  required: false
+  default: <<ref.stack.output.otlp_grpc_endpoint>>
+- id: otel_otlp_http_endpoint
+  label: OTLP/HTTP endpoint
+  type: string
+  description: The cluster's in-cluster OpenTelemetry collector over OTLP/HTTP. Inherited from the selected add-ons module; empty until it applies with Receive OTLP from workloads on.
+  collapsible: true
+  placeholder: http://ravion-otel-collector.ravion-operator.svc.cluster.local:4318
+  required: false
+  default: <<ref.stack.output.otlp_http_endpoint>>
 # The two Grafana Cloud query URLs and the credentials secret are what the
 # Ravion Operator needs to read Grafana Cloud on the dashboard's behalf, rather
 # than only linking out to it. The add-ons module publishes them now so an

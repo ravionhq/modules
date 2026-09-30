@@ -404,3 +404,21 @@ variable "pod_identity_inline_policies" {
     error_message = "The pod_identity_inline_policies must be an object keyed by policy name."
   }
 }
+
+variable "otel_enabled" {
+  type        = bool
+  description = "Whether the workload sends OpenTelemetry to its EKS Add-ons module's in-cluster collector. The deploy sets the OTEL_* environment variables; the stack only refuses a workload that turns it on against add-ons that do not receive OTLP."
+  default     = false
+  nullable    = false
+}
+
+variable "otel_collector_endpoint" {
+  type        = string
+  description = "The EKS Add-ons module's OTLP endpoint for the protocol the workload exports with. Null or empty while the add-ons module does not receive OTLP."
+  default     = null
+
+  validation {
+    condition     = !var.otel_enabled || (var.otel_collector_endpoint != null && var.otel_collector_endpoint != "")
+    error_message = "OpenTelemetry is on for this workload, but its EKS Add-ons module does not receive OTLP. Turn on Receive OTLP from workloads on the add-ons module and apply it before this workload."
+  }
+}
