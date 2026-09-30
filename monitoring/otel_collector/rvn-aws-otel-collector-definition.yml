@@ -112,7 +112,7 @@ module:
       label: Access
       type: section
     - add_button_label: Add security group ID
-      description: Security groups of the services that send telemetry. Only their members can reach the collector on ports 4317 (OTLP/gRPC) and 4318 (OTLP/HTTP).
+      description: Security groups of services that send telemetry, beyond those that attach the collector's client security group. Only members of these groups and of the client security group can reach the collector on ports 4317 (OTLP/gRPC) and 4318 (OTLP/HTTP).
       id: allowed_security_group_ids
       label: Allowed security groups
       patterns:
@@ -139,8 +139,13 @@ module:
     - id: section_logs
       label: Logs
       type: section
+    - default: false
+      description: Accept OTLP logs and write each log record, with its trace and span IDs, to a CloudWatch log group the module creates. While off, the collector rejects log exports.
+      id: logs_enabled
+      label: OTLP logs
+      type: boolean
     - default: 30
-      description: Applies to the collector's own logs and, when CloudWatch metrics are on, to the metric logs.
+      description: Applies to the collector's own logs, the OTLP logs, and, when CloudWatch metrics are on, the metric logs.
       id: log_retention_days
       label: Log retention (days)
       required: true
@@ -206,6 +211,7 @@ module:
         desired_count: << module.input.desired_count >>
         image: << module.input.image >>
         log_retention_days: << module.input.log_retention_days >>
+        logs_enabled: << module.input.logs_enabled >>
         metrics_enabled: << module.input.metrics_enabled >>
         metrics_namespace: << module.input.metrics_namespace >>
         name: << module.input.name >>
@@ -281,6 +287,7 @@ module:
     | `otlp_grpc_endpoint` | `http://otlp.<name>.internal:4317` | `OTEL_EXPORTER_OTLP_ENDPOINT` with `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` |
     | `otlp_http_endpoint` | `http://otlp.<name>.internal:4318` | `OTEL_EXPORTER_OTLP_ENDPOINT` with `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` |
     | `hostname` | `otlp.<name>.internal` | Exporters configured with a host and port |
+    | `client_security_group_id` | A security group ID | Attach to each sender so it can reach the collector |
 
     The collector accepts plain-text OTLP inside the VPC. Traffic never leaves the VPC on the way to the collector, and the collector reaches X-Ray over HTTPS.
 
@@ -290,11 +297,15 @@ module:
 
     Select a VPC network first. Ravion maps its AWS account, region, VPC ID, and private subnet IDs into this module. The collector tasks run in those private subnets without public IP addresses, so the subnets need a NAT gateway or VPC endpoints for X-Ray, CloudWatch Logs, and Amazon ECR Public.
 
-    The collector's security group accepts OTLP on ports 4317 and 4318 only from the allowed security groups. Add the security group of every service that sends telemetry. Nothing else can reach the collector, and it is never exposed to the internet. Its only outbound traffic is HTTPS.
+    The collector's security group accepts OTLP on ports 4317 and 4318 only from its client security group and from the allowed security groups. Attach the client security group (`client_security_group_id`) to every service that sends telemetry, or list a sender's own security group under allowed security groups. Nothing else can reach the collector, and it is never exposed to the internet. Its only outbound traffic is HTTPS.
 
     ## Metrics
 
     CloudWatch metrics are off by default, and the collector rejects OTLP metric exports while they are off. Turn them on to publish OTLP metrics to CloudWatch through embedded metric format logs. Every distinct metric and attribute combination becomes a billed CloudWatch custom metric, so check what your services emit before enabling it. Leave the metrics namespace blank to group each service's metrics under its own `service.namespace` and `service.name`.
+
+    ## Logs
+
+    OTLP logs are off by default, and the collector rejects OTLP log exports while they are off. Turn them on to write every log record your services export to a CloudWatch log group the module creates (`otlp_log_group_name`). Each record is one JSON event that keeps its body, severity, attributes, resource, and trace and span IDs, so a log line can be matched to its trace.
 
     ## Configuration
 
@@ -308,8 +319,9 @@ module:
     | Collector image | Yes | AWS Distro for OpenTelemetry collector v0.50.0 | Change the tag to upgrade the collector. |
     | Allowed security groups | No | None | Security groups allowed to send OTLP. |
     | CloudWatch metrics | No | false | Publishes OTLP metrics as CloudWatch custom metrics. |
+    | OTLP logs | No | false | Writes OTLP log records to a CloudWatch log group. |
     | Metrics namespace | No | Derived from each service | Only shown when CloudWatch metrics are on. |
-    | Log retention (days) | Yes | 30 | Applies to the collector's logs and the metric logs. |
+    | Log retention (days) | Yes | 30 | Applies to the collector's logs, the OTLP logs, and the metric logs. |
     | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
     | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
 
@@ -317,7 +329,8 @@ module:
 
     - The collector runs in its own Fargate cluster, so it needs no ECS cluster module and its capacity never competes with application services.
     - The collector configuration is generated from the module's settings. A setting change deploys a new task definition revision, and a revision the collector cannot start with rolls back to the last one that ran.
-    - The task role can only write to X-Ray and, when CloudWatch metrics are on, to the module's own metric log group.
+    - The task role can only write to X-Ray and, when they are on, to the module's own metric and OTLP log groups.
+    - Senders reach the collector by attaching its client security group, so the collector never has to list the services that send to it.
     - ECS adds each running task to the hostname's DNS records and removes the record when the task stops. A task that fails its container health check is stopped and replaced.
 
     ## Learn more
