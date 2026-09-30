@@ -39,6 +39,29 @@ locals {
 }
 
 locals {
+  vpc_origin_endpoints = {
+    for o in var.origins : o.origin_id => {
+      arn                    = o.vpc_origin_arn
+      http_port              = o.http_port
+      https_port             = o.https_port
+      origin_protocol_policy = o.origin_protocol_policy
+      origin_ssl_protocols   = o.origin_ssl_protocols
+      base_name              = "${var.name}-${o.origin_id}"
+    } if o.vpc_origin_enabled
+  }
+
+  # The hash suffix gives each endpoint configuration its own name, so the
+  # replacement VPC origin can exist alongside the one it replaces.
+  vpc_origin_names = {
+    for k, v in local.vpc_origin_endpoints : k => format(
+      "%s-%s",
+      substr(replace(v.base_name, "/[^a-zA-Z0-9-_]/", "-"), 0, 55),
+      substr(sha1(jsonencode(v)), 0, 8),
+    )
+  }
+}
+
+locals {
   default_tags = {
     ManagedBy = "terraform"
     Module    = "cdn/cloudfront"
