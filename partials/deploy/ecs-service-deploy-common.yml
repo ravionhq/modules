@@ -33,7 +33,8 @@ pre_deploy: >-
   weight: 1, base: 0}] : []))), "network_configuration": {"awsvpc_configuration": {"subnets":
   (module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids),
   "security_groups": ([stack.output.security_group_id] | concat(module.input.security_group_ids != nil ?
-  module.input.security_group_ids : [])), "assign_public_ip": (module.input.private_subnet_placement_enabled ?
+  module.input.security_group_ids : []) | concat(module.input.otel_enabled ?
+  [module.input.otel_client_security_group_id] : [])), "assign_public_ip": (module.input.private_subnet_placement_enabled ?
   "DISABLED" : "ENABLED")}}, "enable_execute_command": module.input.execute_command_enabled, "timeout":
   module.input.pre_deploy_timeout} : nil >>
 post_deploy: >-
@@ -58,7 +59,8 @@ post_deploy: >-
   weight: 1, base: 0}] : []))), "network_configuration": {"awsvpc_configuration": {"subnets":
   (module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids),
   "security_groups": ([stack.output.security_group_id] | concat(module.input.security_group_ids != nil ?
-  module.input.security_group_ids : [])), "assign_public_ip": (module.input.private_subnet_placement_enabled ?
+  module.input.security_group_ids : []) | concat(module.input.otel_enabled ?
+  [module.input.otel_client_security_group_id] : [])), "assign_public_ip": (module.input.private_subnet_placement_enabled ?
   "DISABLED" : "ENABLED")}}, "enable_execute_command": module.input.execute_command_enabled, "timeout":
   module.input.post_deploy_timeout} : nil >>
 timeout: 1800

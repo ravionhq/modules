@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.0.0
-  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks. Pre-deploy, post-deploy, and sidecar CPU and memory now use the app task's units (1 CPU = 1 vCPU, 1 memory = 1 GB) instead of ECS CPU units and MiB; re-enter any saved values after upgrading, for example 512 CPU units becomes 0.5.
+  version: 2.1.0
+  description: Send the app's OpenTelemetry traces, metrics, and logs to an OpenTelemetry collector in the same VPC.
 module:
   inputs:
     - id: section_cluster
@@ -47,6 +47,7 @@ module:
         field_overrides: {}
     - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
     - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-otel-inputs.yml
     - $include: ../../partials/inputs/ecs-service-compliance-inputs.yml
     - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
@@ -98,7 +99,7 @@ module:
         > 0 ? module.input.image_start_command : nil), "cpu": (module.input.capacity_provider == "ec2" ?
         int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu) * 1024)),
         "depends_on": [{"container_name": "log_router", "condition": "START"}], "environment":
-        (module.input.environment_variables != nil ? module.input.environment_variables : []), "essential": true,
+        ((module.input.otel_enabled ? [{name: "OTEL_EXPORTER_OTLP_ENDPOINT", value: (module.input.otel_protocol == "grpc" ? module.input.otel_otlp_grpc_endpoint : module.input.otel_otlp_http_endpoint)}, {name: "OTEL_EXPORTER_OTLP_PROTOCOL", value: module.input.otel_protocol}, {name: "OTEL_SERVICE_NAME", value: module.input.otel_service_name}] | concat(module.input.otel_resource_attributes ? [{name: "OTEL_RESOURCE_ATTRIBUTES", value: module.input.otel_resource_attributes}] : []) : []) | concat(module.input.environment_variables != nil ? module.input.environment_variables : [])), "essential": true,
         "image": (module.input.build_source == "image_registry" ? (deploy.input.image_ref contains
         "sha256:" ? module.input.image_repository + "@" + deploy.input.image_ref : module.input.image_repository
         + ":" + deploy.input.image_ref) : (deploy.input.image_ref contains "sha256:" ?
@@ -129,8 +130,8 @@ module:
         "enable-ecs-log-metadata": string(module.input.firelens_ecs_metadata_enabled)}}}] : [{"command":
         (len(module.input.image_start_command) > 0 ? module.input.image_start_command : nil), "cpu":
         (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) :
-        int(float(module.input.fargate_size.vcpu) * 1024)), "environment": (module.input.environment_variables != nil ?
-        module.input.environment_variables : []), "essential": true, "image": (module.input.build_source ==
+        int(float(module.input.fargate_size.vcpu) * 1024)), "environment": ((module.input.otel_enabled ? [{name: "OTEL_EXPORTER_OTLP_ENDPOINT", value: (module.input.otel_protocol == "grpc" ? module.input.otel_otlp_grpc_endpoint : module.input.otel_otlp_http_endpoint)}, {name: "OTEL_EXPORTER_OTLP_PROTOCOL", value: module.input.otel_protocol}, {name: "OTEL_SERVICE_NAME", value: module.input.otel_service_name}] | concat(module.input.otel_resource_attributes ? [{name: "OTEL_RESOURCE_ATTRIBUTES", value: module.input.otel_resource_attributes}] : []) : []) | concat(module.input.environment_variables != nil ?
+        module.input.environment_variables : [])), "essential": true, "image": (module.input.build_source ==
         "image_registry" ? (deploy.input.image_ref contains "sha256:" ? module.input.image_repository + "@" +
         deploy.input.image_ref : module.input.image_repository + ":" + deploy.input.image_ref) :
         (deploy.input.image_ref contains "sha256:" ? stack.output.ecr_repository_url + "@" + deploy.input.image_ref :
@@ -202,6 +203,10 @@ module:
     Enable the EFS file system setting, select a Ravion EFS module, and set the EFS mount path. Ravion adds the task volume, mounts it into the worker container, attaches the file system's client security group to the service so NFS traffic is allowed, and mounts through the file system's access point when one is enabled. Sidecars mount the same file system through their Mount points setting with `efs` as the source volume.
 
     EFS volumes work with Fargate and EC2 Linux tasks and keep data across task replacement. Transit encryption is enabled by default. Enable EFS IAM authorization to authorize file system access with the task role; the task role must allow elasticfilesystem:ClientMount, plus elasticfilesystem:ClientWrite or elasticfilesystem:ClientRootAccess as needed.
+
+    ## OpenTelemetry
+
+    Turn on **Send telemetry to a collector** and select an OpenTelemetry Collector module in the service's VPC. The app container gets `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_PROTOCOL` pointing at the collector, `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES`, which OpenTelemetry SDKs and auto-instrumentation agents read without code changes. The service's tasks, including pre- and post-deploy tasks, attach the collector's client security group so they can reach it. Choose the OTLP protocol your SDK exports with; most default to HTTP/protobuf.
 
     ## Autoscaling
 

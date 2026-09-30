@@ -63,7 +63,8 @@ runtime_platform:
   operating_system_family: LINUX
 security_group_ids: >-
   << (module.input.security_group_ids != nil ? module.input.security_group_ids : []) |
-  concat(module.input.efs_enabled ? [module.input.efs_client_security_group_id] : []) >>
+  concat(module.input.efs_enabled ? [module.input.efs_client_security_group_id] : []) |
+  concat(module.input.otel_enabled ? [module.input.otel_client_security_group_id] : []) >>
 subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
 tags:
   $include: ./ravion-tags.yml

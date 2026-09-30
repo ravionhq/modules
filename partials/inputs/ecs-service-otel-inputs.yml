@@ -1,0 +1,58 @@
+- id: section_opentelemetry
+  label: OpenTelemetry
+  type: section
+- id: otel_enabled
+  label: Send telemetry to a collector
+  type: boolean
+  description: Point the app's OpenTelemetry SDK at an OpenTelemetry collector in the same VPC. Sets OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL, OTEL_SERVICE_NAME, and OTEL_RESOURCE_ATTRIBUTES on the app container and attaches the collector's client security group to its tasks.
+  default: false
+- id: otel_collector
+  label: OpenTelemetry collector
+  type: $ref:rvn-aws-otel-collector
+  description: The collector the app sends traces, metrics, and logs to. It must run in the service's VPC, the only VPC that resolves its hostname.
+  mapped_inputs:
+    - default: <<ref.stack.output.otlp_grpc_endpoint>>
+      id: otel_otlp_grpc_endpoint
+      label: OTLP/gRPC endpoint
+      type: string
+    - default: <<ref.stack.output.otlp_http_endpoint>>
+      id: otel_otlp_http_endpoint
+      label: OTLP/HTTP endpoint
+      type: string
+    - default: <<ref.stack.output.client_security_group_id>>
+      id: otel_client_security_group_id
+      label: Collector client security group ID
+      type: string
+  required: true
+  show_when:
+    otel_enabled: true
+- id: otel_protocol
+  label: OTLP protocol
+  type: string
+  description: The protocol the app's OpenTelemetry SDK exports with. Most SDKs default to HTTP/protobuf.
+  default: http/protobuf
+  required: true
+  show_when:
+    otel_enabled: true
+  values:
+    - label: HTTP/protobuf
+      value: http/protobuf
+    - label: gRPC
+      value: grpc
+- id: otel_service_name
+  label: Service name
+  type: string
+  description: The service.name every span, metric, and log from this service carries.
+  default: <<module.given_id>>
+  required: true
+  show_when:
+    otel_enabled: true
+- id: otel_resource_attributes
+  label: Resource attributes
+  type: string
+  collapsible: true
+  description: Comma-separated key=value pairs added to every span, metric, and log, as OTEL_RESOURCE_ATTRIBUTES.
+  default: deployment.environment.name=<<environment.given_id>>
+  placeholder: deployment.environment.name=production,team=payments
+  show_when:
+    otel_enabled: true
