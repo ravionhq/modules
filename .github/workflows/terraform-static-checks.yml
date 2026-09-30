@@ -60,6 +60,11 @@ jobs:
           tofu -chdir=monitoring/otel_collector init -backend=false
           tofu -chdir=monitoring/otel_collector test
 
+      - name: Test Prometheus workspace module
+        run: |
+          tofu -chdir=monitoring/prometheus_workspace init -backend=false
+          tofu -chdir=monitoring/prometheus_workspace test
+
       - name: Test EKS capacity reconciliation
         run: |
           python3 -m unittest discover -s compute/eks/tests -p 'test_*.py' -v

@@ -1,0 +1,116 @@
+definition:
+  type: rvn-aws-prometheus
+  name: Prometheus Workspace
+  description: Creates an Amazon Managed Service for Prometheus workspace that collectors remote-write metrics to and Grafana queries.
+release:
+  version: 0.1.0
+  description: Store Prometheus metrics in an Amazon Managed Service for Prometheus workspace with configurable retention.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_workspace
+      label: Workspace
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Alias of the workspace.
+      id: name
+      label: Name
+      patterns:
+        - message: 1-100 letters, numbers, underscores, periods, or hyphens. Start with a letter or number.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$
+      required: true
+      type: string
+    - default: 150
+      description: Days the workspace keeps samples before deleting them.
+      id: retention_period_in_days
+      label: Retention (days)
+      max: 1095
+      min: 1
+      required: true
+      type: number
+    - collapsible: true
+      description: A customer managed KMS key that encrypts the workspace. Leave blank to use an AWS owned key. Changing it replaces the workspace and deletes its data.
+      id: kms_key_arn
+      immutable: true
+      label: KMS key ARN
+      patterns:
+        - message: Use a KMS key ARN.
+          pattern: ^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/.+$
+      placeholder: arn:aws:kms:us-east-1:123456789012:key/...
+      type: string
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: monitoring/prometheus_workspace
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        kms_key_arn: << module.input.kms_key_arn >>
+        name: << module.input.name >>
+        region: << module.input.aws_region >>
+        retention_period_in_days: << module.input.retention_period_in_days >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+  ui:
+    links: |-
+      <<
+      stack.output.workspace_id && stack.output.region ?
+      [{"name":"Prometheus workspace","href":"https://" + stack.output.region + ".console.aws.amazon.com/prometheus/home?region=" + stack.output.region + "#/workspaces/workspace/" + stack.output.workspace_id}] :
+      []
+      >>
+  readme: |-
+    Creates an Amazon Managed Service for Prometheus workspace that collectors remote-write metrics to and Grafana queries.
+
+    ## Overview
+
+    [Amazon Managed Service for Prometheus](https://aws.amazon.com/prometheus/) stores Prometheus metrics without a Prometheus server to run. Senders write samples to the workspace's remote write endpoint and dashboards query it with PromQL, both authenticated with AWS SigV4, so no credentials are shared.
+
+    The workspace is a module of its own so that its metric history outlives the collectors that write to it and the Grafana workspaces that read it. Replacing either leaves the stored metrics in place.
+
+    Terraform source: [ravionhq/modules/monitoring/prometheus_workspace](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/prometheus_workspace)
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | OpenTelemetry metrics | An OpenTelemetry collector remote-writes the metrics services send it, queryable with PromQL. |
+    | Grafana dashboards | A Grafana Prometheus data source reads the workspace with SigV4. |
+    | Long metric history | Keep samples for up to three years, independent of the collectors and dashboards. |
+
+    ## Connecting senders and dashboards
+
+    | Output | Use |
+    | --- | --- |
+    | `remote_write_url` | Remote write endpoint for collectors, signed with SigV4 for the `aps` service |
+    | `query_url` | Prometheus query endpoint for Grafana, signed with SigV4 |
+    | `workspace_arn` | Scope `aps:RemoteWrite` and `aps:QueryMetrics` permissions to this workspace |
+
+    The OpenTelemetry Collector module and the Managed Grafana module reference this module and read these outputs directly.
+
+    ## Configuration
+
+    | Field | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | Account the workspace is created in. |
+    | Region | Yes | None | Region the workspace is created in. |
+    | Name | Yes | Project, environment, and module given IDs | Alias of the workspace. |
+    | Retention (days) | Yes | 150 | 1-1095 days. |
+    | KMS key ARN | No | AWS owned key | Changing it replaces the workspace and deletes its data. |
+    | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
+    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
+
+    ## Costs
+
+    The workspace is billed for samples ingested, samples queried, and metric storage. Every distinct combination of metric name and labels is a separate series, so check what senders emit before pointing them at the workspace.
+
+    ## Learn more
+
+    - [Amazon Managed Service for Prometheus user guide](https://docs.aws.amazon.com/prometheus/latest/userguide/what-is-Amazon-Managed-Service-Prometheus.html)
+    - [Remote write with SigV4](https://docs.aws.amazon.com/prometheus/latest/userguide/AMP-onboard-ingest-metrics-remote-write.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/monitoring/prometheus_workspace)
