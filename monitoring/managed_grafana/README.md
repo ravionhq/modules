@@ -42,7 +42,7 @@ module "grafana" {
 
 ## How data sources are written
 
-Amazon Managed Grafana has no AWS API for data sources. During apply, `scripts/provision_data_sources.py` mints a service account token that expires in 15 minutes, creates or updates each wanted data source by UID through the workspace's Grafana API, deletes the module-owned UIDs no longer wanted, and deletes the token. It runs again whenever the wanted data sources, the workspace or the script change. The Terraform runner needs the AWS CLI and Python 3.
+Amazon Managed Grafana has no AWS API for data sources. During apply, `scripts/provision_data_sources.py` finds or creates a Grafana Admin service account named `<name>-data-sources`, mints it a token that expires in 15 minutes, creates or updates each wanted data source by UID through the workspace's Grafana API, deletes the module-owned UIDs no longer wanted, and deletes the token. It runs again whenever the wanted data sources, the workspace or the script change. The service account is not a Terraform resource: reading one needs `grafana:ListWorkspaceServiceAccounts`, which read-only plan credentials do not have. The Terraform runner needs the AWS CLI and Python 3.
 
 ## Requirements
 

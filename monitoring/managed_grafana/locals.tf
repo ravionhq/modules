@@ -97,6 +97,8 @@ locals {
     }] : [],
   )
 
+  service_account_name = "${var.name}-data-sources"
+
   managed_data_source_uids = ["aws-xray", "aws-cloudwatch", "amazon-prometheus"]
 
   # Plugins the data sources need that are not part of Grafana itself. Amazon

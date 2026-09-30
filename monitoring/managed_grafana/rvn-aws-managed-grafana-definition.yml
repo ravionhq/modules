@@ -366,7 +366,7 @@ module:
 
     ## Design decisions
 
-    - Amazon Managed Grafana has no AWS API for data sources, so the module writes them through the workspace's Grafana API during apply. Each run mints a Grafana service account token that expires in 15 minutes and deletes it when done; no token is stored.
+    - Amazon Managed Grafana has no AWS API for data sources, so the module writes them through the workspace's Grafana API during apply. Each run signs in as a Grafana Admin service account the module creates the first time, mints it a token that expires in 15 minutes, and deletes the token when done; no token is stored.
     - Data sources have fixed UIDs, so dashboards that reference them keep working across redeploys.
     - The workspace uses a role the module owns rather than AWS's service-managed permissions, so the role grants exactly the reads the enabled data sources need.
     - The X-Ray data source is a Grafana catalog plugin, not part of Grafana itself. Amazon Managed Grafana installs catalog plugins only while plugin management is on, so the module turns plugin management on while X-Ray is on and installs the plugin before writing the data source.

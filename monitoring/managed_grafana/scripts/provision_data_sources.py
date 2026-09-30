@@ -8,7 +8,10 @@ Every UID in MANAGED_UIDS that DATA_SOURCES leaves out is deleted. The script
 signs in with a service account token it mints for this run and deletes when
 done, so no credential outlives the run.
 
-Environment: AWS_REGION, WORKSPACE_ID, SERVICE_ACCOUNT_ID, GRAFANA_URL,
+It signs in as SERVICE_ACCOUNT, a Grafana Admin service account it creates
+the first time.
+
+Environment: AWS_REGION, WORKSPACE_ID, SERVICE_ACCOUNT, GRAFANA_URL,
 DATA_SOURCES (JSON list of Grafana data source bodies), MANAGED_UIDS (JSON list),
 PLUGIN_IDS (JSON list of catalog plugin IDs).
 """
@@ -83,16 +86,31 @@ class Grafana:
         return None
 
 
+def service_account_id(workspace_id, name):
+    listed = aws("grafana", "list-workspace-service-accounts", "--workspace-id", workspace_id)
+    for account in listed.get("serviceAccounts", []):
+        if account["name"] == name:
+            return account["id"]
+    created = aws(
+        "grafana", "create-workspace-service-account",
+        "--workspace-id", workspace_id,
+        "--name", name,
+        "--grafana-role", "ADMIN",
+    )
+    log(f"created service account {name}")
+    return created["id"]
+
+
 def main():
     workspace_id = os.environ["WORKSPACE_ID"]
-    service_account_id = os.environ["SERVICE_ACCOUNT_ID"]
+    service_account = service_account_id(workspace_id, os.environ["SERVICE_ACCOUNT"])
     wanted = json.loads(os.environ["DATA_SOURCES"])
     managed_uids = json.loads(os.environ["MANAGED_UIDS"])
 
     minted = aws(
         "grafana", "create-workspace-service-account-token",
         "--workspace-id", workspace_id,
-        "--service-account-id", service_account_id,
+        "--service-account-id", service_account,
         "--name", f"data-sources-{int(time.time())}",
         "--seconds-to-live", str(TOKEN_SECONDS_TO_LIVE),
     )["serviceAccountToken"]
@@ -116,7 +134,7 @@ def main():
         aws(
             "grafana", "delete-workspace-service-account-token",
             "--workspace-id", workspace_id,
-            "--service-account-id", service_account_id,
+            "--service-account-id", service_account,
             "--token-id", minted["id"],
         )
 

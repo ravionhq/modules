@@ -71,12 +71,3 @@ resource "aws_grafana_workspace_saml_configuration" "this" {
   allowed_organizations   = var.saml_allowed_organizations
   login_validity_duration = var.saml_login_validity_minutes
 }
-
-# The identity the module's data source provisioning signs in to Grafana as.
-# It holds no standing token: each provisioning run mints a short-lived one and
-# deletes it when done.
-resource "aws_grafana_workspace_service_account" "provisioner" {
-  workspace_id = aws_grafana_workspace.this.id
-  name         = "${var.name}-data-sources"
-  grafana_role = "ADMIN"
-}
