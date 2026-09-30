@@ -34,7 +34,9 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `messaging/`  | `sns`             | AWS SNS topics and subscriptions                                       | Planned |
 | `messaging/`  | `sqs`             | AWS SQS queues                                                         | Planned |
 | `monitoring/` | `cloudwatch`      | AWS CloudWatch alarms and dashboards                                   | Planned |
-| `monitoring/` | `otel_collector`  | OpenTelemetry collector on ECS Fargate that receives OTLP inside a VPC at a private Cloud Map hostname and sends traces to AWS X-Ray, with optional CloudWatch metrics (includes `rvn-aws-otel-collector` module definition) | Unreleased |
+| `monitoring/` | `managed_grafana`  | Amazon Managed Grafana workspace with IAM Identity Center or SAML sign-in and AWS X-Ray, CloudWatch and Prometheus data sources written on apply (includes `rvn-aws-managed-grafana` module definition) | Unreleased |
+| `monitoring/` | `otel_collector`  | OpenTelemetry collector on ECS Fargate that receives OTLP inside a VPC at a private Cloud Map hostname and sends traces to AWS X-Ray, metrics to CloudWatch or Amazon Managed Service for Prometheus, and logs to CloudWatch Logs (includes `rvn-aws-otel-collector` module definition) | Unreleased |
+| `monitoring/` | `prometheus_workspace`  | Amazon Managed Service for Prometheus workspace with configurable retention (includes `rvn-aws-prometheus` module definition) | Unreleased |
 | `networking/` | `alb`             | Standalone AWS Application Load Balancer with shared HTTP/HTTPS listeners and alarms enabled by default | v1.0.0  |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
@@ -70,16 +72,18 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.0.1 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.0.1 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.1.0 | `security/kms/` |
+| `rvn-aws-managed-grafana` | Managed Grafana | v0.1.0 | `monitoring/managed_grafana/` |
 | `rvn-aws-network` | VPC Network | v1.1.0 | `networking/vpc/` |
-| `rvn-aws-otel-collector` | OpenTelemetry Collector | v0.1.0 | `monitoring/otel_collector/` |
+| `rvn-aws-otel-collector` | OpenTelemetry Collector | v0.2.0 | `monitoring/otel_collector/` |
+| `rvn-aws-prometheus` | Prometheus Workspace | v0.1.0 | `monitoring/prometheus_workspace/` |
 | `rvn-aws-secret` | AWS Secret | v1.0.1 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.2.2 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.3.3 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.0.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.0.0 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v2.0.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.0.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v2.0.0 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v2.1.0 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.1.0 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v2.1.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.0.1 | `storage/efs/` |
 | `rvn-eks-addons` | EKS Add-ons | v0.13.2 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v0.1.2 | `compute/eks_service/` |
