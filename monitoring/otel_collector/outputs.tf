@@ -36,6 +36,11 @@ output "security_group_id" {
   value       = module.security_group.security_group_id
 }
 
+output "client_security_group_id" {
+  description = "The security group senders attach to reach the collector on 4317 and 4318."
+  value       = module.client_security_group.security_group_id
+}
+
 output "service_discovery_namespace_id" {
   description = "The ID of the collector's Cloud Map private DNS namespace."
   value       = aws_service_discovery_private_dns_namespace.this.id
@@ -95,8 +100,13 @@ output "log_stream_prefix" {
 }
 
 output "metrics_log_group_name" {
-  description = "The CloudWatch log group metrics are published through, or null while metrics are disabled."
-  value       = var.metrics_enabled ? aws_cloudwatch_log_group.metrics[0].name : null
+  description = "The CloudWatch log group metrics are published through, or null unless metrics go to cloudwatch."
+  value       = local.metrics_destination == "cloudwatch" ? aws_cloudwatch_log_group.metrics[0].name : null
+}
+
+output "otlp_log_group_name" {
+  description = "The CloudWatch log group OTLP log records are written to, or null while logs are disabled."
+  value       = var.logs_enabled ? aws_cloudwatch_log_group.otlp_logs[0].name : null
 }
 
 output "region" {

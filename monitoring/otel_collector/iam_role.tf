@@ -2,8 +2,9 @@
 # IAM Roles
 #
 # The execution role lets ECS pull the image and write the collector's own
-# logs. The task role is what the collector calls AWS with: X-Ray writes, and
-# the metric log group only while metrics are enabled.
+# logs. The task role is what the collector calls AWS with: X-Ray writes, plus
+# the metric log group or the Prometheus workspace while metrics go there, and
+# the OTLP log group while logs are enabled.
 ################################################################################
 
 data "aws_iam_policy_document" "ecs_tasks_assume" {
@@ -62,7 +63,7 @@ resource "aws_iam_role_policy" "xray" {
 }
 
 data "aws_iam_policy_document" "metrics" {
-  count = var.metrics_enabled ? 1 : 0
+  count = local.metrics_destination == "cloudwatch" ? 1 : 0
 
   statement {
     actions = [
@@ -77,9 +78,49 @@ data "aws_iam_policy_document" "metrics" {
 }
 
 resource "aws_iam_role_policy" "metrics" {
-  count = var.metrics_enabled ? 1 : 0
+  count = local.metrics_destination == "cloudwatch" ? 1 : 0
 
   name   = "cloudwatch-metrics"
   role   = aws_iam_role.task.id
   policy = data.aws_iam_policy_document.metrics[0].json
+}
+
+data "aws_iam_policy_document" "prometheus" {
+  count = local.metrics_destination == "prometheus" ? 1 : 0
+
+  statement {
+    actions   = ["aps:RemoteWrite"]
+    resources = [var.prometheus_workspace_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "prometheus" {
+  count = local.metrics_destination == "prometheus" ? 1 : 0
+
+  name   = "prometheus-remote-write"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.prometheus[0].json
+}
+
+data "aws_iam_policy_document" "logs" {
+  count = var.logs_enabled ? 1 : 0
+
+  statement {
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents",
+    ]
+    resources = [
+      aws_cloudwatch_log_group.otlp_logs[0].arn,
+      "${aws_cloudwatch_log_group.otlp_logs[0].arn}:*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "logs" {
+  count = var.logs_enabled ? 1 : 0
+
+  name   = "cloudwatch-otlp-logs"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.logs[0].json
 }

@@ -50,7 +50,7 @@ variable "subnet_ids" {
 
 variable "allowed_security_group_ids" {
   type        = list(string)
-  description = "Security groups whose members may send OTLP to the collector on ports 4317 (gRPC) and 4318 (HTTP). Nothing else can reach the collector."
+  description = "Security groups whose members may send OTLP to the collector on ports 4317 (gRPC) and 4318 (HTTP), in addition to members of the collector's client security group. Nothing else can reach the collector."
   default     = []
 
   validation {
@@ -119,23 +119,62 @@ variable "desired_count" {
 
 variable "metrics_enabled" {
   type        = bool
-  description = "Accept OTLP metrics and publish them to CloudWatch as embedded metric format logs. Off by default: every metric the senders emit becomes a billed CloudWatch custom metric. While off, the collector rejects metric exports."
+  description = "Accept OTLP metrics and publish them to metrics_destination. While off, the collector rejects metric exports."
   default     = false
+}
+
+variable "metrics_destination" {
+  type        = string
+  description = "Where metrics go while metrics_enabled is true: cloudwatch publishes them as embedded metric format logs, each metric becoming a billed CloudWatch custom metric; prometheus remote-writes them to an Amazon Managed Service for Prometheus workspace."
+  default     = "cloudwatch"
+
+  validation {
+    condition     = contains(["cloudwatch", "prometheus"], var.metrics_destination)
+    error_message = "The metrics_destination must be cloudwatch or prometheus."
+  }
 }
 
 variable "metrics_namespace" {
   type        = string
-  description = "CloudWatch namespace for metrics. Null names it after each sender's service.namespace and service.name resource attributes."
+  description = "CloudWatch namespace for metrics sent to cloudwatch. Null names it after each sender's service.namespace and service.name resource attributes."
   default     = null
+}
+
+variable "prometheus_remote_write_url" {
+  type        = string
+  description = "Remote write URL of the Amazon Managed Service for Prometheus workspace that metrics go to when metrics_destination is prometheus."
+  default     = null
+
+  validation {
+    condition     = !(var.metrics_enabled && var.metrics_destination == "prometheus") || can(regex("^https://aps-workspaces\\.[a-z0-9-]+\\.amazonaws\\.com/workspaces/ws-[a-z0-9-]+/api/v1/remote_write$", var.prometheus_remote_write_url))
+    error_message = "Sending metrics to prometheus needs the workspace's remote write URL, https://aps-workspaces.<region>.amazonaws.com/workspaces/<workspace id>/api/v1/remote_write."
+  }
+}
+
+variable "prometheus_workspace_arn" {
+  type        = string
+  description = "ARN of the Amazon Managed Service for Prometheus workspace that metrics go to when metrics_destination is prometheus. The task role may write to this workspace only."
+  default     = null
+
+  validation {
+    condition     = !(var.metrics_enabled && var.metrics_destination == "prometheus") || can(regex("^arn:aws[a-z-]*:aps:[a-z0-9-]+:[0-9]{12}:workspace/ws-[a-z0-9-]+$", var.prometheus_workspace_arn))
+    error_message = "Sending metrics to prometheus needs the workspace's ARN, arn:aws:aps:<region>:<account>:workspace/<workspace id>."
+  }
 }
 
 ################################################################################
 # Logs
 ################################################################################
 
+variable "logs_enabled" {
+  type        = bool
+  description = "Accept OTLP logs and write each log record, with its trace and span IDs, to a CloudWatch log group the module owns. While off, the collector rejects log exports."
+  default     = false
+}
+
 variable "log_retention_days" {
   type        = number
-  description = "Number of days to retain the collector's own logs and, when metrics are enabled, the metric logs. Set to 0 to retain indefinitely."
+  description = "Number of days to retain the collector's own logs, the OTLP logs and the CloudWatch metric logs. Set to 0 to retain indefinitely."
   default     = 30
 
   validation {

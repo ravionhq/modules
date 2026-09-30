@@ -21,17 +21,24 @@ locals {
   log_group_name         = "/ecs/${var.name}"
   log_stream_prefix      = "collector"
   metrics_log_group_name = "/ecs/${var.name}/metrics"
+  otlp_log_group_name    = "/ecs/${var.name}/otlp-logs"
+
+  # Where metrics go: none while metrics are disabled.
+  metrics_destination = var.metrics_enabled ? var.metrics_destination : "none"
 
   # A form leaves an unused field blank rather than null.
   metrics_namespace = try(trimspace(var.metrics_namespace), "") == "" ? null : trimspace(var.metrics_namespace)
 
   collector_config = templatefile("${path.module}/templates/collector.yaml.tftpl", {
-    region                 = local.region
-    otlp_grpc_port         = local.otlp_grpc_port
-    otlp_http_port         = local.otlp_http_port
-    health_check_port      = local.health_check_port
-    metrics_enabled        = var.metrics_enabled
-    metrics_log_group_name = local.metrics_log_group_name
-    metrics_namespace      = local.metrics_namespace
+    region                      = local.region
+    otlp_grpc_port              = local.otlp_grpc_port
+    otlp_http_port              = local.otlp_http_port
+    health_check_port           = local.health_check_port
+    metrics_destination         = local.metrics_destination
+    metrics_log_group_name      = local.metrics_log_group_name
+    metrics_namespace           = local.metrics_namespace
+    prometheus_remote_write_url = var.prometheus_remote_write_url
+    logs_enabled                = var.logs_enabled
+    otlp_log_group_name         = local.otlp_log_group_name
   })
 }

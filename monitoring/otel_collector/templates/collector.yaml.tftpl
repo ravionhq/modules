@@ -1,6 +1,11 @@
 extensions:
   health_check:
     endpoint: 127.0.0.1:${health_check_port}
+%{ if metrics_destination == "prometheus" ~}
+  sigv4auth:
+    region: ${region}
+    service: aps
+%{ endif ~}
 
 receivers:
   otlp:
@@ -18,15 +23,23 @@ processors:
   batch/traces:
     timeout: 1s
     send_batch_size: 50
-%{ if metrics_enabled ~}
+%{ if metrics_destination == "cloudwatch" ~}
   batch/metrics:
     timeout: 60s
+%{ endif ~}
+%{ if metrics_destination == "prometheus" ~}
+  batch/metrics:
+    timeout: 10s
+%{ endif ~}
+%{ if logs_enabled ~}
+  batch/logs:
+    timeout: 5s
 %{ endif ~}
 
 exporters:
   awsxray:
     region: ${region}
-%{ if metrics_enabled ~}
+%{ if metrics_destination == "cloudwatch" ~}
   awsemf:
     region: ${region}
     log_group_name: ${metrics_log_group_name}
@@ -36,17 +49,35 @@ exporters:
     namespace: ${jsonencode(metrics_namespace)}
 %{ endif ~}
 %{ endif ~}
+%{ if metrics_destination == "prometheus" ~}
+  prometheusremotewrite:
+    endpoint: ${jsonencode(prometheus_remote_write_url)}
+    auth:
+      authenticator: sigv4auth
+%{ endif ~}
+%{ if logs_enabled ~}
+  awscloudwatchlogs:
+    region: ${region}
+    log_group_name: ${otlp_log_group_name}
+    log_stream_name: otlp
+%{ endif ~}
 
 service:
-  extensions: [health_check]
+  extensions: [health_check${metrics_destination == "prometheus" ? ", sigv4auth" : ""}]
   pipelines:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch/traces]
       exporters: [awsxray]
-%{ if metrics_enabled ~}
+%{ if metrics_destination != "none" ~}
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch/metrics]
-      exporters: [awsemf]
+      exporters: [${metrics_destination == "prometheus" ? "prometheusremotewrite" : "awsemf"}]
+%{ endif ~}
+%{ if logs_enabled ~}
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch/logs]
+      exporters: [awscloudwatchlogs]
 %{ endif ~}

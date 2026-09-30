@@ -51,6 +51,12 @@ mock_provider "aws" {
       arn = "arn:aws:servicediscovery:us-west-2:123456789012:service/srv-mock"
     }
   }
+  # The security-groups module validates referenced group IDs.
+  mock_resource "aws_security_group" {
+    defaults = {
+      id = "sg-0123456789abcdef0"
+    }
+  }
 }
 
 variables {
@@ -218,19 +224,183 @@ run "blank_metrics_namespace_is_unset" {
 }
 
 ################################################################################
-# Access
+# Metrics to Amazon Managed Service for Prometheus
 ################################################################################
 
-run "otlp_ports_open_only_to_allowed_security_groups" {
-  command = apply
+run "metrics_to_prometheus_when_chosen" {
+  command = plan
 
   variables {
-    allowed_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa", "sg-0bbbbbbbbbbbbbbbb"]
+    metrics_enabled             = true
+    metrics_destination         = "prometheus"
+    prometheus_remote_write_url = "https://aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-1234abcd-12ab-34cd-56ef-1234567890ab/api/v1/remote_write"
+    prometheus_workspace_arn    = "arn:aws:aps:us-west-2:123456789012:workspace/ws-1234abcd-12ab-34cd-56ef-1234567890ab"
   }
 
   assert {
-    condition     = length(module.security_group.ingress_rule_ids) == 4
-    error_message = "Each allowed security group should get one rule per OTLP port."
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).service.pipelines.metrics.exporters == ["prometheusremotewrite"]
+    error_message = "Metrics should be remote-written to Prometheus."
+  }
+
+  assert {
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).exporters.prometheusremotewrite.endpoint == "https://aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-1234abcd-12ab-34cd-56ef-1234567890ab/api/v1/remote_write"
+    error_message = "The remote write exporter should send to the workspace's remote write URL."
+  }
+
+  assert {
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).exporters.prometheusremotewrite.auth.authenticator == "sigv4auth"
+    error_message = "Remote writes should be signed with SigV4."
+  }
+
+  assert {
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).extensions.sigv4auth == { region = "us-west-2", service = "aps" }
+    error_message = "The SigV4 extension should sign for the aps service in the collector's region."
+  }
+
+  assert {
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).service.extensions == ["health_check", "sigv4auth"]
+    error_message = "The SigV4 extension should be enabled alongside the health check."
+  }
+
+  assert {
+    condition     = !contains(keys(yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).exporters), "awsemf")
+    error_message = "No CloudWatch metrics exporter should be configured."
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_log_group.metrics) == 0 && length(aws_iam_role_policy.metrics) == 0
+    error_message = "No CloudWatch metric log group or permissions should exist while metrics go to Prometheus."
+  }
+
+  assert {
+    condition     = data.aws_iam_policy_document.prometheus[0].statement[0].actions == toset(["aps:RemoteWrite"]) && data.aws_iam_policy_document.prometheus[0].statement[0].resources == toset(["arn:aws:aps:us-west-2:123456789012:workspace/ws-1234abcd-12ab-34cd-56ef-1234567890ab"])
+    error_message = "The task role should only be allowed to remote-write to the chosen workspace."
+  }
+
+  assert {
+    condition     = output.metrics_log_group_name == null
+    error_message = "There is no metric log group while metrics go to Prometheus."
+  }
+}
+
+run "prometheus_destination_is_ignored_while_metrics_are_disabled" {
+  command = plan
+
+  variables {
+    metrics_destination = "prometheus"
+  }
+
+  assert {
+    condition     = keys(yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).service.pipelines) == ["traces"]
+    error_message = "No metrics pipeline should run while metrics are disabled."
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.prometheus) == 0
+    error_message = "No Prometheus permissions should exist while metrics are disabled."
+  }
+}
+
+run "rejects_prometheus_without_a_remote_write_url" {
+  command = plan
+
+  variables {
+    metrics_enabled          = true
+    metrics_destination      = "prometheus"
+    prometheus_workspace_arn = "arn:aws:aps:us-west-2:123456789012:workspace/ws-1234abcd-12ab-34cd-56ef-1234567890ab"
+  }
+
+  expect_failures = [var.prometheus_remote_write_url]
+}
+
+run "rejects_prometheus_without_a_workspace_arn" {
+  command = plan
+
+  variables {
+    metrics_enabled             = true
+    metrics_destination         = "prometheus"
+    prometheus_remote_write_url = "https://aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-1234abcd-12ab-34cd-56ef-1234567890ab/api/v1/remote_write"
+  }
+
+  expect_failures = [var.prometheus_workspace_arn]
+}
+
+run "rejects_unknown_metrics_destination" {
+  command = plan
+
+  variables {
+    metrics_destination = "datadog"
+  }
+
+  expect_failures = [var.metrics_destination]
+}
+
+################################################################################
+# Logs
+################################################################################
+
+run "logs_to_cloudwatch_when_enabled" {
+  command = plan
+
+  variables {
+    logs_enabled = true
+  }
+
+  assert {
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).service.pipelines.logs.exporters == ["awscloudwatchlogs"]
+    error_message = "OTLP logs should be exported to CloudWatch Logs."
+  }
+
+  assert {
+    condition     = yamldecode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment[0].value).exporters.awscloudwatchlogs.log_group_name == "/ecs/test-collector/otlp-logs"
+    error_message = "OTLP logs should be written to the module's OTLP log group."
+  }
+
+  assert {
+    condition     = aws_cloudwatch_log_group.otlp_logs[0].name == "/ecs/test-collector/otlp-logs" && aws_cloudwatch_log_group.otlp_logs[0].retention_in_days == 30
+    error_message = "The OTLP log group should exist with the same retention as the collector's logs."
+  }
+
+  assert {
+    condition     = data.aws_iam_policy_document.logs[0].statement[0].actions == toset(["logs:CreateLogStream", "logs:PutLogEvents"])
+    error_message = "The task role should only create streams and put events in the OTLP log group."
+  }
+
+  assert {
+    condition     = output.otlp_log_group_name == "/ecs/test-collector/otlp-logs"
+    error_message = "The OTLP log group should be an output."
+  }
+}
+
+run "no_logs_pipeline_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_cloudwatch_log_group.otlp_logs) == 0 && length(aws_iam_role_policy.logs) == 0 && output.otlp_log_group_name == null
+    error_message = "No OTLP log group, permissions or output should exist while logs are disabled."
+  }
+}
+
+################################################################################
+# Access
+################################################################################
+
+run "client_security_group_reaches_the_collector_by_default" {
+  command = apply
+
+  assert {
+    condition     = length(module.security_group.ingress_rule_ids) == 2
+    error_message = "Only the client security group should reach the collector, once per OTLP port."
+  }
+
+  assert {
+    condition     = length(module.client_security_group.ingress_rule_ids) == 0 && length(module.client_security_group.egress_rule_ids) == 2
+    error_message = "The client security group should carry no ingress and egress to the collector on each OTLP port only."
+  }
+
+  assert {
+    condition     = output.client_security_group_id == module.client_security_group.security_group_id
+    error_message = "The client security group should be an output for senders to attach."
   }
 
   assert {
@@ -239,12 +409,16 @@ run "otlp_ports_open_only_to_allowed_security_groups" {
   }
 }
 
-run "no_ingress_without_allowed_security_groups" {
+run "otlp_ports_open_to_allowed_security_groups_as_well" {
   command = apply
 
+  variables {
+    allowed_security_group_ids = ["sg-0aaaaaaaaaaaaaaaa", "sg-0bbbbbbbbbbbbbbbb"]
+  }
+
   assert {
-    condition     = length(module.security_group.ingress_rule_ids) == 0
-    error_message = "Without allowed security groups nothing may reach the collector."
+    condition     = length(module.security_group.ingress_rule_ids) == 6
+    error_message = "The client security group and each allowed security group should get one rule per OTLP port."
   }
 }
 
