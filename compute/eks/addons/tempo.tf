@@ -9,8 +9,10 @@
 # The same shape as Loki, for the same reasons:
 #
 #   1. TEMPO IS NEVER EXPOSED. A ClusterIP Service and nothing else: the
-#      collector writes OTLP to it, and the in-cluster Grafana reads its query
-#      API on 3200. Every receiver but OTLP gRPC is off.
+#      collector writes OTLP gRPC to it, and the in-cluster Grafana reads its
+#      query API on 3200. The chart's other receivers (Jaeger, OTLP HTTP) stay
+#      on, because its Service template reads their ports unguarded and fails
+#      to render without them.
 #
 #   2. MONOLITHIC MODE. Every Tempo component in one StatefulSet replica.
 #      tempo_helm_values is the escape hatch for larger clusters.
@@ -203,19 +205,6 @@ resource "helm_release" "tempo" {
               }
               wal = {
                 path = "/var/tempo/wal"
-              }
-            }
-          }
-
-          # OTLP gRPC from the collector only. The chart's default Jaeger
-          # receivers would each open a port on the Service.
-          receivers = {
-            jaeger = null
-            otlp = {
-              protocols = {
-                grpc = {
-                  endpoint = "0.0.0.0:4317"
-                }
               }
             }
           }

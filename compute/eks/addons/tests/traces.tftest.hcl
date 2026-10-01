@@ -297,8 +297,8 @@ run "tempo_stores_traces_in_cluster_on_s3" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.receivers.jaeger == null && keys(yamldecode(helm_release.tempo[0].values[0]).tempo.receivers.otlp.protocols) == ["grpc"]
-    error_message = "Tempo must receive OTLP gRPC only"
+    condition     = !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo), "receivers")
+    error_message = "Tempo must keep the chart's receivers: its Service template fails to render without the Jaeger ones"
   }
 
   assert {
