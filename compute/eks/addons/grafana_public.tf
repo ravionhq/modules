@@ -57,6 +57,11 @@ locals {
     users = {
       auto_assign_org_role = var.grafana_public_access.google_role
     }
+    # The login form being off does not stop the admin password over HTTP
+    # basic auth, which would reach the API from the internet.
+    "auth.basic" = {
+      enabled = false
+    }
   }
 
   # A for expression rather than a conditional: a conditional against {} would

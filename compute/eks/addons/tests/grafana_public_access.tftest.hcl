@@ -94,7 +94,7 @@ run "private_by_default" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].auth == { sigv4_auth_enabled = true } && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]), "auth.google")
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].auth == { sigv4_auth_enabled = true } && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]), "auth.google") && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]), "auth.basic")
     error_message = "A private Grafana must keep its login form and have no Google sign-in"
   }
 }
@@ -139,6 +139,11 @@ run "signs_in_with_google_for_allowed_domains_only" {
   assert {
     condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].auth.disable_login_form == true && yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].server.root_url == "https://grafana.example.com" && yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].users.auto_assign_org_role == "Viewer"
     error_message = "A public Grafana must drop the login form, know its external URL, and make Google users Viewers by default"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.basic"].enabled == false
+    error_message = "A public Grafana must refuse the admin password over HTTP basic auth"
   }
 
   assert {
