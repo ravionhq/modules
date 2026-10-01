@@ -4,10 +4,10 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.13.2
+  version: 0.14.0
   description: >-
-    Prevent applies from failing with an inconsistent result when the load balancer controller CRDs are
-    upgraded.
+    Receive OpenTelemetry from workloads over OTLP: traces to AWS X-Ray, metrics to the selected metrics
+    destinations.
 module:
   inputs:
     - id: cluster
@@ -1034,6 +1034,13 @@ module:
         metrics_enabled: true
         metrics_providers: otlp
       type: string
+    - default: false
+      description: Let workloads send OpenTelemetry to the cluster's metrics collector over OTLP (gRPC 4317, HTTP 4318) at an in-cluster Service. Traces go to AWS X-Ray in the cluster's region; metrics go to the destinations above without the curated allow-list, so every series a workload emits is billed.
+      id: otlp_receiver_enabled
+      label: Receive OTLP from workloads
+      show_when:
+        metrics_enabled: true
+      type: boolean
     - description: Makes referenced Secrets Manager secrets and SSM parameters available as Kubernetes Secrets without sending their values through Ravion.
       id: section_external_secrets
       label: External secrets
@@ -1118,6 +1125,7 @@ module:
         # lists and never the toggles.
         logs_providers: '<< module.input.logs_enabled == false ? [] : (module.input.logs_providers != nil ? module.input.logs_providers : ["loki"]) >>'
         metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
+        otlp_receiver_enabled: << module.input.otlp_receiver_enabled == true >>
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
@@ -1351,6 +1359,8 @@ module:
     | **Amazon Managed Prometheus** - default | One collector scraping a curated metric set, remote-writing over SigV4 | Renders in the Metrics tabs |
     | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, as the fallback behind Amazon Managed Prometheus |
     | **Grafana Cloud / Datadog / New Relic / custom OTLP** | The same collector, one more exporter each | Ships, plus an "Open in ..." link |
+
+    **Workloads can send OpenTelemetry too.** Turn on **Receive OTLP from workloads** and the metrics collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`). Traces go to AWS X-Ray in the cluster's region; metrics go to the destinations above. The curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs.
 
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 

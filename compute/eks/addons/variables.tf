@@ -1391,6 +1391,13 @@ variable "metrics_providers" {
   }
 }
 
+variable "otlp_receiver_enabled" {
+  type        = bool
+  description = "Let workloads send OpenTelemetry to the metrics collector over OTLP (gRPC on 4317, HTTP on 4318) at an in-cluster Service. Traces go to AWS X-Ray in the cluster's region; metrics go to the same metrics_providers as the scraped metrics, without the scrape allow-list, so every series a workload emits is billed. Needs metrics on, which is when the collector runs."
+  default     = false
+  nullable    = false
+}
+
 variable "observability_namespace" {
   type        = string
   description = "Kubernetes namespace the collectors, kube-state-metrics, the log store and the materialized vendor credentials are installed into. When null, Ravion Operator's namespace is used, so Ravion's in-cluster components share one namespace — and, importantly, Loki keeps the Service URL the control plane already defaults to. Created if it does not exist."

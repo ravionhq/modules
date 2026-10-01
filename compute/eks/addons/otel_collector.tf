@@ -5,7 +5,9 @@
 # under the community opentelemetry-collector chart. It scrapes three targets —
 # cAdvisor and the kubelet's resource endpoint on every node, through the API
 # server proxy, and kube-state-metrics in-cluster — keeps the curated allow-list
-# in locals.tf, and remote-writes the survivors to AMP signed with SigV4.
+# in locals.tf, and remote-writes the survivors to AMP signed with SigV4. With
+# otlp_receiver_enabled it also accepts OTLP from workloads at an in-cluster
+# Service: traces to X-Ray, metrics to the same destinations as the scrape.
 #
 # Three things about the shape of this file:
 #
@@ -142,6 +144,21 @@ locals {
 
   otel_metrics_pipeline_exporters = [for name, _ in local.otel_metrics_exporters : name if name != "debug"]
 
+  # OTLP from workloads rides the same collector, so it exists only while the
+  # collector does. Traces have one destination, X-Ray in the cluster's region;
+  # OTLP metrics fan out to the same exporters as the scraped ones.
+  otlp_enabled       = var.otlp_receiver_enabled && local.otel_metrics_enabled
+  otlp_service_host  = "${local.otel_collector_name}.${local.metrics_namespace}.svc.cluster.local"
+  otlp_grpc_endpoint = local.otlp_enabled ? "http://${local.otlp_service_host}:4317" : null
+  otlp_http_endpoint = local.otlp_enabled ? "http://${local.otlp_service_host}:4318" : null
+  xray_region        = coalesce(var.region, data.aws_region.current.region)
+
+  otel_traces_exporters = local.otlp_enabled ? {
+    awsxray = {
+      region = local.xray_region
+    }
+  } : {}
+
   otel_collector_extra_envs = [
     for secret in local.otel_metrics_secret_env : {
       name = secret.environment
@@ -165,10 +182,13 @@ locals {
     scrape_interval  = "${var.scrape_interval_seconds}s"
     extra_envs       = local.otel_collector_extra_envs
 
-    exporters          = local.otel_metrics_exporters
+    exporters          = merge(local.otel_metrics_exporters, local.otel_traces_exporters)
     extensions         = local.otel_metrics_extensions
     service_extensions = concat(["health_check"], sort(keys(local.otel_metrics_extensions)))
     pipeline_exporters = sort(local.otel_metrics_pipeline_exporters)
+
+    otlp_enabled              = local.otlp_enabled
+    traces_pipeline_exporters = sort(keys(local.otel_traces_exporters))
 
     kube_state_metrics_enabled = local.kube_state_metrics_install
     kube_state_metrics_target  = local.kube_state_metrics_target
@@ -232,4 +252,49 @@ resource "helm_release" "otel_collector" {
       error_message = "otlp is in metrics_providers but no OTLP endpoint was given. There is nowhere to send the metrics."
     }
   }
+}
+
+################################################################################
+# X-Ray write for workload traces
+#
+# The collector's service account has one Pod Identity association. With AMP
+# selected that association already carries the remote-write role, which gets
+# X-Ray write beside it; without AMP the collector gets a role of its own.
+################################################################################
+
+# X-Ray has no resource-level permissions for these actions.
+data "aws_iam_policy_document" "otel_collector_xray" {
+  count = local.otlp_enabled ? 1 : 0
+
+  statement {
+    sid       = "WriteTraces"
+    effect    = "Allow"
+    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "otel_collector_xray" {
+  count = local.otlp_enabled && local.amp_enabled ? 1 : 0
+
+  name   = "xray-write"
+  role   = module.amp_remote_write_role[0].role_name
+  policy = data.aws_iam_policy_document.otel_collector_xray[0].json
+}
+
+module "otel_collector_role" {
+  count = local.otlp_enabled && !local.amp_enabled ? 1 : 0
+
+  source = "../../../security/iam"
+
+  name        = "${local.name}-otel-collector"
+  description = "X-Ray write Pod Identity role for the OpenTelemetry collector on ${var.cluster_name}"
+
+  custom_assume_role_policy = local.pod_identity_trust_policy
+
+  inline_policies = {
+    "xray-write" = data.aws_iam_policy_document.otel_collector_xray[0].json
+  }
+
+  tags = local.tags
 }
