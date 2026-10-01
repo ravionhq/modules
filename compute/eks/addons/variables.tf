@@ -1393,7 +1393,7 @@ variable "metrics_providers" {
 
 variable "traces_providers" {
   type        = list(string)
-  description = "Where workload traces go. Any of: xray (AWS X-Ray). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. An empty list turns traces off."
+  description = "Where workload traces go. Any of: xray (AWS X-Ray). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data. An empty list turns traces off."
   default     = []
   nullable    = false
 

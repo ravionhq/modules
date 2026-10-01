@@ -71,6 +71,12 @@ config:
 %{ if traces_enabled ~}
     # The pod IP, the chart's own default: the Service targets it, and nothing
     # on the node's other interfaces can reach the receiver.
+    #
+    # It authenticates no sender. Any pod that reaches the Service can send
+    # spans under any service.name, and the traces pipeline exports them as
+    # sent: the cluster network is the trust boundary, so every workload in the
+    # cluster is trusted with the trace data. Restrict who reaches it with a
+    # NetworkPolicy when that does not hold.
     otlp:
       protocols:
         grpc:

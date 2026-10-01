@@ -1038,7 +1038,7 @@ module:
       label: Traces
       type: section
     - default: false
-      description: Run an OTLP receiver (gRPC 4317, HTTP 4318) at an in-cluster Service and send workload traces to the selected destinations. While metrics are on, the receiver also takes workload metrics into the metrics destinations, without the curated allow-list, so every series a workload sends is billed.
+      description: Run an OTLP receiver (gRPC 4317, HTTP 4318) at an in-cluster Service and send workload traces to the selected destinations. While metrics are on, the receiver also takes workload metrics into the metrics destinations, without the curated allow-list, so every series a workload sends is billed. The receiver authenticates no sender, so any pod in the cluster can send spans under any service name.
       id: traces_enabled
       label: Traces
       type: boolean
@@ -1384,7 +1384,7 @@ module:
     | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, as the fallback behind Amazon Managed Prometheus |
     | **Grafana Cloud / Datadog / New Relic / custom OTLP** | The same collector, one more exporter each | Ships, plus an "Open in ..." link |
 
-    **Traces.** Turn on **Traces** and the cluster's OpenTelemetry collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), with or without metrics. Traces go to the selected destinations; AWS X-Ray writes to the cluster's region unless another is set. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs.
+    **Traces.** Turn on **Traces** and the cluster's OpenTelemetry collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), with or without metrics. Traces go to the selected destinations; AWS X-Ray writes to the cluster's region unless another is set. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
 
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
