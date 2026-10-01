@@ -8,6 +8,7 @@ release:
   description: >-
     Add traces: an OTLP receiver at an in-cluster Service that sends workload traces to AWS X-Ray, Tempo in
     the cluster on S3, or both, and workload metrics to the metrics destinations while metrics are on.
+    The in-cluster Grafana reads Tempo, and can be served on the shared public ALB behind Google sign-in.
 module:
   inputs:
     - id: cluster
