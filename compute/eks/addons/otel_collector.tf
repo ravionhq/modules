@@ -1,13 +1,14 @@
 ################################################################################
-# OpenTelemetry collector → Amazon Managed Prometheus (Helm)
+# OpenTelemetry collector → metrics and traces destinations (Helm)
 #
 # A single-replica Deployment running the AWS Distro for OpenTelemetry image
-# under the community opentelemetry-collector chart. It scrapes three targets —
-# cAdvisor and the kubelet's resource endpoint on every node, through the API
-# server proxy, and kube-state-metrics in-cluster — keeps the curated allow-list
-# in locals.tf, and remote-writes the survivors to AMP signed with SigV4. With
-# otlp_receiver_enabled it also accepts OTLP from workloads at an in-cluster
-# Service: traces to X-Ray, metrics to the same destinations as the scrape.
+# under the community opentelemetry-collector chart, for either signal. While
+# metrics are on it scrapes three targets — cAdvisor and the kubelet's resource
+# endpoint on every node, through the API server proxy, and kube-state-metrics
+# in-cluster — keeps the curated allow-list in locals.tf, and remote-writes the
+# survivors to AMP signed with SigV4. While traces are on it accepts OTLP from
+# workloads at an in-cluster Service and sends traces to traces_providers, and,
+# with metrics on too, workload metrics to the same destinations as the scrape.
 #
 # Three things about the shape of this file:
 #
@@ -144,20 +145,22 @@ locals {
 
   otel_metrics_pipeline_exporters = [for name, _ in local.otel_metrics_exporters : name if name != "debug"]
 
-  # OTLP from workloads rides the same collector, so it exists only while the
-  # collector does. Traces have one destination, X-Ray in the cluster's region;
-  # OTLP metrics fan out to the same exporters as the scraped ones.
-  otlp_enabled       = var.otlp_receiver_enabled && local.otel_metrics_enabled
+  # The OTLP receiver is the traces signal's way in, so it runs while traces
+  # are on. OTLP metrics from workloads fan out to the same exporters as the
+  # scraped ones, which exist only while metrics are on.
   otlp_service_host  = "${local.otel_collector_name}.${local.metrics_namespace}.svc.cluster.local"
-  otlp_grpc_endpoint = local.otlp_enabled ? "http://${local.otlp_service_host}:4317" : null
-  otlp_http_endpoint = local.otlp_enabled ? "http://${local.otlp_service_host}:4318" : null
-  xray_region        = coalesce(var.region, data.aws_region.current.region)
+  otlp_grpc_endpoint = local.traces_on ? "http://${local.otlp_service_host}:4317" : null
+  otlp_http_endpoint = local.traces_on ? "http://${local.otlp_service_host}:4318" : null
+  xray_region        = coalesce(var.traces_xray.region, var.region, data.aws_region.current.region)
 
-  otel_traces_exporters = local.otlp_enabled ? {
-    awsxray = {
-      region = local.xray_region
-    }
-  } : {}
+  # One exporter per selected traces provider, as for metrics.
+  otel_traces_exporters = merge(
+    local.xray_enabled ? {
+      awsxray = {
+        region = local.xray_region
+      }
+    } : {},
+  )
 
   otel_collector_extra_envs = [
     for secret in local.otel_metrics_secret_env : {
@@ -171,7 +174,7 @@ locals {
     }
   ]
 
-  otel_collector_values = local.otel_metrics_enabled ? templatefile("${path.module}/templates/otel_values.yaml.tpl", {
+  otel_collector_values = local.otel_collector_enabled ? templatefile("${path.module}/templates/otel_values.yaml.tpl", {
     name             = local.otel_collector_name
     replica_count    = 1
     image_repository = local.otel_metrics_image_repository
@@ -187,7 +190,8 @@ locals {
     service_extensions = concat(["health_check"], sort(keys(local.otel_metrics_extensions)))
     pipeline_exporters = sort(local.otel_metrics_pipeline_exporters)
 
-    otlp_enabled              = local.otlp_enabled
+    metrics_enabled           = local.otel_metrics_enabled
+    traces_enabled            = local.traces_on
     traces_pipeline_exporters = sort(keys(local.otel_traces_exporters))
 
     kube_state_metrics_enabled = local.kube_state_metrics_install
@@ -200,7 +204,7 @@ locals {
 }
 
 resource "helm_release" "otel_collector" {
-  count = local.otel_metrics_enabled ? 1 : 0
+  count = local.otel_collector_enabled ? 1 : 0
 
   name       = local.otel_collector_name
   namespace  = local.metrics_namespace
@@ -260,11 +264,13 @@ resource "helm_release" "otel_collector" {
 # The collector's service account has one Pod Identity association. With AMP
 # selected that association already carries the remote-write role, which gets
 # X-Ray write beside it; without AMP the collector gets a role of its own.
+# Keeping the remote-write role as it is avoids replacing it on clusters that
+# already run AMP.
 ################################################################################
 
 # X-Ray has no resource-level permissions for these actions.
 data "aws_iam_policy_document" "otel_collector_xray" {
-  count = local.otlp_enabled ? 1 : 0
+  count = local.xray_enabled ? 1 : 0
 
   statement {
     sid       = "WriteTraces"
@@ -275,7 +281,7 @@ data "aws_iam_policy_document" "otel_collector_xray" {
 }
 
 resource "aws_iam_role_policy" "otel_collector_xray" {
-  count = local.otlp_enabled && local.amp_enabled ? 1 : 0
+  count = local.xray_enabled && local.amp_enabled ? 1 : 0
 
   name   = "xray-write"
   role   = module.amp_remote_write_role[0].role_name
@@ -283,7 +289,7 @@ resource "aws_iam_role_policy" "otel_collector_xray" {
 }
 
 module "otel_collector_role" {
-  count = local.otlp_enabled && !local.amp_enabled ? 1 : 0
+  count = local.xray_enabled && !local.amp_enabled ? 1 : 0
 
   source = "../../../security/iam"
 

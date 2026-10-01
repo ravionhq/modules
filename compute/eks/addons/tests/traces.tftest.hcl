@@ -1,5 +1,5 @@
 ################################################################################
-# OTLP from workloads: the collector's receiver, X-Ray traces, OTLP metrics
+# Traces: the collector's OTLP receiver, X-Ray, and workload OTLP metrics
 #
 # Toggle matrix for the observability half of this module. Run from the module
 # root: `tofu test`.
@@ -75,7 +75,7 @@ mock_provider "helm" {}
 # configure without a runner JWT.
 mock_provider "ravion" {}
 
-# Both signals start empty so every run opts into exactly the providers it is
+# Every signal starts empty so each run opts into exactly the providers it is
 # about. The defaults ([loki] and [amp]) have their own coverage in
 # observability.tftest.hcl.
 variables {
@@ -91,7 +91,7 @@ variables {
 # Off by default: the collector keeps pulling only, with no Service.
 ################################################################################
 
-run "otlp_off_by_default" {
+run "traces_off_by_default" {
   command = plan
 
   variables {
@@ -100,35 +100,35 @@ run "otlp_off_by_default" {
 
   assert {
     condition     = yamldecode(helm_release.otel_collector[0].values[0]).service.enabled == false
-    error_message = "The collector must have no Service while the OTLP receiver is off"
+    error_message = "The collector must have no Service while traces are off"
   }
 
   assert {
     condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.otlp == null && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces == null
-    error_message = "No OTLP receiver or traces pipeline may run while the OTLP receiver is off"
+    error_message = "No OTLP receiver or traces pipeline may run while traces are off"
   }
 
   assert {
     condition     = length(aws_iam_role_policy.otel_collector_xray) == 0 && length(module.otel_collector_role) == 0
-    error_message = "No X-Ray permission may exist while the OTLP receiver is off"
+    error_message = "No X-Ray permission may exist while traces are off"
   }
 
   assert {
     condition     = output.otlp_host == null && output.otlp_grpc_endpoint == null && output.otlp_http_endpoint == null && output.xray_region == null
-    error_message = "The OTLP outputs must be null while the OTLP receiver is off"
+    error_message = "The traces outputs must be null while traces are off"
   }
 }
 
 ################################################################################
-# On, with AMP: X-Ray write joins the remote-write role.
+# X-Ray with AMP: X-Ray write joins the remote-write role.
 ################################################################################
 
-run "otlp_with_amp_sends_traces_to_xray_and_metrics_to_amp" {
+run "xray_with_amp_sends_traces_to_xray_and_workload_metrics_to_amp" {
   command = plan
 
   variables {
-    metrics_providers     = ["amp"]
-    otlp_receiver_enabled = true
+    metrics_providers = ["amp"]
+    traces_providers  = ["xray"]
   }
 
   assert {
@@ -168,20 +168,20 @@ run "otlp_with_amp_sends_traces_to_xray_and_metrics_to_amp" {
 
   assert {
     condition     = output.otlp_host == "ravion-otel-collector.ravion-operator.svc.cluster.local" && output.otlp_grpc_endpoint == "http://ravion-otel-collector.ravion-operator.svc.cluster.local:4317" && output.otlp_http_endpoint == "http://ravion-otel-collector.ravion-operator.svc.cluster.local:4318" && output.xray_region == "us-east-2"
-    error_message = "The OTLP outputs must name the collector's in-cluster Service"
+    error_message = "The traces outputs must name the collector's in-cluster Service"
   }
 }
 
 ################################################################################
-# On, without AMP: the collector gets an X-Ray role of its own.
+# X-Ray without AMP: the collector gets an X-Ray role of its own.
 ################################################################################
 
-run "otlp_without_amp_gets_its_own_role" {
+run "xray_without_amp_gets_its_own_role" {
   command = plan
 
   variables {
-    metrics_providers     = ["prometheus"]
-    otlp_receiver_enabled = true
+    metrics_providers = ["prometheus"]
+    traces_providers  = ["xray"]
   }
 
   assert {
@@ -196,23 +196,76 @@ run "otlp_without_amp_gets_its_own_role" {
 }
 
 ################################################################################
-# Requested while metrics are off: there is no collector to receive on.
+# Traces with metrics off: the collector runs for traces alone.
 ################################################################################
 
-run "otlp_needs_metrics_on" {
+run "traces_without_metrics_run_a_traces_only_collector" {
   command = plan
 
   variables {
-    otlp_receiver_enabled = true
+    traces_providers = ["xray"]
   }
 
   assert {
-    condition     = length(helm_release.otel_collector) == 0 && length(aws_eks_pod_identity_association.otel_collector) == 0
-    error_message = "The OTLP receiver must not install a collector on its own"
+    condition     = length(helm_release.otel_collector) == 1 && length(helm_release.kube_state_metrics) == 0
+    error_message = "Traces alone must run the collector, and nothing that only metrics need"
   }
 
   assert {
-    condition     = output.otlp_grpc_endpoint == null && output.otlp_http_endpoint == null
-    error_message = "The OTLP outputs must be null while metrics are off"
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.prometheus == null && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics == null && !contains(keys(yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines), "metrics/otlp")
+    error_message = "A traces-only collector must neither scrape nor take workload metrics"
   }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).clusterRole.create == false
+    error_message = "A traces-only collector must not get the node read permissions the scrape needs"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray"] && yamldecode(helm_release.otel_collector[0].values[0]).service.enabled == true
+    error_message = "A traces-only collector must still receive OTLP and export to X-Ray"
+  }
+
+  assert {
+    condition     = length(module.otel_collector_role) == 1 && length(aws_eks_pod_identity_association.otel_collector) == 1 && length(aws_prometheus_workspace.this) == 0
+    error_message = "A traces-only collector must get its X-Ray role and no AMP workspace"
+  }
+
+  assert {
+    condition     = output.otlp_grpc_endpoint == "http://ravion-otel-collector.ravion-operator.svc.cluster.local:4317" && output.xray_region == "us-east-2"
+    error_message = "The traces outputs must be set with metrics off"
+  }
+}
+
+################################################################################
+# Another X-Ray region.
+################################################################################
+
+run "xray_region_can_differ_from_the_cluster" {
+  command = plan
+
+  variables {
+    metrics_providers = ["amp"]
+    traces_providers  = ["xray"]
+    traces_xray       = { region = "us-west-2" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters.awsxray.region == "us-west-2" && output.xray_region == "us-west-2"
+    error_message = "Traces must go to the X-Ray region that was set"
+  }
+}
+
+################################################################################
+# Only known destinations.
+################################################################################
+
+run "rejects_unknown_traces_provider" {
+  command = plan
+
+  variables {
+    traces_providers = ["datadog"]
+  }
+
+  expect_failures = [var.traces_providers]
 }

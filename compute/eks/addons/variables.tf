@@ -1391,10 +1391,24 @@ variable "metrics_providers" {
   }
 }
 
-variable "otlp_receiver_enabled" {
-  type        = bool
-  description = "Let workloads send OpenTelemetry to the metrics collector over OTLP (gRPC on 4317, HTTP on 4318) at an in-cluster Service. Traces go to AWS X-Ray in the cluster's region; metrics go to the same metrics_providers as the scraped metrics, without the scrape allow-list, so every series a workload emits is billed. Needs metrics on, which is when the collector runs."
-  default     = false
+variable "traces_providers" {
+  type        = list(string)
+  description = "Where workload traces go. Any of: xray (AWS X-Ray). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. An empty list turns traces off."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for provider in var.traces_providers : contains(["xray"], provider)])
+    error_message = "Each traces_providers entry must be: xray."
+  }
+}
+
+variable "traces_xray" {
+  type = object({
+    region = optional(string)
+  })
+  description = "AWS X-Ray: the region traces are written to. Null or blank uses the cluster's region."
+  default     = {}
   nullable    = false
 }
 

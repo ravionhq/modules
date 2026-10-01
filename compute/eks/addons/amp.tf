@@ -95,13 +95,13 @@ module "amp_remote_write_role" {
 }
 
 # Binds the collector's role to its service account: the remote-write role
-# while AMP is selected (with X-Ray write added for OTLP traces), otherwise the
-# X-Ray-only role otel_collector.tf creates for OTLP traces. The collector
+# while AMP is selected (with X-Ray write added when xray is a traces provider),
+# otherwise the X-Ray-only role otel_collector.tf creates. The collector
 # resolves credentials through the AWS SDK default credential chain, which the
 # Pod Identity Agent populates — the sigv4auth extension configures no
 # credentials of its own.
 resource "aws_eks_pod_identity_association" "otel_collector" {
-  count = local.amp_enabled || local.otlp_enabled ? 1 : 0
+  count = local.amp_enabled || local.xray_enabled ? 1 : 0
 
   cluster_name    = var.cluster_name
   namespace       = local.metrics_namespace

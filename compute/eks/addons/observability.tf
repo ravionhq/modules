@@ -60,6 +60,7 @@ locals {
   metrics_datadog_enabled       = contains(local.metrics_providers, "datadog")
   metrics_new_relic_enabled     = contains(local.metrics_providers, "new_relic")
   metrics_otlp_enabled          = contains(local.metrics_providers, "otlp")
+  xray_enabled                  = contains(var.traces_providers, "xray")
   grafana_cloud_enabled         = local.logs_grafana_cloud_enabled || local.metrics_grafana_cloud_enabled
 
   # Alloy carries the loki-family destinations; the OpenTelemetry collector
@@ -75,6 +76,11 @@ locals {
   otel_metrics_providers    = [for provider in local.metrics_providers : provider if provider != "cloudwatch"]
   otel_metrics_enabled      = length(local.otel_metrics_providers) > 0
   kube_state_metrics_wanted = local.otel_metrics_enabled
+
+  # Traces ride the metrics collector, which runs for either signal: it scrapes
+  # while metrics are on and receives OTLP while traces are on.
+  traces_on              = length(var.traces_providers) > 0
+  otel_collector_enabled = local.otel_metrics_enabled || local.traces_on
 
   ##############################################################################
   # Per-provider settings, with the older flat variables as fallbacks
