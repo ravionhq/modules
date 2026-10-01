@@ -81,7 +81,7 @@ resource "helm_release" "external_secrets_stores" {
       # No auth block is rendered: the store inherits the controller pod's
       # Pod Identity credentials via the AWS SDK default credential chain.
       region            = data.aws_region.current.region
-      allowedNamespaces = local.eso_allowed_namespaces
+      allowedNamespaces = local.eso_store_namespaces
       secretsManagerStore = {
         name = var.eso_secrets_manager_store_name
       }
