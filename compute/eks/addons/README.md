@@ -341,13 +341,15 @@ Assume role: <grafana_role_arn>
 
 **Metrics and logs → in-cluster Grafana** (`grafana_enabled`). AMG runs in an AWS-managed VPC and cannot reach a ClusterIP Service, so "the logs, in Grafana" is only answerable by a Grafana inside the cluster. The release is preprovisioned with both datasources — AMP over SigV4, signed with credentials the Pod Identity Agent supplies to its own role, and Loki over plain in-cluster HTTP — and a datasource whose pipeline is not installed is simply not rendered.
 
-No ingress and no Service type beyond ClusterIP. Reach it with:
+By default there is no ingress and no Service type beyond ClusterIP. Reach it with:
 
 ```console
 kubectl -n <grafana_namespace> port-forward svc/<grafana_service> 3000:80
 ```
 
-The chart generates an admin password into a Secret; `grafana_helm_values` is the route to an ingress, persistence, an existing admin secret, or dashboards. A module that quietly published a Grafana with a default password to the internet would be a bug, not a convenience.
+The chart generates an admin password into a Secret; `grafana_helm_values` is the route to persistence, an existing admin secret, or dashboards. A module that quietly published a Grafana with a default password to the internet would be a bug, not a convenience.
+
+**Public access with Google sign-in** (`grafana_public_access`). Grafana stays a ClusterIP Service; the shared public ALB reaches its pods through an IP target group, a host-header rule on the HTTPS listener, and a TargetGroupBinding the load balancer controller keeps registered. Every precondition is checked at plan: the public ALB with HTTPS, a hostname, a Google client ID and the Secrets Manager ARN of its client secret, and at least one allowed domain. With public access on, the login form is off and Google is the only sign-in: an account outside `google_allowed_domains` is refused, and one inside is created on first sign-in with `google_role`. The client secret reaches Grafana as `GF_AUTH_GOOGLE_CLIENT_SECRET` from a Secret the External Secrets Operator writes, never as a Helm value. DNS is not managed: point the hostname at `public_alb_dns_name`, and register `https://<hostname>/login/google` as the OAuth client's redirect URI.
 
 **Self-hosted Grafana elsewhere** can reach AMP the same way AMG does, given credentials that can assume `grafana_role_arn`:
 
@@ -676,6 +678,7 @@ failed during initialization have no provider resources to migrate.
 | kube_state_metrics_helm_values | Extra YAML docs merged into the kube-state-metrics chart values. | `list(string)` | `[]` | no |
 | grafana_role_creation_enabled | Create the IAM role Amazon Managed Grafana assumes to read the workspace and log groups. | `bool` | `false` | no |
 | grafana_source_account_id | Account whose Grafana workspaces may assume that role (`aws:SourceAccount`). Null uses this account. | `string` | `null` | no |
+| grafana_public_access | `{ enabled, hostname, listener_rule_priority, google_client_id, google_client_secret_arn, google_allowed_domains, google_role }` — serve the in-cluster Grafana on the public ALB's HTTPS listener at `hostname`, behind Google sign-in for `google_allowed_domains`. `google_role` is `Viewer`, `Editor` or `Admin`; a null priority lets AWS assign one. | `object` | `{}` | no |
 | logs_enabled | Collect container logs with Alloy into an in-cluster Loki storing to S3 in this account. | `bool` | `false` | no |
 | loki_s3_bucket_name | Existing bucket for log chunks and index. Null creates `ravion-loki-<cluster>-<account>`. | `string` | `null` | no |
 | log_retention_days | How long logs stay queryable. Enforced by Loki's compactor; the bucket expires a week later as a backstop. | `number` | `365` | no |
@@ -777,6 +780,7 @@ All outputs are null when the corresponding add-on is disabled.
 | xray_region | Region traces are written to in AWS X-Ray, or null while `xray` is not a traces provider. |
 | tempo_endpoint | In-cluster base URL of Tempo's query API, for a Grafana Tempo data source. |
 | tempo_namespace / tempo_s3_bucket / tempo_s3_bucket_arn / tempo_role_arn / tempo_chart_version | Where Tempo runs, its trace bucket, its Pod Identity role, and the installed chart version. |
+| grafana_url / grafana_target_group_arn | Grafana's public URL and the target group the public ALB forwards it to. Null without public access. |
 | grafana_role_arn | Role Amazon Managed Grafana assumes to query the AMP workspace. |
 | loki_endpoint | In-cluster base URL of Loki. Reachable only from inside the cluster — it is what Ravion Operator's proxy allowlist names. |
 | loki_namespace | Namespace Loki and Alloy are installed into. |

@@ -804,10 +804,73 @@ module:
       label: Grafana
       type: section
     - default: false
-      description: Install Grafana in the cluster with data sources for the selected Loki, Amazon Managed Prometheus, in-cluster Prometheus, and Tempo destinations. No ingress is created; connect with a port-forward or advanced Helm values.
+      description: Install Grafana in the cluster with data sources for the selected Loki, Amazon Managed Prometheus, in-cluster Prometheus, and Tempo destinations. Without public access, Grafana has no ingress; connect with a port-forward.
       id: grafana_enabled
       label: In-cluster Grafana
       type: boolean
+    - default: false
+      description: Serve Grafana on the shared public load balancer's HTTPS listener, behind Google sign-in. Needs the public load balancer with HTTPS and External Secrets. DNS is not managed; point the hostname at the load balancer's DNS name.
+      id: grafana_public_access_enabled
+      label: Public access with Google sign-in
+      show_when:
+        grafana_enabled: true
+      type: boolean
+    - description: Hostname Grafana answers on. A certificate on the public load balancer must cover it.
+      id: grafana_hostname
+      label: Grafana hostname
+      placeholder: grafana.example.com
+      show_when:
+        grafana_enabled: true
+        grafana_public_access_enabled: true
+      type: string
+    - description: Client ID of a Google OAuth web client whose authorized redirect URI is https://<hostname>/login/google.
+      id: grafana_google_client_id
+      label: Google OAuth client ID
+      placeholder: 123456789012-abcdefghijklmnopqrstuvwxyz012345.apps.googleusercontent.com
+      show_when:
+        grafana_enabled: true
+        grafana_public_access_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the Google OAuth client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_google_client_secret_arn
+      label: Google OAuth client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-google-client-secret
+      show_when:
+        grafana_enabled: true
+        grafana_public_access_enabled: true
+      type: string
+    - add_button_label: Add domain
+      description: Google Workspace domains whose accounts can sign in. Every other Google account is refused.
+      id: grafana_google_allowed_domains
+      label: Allowed Google domains
+      placeholder: example.com
+      show_when:
+        grafana_enabled: true
+        grafana_public_access_enabled: true
+      type: string_array
+    - default: Viewer
+      description: Grafana role each account gets the first time it signs in.
+      id: grafana_google_role
+      label: Role for new accounts
+      show_when:
+        grafana_enabled: true
+        grafana_public_access_enabled: true
+      type: string
+      values:
+        - label: Viewer
+          value: Viewer
+        - label: Editor
+          value: Editor
+        - label: Admin
+          value: Admin
+    - collapsible: true
+      description: Explicit rule order on the public load balancer's HTTPS listener. Leave blank to let AWS assign the next available priority.
+      id: grafana_listener_rule_priority
+      label: Listener rule priority
+      show_when:
+        grafana_enabled: true
+        grafana_public_access_enabled: true
+      type: number
     - default: false
       description: Create an assumable role for querying the selected Amazon Managed Prometheus workspace plus Container Insights and EKS control-plane log groups. No Grafana workspace is created.
       id: grafana_role_creation_enabled
@@ -1233,6 +1296,14 @@ module:
           headers_secret_arn: << module.input.otlp_headers_secret_arn || module.input.otlp_metrics_headers_secret_arn >>
         grafana_role_creation_enabled: << module.input.grafana_role_creation_enabled >>
         grafana_enabled: << module.input.grafana_enabled >>
+        grafana_public_access:
+          enabled: << module.input.grafana_public_access_enabled >>
+          hostname: << module.input.grafana_hostname >>
+          listener_rule_priority: << module.input.grafana_listener_rule_priority >>
+          google_client_id: << module.input.grafana_google_client_id >>
+          google_client_secret_arn: << module.input.grafana_google_client_secret_arn >>
+          google_allowed_domains: '<< module.input.grafana_google_allowed_domains != nil ? module.input.grafana_google_allowed_domains : [] >>'
+          google_role: << module.input.grafana_google_role || "Viewer" >>
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
@@ -1411,6 +1482,8 @@ module:
 
     **Traces.** Turn on **Traces** and the cluster's OpenTelemetry collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), with or without metrics. Every trace goes to each selected destination. AWS X-Ray writes to the cluster's region unless another is set. **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode with its blocks in an S3 bucket in your account (30 days by default), reachable only inside the cluster, and read by the in-cluster Grafana when that is on. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
 
+    **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, in-cluster Prometheus or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without public access Grafana has no ingress. **Public access with Google sign-in** routes a hostname on the shared public ALB's HTTPS listener to Grafana. Sign-in is Google only, the login form is off, and only accounts in the allowed domains get in, each with the chosen role the first time. Create a Google OAuth web client whose redirect URI is `https://<hostname>/login/google`, store its client secret in Secrets Manager, and point the hostname's DNS at `public_alb_dns_name`.
+
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
     **What each costs.** The in-cluster store costs S3 storage and requests plus the collector pods, with no per-gigabyte ingestion charge. Amazon Managed Prometheus bills per metric sample - roughly $25-50 a month for a 20-service cluster. CloudWatch bills per gigabyte of logs ingested and per metric. Every vendor bills for what it receives, so choosing two of them ships - and pays for - the same lines twice. That is a choice the form makes visible rather than one it prevents.
@@ -1543,6 +1616,7 @@ module:
     | Application Signals    | No       | `false`              | CloudWatch auto-instrumentation: injects the AWS agent into the named namespaces and restarts their pods |
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to the selected logs, metrics and traces stores |
+    | Public access with Google sign-in | No | `false`       | Grafana on the public ALB's HTTPS listener at a hostname, for the allowed Google domains |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |

@@ -1347,6 +1347,26 @@ variable "grafana_helm_values" {
   nullable    = false
 }
 
+variable "grafana_public_access" {
+  type = object({
+    enabled                  = optional(bool, false)
+    hostname                 = optional(string)
+    listener_rule_priority   = optional(number)
+    google_client_id         = optional(string)
+    google_client_secret_arn = optional(string)
+    google_allowed_domains   = optional(list(string), [])
+    google_role              = optional(string, "Viewer")
+  })
+  description = "Serve the in-cluster Grafana on the shared public ALB's HTTPS listener at hostname, behind Google sign-in. google_client_secret_arn is a Secrets Manager ARN read through the External Secrets Operator; only accounts in google_allowed_domains can sign in, and each gets google_role (Viewer, Editor or Admin). Null listener_rule_priority lets AWS assign one. DNS is not managed: point hostname at public_alb_dns_name."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_public_access.google_role)
+    error_message = "The grafana_public_access.google_role must be Viewer, Editor or Admin."
+  }
+}
+
 ################################################################################
 # Observability providers
 #

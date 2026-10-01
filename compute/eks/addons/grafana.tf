@@ -164,11 +164,9 @@ resource "helm_release" "grafana" {
 
         # SigV4 is off in Grafana by default and a datasource that asks for it
         # without this simply fails to authenticate, with no hint as to why.
-        "grafana.ini" = {
-          auth = {
-            sigv4_auth_enabled = true
-          }
-        }
+        # Public access adds Google sign-in (grafana_public.tf).
+        "grafana.ini" = local.grafana_ini
+        envValueFrom  = local.grafana_env_value_from
 
         datasources = {
           "datasources.yaml" = {
@@ -185,6 +183,8 @@ resource "helm_release" "grafana" {
     helm_release.lb_controller,
     aws_eks_pod_identity_association.grafana,
     helm_release.loki,
+    # The Google client secret Grafana reads must exist before its pod starts.
+    helm_release.observability_secrets,
   ]
 
   lifecycle {
