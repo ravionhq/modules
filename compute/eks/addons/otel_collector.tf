@@ -160,6 +160,15 @@ locals {
         region = local.xray_region
       }
     } : {},
+    local.tempo_enabled ? {
+      # Plain gRPC inside the cluster, to the same ClusterIP Service Grafana reads.
+      "otlp/tempo" = {
+        endpoint = local.tempo_otlp_grpc_host
+        tls = {
+          insecure = true
+        }
+      }
+    } : {},
   )
 
   otel_collector_extra_envs = [

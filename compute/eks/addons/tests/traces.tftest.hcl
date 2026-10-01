@@ -269,3 +269,137 @@ run "rejects_unknown_traces_provider" {
 
   expect_failures = [var.traces_providers]
 }
+
+################################################################################
+# Tempo: the in-cluster store on S3, the traces counterpart of Loki.
+################################################################################
+
+run "tempo_stores_traces_in_cluster_on_s3" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+  }
+
+  assert {
+    condition     = length(module.tempo_bucket) == 1 && output.tempo_s3_bucket == "ravion-tempo-test-cluster-123456789012"
+    error_message = "Tempo must get a bucket named ravion-tempo-<cluster>-<account>"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace.backend == "s3" && yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace.s3.bucket == "ravion-tempo-test-cluster-123456789012" && yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace.s3.region == "us-east-2"
+    error_message = "Tempo must store its blocks in the trace bucket"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.retention == "720h"
+    error_message = "Traces must stay queryable for 30 days by default"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.receivers.jaeger == null && keys(yamldecode(helm_release.tempo[0].values[0]).tempo.receivers.otlp.protocols) == ["grpc"]
+    error_message = "Tempo must receive OTLP gRPC only"
+  }
+
+  assert {
+    condition     = length(module.tempo_role) == 1 && aws_eks_pod_identity_association.tempo[0].service_account == "ravion-tempo" && aws_eks_pod_identity_association.tempo[0].namespace == "ravion-operator" && yamldecode(helm_release.tempo[0].values[0]).serviceAccount.name == "ravion-tempo"
+    error_message = "Tempo's service account must carry its S3 role through Pod Identity"
+  }
+
+  assert {
+    condition     = data.aws_iam_policy_document.tempo_s3[0].statement[1].resources == toset(["arn:aws:s3:::ravion-tempo-test-cluster-123456789012/*"]) && data.aws_iam_policy_document.tempo_s3[0].statement[1].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetObjectTagging", "s3:PutObjectTagging"])
+    error_message = "Tempo's role must have Tempo's documented object permissions on its own bucket only"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp/tempo"] && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp/tempo"].endpoint == "ravion-tempo.ravion-operator.svc.cluster.local:4317"
+    error_message = "The collector must send traces to Tempo's in-cluster Service"
+  }
+
+  assert {
+    condition     = length(module.otel_collector_role) == 0 && length(aws_iam_role_policy.otel_collector_xray) == 0 && output.xray_region == null
+    error_message = "Tempo alone needs no X-Ray permission"
+  }
+
+  assert {
+    condition     = output.tempo_endpoint == "http://ravion-tempo.ravion-operator.svc.cluster.local:3200"
+    error_message = "The Tempo query endpoint must name its in-cluster Service"
+  }
+}
+
+run "xray_and_tempo_both_receive_every_trace" {
+  command = plan
+
+  variables {
+    metrics_providers = ["amp"]
+    traces_providers  = ["xray", "tempo"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray", "otlp/tempo"]
+    error_message = "With both providers, the traces pipeline must fan out to X-Ray and Tempo"
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.otel_collector_xray) == 1 && length(helm_release.tempo) == 1
+    error_message = "Both stores must be set up"
+  }
+}
+
+run "tempo_uses_an_existing_bucket_and_retention" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    traces_tempo     = { s3_bucket_name = "my-traces", retention_days = 7 }
+  }
+
+  assert {
+    condition     = length(module.tempo_bucket) == 0 && yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace.s3.bucket == "my-traces"
+    error_message = "An existing bucket must be used as is, without creating one"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.retention == "168h"
+    error_message = "Retention must follow traces_tempo.retention_days"
+  }
+}
+
+run "tempo_creates_a_bucket_when_the_form_leaves_it_blank" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    traces_tempo     = { s3_bucket_name = "" }
+  }
+
+  assert {
+    condition     = length(module.tempo_bucket) == 1 && output.tempo_s3_bucket == "ravion-tempo-test-cluster-123456789012"
+    error_message = "A blank bucket name must create the bucket"
+  }
+}
+
+run "in_cluster_grafana_reads_tempo" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    grafana_enabled  = true
+  }
+
+  assert {
+    condition     = contains([for source in yamldecode(helm_release.grafana[0].values[0]).datasources["datasources.yaml"].datasources : source.uid], "ravion-tempo")
+    error_message = "The in-cluster Grafana must get a Tempo data source"
+  }
+}
+
+run "rejects_zero_tempo_retention" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    traces_tempo     = { retention_days = 0 }
+  }
+
+  expect_failures = [var.traces_tempo]
+}

@@ -410,6 +410,36 @@ output "loki_chart_version" {
   value       = local.loki_enabled ? helm_release.loki[0].version : null
 }
 
+output "tempo_endpoint" {
+  description = "In-cluster base URL of Tempo's query API, for a Grafana Tempo data source inside the cluster (null unless tempo is a traces provider)."
+  value       = local.tempo_endpoint
+}
+
+output "tempo_namespace" {
+  description = "Namespace Tempo is installed into (null unless tempo is a traces provider)."
+  value       = local.tempo_enabled ? local.tempo_namespace : null
+}
+
+output "tempo_s3_bucket" {
+  description = "Name of the S3 bucket Tempo stores trace blocks in: the created bucket, or the one passed as traces_tempo.s3_bucket_name (null unless tempo is a traces provider)."
+  value       = local.tempo_bucket_name
+}
+
+output "tempo_s3_bucket_arn" {
+  description = "ARN of the Tempo trace bucket (null unless tempo is a traces provider)."
+  value       = local.tempo_bucket_arn
+}
+
+output "tempo_role_arn" {
+  description = "ARN of Tempo's Pod Identity role, scoped to the trace bucket (null unless tempo is a traces provider)."
+  value       = local.tempo_enabled ? module.tempo_role[0].role_arn : null
+}
+
+output "tempo_chart_version" {
+  description = "Installed version of the grafana-community/tempo Helm chart (null unless tempo is a traces provider)."
+  value       = local.tempo_enabled ? helm_release.tempo[0].version : null
+}
+
 output "alloy_chart_version" {
   description = "Installed version of the grafana/alloy Helm chart (null if logs are disabled)."
   value       = local.alloy_enabled ? helm_release.alloy[0].version : null

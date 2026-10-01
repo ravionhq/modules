@@ -61,6 +61,7 @@ locals {
   metrics_new_relic_enabled     = contains(local.metrics_providers, "new_relic")
   metrics_otlp_enabled          = contains(local.metrics_providers, "otlp")
   xray_enabled                  = contains(var.traces_providers, "xray")
+  tempo_enabled                 = contains(var.traces_providers, "tempo")
   grafana_cloud_enabled         = local.logs_grafana_cloud_enabled || local.metrics_grafana_cloud_enabled
 
   # Alloy carries the loki-family destinations; the OpenTelemetry collector
@@ -85,6 +86,13 @@ locals {
   ##############################################################################
   # Per-provider settings, with the older flat variables as fallbacks
   ##############################################################################
+
+  # A form leaves an unused bucket field blank rather than null.
+  tempo_config = {
+    retention_days     = coalesce(var.traces_tempo.retention_days, 30)
+    s3_bucket          = try(trimspace(var.traces_tempo.s3_bucket_name), "") == "" ? null : trimspace(var.traces_tempo.s3_bucket_name)
+    local_storage_size = coalesce(var.traces_tempo.local_storage_size, "10Gi")
+  }
 
   loki_config = {
     retention_days      = var.logs_loki.retention_days != null ? var.logs_loki.retention_days : var.log_retention_days

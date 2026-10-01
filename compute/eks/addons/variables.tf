@@ -1393,13 +1393,13 @@ variable "metrics_providers" {
 
 variable "traces_providers" {
   type        = list(string)
-  description = "Where workload traces go. Any of: xray (AWS X-Ray). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data. An empty list turns traces off."
+  description = "Where workload traces go. Any combination of: xray (AWS X-Ray), tempo (in-cluster Tempo on S3). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data. An empty list turns traces off."
   default     = []
   nullable    = false
 
   validation {
-    condition     = alltrue([for provider in var.traces_providers : contains(["xray"], provider)])
-    error_message = "Each traces_providers entry must be: xray."
+    condition     = alltrue([for provider in var.traces_providers : contains(["xray", "tempo"], provider)])
+    error_message = "Each traces_providers entry must be one of: xray, tempo."
   }
 }
 
@@ -1409,6 +1409,55 @@ variable "traces_xray" {
   })
   description = "AWS X-Ray: the region traces are written to. Null or blank uses the cluster's region."
   default     = {}
+  nullable    = false
+}
+
+variable "traces_tempo" {
+  type = object({
+    retention_days     = optional(number)
+    s3_bucket_name     = optional(string)
+    local_storage_size = optional(string)
+  })
+  description = "In-cluster Tempo: how many days traces stay queryable (30 when null), an existing bucket to store blocks in (null or blank creates one), and the size limit of Tempo's local working volume for its write-ahead log and live store (10Gi when null)."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = var.traces_tempo.retention_days == null || try(var.traces_tempo.retention_days >= 1, false)
+    error_message = "The traces_tempo.retention_days must be at least 1."
+  }
+}
+
+variable "tempo_chart_version" {
+  type        = string
+  description = "Version of the grafana-community/tempo Helm chart to install."
+  default     = "3.1.0"
+  nullable    = false
+}
+
+variable "tempo_service_account" {
+  type        = string
+  description = "Service account Tempo runs as. The Pod Identity association binds the S3 role to this name, so the chart and the association are driven from this single value."
+  default     = "ravion-tempo"
+  nullable    = false
+}
+
+variable "tempo_resources" {
+  type = object({
+    cpu_request    = optional(string, "200m")
+    memory_request = optional(string, "512Mi")
+    cpu_limit      = optional(string)
+    memory_limit   = optional(string, "2Gi")
+  })
+  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted."
+  default     = {}
+  nullable    = false
+}
+
+variable "tempo_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives (later entries win). The route to more replicas, tolerations, or a private image registry."
+  default     = []
   nullable    = false
 }
 

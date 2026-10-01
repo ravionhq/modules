@@ -59,6 +59,16 @@ locals {
         }
       },
     ] : [],
+    local.tempo_enabled ? [
+      {
+        name      = "Ravion Traces (Tempo)"
+        uid       = "ravion-tempo"
+        type      = "tempo"
+        access    = "proxy"
+        url       = local.tempo_endpoint
+        isDefault = false
+      },
+    ] : [],
     local.loki_enabled ? [
       {
         name      = "Ravion Logs (Loki)"
@@ -179,8 +189,8 @@ resource "helm_release" "grafana" {
 
   lifecycle {
     precondition {
-      condition     = local.metrics_on || local.logs_on
-      error_message = "grafana_enabled is true but both logs_providers and metrics_providers are empty. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
+      condition     = local.metrics_on || local.logs_on || local.tempo_enabled
+      error_message = "grafana_enabled is true but logs_providers and metrics_providers are empty and tempo is not a traces provider. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
     }
   }
 }
