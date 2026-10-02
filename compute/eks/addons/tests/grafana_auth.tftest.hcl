@@ -68,6 +68,7 @@ variables {
   private_alb_https_enabled    = true
   private_alb_certificate_arns = ["arn:aws:acm:us-east-2:123456789012:certificate/66666666-7777-8888-9999-000000000000"]
   karpenter_enabled            = false
+  ebs_csi_driver_enabled       = false
   eso_enabled                  = true
   eso_allowed_namespaces       = ["apps"]
   logs_providers               = ["loki"]

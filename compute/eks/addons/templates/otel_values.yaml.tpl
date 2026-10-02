@@ -32,9 +32,8 @@ extraEnvs: ${jsonencode(extra_envs)}
 
 # Scraping the kubelet through the API server proxy needs nodes/proxy; the node
 # service discovery needs nodes. Nothing here reads pods, services or secrets.
-# A traces-only collector scrapes nothing and needs none of it.
 clusterRole:
-  create: ${metrics_enabled}
+  create: true
   rules:
     - apiGroups: [""]
       resources: ["nodes", "nodes/proxy", "nodes/metrics"]
@@ -42,17 +41,16 @@ clusterRole:
 
 resources: ${jsonencode(resources)}
 
-# The collector pulls its scrape targets. Workloads send to it only while
-# traces are on: then a ClusterIP Service carries the two OTLP ports, and none
-# of the chart's other default receiver ports.
+# Nothing sends telemetry to this collector — it pulls. No Service, and none of
+# the chart's default receiver ports.
 service:
-  enabled: ${traces_enabled}
+  enabled: false
 
 ports:
   otlp:
-    enabled: ${traces_enabled}
+    enabled: false
   otlp-http:
-    enabled: ${traces_enabled}
+    enabled: false
   jaeger-compact:
     enabled: false
   jaeger-thrift:
@@ -68,25 +66,7 @@ config:
   receivers:
     jaeger: null
     zipkin: null
-%{ if traces_enabled ~}
-    # The pod IP, the chart's own default: the Service targets it, and nothing
-    # on the node's other interfaces can reach the receiver.
-    #
-    # It authenticates no sender. Any pod that reaches the Service can send
-    # spans under any service.name, and the traces pipeline exports them as
-    # sent: the cluster network is the trust boundary, so every workload in the
-    # cluster is trusted with the trace data. Restrict who reaches it with a
-    # NetworkPolicy when that does not hold.
-    otlp:
-      protocols:
-        grpc:
-          endpoint: $${env:MY_POD_IP}:4317
-        http:
-          endpoint: $${env:MY_POD_IP}:4318
-%{ else ~}
     otlp: null
-%{ endif ~}
-%{ if metrics_enabled ~}
     prometheus:
       config:
         scrape_configs:
@@ -171,9 +151,6 @@ config:
               - source_labels: [__name__]
                 regex: ${jsonencode(kubelet_resource_keep_regex)}
                 action: keep
-%{ else ~}
-    prometheus: null
-%{ endif ~}
 
   processors:
     # Sized as a percentage of the container's memory limit, which is why
@@ -202,30 +179,7 @@ config:
     extensions: ${jsonencode(service_extensions)}
     pipelines:
       logs: null
-%{ if traces_enabled ~}
-      # Workload traces, to the traces providers.
-      traces:
-        receivers:
-          - otlp
-        processors:
-          - memory_limiter
-          - batch
-        exporters: ${jsonencode(traces_pipeline_exporters)}
-%{ else ~}
       traces: null
-%{ endif ~}
-%{ if traces_enabled && metrics_enabled ~}
-      # Workload metrics, to the same destinations as the scraped ones. They
-      # skip the scrape allow-list: a workload's own metrics are its choice.
-      metrics/otlp:
-        receivers:
-          - otlp
-        processors:
-          - memory_limiter
-          - batch
-        exporters: ${jsonencode(pipeline_exporters)}
-%{ endif ~}
-%{ if metrics_enabled ~}
       metrics:
         receivers:
           - prometheus
@@ -233,6 +187,3 @@ config:
           - memory_limiter
           - batch
         exporters: ${jsonencode(pipeline_exporters)}
-%{ else ~}
-      metrics: null
-%{ endif ~}

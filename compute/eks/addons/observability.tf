@@ -2,7 +2,7 @@
 # Observability providers — selection, fallbacks, and everything derived
 #
 # ONE MULTI-SELECT PER SIGNAL. logs_providers and metrics_providers name every
-# destination the cluster ships to. Loki and AMP are the defaults, so a fresh
+# destination the cluster ships to. Loki and Prometheus are the defaults, so a fresh
 # instance renders both tabs with no configuration; CloudWatch is a member of
 # the same lists and is never installed as a side effect of anything.
 #
@@ -33,6 +33,9 @@ locals {
 
   logs_providers    = distinct(var.logs_providers)
   metrics_providers = distinct(var.metrics_providers)
+
+  # Leave room for the longer metrics/traces prefixes and the account ID.
+  s3_observability_cluster_slug = replace(substr(local.loki_cluster_slug, 0, 35), "/-+$/", "")
 
   # Selected members of the rendering lists, in fallback order. Empty when the
   # signal is off, which is what the tabs read as "turned off for this cluster".
@@ -92,8 +95,7 @@ locals {
     one([for entry in var.traces_destinations : entry if entry.destination == destination])
   }
 
-  traces_on              = length(local.traces_providers) > 0
-  otel_collector_enabled = local.otel_metrics_enabled || local.traces_on
+  traces_on = length(local.traces_providers) > 0
 
   ##############################################################################
   # Per-provider settings, with the older flat variables as fallbacks
@@ -104,9 +106,10 @@ locals {
     retention_days            = coalesce(try(local.trace.tempo.retention_days, null), 30)
     storage_backend           = try(trimspace(local.trace.tempo.storage_backend), "") == "" ? "s3" : trimspace(local.trace.tempo.storage_backend)
     s3_bucket                 = try(trimspace(local.trace.tempo.s3_bucket_name), "") == "" ? null : trimspace(local.trace.tempo.s3_bucket_name)
-    persistence_enabled       = coalesce(try(local.trace.tempo.persistence_enabled, null), false)
+    persistence_enabled       = coalesce(try(local.trace.tempo.persistence_enabled, null), local.ebs_default_storage_class_enabled)
     persistence_size          = try(trimspace(local.trace.tempo.persistence_size), "") == "" ? "10Gi" : trimspace(local.trace.tempo.persistence_size)
     metrics_generator_enabled = coalesce(try(local.trace.tempo.metrics_generator_enabled, null), false)
+    storage_class             = try(trimspace(local.trace.tempo.storage_class), "") != "" ? trimspace(local.trace.tempo.storage_class) : (local.ebs_default_storage_class_enabled ? "gp3" : null)
     chart_version             = try(trimspace(local.trace.tempo.chart_version), "") == "" ? "3.1.0" : trimspace(local.trace.tempo.chart_version)
     helm_values               = try(merge({}, local.trace.tempo.helm_values), {})
   }
@@ -159,10 +162,15 @@ locals {
     stack_url        = try(coalesce(var.logs_grafana_cloud.stack_url, var.metrics_grafana_cloud.stack_url), null)
   }
 
+  # Blank form fields are unset, as for Tempo.
   prometheus_config = {
-    retention_days = coalesce(var.metrics_prometheus.retention_days, 15)
-    storage_size   = coalesce(var.metrics_prometheus.storage_size, "50Gi")
-    endpoint       = var.metrics_prometheus.endpoint
+    retention_days     = coalesce(var.metrics_prometheus.retention_days, 15)
+    storage_size       = try(trimspace(var.metrics_prometheus.storage_size), "") == "" ? "50Gi" : trimspace(var.metrics_prometheus.storage_size)
+    storage_class      = try(trimspace(var.metrics_prometheus.storage_class), "") != "" ? trimspace(var.metrics_prometheus.storage_class) : (local.ebs_default_storage_class_enabled ? "gp3" : null)
+    endpoint           = try(trimspace(var.metrics_prometheus.endpoint), "") == "" ? null : trimspace(var.metrics_prometheus.endpoint)
+    s3_storage_enabled = coalesce(var.metrics_prometheus.s3_storage_enabled, true)
+    s3_bucket_name     = try(trimspace(var.metrics_prometheus.s3_bucket_name), "") == "" ? null : trimspace(var.metrics_prometheus.s3_bucket_name)
+    s3_retention_days  = coalesce(var.metrics_prometheus.s3_retention_days, 365)
   }
 
   opensearch_config = {
@@ -214,11 +222,17 @@ locals {
   # Installed here, or one the customer already runs.
   prometheus_install = local.prometheus_enabled && local.prometheus_config.endpoint == null
 
-  prometheus_endpoint = local.prometheus_enabled ? (
-    local.prometheus_config.endpoint != null ? local.prometheus_config.endpoint : "http://${local.prometheus_service_host}:9090"
+  # Writes always reach Prometheus, never Thanos Query. Reads include S3 history
+  # through Query when Thanos is installed. Existing endpoints keep both paths.
+  prometheus_write_endpoint = local.prometheus_enabled ? (
+    local.prometheus_config.endpoint != null ? trimsuffix(local.prometheus_config.endpoint, "/") : "http://${local.prometheus_service_host}:9090"
   ) : null
 
-  prometheus_remote_write_endpoint = local.prometheus_enabled ? "${local.prometheus_endpoint}/api/v1/write" : null
+  prometheus_endpoint = local.prometheus_enabled ? (
+    local.thanos_enabled ? local.thanos_query_endpoint : local.prometheus_write_endpoint
+  ) : null
+
+  prometheus_remote_write_endpoint = local.prometheus_enabled ? "${local.prometheus_write_endpoint}/api/v1/write" : null
 
   # Grafana Cloud hands out a push URL; the query base is the same service with
   # the push path removed. Loki: <base>/loki/api/v1/push -> <base>/loki.
@@ -303,8 +317,14 @@ locals {
     if contains(["datadog", "new_relic", "splunk", "otlp_logs"], secret.provider)
   ]
 
-  # The metrics collector is also the traces collector.
   otel_metrics_secret_env = [
+    for secret in local.vendor_secrets : secret
+    if contains(["datadog", "new_relic", "grafana_cloud", "otlp_metrics"], secret.provider)
+  ]
+
+  # The OTLP collector exports workload metrics and traces, so it reads the
+  # vendor credentials of both signals.
+  otlp_collector_secret_env = [
     for secret in local.vendor_secrets : secret
     if contains(["datadog", "new_relic", "grafana_cloud", "otlp_metrics", "otlp_traces"], secret.provider)
   ]
@@ -370,9 +390,8 @@ locals {
   # which carries sigv4auth as well. Both are overridable.
   ##############################################################################
 
-  # The AWS distribution lacks the vendor exporters, for metrics and traces alike.
   metrics_needs_contrib = length([
-    for provider in concat(local.otel_metrics_providers, local.traces_providers) : provider
+    for provider in local.otel_metrics_providers : provider
     if contains(["datadog", "grafana_cloud", "new_relic", "otlp"], provider)
   ]) > 0
 

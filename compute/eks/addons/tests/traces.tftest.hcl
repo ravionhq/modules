@@ -79,19 +79,21 @@ mock_provider "ravion" {}
 # about. The defaults ([loki] and [amp]) have their own coverage in
 # observability.tftest.hcl.
 variables {
-  cluster_name      = "test-cluster"
-  region            = "us-east-2"
-  karpenter_enabled = false
-  eso_enabled       = false
-  logs_providers    = []
-  metrics_providers = []
+  cluster_name           = "test-cluster"
+  region                 = "us-east-2"
+  karpenter_enabled      = false
+  eso_enabled            = false
+  ebs_csi_driver_enabled = false
+  logs_providers         = []
+  metrics_providers      = []
+  traces_destinations    = []
 }
 
 ################################################################################
 # Off by default: the collector keeps pulling only, with no Service.
 ################################################################################
 
-run "traces_off_by_default" {
+run "traces_off_without_destinations" {
   command = plan
 
   variables {
@@ -99,28 +101,24 @@ run "traces_off_by_default" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).service.enabled == false
-    error_message = "The collector must have no Service while traces are off"
+    condition     = length(helm_release.otlp_collector) == 0 && length(module.otlp_collector_role) == 0 && length(aws_eks_pod_identity_association.otlp_collector) == 0
+    error_message = "No OTLP collector or role may exist without a trace destination"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.otlp == null && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces == null
-    error_message = "No OTLP receiver or traces pipeline may run while traces are off"
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).service.enabled == false && yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.otlp == null
+    error_message = "The scrape collector must stay as it was: no Service and no OTLP receiver"
   }
 
   assert {
-    condition     = length(aws_iam_role_policy.otel_collector_xray) == 0 && length(module.otel_collector_role) == 0
-    error_message = "No X-Ray permission may exist while traces are off"
-  }
-
-  assert {
-    condition     = output.otlp_host == null && output.otlp_grpc_endpoint == null && output.otlp_http_endpoint == null && output.xray_region == null
+    condition     = output.otlp_host == null && output.otlp_grpc_endpoint == null && output.otlp_http_endpoint == null && output.xray_region == null && length(output.traces_providers) == 0
     error_message = "The traces outputs must be null while traces are off"
   }
 }
 
 ################################################################################
-# X-Ray with AMP: X-Ray write joins the remote-write role.
+# X-Ray with AMP: the OTLP collector writes traces to X-Ray and workload
+# metrics to AMP, with a role of its own; the scrape collector is untouched.
 ################################################################################
 
 run "xray_with_amp_sends_traces_to_xray_and_workload_metrics_to_amp" {
@@ -134,51 +132,51 @@ run "xray_with_amp_sends_traces_to_xray_and_workload_metrics_to_amp" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).service.enabled == true && yamldecode(helm_release.otel_collector[0].values[0]).ports.otlp.enabled == true && yamldecode(helm_release.otel_collector[0].values[0])["ports"]["otlp-http"].enabled == true
-    error_message = "The collector must expose both OTLP ports through a Service"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).service.enabled == true && yamldecode(helm_release.otlp_collector[0].values[0]).ports.otlp.enabled == true && yamldecode(helm_release.otlp_collector[0].values[0])["ports"]["otlp-http"].enabled == true && yamldecode(helm_release.otlp_collector[0].values[0]).ports.zipkin.enabled == false && yamldecode(helm_release.otlp_collector[0].values[0])["ports"]["jaeger-grpc"].enabled == false
+    error_message = "The OTLP collector must expose both OTLP ports, and only those, through a Service"
   }
 
   assert {
-    condition     = keys(yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.otlp.protocols) == ["grpc", "http"]
-    error_message = "The OTLP receiver must accept gRPC and HTTP"
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray"] && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters.awsxray.region == "us-east-2"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters.awsxray.region == "us-east-2"
     error_message = "Workload traces must go to X-Ray in the cluster's region"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines["metrics/otlp"].exporters == ["prometheusremotewrite/amp"] && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines["metrics/otlp"].receivers == ["otlp"]
-    error_message = "Workload metrics must go to the same destinations as the scraped ones"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/amp"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.receivers == ["otlp"] && contains(keys(yamldecode(helm_release.otlp_collector[0].values[0]).config.extensions), "sigv4auth")
+    error_message = "Workload metrics must go to the same destinations as the scraped ones, signed for AMP"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics.receivers == ["prometheus"]
-    error_message = "The scrape pipeline must stay prometheus-only"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).presets.kubernetesAttributes.enabled == true && yamldecode(helm_release.otlp_collector[0].values[0]).image.repository == "docker.io/otel/opentelemetry-collector-contrib"
+    error_message = "Spans and metrics must carry their pod's Kubernetes attributes, on the contrib collector"
   }
 
   assert {
-    condition     = length(aws_iam_role_policy.otel_collector_xray) == 1 && length(module.otel_collector_role) == 0 && length(aws_eks_pod_identity_association.otel_collector) == 1
-    error_message = "With AMP, X-Ray write must join the remote-write role behind the one association"
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.otlp == null && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics.receivers == ["prometheus"]
+    error_message = "The scrape collector must stay a scrape: no OTLP receiver"
   }
 
   assert {
-    condition     = data.aws_iam_policy_document.otel_collector_xray[0].statement[0].actions == toset(["xray:PutTraceSegments", "xray:PutTelemetryRecords"])
-    error_message = "The collector may only write to X-Ray"
+    condition     = length(module.otlp_collector_role) == 1 && aws_eks_pod_identity_association.otlp_collector[0].service_account == "ravion-otel-otlp" && toset([for statement in data.aws_iam_policy_document.otlp_collector[0].statement : statement.sid]) == toset(["WriteTraces", "WriteWorkloadMetrics"])
+    error_message = "The OTLP collector's own role must write traces to X-Ray and workload metrics to AMP"
   }
 
   assert {
-    condition     = output.otlp_host == "ravion-otel-collector.ravion-operator.svc.cluster.local" && output.otlp_grpc_endpoint == "http://ravion-otel-collector.ravion-operator.svc.cluster.local:4317" && output.otlp_http_endpoint == "http://ravion-otel-collector.ravion-operator.svc.cluster.local:4318" && output.xray_region == "us-east-2"
-    error_message = "The traces outputs must name the collector's in-cluster Service"
+    condition     = one([for statement in data.aws_iam_policy_document.otlp_collector[0].statement : statement if statement.sid == "WriteTraces"]).actions == toset(["xray:PutTraceSegments", "xray:PutTelemetryRecords"]) && one([for statement in data.aws_iam_policy_document.otlp_collector[0].statement : statement if statement.sid == "WriteWorkloadMetrics"]).actions == toset(["aps:RemoteWrite"])
+    error_message = "The role may only write traces and remote-write metrics"
+  }
+
+  assert {
+    condition     = output.otlp_host == "ravion-otel-otlp.ravion-operator.svc.cluster.local" && output.otlp_grpc_endpoint == "http://ravion-otel-otlp.ravion-operator.svc.cluster.local:4317" && output.otlp_http_endpoint == "http://ravion-otel-otlp.ravion-operator.svc.cluster.local:4318" && output.xray_region == "us-east-2"
+    error_message = "The traces outputs must name the OTLP collector's in-cluster Service"
   }
 }
 
 ################################################################################
-# X-Ray without AMP: the collector gets an X-Ray role of its own.
+# X-Ray with the in-cluster Prometheus: the role writes traces only.
 ################################################################################
 
-run "xray_without_amp_gets_its_own_role" {
+run "xray_without_amp_writes_traces_only" {
   command = plan
 
   variables {
@@ -189,21 +187,21 @@ run "xray_without_amp_gets_its_own_role" {
   }
 
   assert {
-    condition     = length(module.otel_collector_role) == 1 && length(aws_iam_role_policy.otel_collector_xray) == 0 && length(aws_eks_pod_identity_association.otel_collector) == 1
-    error_message = "Without AMP, the collector's association must carry an X-Ray-only role"
+    condition     = length(module.otlp_collector_role) == 1 && [for statement in data.aws_iam_policy_document.otlp_collector[0].statement : statement.sid] == ["WriteTraces"]
+    error_message = "Without AMP, the OTLP collector's role must only write to X-Ray"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines["metrics/otlp"].exporters == ["prometheusremotewrite/in_cluster"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"]
     error_message = "Workload metrics must go to the in-cluster Prometheus"
   }
 }
 
 ################################################################################
-# Traces with metrics off: the collector runs for traces alone.
+# Traces with metrics off: only the OTLP collector runs.
 ################################################################################
 
-run "traces_without_metrics_run_a_traces_only_collector" {
+run "traces_without_metrics_run_only_the_otlp_collector" {
   command = plan
 
   variables {
@@ -213,33 +211,18 @@ run "traces_without_metrics_run_a_traces_only_collector" {
   }
 
   assert {
-    condition     = length(helm_release.otel_collector) == 1 && length(helm_release.kube_state_metrics) == 0
-    error_message = "Traces alone must run the collector, and nothing that only metrics need"
+    condition     = length(helm_release.otel_collector) == 0 && length(helm_release.kube_state_metrics) == 0 && length(helm_release.otlp_collector) == 1
+    error_message = "Traces alone must run the OTLP collector, and nothing that only metrics need"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.prometheus == null && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics == null && !contains(keys(yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines), "metrics/otlp")
-    error_message = "A traces-only collector must neither scrape nor take workload metrics"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics == null && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray"]
+    error_message = "With metrics off, the OTLP collector must take traces only"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).clusterRole.create == false
-    error_message = "A traces-only collector must not get the node read permissions the scrape needs"
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray"] && yamldecode(helm_release.otel_collector[0].values[0]).service.enabled == true
-    error_message = "A traces-only collector must still receive OTLP and export to X-Ray"
-  }
-
-  assert {
-    condition     = length(module.otel_collector_role) == 1 && length(aws_eks_pod_identity_association.otel_collector) == 1 && length(aws_prometheus_workspace.this) == 0
-    error_message = "A traces-only collector must get its X-Ray role and no AMP workspace"
-  }
-
-  assert {
-    condition     = output.otlp_grpc_endpoint == "http://ravion-otel-collector.ravion-operator.svc.cluster.local:4317" && output.xray_region == "us-east-2"
-    error_message = "The traces outputs must be set with metrics off"
+    condition     = length(aws_prometheus_workspace.this) == 0 && output.otlp_grpc_endpoint == "http://ravion-otel-otlp.ravion-operator.svc.cluster.local:4317" && output.xray_region == "us-east-2"
+    error_message = "The traces outputs must be set with metrics off, and no AMP workspace created"
   }
 }
 
@@ -261,7 +244,7 @@ run "xray_region_can_differ_from_the_cluster" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters.awsxray.region == "us-west-2" && output.xray_region == "us-west-2"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters.awsxray.region == "us-west-2" && output.xray_region == "us-west-2"
     error_message = "Traces must go to the X-Ray region that was set"
   }
 }
@@ -326,12 +309,12 @@ run "tempo_stores_traces_in_cluster_on_s3" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp/tempo"] && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp/tempo"].endpoint == "ravion-tempo.ravion-operator.svc.cluster.local:4317"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_grpc/tempo"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_grpc/tempo"].endpoint == "ravion-tempo.ravion-operator.svc.cluster.local:4317"
     error_message = "The collector must send traces to Tempo's in-cluster Service"
   }
 
   assert {
-    condition     = length(module.otel_collector_role) == 0 && length(aws_iam_role_policy.otel_collector_xray) == 0 && output.xray_region == null
+    condition     = length(module.otlp_collector_role) == 0 && output.xray_region == null
     error_message = "Tempo alone needs no X-Ray permission"
   }
 
@@ -353,12 +336,12 @@ run "xray_and_tempo_both_receive_every_trace" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray", "otlp/tempo"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["awsxray", "otlp_grpc/tempo"]
     error_message = "With both providers, the traces pipeline must fan out to X-Ray and Tempo"
   }
 
   assert {
-    condition     = length(aws_iam_role_policy.otel_collector_xray) == 1 && length(helm_release.tempo) == 1
+    condition     = length(module.otlp_collector_role) == 1 && length(helm_release.tempo) == 1
     error_message = "Both stores must be set up"
   }
 }
@@ -379,7 +362,7 @@ run "tempo_uses_an_existing_bucket_and_retention" {
 
   assert {
     condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.retention == "168h"
-    error_message = "Retention must follow traces_tempo.retention_days"
+    error_message = "Retention must follow the tempo destination's retention_days"
   }
 }
 
@@ -662,27 +645,27 @@ run "traces_go_to_every_vendor_destination" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["datadog", "otlp_http/custom_traces", "otlp_http/grafana_cloud_traces", "otlp_http/new_relic"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["datadog", "otlp_http/custom_traces", "otlp_http/grafana_cloud_traces", "otlp_http/new_relic"]
     error_message = "The traces pipeline must send to each selected vendor"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/grafana_cloud_traces"].endpoint == "https://otlp-gateway-prod-us-east-0.grafana.net/otlp" && yamldecode(helm_release.otel_collector[0].values[0]).config.extensions["basicauth/grafana_cloud_traces"].client_auth.username == "123456" && contains(yamldecode(helm_release.otel_collector[0].values[0]).config.service.extensions, "basicauth/grafana_cloud_traces")
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/grafana_cloud_traces"].endpoint == "https://otlp-gateway-prod-us-east-0.grafana.net/otlp" && yamldecode(helm_release.otlp_collector[0].values[0]).config.extensions["basicauth/grafana_cloud_traces"].client_auth.username == "123456" && contains(yamldecode(helm_release.otlp_collector[0].values[0]).config.service.extensions, "basicauth/grafana_cloud_traces")
     error_message = "Grafana Cloud traces must authenticate with the traces instance id"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters.datadog.api.site == "datadoghq.eu" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/new_relic"].endpoint == "https://otlp.eu01.nr-data.net" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/custom_traces"].endpoint == "https://api.honeycomb.io" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/custom_traces"].headers.authorization == "$${env:OTLP_TRACES_AUTHORIZATION}"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters.datadog.api.site == "datadoghq.eu" && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/new_relic"].endpoint == "https://otlp.eu01.nr-data.net" && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/custom_traces"].endpoint == "https://api.honeycomb.io" && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/custom_traces"].headers.authorization == "$${env:OTLP_TRACES_AUTHORIZATION}"
     error_message = "Each vendor exporter must carry its own site, region or endpoint"
   }
 
   assert {
-    condition     = toset([for env in yamldecode(helm_release.otel_collector[0].values[0]).extraEnvs : env.name]) == toset(["DATADOG_API_KEY", "NEW_RELIC_LICENSE_KEY", "GRAFANA_CLOUD_TOKEN", "OTLP_TRACES_AUTHORIZATION"])
+    condition     = toset([for env in yamldecode(helm_release.otlp_collector[0].values[0]).extraEnvs : env.name]) == toset(["DATADOG_API_KEY", "NEW_RELIC_LICENSE_KEY", "GRAFANA_CLOUD_TOKEN", "OTLP_TRACES_AUTHORIZATION"])
     error_message = "Each vendor's secret must reach the collector as an environment variable"
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).image.repository == "docker.io/otel/opentelemetry-collector-contrib"
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).image.repository == "docker.io/otel/opentelemetry-collector-contrib"
     error_message = "Vendor trace destinations need the contrib collector"
   }
 }
@@ -704,7 +687,7 @@ run "a_vendor_account_is_one_exporter_for_metrics_and_traces" {
   }
 
   assert {
-    condition     = contains(yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters, "datadog") && contains(yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics.exporters, "datadog")
+    condition     = contains(yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters, "datadog") && contains(yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters, "datadog")
     error_message = "Both signals must reach Datadog through the shared exporter and key"
   }
 }
@@ -725,7 +708,7 @@ run "traces_only_vendors_stay_out_of_the_metrics_pipeline" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"] && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
     error_message = "A traces destination must not receive metrics"
   }
 }
@@ -745,7 +728,7 @@ run "rejects_grafana_cloud_traces_without_its_instance" {
     ]
   }
 
-  expect_failures = [helm_release.otel_collector]
+  expect_failures = [helm_release.otlp_collector]
 }
 
 run "rejects_otlp_traces_without_an_endpoint" {
@@ -757,7 +740,7 @@ run "rejects_otlp_traces_without_an_endpoint" {
     ]
   }
 
-  expect_failures = [helm_release.otel_collector]
+  expect_failures = [helm_release.otlp_collector]
 }
 
 run "tempo_follows_persistence_set_in_chart_values" {

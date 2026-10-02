@@ -115,8 +115,8 @@ variable "aws_load_balancer_controller_helm_values" {
 
 variable "ebs_csi_driver_enabled" {
   type        = bool
-  description = "Install the aws-ebs-csi-driver add-on and create its Pod Identity role so workloads can use EBS-backed persistent volumes."
-  default     = false
+  description = "Install the aws-ebs-csi-driver add-on and its Pod Identity role. Enabled by default for the Prometheus and Tempo working volumes; disable when another provisioner supplies persistent storage."
+  default     = true
 }
 
 variable "ebs_csi_addon_version" {
@@ -1310,7 +1310,7 @@ variable "alloy_helm_values" {
 
 variable "grafana_enabled" {
   type        = bool
-  description = "Install Grafana in the cluster, preprovisioned with both Ravion datasources: Amazon Managed Prometheus over SigV4 and the in-cluster Loki. This is the only way to see the logs in Grafana - Amazon Managed Grafana runs outside the cluster and cannot reach Loki, which is deliberately not exposed. No ingress is created; reach it with a port-forward or add one through grafana_helm_values."
+  description = "Install Grafana in the cluster with data sources for the selected Loki, Prometheus/Thanos, Tempo and AMP stores. Without grafana_access it has no ingress: use a port-forward. Amazon Managed Grafana cannot reach these private stores without additional networking."
   default     = false
   nullable    = false
 }
@@ -1423,7 +1423,7 @@ variable "grafana_auth_providers" {
 ################################################################################
 # Observability providers
 #
-# One multi-select per signal. Loki (in-cluster) and Amazon Managed Prometheus
+# One multi-select per signal. Loki, Prometheus with Thanos, and Tempo on S3
 # are the defaults: a fresh instance gets Ravion's full Logs and Metrics
 # experience with no configuration, and nothing CloudWatch is ever installed as
 # a side effect. Every other destination — including CloudWatch — is a member of
@@ -1452,7 +1452,7 @@ variable "logs_providers" {
 variable "metrics_providers" {
   type        = list(string)
   description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
-  default     = ["amp"]
+  default     = ["prometheus"]
   nullable    = false
 
   validation {
@@ -1475,6 +1475,7 @@ variable "traces_destinations" {
     persistence_enabled       = optional(bool)
     persistence_size          = optional(string)
     metrics_generator_enabled = optional(bool)
+    storage_class             = optional(string)
     chart_version             = optional(string)
     helm_values               = optional(any)
 
@@ -1500,7 +1501,7 @@ variable "traces_destinations" {
   }))
   description = <<-EOT
     Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
-    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), and persistence_size is its size or the emptyDir's limit (10Gi); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
     - xray: AWS X-Ray, in region (the cluster's when null).
     - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
     - datadog: site and a Secrets Manager ARN holding the API key.
@@ -1508,7 +1509,7 @@ variable "traces_destinations" {
     - otlp: any OTLP/HTTP traces receiver (endpoint), and optionally a Secrets Manager ARN holding an Authorization header value.
     A vendor that is also a logs or metrics destination uses that signal's site, region and secret.
   EOT
-  default     = []
+  default     = [{ destination = "tempo" }]
   nullable    = false
 
   validation {
@@ -1559,6 +1560,32 @@ variable "tempo_resources" {
 variable "tempo_helm_values" {
   type        = list(string)
   description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives and the tempo destination's helm_values (later entries win)."
+  default     = []
+  nullable    = false
+}
+
+variable "thanos_image" {
+  type        = string
+  description = "Pinned Thanos image used by the Prometheus sidecar, Query, Store Gateway, and Compactor."
+  default     = "quay.io/thanos/thanos:v0.42.4"
+  nullable    = false
+
+  validation {
+    condition     = length(trimspace(var.thanos_image)) > 0
+    error_message = "thanos_image must not be empty."
+  }
+}
+
+variable "thanos_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents for the local Thanos chart, including query/store/compactor resources and placement (later entries win). Compactor must remain a singleton for its bucket."
+  default     = []
+  nullable    = false
+}
+
+variable "otlp_collector_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents for the OTLP collector that receives workload traces and metrics: resources, replicas, placement, processors (later entries win)."
   default     = []
   nullable    = false
 }
@@ -1705,13 +1732,42 @@ variable "metrics_cloudwatch" {
 
 variable "metrics_prometheus" {
   type = object({
-    retention_days = optional(number)
-    storage_size   = optional(string)
-    endpoint       = optional(string)
+    retention_days     = optional(number)
+    storage_size       = optional(string)
+    storage_class      = optional(string)
+    endpoint           = optional(string)
+    s3_storage_enabled = optional(bool)
+    s3_bucket_name     = optional(string)
+    s3_retention_days  = optional(number)
   })
-  description = "Prometheus running in the cluster, with the remote-write receiver on and a PersistentVolume behind it. Set endpoint to point at a Prometheus you already run, and the module installs nothing and only remote-writes to it. Installing needs a working StorageClass, which on a Ravion cluster means ebs_csi_driver_enabled."
+  description = "In-cluster Prometheus: local retention (15 days), working volume (50Gi), and Thanos S3 storage (enabled, 365-day retention). Set endpoint to use an existing remote-write receiver and skip all managed Prometheus/Thanos resources. storage_class defaults to managed gp3 or the cluster default. Existing buckets must be dedicated, in the cluster region, and allow the generated Pod Identity roles; customer-managed KMS grants are not provisioned."
   default     = {}
   nullable    = false
+
+  validation {
+    condition     = var.metrics_prometheus.retention_days == null ? true : var.metrics_prometheus.retention_days >= 1 && floor(var.metrics_prometheus.retention_days) == var.metrics_prometheus.retention_days
+    error_message = "metrics_prometheus.retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.s3_retention_days == null ? true : var.metrics_prometheus.s3_retention_days >= 1 && floor(var.metrics_prometheus.s3_retention_days) == var.metrics_prometheus.s3_retention_days
+    error_message = "metrics_prometheus.s3_retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.endpoint), "") == "" || can(regex("^https?://[^/]+", trimspace(var.metrics_prometheus.endpoint)))
+    error_message = "metrics_prometheus.endpoint must be an HTTP or HTTPS base URL."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.s3_bucket_name), "") == "" || can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", trimspace(var.metrics_prometheus.s3_bucket_name)))
+    error_message = "metrics_prometheus.s3_bucket_name must be a valid 3-63 character lowercase S3 bucket name, or null or blank to create one."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.storage_size), "") == "" || can(regex("^[1-9][0-9]*(Mi|Gi|Ti)$", trimspace(var.metrics_prometheus.storage_size)))
+    error_message = "metrics_prometheus.storage_size must be a positive volume size such as 50Gi."
+  }
 }
 
 variable "metrics_grafana_cloud" {

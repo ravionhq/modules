@@ -67,7 +67,7 @@ locals {
           type      = "tempo"
           access    = "proxy"
           url       = local.tempo_endpoint
-          isDefault = false
+          isDefault = !local.amp_enabled && !local.prometheus_enabled && !local.loki_enabled
         },
         # The metrics generator's service graphs, drawn from the Prometheus it
         # writes to.
@@ -196,6 +196,8 @@ resource "helm_release" "grafana" {
     helm_release.lb_controller,
     aws_eks_pod_identity_association.grafana,
     helm_release.loki,
+    helm_release.thanos,
+    helm_release.tempo,
     # The sign-in providers' client secrets must exist before its pod starts.
     helm_release.observability_secrets,
   ]

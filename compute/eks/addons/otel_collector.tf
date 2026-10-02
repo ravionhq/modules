@@ -1,14 +1,11 @@
 ################################################################################
-# OpenTelemetry collector → metrics and traces destinations (Helm)
+# OpenTelemetry collector → Amazon Managed Prometheus (Helm)
 #
 # A single-replica Deployment running the AWS Distro for OpenTelemetry image
-# under the community opentelemetry-collector chart, for either signal. While
-# metrics are on it scrapes three targets — cAdvisor and the kubelet's resource
-# endpoint on every node, through the API server proxy, and kube-state-metrics
-# in-cluster — keeps the curated allow-list in locals.tf, and remote-writes the
-# survivors to AMP signed with SigV4. While traces are on it accepts OTLP from
-# workloads at an in-cluster Service and sends traces to traces_providers, and,
-# with metrics on too, workload metrics to the same destinations as the scrape.
+# under the community opentelemetry-collector chart. It scrapes three targets —
+# cAdvisor and the kubelet's resource endpoint on every node, through the API
+# server proxy, and kube-state-metrics in-cluster — keeps the curated allow-list
+# in locals.tf, and remote-writes the survivors to AMP signed with SigV4.
 #
 # Three things about the shape of this file:
 #
@@ -141,78 +138,9 @@ locals {
         }
       }
     } : {},
-    # Grafana Cloud's traces instance has an id of its own.
-    local.traces_grafana_cloud_enabled ? {
-      "basicauth/grafana_cloud_traces" = {
-        client_auth = {
-          username = local.grafana_cloud_config.traces_user
-          password = "$${env:GRAFANA_CLOUD_TOKEN}"
-        }
-      }
-    } : {},
   )
 
   otel_metrics_pipeline_exporters = [for name, _ in local.otel_metrics_exporters : name if name != "debug"]
-
-  # The OTLP receiver is the traces signal's way in, so it runs while traces
-  # are on. OTLP metrics from workloads fan out to the same exporters as the
-  # scraped ones, which exist only while metrics are on.
-  otlp_service_host  = "${local.otel_collector_name}.${local.metrics_namespace}.svc.cluster.local"
-  otlp_grpc_endpoint = local.traces_on ? "http://${local.otlp_service_host}:4317" : null
-  otlp_http_endpoint = local.traces_on ? "http://${local.otlp_service_host}:4318" : null
-  xray_region        = coalesce(try(trimspace(local.trace.xray.region), ""), var.region, data.aws_region.current.region)
-
-  # One exporter per selected traces provider, as for metrics.
-  otel_traces_exporters = merge(
-    local.xray_enabled ? {
-      awsxray = {
-        region = local.xray_region
-      }
-    } : {},
-    local.tempo_enabled ? {
-      # Plain gRPC inside the cluster, to the same ClusterIP Service Grafana reads.
-      "otlp/tempo" = {
-        endpoint = local.tempo_otlp_grpc_host
-        tls = {
-          insecure = true
-        }
-      }
-    } : {},
-    local.traces_grafana_cloud_enabled ? {
-      "otlp_http/grafana_cloud_traces" = {
-        endpoint = local.grafana_cloud_config.traces_url
-        auth = {
-          authenticator = "basicauth/grafana_cloud_traces"
-        }
-      }
-    } : {},
-    # The same exporters the metrics pipelines use, under the same ids: one
-    # vendor account, one exporter, whichever signals send to it.
-    local.traces_datadog_enabled ? {
-      datadog = {
-        api = {
-          site = local.datadog_config.site
-          key  = "$${env:DATADOG_API_KEY}"
-        }
-      }
-    } : {},
-    local.traces_new_relic_enabled ? {
-      "otlp_http/new_relic" = {
-        endpoint = local.new_relic_otlp_endpoint
-        headers = {
-          "api-key" = "$${env:NEW_RELIC_LICENSE_KEY}"
-        }
-      }
-    } : {},
-    local.traces_otlp_enabled ? {
-      "otlp_http/custom_traces" = merge(
-        { endpoint = local.otlp_traces_config.endpoint },
-        local.otlp_traces_config.headers_secret_arn == null ? {} : {
-          headers = { authorization = "$${env:OTLP_TRACES_AUTHORIZATION}" }
-        },
-      )
-    } : {},
-  )
 
   otel_collector_extra_envs = [
     for secret in local.otel_metrics_secret_env : {
@@ -226,7 +154,7 @@ locals {
     }
   ]
 
-  otel_collector_values = local.otel_collector_enabled ? templatefile("${path.module}/templates/otel_values.yaml.tpl", {
+  otel_collector_values = local.otel_metrics_enabled ? templatefile("${path.module}/templates/otel_values.yaml.tpl", {
     name             = local.otel_collector_name
     replica_count    = 1
     image_repository = local.otel_metrics_image_repository
@@ -237,14 +165,10 @@ locals {
     scrape_interval  = "${var.scrape_interval_seconds}s"
     extra_envs       = local.otel_collector_extra_envs
 
-    exporters          = merge(local.otel_metrics_exporters, local.otel_traces_exporters)
+    exporters          = local.otel_metrics_exporters
     extensions         = local.otel_metrics_extensions
     service_extensions = concat(["health_check"], sort(keys(local.otel_metrics_extensions)))
     pipeline_exporters = sort(local.otel_metrics_pipeline_exporters)
-
-    metrics_enabled           = local.otel_metrics_enabled
-    traces_enabled            = local.traces_on
-    traces_pipeline_exporters = sort(keys(local.otel_traces_exporters))
 
     kube_state_metrics_enabled = local.kube_state_metrics_install
     kube_state_metrics_target  = local.kube_state_metrics_target
@@ -256,7 +180,7 @@ locals {
 }
 
 resource "helm_release" "otel_collector" {
-  count = local.otel_collector_enabled ? 1 : 0
+  count = local.otel_metrics_enabled ? 1 : 0
 
   name       = local.otel_collector_name
   namespace  = local.metrics_namespace
@@ -307,72 +231,5 @@ resource "helm_release" "otel_collector" {
       condition     = !local.metrics_otlp_enabled || local.otlp_metrics_config.endpoint != null
       error_message = "otlp is in metrics_providers but no OTLP endpoint was given. There is nowhere to send the metrics."
     }
-
-    precondition {
-      condition     = !local.traces_grafana_cloud_enabled || (local.grafana_cloud_config.traces_url != null && local.grafana_cloud_config.traces_user != null && local.grafana_cloud_config.token_secret_arn != null)
-      error_message = "grafana_cloud is in traces_providers but its OTLP endpoint, instance id, or token secret ARN is missing. All three are required: Grafana Cloud authenticates every export with basic auth."
-    }
-
-    precondition {
-      condition     = !local.traces_datadog_enabled || local.datadog_config.api_key_secret_arn != null
-      error_message = "datadog is in traces_providers but no API key secret ARN was given. The key is read in-cluster from Secrets Manager by External Secrets."
-    }
-
-    precondition {
-      condition     = !local.traces_new_relic_enabled || local.new_relic_config.license_key_secret_arn != null
-      error_message = "new_relic is in traces_providers but no license key secret ARN was given. The key is read in-cluster from Secrets Manager by External Secrets."
-    }
-
-    precondition {
-      condition     = !local.traces_otlp_enabled || local.otlp_traces_config.endpoint != null
-      error_message = "otlp is in traces_providers but no OTLP endpoint was given. There is nowhere to send the traces."
-    }
   }
-}
-
-################################################################################
-# X-Ray write for workload traces
-#
-# The collector's service account has one Pod Identity association. With AMP
-# selected that association already carries the remote-write role, which gets
-# X-Ray write beside it; without AMP the collector gets a role of its own.
-# Keeping the remote-write role as it is avoids replacing it on clusters that
-# already run AMP.
-################################################################################
-
-# X-Ray has no resource-level permissions for these actions.
-data "aws_iam_policy_document" "otel_collector_xray" {
-  count = local.xray_enabled ? 1 : 0
-
-  statement {
-    sid       = "WriteTraces"
-    effect    = "Allow"
-    actions   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy" "otel_collector_xray" {
-  count = local.xray_enabled && local.amp_enabled ? 1 : 0
-
-  name   = "xray-write"
-  role   = module.amp_remote_write_role[0].role_name
-  policy = data.aws_iam_policy_document.otel_collector_xray[0].json
-}
-
-module "otel_collector_role" {
-  count = local.xray_enabled && !local.amp_enabled ? 1 : 0
-
-  source = "../../../security/iam"
-
-  name        = "${local.name}-otel-collector"
-  description = "X-Ray write Pod Identity role for the OpenTelemetry collector on ${var.cluster_name}"
-
-  custom_assume_role_policy = local.pod_identity_trust_policy
-
-  inline_policies = {
-    "xray-write" = data.aws_iam_policy_document.otel_collector_xray[0].json
-  }
-
-  tags = local.tags
 }

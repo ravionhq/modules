@@ -147,6 +147,9 @@ module "tempo_bucket" {
   # case. Retention keeps the bucket bounded.
   force_destroy_enabled = true
 
+  # Tempo only ever talks HTTPS to S3; anything else is refused.
+  policy_templates = ["deny_insecure_transport"]
+
   lifecycle_rules = [
     {
       id      = "ravion-tempo-retention"
@@ -319,10 +322,13 @@ resource "helm_release" "tempo" {
           },
         )
 
-        persistence = {
-          enabled = local.tempo_config.persistence_enabled
-          size    = local.tempo_config.persistence_size
-        }
+        persistence = merge(
+          {
+            enabled = local.tempo_config.persistence_enabled
+            size    = local.tempo_config.persistence_size
+          },
+          local.tempo_config.storage_class == null ? {} : { storageClassName = local.tempo_config.storage_class },
+        )
 
         extraVolumes = local.tempo_persistence_enabled ? [] : [
           {
@@ -346,6 +352,8 @@ resource "helm_release" "tempo" {
   # Tempo reads AWS credentials on startup through the Pod Identity Agent, and
   # writes to a bucket that must already exist.
   depends_on = [
+    helm_release.lb_controller,
+    helm_release.ebs_storage,
     aws_eks_pod_identity_association.tempo,
     module.tempo_bucket,
   ]
@@ -355,7 +363,7 @@ resource "helm_release" "tempo" {
 
     precondition {
       condition     = !local.tempo_generator_enabled || local.tempo_generator_target != null
-      error_message = "Tempo's metrics generator writes service graphs and span metrics to Prometheus, but metrics_providers has neither prometheus nor amp. Select one, or turn traces_tempo.metrics_generator_enabled off."
+      error_message = "Tempo's metrics generator writes service graphs and span metrics to Prometheus, but metrics_providers has neither prometheus nor amp. Select one, or turn the tempo destination's metrics_generator_enabled off."
     }
   }
 }

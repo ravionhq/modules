@@ -333,8 +333,13 @@ output "amp_remote_write_role_arn" {
 }
 
 output "otel_collector_chart_version" {
-  description = "Installed version of the opentelemetry-collector Helm chart (null while neither metrics nor traces are on)."
-  value       = local.otel_collector_enabled ? helm_release.otel_collector[0].version : null
+  description = "Installed version of the opentelemetry-collector Helm chart (null if metrics are disabled)."
+  value       = local.otel_metrics_enabled ? helm_release.otel_collector[0].version : null
+}
+
+output "traces_providers" {
+  description = "Trace destinations selected for this cluster; empty when traces are off."
+  value       = tolist(local.traces_providers)
 }
 
 output "otlp_host" {
@@ -353,7 +358,7 @@ output "otlp_http_endpoint" {
 }
 
 output "xray_region" {
-  description = "Region traces are written to in AWS X-Ray (null unless xray is a traces provider)."
+  description = "Region traces are written to in AWS X-Ray (null unless xray is a traces destination)."
   value       = local.xray_enabled ? local.xray_region : null
 }
 
@@ -411,22 +416,22 @@ output "loki_chart_version" {
 }
 
 output "tempo_endpoint" {
-  description = "In-cluster base URL of Tempo's query API, for a Grafana Tempo data source inside the cluster (null unless tempo is a traces provider)."
+  description = "In-cluster base URL of Tempo's query API, for a Grafana Tempo data source inside the cluster (null unless tempo is a traces destination)."
   value       = local.tempo_endpoint
 }
 
 output "tempo_namespace" {
-  description = "Namespace Tempo is installed into (null unless tempo is a traces provider)."
+  description = "Namespace Tempo is installed into (null unless tempo is a traces destination)."
   value       = local.tempo_enabled ? local.tempo_namespace : null
 }
 
 output "tempo_s3_bucket" {
-  description = "Name of the S3 bucket Tempo stores trace blocks in: the created bucket, or the one passed as traces_tempo.s3_bucket_name (null unless tempo is a traces provider with S3 storage)."
+  description = "Name of the S3 bucket Tempo stores trace blocks in: the created bucket, or the tempo destination's s3_bucket_name (null unless tempo is a traces destination with S3 storage)."
   value       = local.tempo_bucket_name
 }
 
 output "tempo_s3_bucket_arn" {
-  description = "ARN of the Tempo trace bucket (null unless tempo is a traces provider with S3 storage)."
+  description = "ARN of the Tempo trace bucket (null unless tempo is a traces destination with S3 storage)."
   value       = local.tempo_bucket_arn
 }
 
@@ -436,7 +441,7 @@ output "tempo_role_arn" {
 }
 
 output "tempo_chart_version" {
-  description = "Installed version of the grafana-community/tempo Helm chart (null unless tempo is a traces provider)."
+  description = "Installed version of the grafana-community/tempo Helm chart (null unless tempo is a traces destination)."
   value       = local.tempo_enabled ? helm_release.tempo[0].version : null
 }
 
@@ -514,7 +519,7 @@ output "metrics_external_links" {
 }
 
 output "prometheus_endpoint" {
-  description = "In-cluster Prometheus base URL (null unless prometheus is in metrics_providers). Reachable only from inside the cluster: Ravion queries it through Ravion Operator, the same way it queries Loki."
+  description = "Prometheus-compatible query URL: Thanos Query (recent plus S3 history), plain Prometheus when S3 storage is off, or the supplied endpoint. Null unless prometheus is selected; Ravion reaches it through Operator."
   value       = local.prometheus_endpoint
 }
 
@@ -566,4 +571,29 @@ output "grafana_url" {
 output "grafana_target_group_arn" {
   description = "Target group the chosen shared ALB routes Grafana's hostname to (null unless grafana_access is enabled)."
   value       = local.grafana_access_enabled ? aws_lb_target_group.grafana[0].arn : null
+}
+
+output "cluster_arn" {
+  description = "ARN of the EKS cluster whose observability stores Operator queries."
+  value       = data.aws_eks_cluster.this.arn
+}
+
+output "prometheus_remote_write_endpoint" {
+  description = "Prometheus ingestion URL, distinct from the Thanos query endpoint (null unless prometheus is selected)."
+  value       = local.prometheus_remote_write_endpoint
+}
+
+output "prometheus_s3_bucket" {
+  description = "Dedicated metrics bucket, created or supplied (null when managed Thanos storage is off)."
+  value       = local.thanos_bucket_name
+}
+
+output "prometheus_s3_bucket_arn" {
+  description = "ARN of the Thanos metrics bucket (null when managed Thanos storage is off)."
+  value       = local.thanos_bucket_arn
+}
+
+output "thanos_role_arns" {
+  description = "Pod Identity roles keyed by sidecar, store, and compactor; empty when Thanos is disabled."
+  value       = { for name, role in module.thanos_role : name => role.role_arn }
 }
