@@ -37,6 +37,7 @@ mock_provider "helm" {}
 mock_provider "ravion" {}
 
 variables {
+  traces_destinations     = []
   cluster_name            = "test-cluster"
   region                  = "us-east-2"
   karpenter_enabled       = false

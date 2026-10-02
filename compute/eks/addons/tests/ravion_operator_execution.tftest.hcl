@@ -39,6 +39,8 @@ override_resource {
 }
 
 variables {
+  traces_destinations                    = []
+  ebs_csi_driver_enabled                 = false
   cluster_name                           = "test-cluster"
   region                                 = "us-east-2"
   karpenter_enabled                      = false
