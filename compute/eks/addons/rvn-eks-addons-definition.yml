@@ -849,7 +849,7 @@ module:
         - description: Internet-facing. Anyone can reach the sign-in page.
           label: Public
           value: public
-    - description: Ingress class whose controller serves Grafana, such as tailscale, nginx or alb. Leave blank for the cluster's default IngressClass.
+    - description: Ingress class whose controller serves Grafana, such as tailscale, nginx or alb. Leave blank for the cluster's default IngressClass. Install the controller first, such as the Tailscale operator; the AWS Load Balancer Controller refuses an Ingress whose class does not exist yet.
       id: grafana_ingress_class_name
       label: Ingress class
       placeholder: tailscale
@@ -1943,7 +1943,7 @@ module:
     **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, Prometheus through Thanos or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without **Access** Grafana is reachable only with a port-forward. **Access** serves Grafana over HTTPS at a hostname, through either of two methods:
 
     - **Shared load balancer** routes the hostname on the HTTPS listener of the shared private or public ALB. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. Point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
-    - **Kubernetes Ingress** gives Grafana an Ingress for the hostname with TLS, served by the controller of the ingress class you name, with any annotations it needs. With the Tailscale Kubernetes operator's `tailscale` class and a `<name>.<tailnet>.ts.net` hostname, Grafana becomes one device on the tailnet with a Let's Encrypt certificate, and nothing else in the VPC is reachable through it.
+    - **Kubernetes Ingress** gives Grafana an Ingress for the hostname with TLS, served by the controller of the ingress class you name, with any annotations it needs. With the Tailscale Kubernetes operator's `tailscale` class and a `<name>.<tailnet>.ts.net` hostname, Grafana becomes one device on the tailnet with a Let's Encrypt certificate, and nothing else in the VPC is reachable through it. Install the class's controller first: the AWS Load Balancer Controller refuses an Ingress whose class does not exist yet.
 
     **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI.
 
