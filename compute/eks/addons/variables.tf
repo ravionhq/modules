@@ -1349,16 +1349,12 @@ variable "grafana_helm_values" {
 
 variable "grafana_access" {
   type = object({
-    enabled                  = optional(bool, false)
-    load_balancer            = optional(string, "public")
-    hostname                 = optional(string)
-    listener_rule_priority   = optional(number)
-    google_client_id         = optional(string)
-    google_client_secret_arn = optional(string)
-    google_allowed_domains   = optional(list(string), [])
-    google_role              = optional(string, "Viewer")
+    enabled                = optional(bool, false)
+    load_balancer          = optional(string, "public")
+    hostname               = optional(string)
+    listener_rule_priority = optional(number)
   })
-  description = "Serve the in-cluster Grafana on a shared ALB's HTTPS listener at hostname, behind Google sign-in. load_balancer is public (the internet-facing ALB) or private (the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router). google_client_secret_arn is a Secrets Manager ARN read through the External Secrets Operator; only accounts in google_allowed_domains can sign in, and each gets google_role (Viewer, Editor or Admin). Null listener_rule_priority lets AWS assign one. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name)."
+  description = "Serve the in-cluster Grafana on a shared ALB's HTTPS listener at hostname. load_balancer is public (the internet-facing ALB) or private (the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router). Null listener_rule_priority lets AWS assign one. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name). Who can sign in is grafana_auth and grafana_auth_providers."
   default     = {}
   nullable    = false
 
@@ -1366,11 +1362,126 @@ variable "grafana_access" {
     condition     = contains(["public", "private"], var.grafana_access.load_balancer)
     error_message = "The grafana_access.load_balancer must be public or private."
   }
+}
+
+variable "grafana_auth" {
+  type = object({
+    login_form_enabled = optional(bool, true)
+    default_role       = optional(string, "Viewer")
+  })
+  description = "Grafana's own sign-in settings. login_form_enabled keeps username and password sign-in for Grafana's local users, including the generated admin; false removes the login form and HTTP basic auth both. default_role is the role an account gets the first time it signs in through a provider (users.auto_assign_org_role): Viewer, Editor or Admin."
+  default     = {}
+  nullable    = false
 
   validation {
-    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_access.google_role)
-    error_message = "The grafana_access.google_role must be Viewer, Editor or Admin."
+    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_auth.default_role)
+    error_message = "The grafana_auth.default_role must be Viewer, Editor or Admin."
   }
+}
+
+variable "grafana_auth_providers" {
+  type        = list(string)
+  description = "OAuth providers people sign in to the in-cluster Grafana with, any of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth. Each is configured by its grafana_auth_<provider> object."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for provider in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], provider)])
+    error_message = "Each grafana_auth_providers entry must be one of: google, github, gitlab, azuread, okta, generic_oauth."
+  }
+}
+
+# Each provider object takes Grafana's own [auth.<provider>] key names. settings
+# passes any other key of that section through verbatim; client_secret_arn is
+# the only setting that is not Grafana's, because the secret itself never
+# enters the configuration.
+
+variable "grafana_auth_google" {
+  type = object({
+    client_id           = optional(string)
+    client_secret_arn   = optional(string)
+    allowed_domains     = optional(list(string), [])
+    allowed_groups      = optional(list(string), [])
+    role_attribute_path = optional(string)
+    settings            = optional(map(string), {})
+  })
+  description = "Google sign-in ([auth.google]). Anyone with a Google account could sign in, so allowed_domains (Google Workspace domains) or allowed_groups is required."
+  default     = {}
+  nullable    = false
+}
+
+variable "grafana_auth_github" {
+  type = object({
+    client_id             = optional(string)
+    client_secret_arn     = optional(string)
+    allowed_organizations = optional(list(string), [])
+    team_ids              = optional(list(string), [])
+    role_attribute_path   = optional(string)
+    settings              = optional(map(string), {})
+  })
+  description = "GitHub sign-in ([auth.github]). Anyone with a GitHub account could sign in, so allowed_organizations or team_ids is required."
+  default     = {}
+  nullable    = false
+}
+
+variable "grafana_auth_gitlab" {
+  type = object({
+    client_id           = optional(string)
+    client_secret_arn   = optional(string)
+    url                 = optional(string)
+    allowed_groups      = optional(list(string), [])
+    role_attribute_path = optional(string)
+    settings            = optional(map(string), {})
+  })
+  description = "GitLab sign-in ([auth.gitlab]). url is a self-managed GitLab's base URL; null uses gitlab.com, where anyone has an account, so allowed_groups is then required."
+  default     = {}
+  nullable    = false
+}
+
+variable "grafana_auth_azuread" {
+  type = object({
+    client_id         = optional(string)
+    client_secret_arn = optional(string)
+    tenant_id         = optional(string)
+    allowed_groups    = optional(list(string), [])
+    settings          = optional(map(string), {})
+  })
+  description = "Microsoft Entra ID sign-in ([auth.azuread]). tenant_id is required; roles come from the app registration's app roles."
+  default     = {}
+  nullable    = false
+}
+
+variable "grafana_auth_okta" {
+  type = object({
+    client_id           = optional(string)
+    client_secret_arn   = optional(string)
+    url                 = optional(string)
+    allowed_groups      = optional(list(string), [])
+    role_attribute_path = optional(string)
+    settings            = optional(map(string), {})
+  })
+  description = "Okta sign-in ([auth.okta]). url is the Okta org URL, such as https://example.okta.com, and is required."
+  default     = {}
+  nullable    = false
+}
+
+variable "grafana_auth_generic_oauth" {
+  type = object({
+    name                = optional(string)
+    client_id           = optional(string)
+    client_secret_arn   = optional(string)
+    auth_url            = optional(string)
+    token_url           = optional(string)
+    api_url             = optional(string)
+    scopes              = optional(string)
+    allowed_domains     = optional(list(string), [])
+    allowed_groups      = optional(list(string), [])
+    role_attribute_path = optional(string)
+    settings            = optional(map(string), {})
+  })
+  description = "Any other OAuth2 or OpenID Connect provider ([auth.generic_oauth]), such as Keycloak, Auth0 or Authentik. auth_url and token_url are required; name is the label on the sign-in button."
+  default     = {}
+  nullable    = false
 }
 
 ################################################################################

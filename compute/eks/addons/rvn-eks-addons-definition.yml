@@ -8,7 +8,8 @@ release:
   description: >-
     Add traces: an OTLP receiver at an in-cluster Service that sends workload traces to AWS X-Ray, Tempo in
     the cluster on S3, or both, and workload metrics to the metrics destinations while metrics are on.
-    The in-cluster Grafana reads Tempo, and can be served on the shared public ALB behind Google sign-in.
+    The in-cluster Grafana reads Tempo, can be served on the shared private or public ALB, and signs people in
+    with username and password or any of Grafana's OAuth providers.
 module:
   inputs:
     - id: cluster
@@ -810,82 +811,42 @@ module:
       label: In-cluster Grafana
       type: boolean
     - default: false
-      description: Serve Grafana on a shared load balancer's HTTPS listener, behind Google sign-in. Needs that load balancer with HTTPS, and External Secrets. DNS is not managed; point the hostname at the load balancer's DNS name.
+      description: Serve Grafana on a shared load balancer's HTTPS listener at a hostname. Needs that load balancer with HTTPS. DNS is not managed; point the hostname at the load balancer's DNS name.
       id: grafana_access_enabled
-      label: Load balancer access with Google sign-in
+      label: Load balancer access
       show_when:
         grafana_enabled: true
       type: boolean
-    - default: public
+    - default: private
       description: Which shared load balancer serves Grafana.
       id: grafana_load_balancer
       label: Load balancer
       show_when:
-        grafana_enabled: true
         grafana_access_enabled: true
+        grafana_enabled: true
       type: string
       values:
-        - description: Internet-facing. Anyone can reach the sign-in page.
-          label: Public
-          value: public
         - description: Internal. Reachable only from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router.
           label: Private
           value: private
+        - description: Internet-facing. Anyone can reach the sign-in page.
+          label: Public
+          value: public
     - description: Hostname Grafana answers on. A certificate on the chosen load balancer must cover it.
       id: grafana_hostname
       label: Grafana hostname
       placeholder: grafana.example.com
       show_when:
-        grafana_enabled: true
         grafana_access_enabled: true
+        grafana_enabled: true
       type: string
-    - description: Client ID of a Google OAuth web client whose authorized redirect URI is https://<hostname>/login/google.
-      id: grafana_google_client_id
-      label: Google OAuth client ID
-      placeholder: 123456789012-abcdefghijklmnopqrstuvwxyz012345.apps.googleusercontent.com
-      show_when:
-        grafana_enabled: true
-        grafana_access_enabled: true
-      type: string
-    - description: Secrets Manager ARN containing the Google OAuth client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
-      id: grafana_google_client_secret_arn
-      label: Google OAuth client secret ARN
-      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-google-client-secret
-      show_when:
-        grafana_enabled: true
-        grafana_access_enabled: true
-      type: string
-    - add_button_label: Add domain
-      description: Google Workspace domains whose accounts can sign in. Every other Google account is refused.
-      id: grafana_google_allowed_domains
-      label: Allowed Google domains
-      placeholder: example.com
-      show_when:
-        grafana_enabled: true
-        grafana_access_enabled: true
-      type: string_array
-    - default: Viewer
-      description: Grafana role each account gets the first time it signs in.
-      id: grafana_google_role
-      label: Role for new accounts
-      show_when:
-        grafana_enabled: true
-        grafana_access_enabled: true
-      type: string
-      values:
-        - label: Viewer
-          value: Viewer
-        - label: Editor
-          value: Editor
-        - label: Admin
-          value: Admin
     - collapsible: true
-      description: Explicit rule order on the public load balancer's HTTPS listener. Leave blank to let AWS assign the next available priority.
+      description: Explicit rule order on the chosen load balancer's HTTPS listener. Leave blank to let AWS assign the next available priority.
       id: grafana_listener_rule_priority
       label: Listener rule priority
       show_when:
-        grafana_enabled: true
         grafana_access_enabled: true
+        grafana_enabled: true
       type: number
     - default: false
       description: Create an assumable role for querying the selected Amazon Managed Prometheus workspace plus Container Insights and EKS control-plane log groups. No Grafana workspace is created.
@@ -894,6 +855,390 @@ module:
       show_when:
         metrics_enabled: true
       type: boolean
+    - id: section_grafana_sign_in
+      label: Grafana sign-in
+      type: section
+    - default: true
+      description: Grafana's built-in sign-in for local users, including the generated admin. Turning it off removes the login form and password access to the API, so only the providers below can sign in.
+      id: grafana_login_form_enabled
+      label: Username and password
+      show_when:
+        grafana_enabled: true
+      type: boolean
+    - add_button_label: Add provider
+      description: OAuth providers people can sign in with, each a button on Grafana's sign-in page.
+      id: grafana_auth_providers
+      label: Sign-in providers
+      show_when:
+        grafana_enabled: true
+      type: string_array
+      values:
+        - label: Google
+          value: google
+        - label: GitHub
+          value: github
+        - label: GitLab
+          value: gitlab
+        - label: Microsoft Entra ID
+          value: azuread
+        - label: Okta
+          value: okta
+        - label: Generic OAuth (Keycloak, Auth0, Authentik, any OpenID Connect provider)
+          value: generic_oauth
+    - default: Viewer
+      description: Grafana role an account gets the first time it signs in through a provider, unless the provider's role mapping says otherwise.
+      id: grafana_default_role
+      label: Role for new accounts
+      show_when:
+        grafana_enabled: true
+      type: string
+      values:
+        - label: Viewer
+          value: Viewer
+        - label: Editor
+          value: Editor
+        - label: Admin
+          value: Admin
+    - description: Client ID of the Google OAuth application. Its redirect URI is https://<hostname>/login/google.
+      id: grafana_auth_google_client_id
+      label: Google client ID
+      show_when:
+        grafana_auth_providers: google
+        grafana_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_auth_google_client_secret_arn
+      label: Google client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-google-client-secret
+      show_when:
+        grafana_auth_providers: google
+        grafana_enabled: true
+      type: string
+    - add_button_label: Add domain
+      description: Google Workspace domains whose accounts can sign in. Anyone with a Google account could otherwise sign in, so set these or allowed groups.
+      id: grafana_auth_google_allowed_domains
+      label: Allowed domains
+      placeholder: example.com
+      show_when:
+        grafana_auth_providers: google
+        grafana_enabled: true
+      type: string_array
+    - add_button_label: Add group
+      collapsible: true
+      description: Google groups whose members can sign in.
+      id: grafana_auth_google_allowed_groups
+      label: Allowed groups
+      placeholder: grafana-users@example.com
+      show_when:
+        grafana_auth_providers: google
+        grafana_enabled: true
+      type: string_array
+    - collapsible: true
+      description: 'Grafana''s role_attribute_path: a JMESPath expression over the Google user info that returns Admin, Editor or Viewer. Leave blank to give new accounts the default role.'
+      id: grafana_auth_google_role_attribute_path
+      label: Role mapping
+      placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+      show_when:
+        grafana_auth_providers: google
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: 'Any other key of Grafana''s [auth.google] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+      id: grafana_auth_google_settings
+      label: Other Grafana settings
+      show_when:
+        grafana_auth_providers: google
+        grafana_enabled: true
+      type: object
+    - description: Client ID of the GitHub OAuth application. Its redirect URI is https://<hostname>/login/github.
+      id: grafana_auth_github_client_id
+      label: GitHub client ID
+      show_when:
+        grafana_auth_providers: github
+        grafana_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_auth_github_client_secret_arn
+      label: GitHub client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-github-client-secret
+      show_when:
+        grafana_auth_providers: github
+        grafana_enabled: true
+      type: string
+    - add_button_label: Add organization
+      description: GitHub organizations whose members can sign in. Anyone with a GitHub account could otherwise sign in, so set these or team IDs.
+      id: grafana_auth_github_allowed_organizations
+      label: Allowed organizations
+      placeholder: example-org
+      show_when:
+        grafana_auth_providers: github
+        grafana_enabled: true
+      type: string_array
+    - add_button_label: Add team ID
+      collapsible: true
+      description: Numeric IDs of GitHub teams whose members can sign in.
+      id: grafana_auth_github_team_ids
+      label: Allowed team IDs
+      placeholder: '1234567'
+      show_when:
+        grafana_auth_providers: github
+        grafana_enabled: true
+      type: string_array
+    - collapsible: true
+      description: 'Grafana''s role_attribute_path: a JMESPath expression over the GitHub user info that returns Admin, Editor or Viewer. Leave blank to give new accounts the default role.'
+      id: grafana_auth_github_role_attribute_path
+      label: Role mapping
+      placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+      show_when:
+        grafana_auth_providers: github
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: 'Any other key of Grafana''s [auth.github] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+      id: grafana_auth_github_settings
+      label: Other Grafana settings
+      show_when:
+        grafana_auth_providers: github
+        grafana_enabled: true
+      type: object
+    - description: Client ID of the GitLab OAuth application. Its redirect URI is https://<hostname>/login/gitlab.
+      id: grafana_auth_gitlab_client_id
+      label: GitLab client ID
+      show_when:
+        grafana_auth_providers: gitlab
+        grafana_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_auth_gitlab_client_secret_arn
+      label: GitLab client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-gitlab-client-secret
+      show_when:
+        grafana_auth_providers: gitlab
+        grafana_enabled: true
+      type: string
+    - description: Base URL of a self-managed GitLab. Leave blank for gitlab.com, which then needs allowed groups.
+      id: grafana_auth_gitlab_url
+      label: GitLab URL
+      placeholder: https://gitlab.example.com
+      show_when:
+        grafana_auth_providers: gitlab
+        grafana_enabled: true
+      type: string
+    - add_button_label: Add group
+      description: GitLab groups whose members can sign in.
+      id: grafana_auth_gitlab_allowed_groups
+      label: Allowed groups
+      placeholder: example-group
+      show_when:
+        grafana_auth_providers: gitlab
+        grafana_enabled: true
+      type: string_array
+    - collapsible: true
+      description: 'Grafana''s role_attribute_path: a JMESPath expression over the GitLab user info that returns Admin, Editor or Viewer. Leave blank to give new accounts the default role.'
+      id: grafana_auth_gitlab_role_attribute_path
+      label: Role mapping
+      placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+      show_when:
+        grafana_auth_providers: gitlab
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: 'Any other key of Grafana''s [auth.gitlab] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+      id: grafana_auth_gitlab_settings
+      label: Other Grafana settings
+      show_when:
+        grafana_auth_providers: gitlab
+        grafana_enabled: true
+      type: object
+    - description: Client ID of the Microsoft Entra ID OAuth application. Its redirect URI is https://<hostname>/login/azuread.
+      id: grafana_auth_azuread_client_id
+      label: Microsoft Entra ID client ID
+      show_when:
+        grafana_auth_providers: azuread
+        grafana_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_auth_azuread_client_secret_arn
+      label: Microsoft Entra ID client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-azuread-client-secret
+      show_when:
+        grafana_auth_providers: azuread
+        grafana_enabled: true
+      type: string
+    - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
+      id: grafana_auth_azuread_tenant_id
+      label: Tenant ID
+      placeholder: 11111111-2222-3333-4444-555555555555
+      show_when:
+        grafana_auth_providers: azuread
+        grafana_enabled: true
+      type: string
+    - add_button_label: Add group
+      collapsible: true
+      description: Object IDs of Entra ID groups whose members can sign in.
+      id: grafana_auth_azuread_allowed_groups
+      label: Allowed groups
+      placeholder: 11111111-2222-3333-4444-555555555555
+      show_when:
+        grafana_auth_providers: azuread
+        grafana_enabled: true
+      type: string_array
+    - collapsible: true
+      default: {}
+      description: 'Any other key of Grafana''s [auth.azuread] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+      id: grafana_auth_azuread_settings
+      label: Other Grafana settings
+      show_when:
+        grafana_auth_providers: azuread
+        grafana_enabled: true
+      type: object
+    - description: Client ID of the Okta OAuth application. Its redirect URI is https://<hostname>/login/okta.
+      id: grafana_auth_okta_client_id
+      label: Okta client ID
+      show_when:
+        grafana_auth_providers: okta
+        grafana_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_auth_okta_client_secret_arn
+      label: Okta client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-okta-client-secret
+      show_when:
+        grafana_auth_providers: okta
+        grafana_enabled: true
+      type: string
+    - description: Your Okta org's URL.
+      id: grafana_auth_okta_url
+      label: Okta org URL
+      placeholder: https://example.okta.com
+      show_when:
+        grafana_auth_providers: okta
+        grafana_enabled: true
+      type: string
+    - add_button_label: Add group
+      collapsible: true
+      description: Okta groups whose members can sign in.
+      id: grafana_auth_okta_allowed_groups
+      label: Allowed groups
+      placeholder: grafana-users
+      show_when:
+        grafana_auth_providers: okta
+        grafana_enabled: true
+      type: string_array
+    - collapsible: true
+      description: 'Grafana''s role_attribute_path: a JMESPath expression over the Okta user info that returns Admin, Editor or Viewer. Leave blank to give new accounts the default role.'
+      id: grafana_auth_okta_role_attribute_path
+      label: Role mapping
+      placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+      show_when:
+        grafana_auth_providers: okta
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: 'Any other key of Grafana''s [auth.okta] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+      id: grafana_auth_okta_settings
+      label: Other Grafana settings
+      show_when:
+        grafana_auth_providers: okta
+        grafana_enabled: true
+      type: object
+    - description: Name on Grafana's sign-in button.
+      id: grafana_auth_generic_oauth_name
+      label: Button label
+      placeholder: Keycloak
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - description: Client ID of the OAuth OAuth application. Its redirect URI is https://<hostname>/login/generic_oauth.
+      id: grafana_auth_generic_oauth_client_id
+      label: OAuth client ID
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+      id: grafana_auth_generic_oauth_client_secret_arn
+      label: OAuth client secret ARN
+      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-generic-oauth-client-secret
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - description: The provider's OAuth authorization endpoint.
+      id: grafana_auth_generic_oauth_auth_url
+      label: Authorization URL
+      placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/auth
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - description: The provider's OAuth token endpoint.
+      id: grafana_auth_generic_oauth_token_url
+      label: Token URL
+      placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/token
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - description: The provider's user info endpoint.
+      id: grafana_auth_generic_oauth_api_url
+      label: User info URL
+      placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/userinfo
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - description: Space-separated scopes to request. Leave blank for Grafana's default.
+      id: grafana_auth_generic_oauth_scopes
+      label: Scopes
+      placeholder: openid email profile
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - add_button_label: Add domain
+      collapsible: true
+      description: Email domains whose accounts can sign in.
+      id: grafana_auth_generic_oauth_allowed_domains
+      label: Allowed email domains
+      placeholder: example.com
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string_array
+    - add_button_label: Add group
+      collapsible: true
+      description: Groups whose members can sign in.
+      id: grafana_auth_generic_oauth_allowed_groups
+      label: Allowed groups
+      placeholder: grafana-users
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string_array
+    - collapsible: true
+      description: 'Grafana''s role_attribute_path: a JMESPath expression over the provider''s user info that returns Admin, Editor or Viewer. Leave blank to give new accounts the default role.'
+      id: grafana_auth_generic_oauth_role_attribute_path
+      label: Role mapping
+      placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: 'Any other key of Grafana''s [auth.generic_oauth] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+      id: grafana_auth_generic_oauth_settings
+      label: Other Grafana settings
+      show_when:
+        grafana_auth_providers: generic_oauth
+        grafana_enabled: true
+      type: object
     - id: section_metrics
       label: Metrics
       type: section
@@ -1314,13 +1659,59 @@ module:
         grafana_enabled: << module.input.grafana_enabled >>
         grafana_access:
           enabled: << module.input.grafana_access_enabled >>
-          load_balancer: << module.input.grafana_load_balancer || "public" >>
+          load_balancer: << module.input.grafana_load_balancer || "private" >>
           hostname: << module.input.grafana_hostname >>
           listener_rule_priority: << module.input.grafana_listener_rule_priority >>
-          google_client_id: << module.input.grafana_google_client_id >>
-          google_client_secret_arn: << module.input.grafana_google_client_secret_arn >>
-          google_allowed_domains: '<< module.input.grafana_google_allowed_domains != nil ? module.input.grafana_google_allowed_domains : [] >>'
-          google_role: << module.input.grafana_google_role || "Viewer" >>
+        grafana_auth:
+          login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
+          default_role: << module.input.grafana_default_role || "Viewer" >>
+        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_auth_google:
+          client_id: << module.input.grafana_auth_google_client_id >>
+          client_secret_arn: << module.input.grafana_auth_google_client_secret_arn >>
+          allowed_domains: '<< module.input.grafana_auth_google_allowed_domains != nil ? module.input.grafana_auth_google_allowed_domains : [] >>'
+          allowed_groups: '<< module.input.grafana_auth_google_allowed_groups != nil ? module.input.grafana_auth_google_allowed_groups : [] >>'
+          role_attribute_path: << module.input.grafana_auth_google_role_attribute_path >>
+          settings: '<< module.input.grafana_auth_google_settings != nil ? module.input.grafana_auth_google_settings : {} >>'
+        grafana_auth_github:
+          client_id: << module.input.grafana_auth_github_client_id >>
+          client_secret_arn: << module.input.grafana_auth_github_client_secret_arn >>
+          allowed_organizations: '<< module.input.grafana_auth_github_allowed_organizations != nil ? module.input.grafana_auth_github_allowed_organizations : [] >>'
+          team_ids: '<< module.input.grafana_auth_github_team_ids != nil ? module.input.grafana_auth_github_team_ids : [] >>'
+          role_attribute_path: << module.input.grafana_auth_github_role_attribute_path >>
+          settings: '<< module.input.grafana_auth_github_settings != nil ? module.input.grafana_auth_github_settings : {} >>'
+        grafana_auth_gitlab:
+          client_id: << module.input.grafana_auth_gitlab_client_id >>
+          client_secret_arn: << module.input.grafana_auth_gitlab_client_secret_arn >>
+          url: << module.input.grafana_auth_gitlab_url >>
+          allowed_groups: '<< module.input.grafana_auth_gitlab_allowed_groups != nil ? module.input.grafana_auth_gitlab_allowed_groups : [] >>'
+          role_attribute_path: << module.input.grafana_auth_gitlab_role_attribute_path >>
+          settings: '<< module.input.grafana_auth_gitlab_settings != nil ? module.input.grafana_auth_gitlab_settings : {} >>'
+        grafana_auth_azuread:
+          client_id: << module.input.grafana_auth_azuread_client_id >>
+          client_secret_arn: << module.input.grafana_auth_azuread_client_secret_arn >>
+          tenant_id: << module.input.grafana_auth_azuread_tenant_id >>
+          allowed_groups: '<< module.input.grafana_auth_azuread_allowed_groups != nil ? module.input.grafana_auth_azuread_allowed_groups : [] >>'
+          settings: '<< module.input.grafana_auth_azuread_settings != nil ? module.input.grafana_auth_azuread_settings : {} >>'
+        grafana_auth_okta:
+          client_id: << module.input.grafana_auth_okta_client_id >>
+          client_secret_arn: << module.input.grafana_auth_okta_client_secret_arn >>
+          url: << module.input.grafana_auth_okta_url >>
+          allowed_groups: '<< module.input.grafana_auth_okta_allowed_groups != nil ? module.input.grafana_auth_okta_allowed_groups : [] >>'
+          role_attribute_path: << module.input.grafana_auth_okta_role_attribute_path >>
+          settings: '<< module.input.grafana_auth_okta_settings != nil ? module.input.grafana_auth_okta_settings : {} >>'
+        grafana_auth_generic_oauth:
+          name: << module.input.grafana_auth_generic_oauth_name >>
+          client_id: << module.input.grafana_auth_generic_oauth_client_id >>
+          client_secret_arn: << module.input.grafana_auth_generic_oauth_client_secret_arn >>
+          auth_url: << module.input.grafana_auth_generic_oauth_auth_url >>
+          token_url: << module.input.grafana_auth_generic_oauth_token_url >>
+          api_url: << module.input.grafana_auth_generic_oauth_api_url >>
+          scopes: << module.input.grafana_auth_generic_oauth_scopes >>
+          allowed_domains: '<< module.input.grafana_auth_generic_oauth_allowed_domains != nil ? module.input.grafana_auth_generic_oauth_allowed_domains : [] >>'
+          allowed_groups: '<< module.input.grafana_auth_generic_oauth_allowed_groups != nil ? module.input.grafana_auth_generic_oauth_allowed_groups : [] >>'
+          role_attribute_path: << module.input.grafana_auth_generic_oauth_role_attribute_path >>
+          settings: '<< module.input.grafana_auth_generic_oauth_settings != nil ? module.input.grafana_auth_generic_oauth_settings : {} >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
@@ -1499,7 +1890,7 @@ module:
 
     **Traces.** Turn on **Traces** and the cluster's OpenTelemetry collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), with or without metrics. Every trace goes to each selected destination. AWS X-Ray writes to the cluster's region unless another is set. **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode with its blocks in an S3 bucket in your account (30 days by default), reachable only inside the cluster, and read by the in-cluster Grafana when that is on. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
 
-    **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, in-cluster Prometheus or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without load balancer access Grafana has no ingress. **Load balancer access with Google sign-in** routes a hostname on the HTTPS listener of the shared public or private ALB to Grafana. The public ALB puts the sign-in page on the internet; the private ALB keeps it inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router. Sign-in is Google only: the login form and password access to the API are off, and only accounts in the allowed domains get in, each with the chosen role the first time. Create a Google OAuth web client whose redirect URI is `https://<hostname>/login/google`, store its client secret in Secrets Manager, and point the hostname's DNS at `public_alb_dns_name` or `private_alb_dns_name`.
+    **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, in-cluster Prometheus or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without load balancer access Grafana has no ingress. **Load balancer access** routes a hostname on the HTTPS listener of the shared private or public ALB to Grafana. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI, and point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
 
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
@@ -1633,7 +2024,9 @@ module:
     | Application Signals    | No       | `false`              | CloudWatch auto-instrumentation: injects the AWS agent into the named namespaces and restarts their pods |
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to the selected logs, metrics and traces stores |
-    | Load balancer access with Google sign-in | No | `false` | Grafana on the public or private ALB's HTTPS listener at a hostname, for the allowed Google domains |
+    | Load balancer access   | No       | `false`              | Grafana on the private (default) or public ALB's HTTPS listener at a hostname |
+    | Username and password  | No       | `true`               | Grafana's built-in sign-in; off leaves only the providers |
+    | Sign-in providers      | No       | None                 | Any of Google, GitHub, GitLab, Microsoft Entra ID, Okta and generic OAuth |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |

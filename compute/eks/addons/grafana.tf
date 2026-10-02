@@ -164,7 +164,7 @@ resource "helm_release" "grafana" {
 
         # SigV4 is off in Grafana by default and a datasource that asks for it
         # without this simply fails to authenticate, with no hint as to why.
-        # Load balancer access adds Google sign-in (grafana_access.tf).
+        # Sign-in and load balancer access settings come from grafana_auth.tf.
         "grafana.ini" = local.grafana_ini
         envValueFrom  = local.grafana_env_value_from
 
@@ -183,7 +183,7 @@ resource "helm_release" "grafana" {
     helm_release.lb_controller,
     aws_eks_pod_identity_association.grafana,
     helm_release.loki,
-    # The Google client secret Grafana reads must exist before its pod starts.
+    # The sign-in providers' client secrets must exist before its pod starts.
     helm_release.observability_secrets,
   ]
 
@@ -191,6 +191,31 @@ resource "helm_release" "grafana" {
     precondition {
       condition     = local.metrics_on || local.logs_on || local.tempo_enabled
       error_message = "grafana_enabled is true but logs_providers and metrics_providers are empty and tempo is not a traces provider. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
+    }
+
+    precondition {
+      condition     = var.grafana_auth.login_form_enabled || length(local.grafana_auth_providers) > 0
+      error_message = "Grafana would have no way to sign in: grafana_auth.login_form_enabled is false and grafana_auth_providers is empty."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_without_client) == 0
+      error_message = "Each Grafana sign-in provider needs a client ID and the Secrets Manager ARN of its client secret: ${join(", ", local.grafana_auth_without_client)}."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_unrestricted) == 0
+      error_message = "Anyone with an account at these providers could sign in to Grafana: ${join(", ", local.grafana_auth_unrestricted)}. Set google allowed_domains or allowed_groups, github allowed_organizations or team_ids, and gitlab allowed_groups (or a self-managed url)."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_without_endpoint) == 0
+      error_message = "These Grafana sign-in providers are missing where to sign in: ${join(", ", local.grafana_auth_without_endpoint)}. azuread needs tenant_id, okta needs url, and generic_oauth needs auth_url and token_url."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_settings_with_secrets) == 0
+      error_message = "A Grafana sign-in provider's settings set client_secret or enabled: ${join(", ", local.grafana_auth_settings_with_secrets)}. The client secret is client_secret_arn, read through External Secrets, and grafana_auth_providers turns a provider on."
     }
   }
 }

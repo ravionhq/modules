@@ -349,7 +349,22 @@ kubectl -n <grafana_namespace> port-forward svc/<grafana_service> 3000:80
 
 The chart generates an admin password into a Secret; `grafana_helm_values` is the route to persistence, an existing admin secret, or dashboards. A module that quietly published a Grafana with a default password to the internet would be a bug, not a convenience.
 
-**Load balancer access with Google sign-in** (`grafana_access`). Grafana stays a ClusterIP Service; the chosen shared ALB reaches its pods through an IP target group, a host-header rule on the HTTPS listener, and a TargetGroupBinding the load balancer controller keeps registered. `load_balancer = "public"` uses the internet-facing ALB, so anyone can reach the sign-in page. `"private"` uses the internal ALB, reachable only from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router; its security group admits `private_alb_ingress_cidr_blocks`, which by default covers the private ranges a subnet router's traffic arrives from. Every precondition is checked at plan: the chosen ALB with HTTPS, a hostname, a Google client ID and the Secrets Manager ARN of its client secret, and at least one allowed domain. The login form and HTTP basic auth are off and Google is the only sign-in: an account outside `google_allowed_domains` is refused, and one inside is created on first sign-in with `google_role`. The client secret reaches Grafana as `GF_AUTH_GOOGLE_CLIENT_SECRET` from a Secret the External Secrets Operator writes, never as a Helm value. DNS is not managed: point the hostname at `public_alb_dns_name` or `private_alb_dns_name` (a public record works for the private ALB too, since it resolves to private addresses only reachable from inside), and register `https://<hostname>/login/google` as the OAuth client's redirect URI.
+**Load balancer access** (`grafana_access`). Grafana stays a ClusterIP Service; the chosen shared ALB reaches its pods through an IP target group, a host-header rule on the HTTPS listener, and a TargetGroupBinding the load balancer controller keeps registered. `load_balancer = "private"` (the default) uses the internal ALB, reachable only from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router; its security group admits `private_alb_ingress_cidr_blocks`, which by default covers the private ranges a subnet router's traffic arrives from. `"public"` uses the internet-facing ALB, so anyone can reach the sign-in page. Plan refuses access without the chosen ALB's HTTPS listener or a hostname. DNS is not managed: point the hostname at `private_alb_dns_name` or `public_alb_dns_name`. A public record works for the private ALB too, since it resolves to private addresses only reachable from inside.
+
+**Sign-in** (`grafana_auth`, `grafana_auth_providers`, `grafana_auth_<provider>`) is Grafana's own, under Grafana's own setting names:
+
+- `grafana_auth.login_form_enabled` (default `true`) keeps username and password for Grafana's local users, including the generated admin. `false` turns off the login form and HTTP basic auth both, so a password works nowhere.
+- `grafana_auth_providers` turns on any of Grafana's OAuth providers side by side: `google`, `github`, `gitlab`, `azuread` (Microsoft Entra ID), `okta` and `generic_oauth` (Keycloak, Auth0, Authentik or any OpenID Connect provider). Each becomes Grafana's `[auth.<provider>]` section, configured by its `grafana_auth_<provider>` object.
+  - Typed fields cover what each provider needs: allowed domains, groups, organizations or team IDs, role mapping (`role_attribute_path`), and the tenant, org URL, self-managed URL or endpoints.
+  - `settings` passes any other key of the section through verbatim.
+- Every client secret is a Secrets Manager ARN. The External Secrets Operator writes it into a Secret, and Grafana reads it as `GF_AUTH_<PROVIDER>_CLIENT_SECRET`, never as a Helm value.
+- `grafana_auth.default_role` (default `Viewer`) is the role an account gets on first sign-in, unless the provider's role mapping says otherwise.
+- Plan refuses these configurations:
+  - No way to sign in at all.
+  - A provider without its client ID and secret ARN, or without its tenant, org URL or endpoints.
+  - A client secret placed in `settings`.
+  - Google, GitHub or gitlab.com with no restriction, since anyone with an account there could otherwise sign in.
+- Register `https://<hostname>/login/<provider>` as each OAuth application's redirect URI.
 
 **Self-hosted Grafana elsewhere** can reach AMP the same way AMG does, given credentials that can assume `grafana_role_arn`:
 
@@ -678,7 +693,10 @@ failed during initialization have no provider resources to migrate.
 | kube_state_metrics_helm_values | Extra YAML docs merged into the kube-state-metrics chart values. | `list(string)` | `[]` | no |
 | grafana_role_creation_enabled | Create the IAM role Amazon Managed Grafana assumes to read the workspace and log groups. | `bool` | `false` | no |
 | grafana_source_account_id | Account whose Grafana workspaces may assume that role (`aws:SourceAccount`). Null uses this account. | `string` | `null` | no |
-| grafana_access | `{ enabled, load_balancer, hostname, listener_rule_priority, google_client_id, google_client_secret_arn, google_allowed_domains, google_role }` — serve the in-cluster Grafana on the `public` (default) or `private` ALB's HTTPS listener at `hostname`, behind Google sign-in for `google_allowed_domains`. `google_role` is `Viewer`, `Editor` or `Admin`; a null priority lets AWS assign one. | `object` | `{}` | no |
+| grafana_access | `{ enabled, load_balancer, hostname, listener_rule_priority }` — serve the in-cluster Grafana on the `private` (default) or `public` ALB's HTTPS listener at `hostname`; a null priority lets AWS assign one. | `object` | `{}` | no |
+| grafana_auth | `{ login_form_enabled, default_role }` — username and password sign-in (default `true`) and the role for new accounts (`Viewer`, `Editor` or `Admin`; default `Viewer`). | `object` | `{}` | no |
+| grafana_auth_providers | Grafana OAuth providers to turn on: any of `google`, `github`, `gitlab`, `azuread`, `okta`, `generic_oauth`. | `list(string)` | `[]` | no |
+| grafana_auth_google / _github / _gitlab / _azuread / _okta / _generic_oauth | Each provider's settings under Grafana's key names, plus `client_secret_arn` and a verbatim `settings` map: Google `allowed_domains`, `allowed_groups`; GitHub `allowed_organizations`, `team_ids`; GitLab `url`, `allowed_groups`; Entra ID `tenant_id`, `allowed_groups`; Okta `url`, `allowed_groups`; generic `name`, `auth_url`, `token_url`, `api_url`, `scopes`, `allowed_domains`, `allowed_groups`; `role_attribute_path` on all but Entra ID. | `object` | `{}` | no |
 | logs_enabled | Collect container logs with Alloy into an in-cluster Loki storing to S3 in this account. | `bool` | `false` | no |
 | loki_s3_bucket_name | Existing bucket for log chunks and index. Null creates `ravion-loki-<cluster>-<account>`. | `string` | `null` | no |
 | log_retention_days | How long logs stay queryable. Enforced by Loki's compactor; the bucket expires a week later as a backstop. | `number` | `365` | no |

@@ -1,18 +1,14 @@
 ################################################################################
-# In-cluster Grafana on a shared ALB, behind Google sign-in (optional)
+# In-cluster Grafana on a shared ALB (optional)
 #
 # Grafana stays a ClusterIP Service; the chosen shared ALB reaches its pods
 # through a target group the load balancer controller binds to that Service,
 # the same TargetGroupBinding pattern the EKS workload modules use. The ALB
 # routes one hostname to it on the HTTPS listener only.
 #
-# The public ALB puts the sign-in page on the internet. The private ALB keeps it
-# inside the VPC and the networks connected to it, such as a VPN or a Tailscale
-# subnet router. Either way sign-in is Google OAuth limited to the allowed
-# domains, and Grafana's own login form and password access are turned off.
-# The client secret is a Secrets Manager ARN the External Secrets Operator
-# materializes into a Kubernetes Secret Grafana reads as an environment
-# variable: it is never a Helm value or a Terraform output.
+# The public ALB puts Grafana's sign-in page on the internet. The private ALB
+# keeps it inside the VPC and the networks connected to it, such as a VPN or a
+# Tailscale subnet router. Who may sign in is grafana_auth.tf's.
 #
 # DNS is not managed here. Point the hostname at the chosen ALB's DNS name, and
 # make sure one of its HTTPS listener's certificates covers it.
@@ -22,74 +18,10 @@ locals {
   grafana_access_enabled = var.grafana_enabled && var.grafana_access.enabled
   grafana_access_public  = var.grafana_access.load_balancer == "public"
 
-  grafana_hostname          = try(trimspace(var.grafana_access.hostname), "")
-  grafana_google_client_id  = try(trimspace(var.grafana_access.google_client_id), "")
-  grafana_google_secret_arn = try(trimspace(var.grafana_access.google_client_secret_arn), "")
-  grafana_google_domains    = [for domain in var.grafana_access.google_allowed_domains : trimspace(domain) if trimspace(domain) != ""]
-
-  grafana_google_secret_name = "ravion-grafana-google-oauth"
+  grafana_hostname = try(trimspace(var.grafana_access.hostname), "")
 
   # Target group names are at most 32 characters and cannot end in a hyphen.
   grafana_target_group_name = trimsuffix(substr("${local.name}-grafana", 0, 32), "-")
-
-  grafana_google_oauth_secrets = local.grafana_access_enabled ? [{
-    name      = local.grafana_google_secret_name
-    namespace = local.grafana_namespace
-    template  = {}
-    data = [{
-      secretKey = "clientSecret"
-      remoteRef = local.grafana_google_secret_arn
-    }]
-  }] : []
-
-  # grafana.ini: SigV4 for the AMP data source always; with load balancer
-  # access, the external URL Google redirects back to, Google sign-in, and no
-  # login form.
-  grafana_access_ini = {
-    server = {
-      domain   = local.grafana_hostname
-      root_url = "https://${local.grafana_hostname}"
-    }
-    "auth.google" = {
-      enabled         = true
-      client_id       = local.grafana_google_client_id
-      allowed_domains = join(" ", local.grafana_google_domains)
-      allow_sign_up   = true
-      scopes          = "openid email profile"
-      use_pkce        = true
-    }
-    users = {
-      auto_assign_org_role = var.grafana_access.google_role
-    }
-    # The login form being off does not stop the admin password over HTTP
-    # basic auth, which would reach the API through the load balancer.
-    "auth.basic" = {
-      enabled = false
-    }
-  }
-
-  # A for expression rather than a conditional: a conditional against {} would
-  # unify the sections into a map of strings and quote every boolean.
-  grafana_ini = merge(
-    {
-      auth = merge(
-        { sigv4_auth_enabled = true },
-        local.grafana_access_enabled ? { disable_login_form = true } : {},
-      )
-    },
-    { for section, settings in local.grafana_access_ini : section => settings if local.grafana_access_enabled },
-  )
-
-  # Grafana reads any setting from GF_<SECTION>_<KEY>, so the secret never
-  # appears in grafana.ini.
-  grafana_env_value_from = local.grafana_access_enabled ? {
-    GF_AUTH_GOOGLE_CLIENT_SECRET = {
-      secretKeyRef = {
-        name = local.grafana_google_secret_name
-        key  = "clientSecret"
-      }
-    }
-  } : {}
 }
 
 resource "aws_lb_target_group" "grafana" {
@@ -137,16 +69,6 @@ resource "aws_lb_listener_rule" "grafana" {
     precondition {
       condition     = local.grafana_hostname != ""
       error_message = "Grafana's load balancer access needs a hostname, routed on the chosen ALB's HTTPS listener."
-    }
-
-    precondition {
-      condition     = local.grafana_google_client_id != "" && local.grafana_google_secret_arn != ""
-      error_message = "Grafana's load balancer access needs a Google OAuth client ID and the Secrets Manager ARN of its client secret."
-    }
-
-    precondition {
-      condition     = length(local.grafana_google_domains) > 0
-      error_message = "Grafana's load balancer access needs at least one allowed Google domain; without one, any Google account could sign in."
     }
   }
 }
