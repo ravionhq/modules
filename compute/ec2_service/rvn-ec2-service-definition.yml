@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 2.0.0
-  description: Rename scaling inputs to min_instances and max_instances to make clear they count EC2 instances.
+  version: 2.1.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: network

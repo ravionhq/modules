@@ -3,8 +3,8 @@ definition:
   name: Terraform Stack
   description: Automate Terraform and OpenTofu workflows with git-driven deployments and managed state.
 release:
-  version: 1.3.1
-  description: Clarify that pull request plan results are viewed in Ravion; posting them to the pull request is coming soon
+  version: 1.4.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: section_aws
@@ -150,6 +150,7 @@ module:
         tool: opentofu
       type: string
       values: $values:opentofu/versions
+    - $include: ../../partials/inputs/terraform-runner-permissions.yml
     - default: true
       description: Use Ravion-managed state. Your Terraform configuration must include an empty `terraform { cloud {} }` block; Ravion supplies the workspace configuration. Disable to use your own backend, including S3 or Terraform Cloud.
       id: use_ravion_state_backend
@@ -238,6 +239,8 @@ module:
             type: webhook:github
       defaults:
         input:
+          $merge:
+            - ../../partials/stack/terraform-runner-permissions-pipeline-inputs.yml
           aws_account_id: "<< module.input.default_networking ? module.input.aws_account_id : null >>"
           aws_region: "<< module.input.default_networking ? module.input.aws_region : null >>"
           base_path: "<< module.input.base_path >>"

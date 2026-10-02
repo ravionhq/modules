@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
 release:
-  version: 0.2.1
-  description: Adds the module_instance_id output, the id of this module, for references that name the module.
+  version: 0.3.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

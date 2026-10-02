@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.0.0
-  description: Rename scaling inputs to min_tasks, max_tasks, and desired_tasks to make clear they count ECS tasks. Pre-deploy, post-deploy, and sidecar CPU and memory now use the app task's units (1 CPU = 1 vCPU, 1 memory = 1 GB) instead of ECS CPU units and MiB; re-enter any saved values after upgrading, for example 512 CPU units becomes 0.5.
+  version: 2.1.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: section_cluster
@@ -283,6 +283,8 @@ module:
     pipelines:
       defaults:
         input:
+          $merge:
+            - ../../partials/stack/terraform-runner-permissions-pipeline-inputs.yml
           aws_account_id: "<< module.input.execution_environment_id ? null : module.input.aws_account_id >>"
           aws_region: "<< module.input.execution_environment_id ? null : module.input.aws_region >>"
           base_path: compute/ecs_service

@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 2.0.0
-  description: Rename EC2 capacity inputs to ec2_min_instances and ec2_max_instances to make clear they count EC2 host instances, not ECS tasks.
+  version: 2.1.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: network
