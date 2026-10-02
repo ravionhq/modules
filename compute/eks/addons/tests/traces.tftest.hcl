@@ -454,8 +454,8 @@ run "tempo_keeps_blocks_on_its_own_volume_without_aws_access" {
   }
 
   assert {
-    condition     = length(module.tempo_bucket) == 1
-    error_message = "The created bucket must survive a switch to local storage, so no stored trace is deleted"
+    condition     = length(module.tempo_bucket) == 0
+    error_message = "Local storage must not create a bucket, so it needs no S3 permissions"
   }
 
   assert {

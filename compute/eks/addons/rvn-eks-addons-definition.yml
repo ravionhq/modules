@@ -1289,7 +1289,7 @@ module:
             - description: Blocks in an S3 bucket in this account, through Tempo's own Pod Identity role.
               label: S3 bucket
               value: s3
-            - description: Blocks on Tempo's own volume. Suits a single replica, and survives restarts only with a persistent volume. A bucket this module created stays, so switching never deletes stored traces.
+            - description: Blocks on Tempo's own volume, with no AWS access. Suits a single replica, and survives restarts only with a persistent volume. Switching an existing Tempo here deletes the bucket this module created, and the traces in it.
               label: Tempo's volume
               value: local
         - collapsible: true

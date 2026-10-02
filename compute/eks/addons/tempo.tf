@@ -45,10 +45,11 @@ locals {
   tempo_generated_bucket_name = "ravion-tempo-${replace(substr(local.loki_cluster_slug, 0, 37), "/-+$/", "")}-${data.aws_caller_identity.current.account_id}"
 
   tempo_s3_enabled = local.tempo_enabled && local.tempo_config.storage_backend == "s3"
-  # The created bucket follows Tempo, not the storage choice, so switching an
-  # existing Tempo to local storage never deletes the traces already in S3.
-  # Unused, its lifecycle rule empties it within retention plus a week.
-  tempo_create_bucket = local.tempo_enabled && local.tempo_config.s3_bucket == null
+  # A bucket only for S3 storage: local storage needs no AWS access at all. As
+  # with Loki, the created bucket follows its use, so switching an existing
+  # Tempo to local storage deletes it and the traces in it; the plan shows the
+  # deletion for approval first.
+  tempo_create_bucket = local.tempo_s3_enabled && local.tempo_config.s3_bucket == null
 
   # Whether the chart ends up with a persistent volume: the last value set
   # across the module's own, the destination's helm_values and each
