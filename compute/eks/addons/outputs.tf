@@ -421,18 +421,18 @@ output "tempo_namespace" {
 }
 
 output "tempo_s3_bucket" {
-  description = "Name of the S3 bucket Tempo stores trace blocks in: the created bucket, or the one passed as traces_tempo.s3_bucket_name (null unless tempo is a traces provider)."
+  description = "Name of the S3 bucket Tempo stores trace blocks in: the created bucket, or the one passed as traces_tempo.s3_bucket_name (null unless tempo is a traces provider with S3 storage)."
   value       = local.tempo_bucket_name
 }
 
 output "tempo_s3_bucket_arn" {
-  description = "ARN of the Tempo trace bucket (null unless tempo is a traces provider)."
+  description = "ARN of the Tempo trace bucket (null unless tempo is a traces provider with S3 storage)."
   value       = local.tempo_bucket_arn
 }
 
 output "tempo_role_arn" {
-  description = "ARN of Tempo's Pod Identity role, scoped to the trace bucket (null unless tempo is a traces provider)."
-  value       = local.tempo_enabled ? module.tempo_role[0].role_arn : null
+  description = "ARN of Tempo's Pod Identity role, scoped to its trace bucket and, with the metrics generator writing to AMP, to that workspace (null when Tempo needs no AWS access)."
+  value       = local.tempo_role_enabled ? module.tempo_role[0].role_arn : null
 }
 
 output "tempo_chart_version" {

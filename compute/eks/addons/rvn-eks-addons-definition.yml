@@ -1278,6 +1278,21 @@ module:
         traces_enabled: true
         traces_providers: tempo
       type: number
+    - default: s3
+      description: Where Tempo keeps its trace blocks.
+      id: traces_tempo_storage_backend
+      label: Tempo storage
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: string
+      values:
+        - description: Blocks in an S3 bucket in this account, through Tempo's own Pod Identity role.
+          label: S3 bucket
+          value: s3
+        - description: Blocks on Tempo's own volume. Suits a single replica, and survives restarts only with a persistent volume.
+          label: Tempo's volume
+          value: local
     - collapsible: true
       description: S3 bucket name for trace storage. Leave blank to create a bucket. Lifecycle and encryption remain your responsibility for an existing bucket.
       id: traces_tempo_s3_bucket_name
@@ -1286,7 +1301,51 @@ module:
       show_when:
         traces_enabled: true
         traces_providers: tempo
+        traces_tempo_storage_backend: s3
       type: string
+    - default: false
+      description: Keep Tempo's volume (write-ahead log, live store and, with local storage, the blocks) on a gp3 PersistentVolumeClaim. Needs the EBS CSI driver. Off, it is a size-limited scratch volume that restarts empty.
+      id: traces_tempo_persistence_enabled
+      label: Persistent volume
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: boolean
+    - default: 10Gi
+      description: Size of Tempo's volume, as a Kubernetes quantity.
+      id: traces_tempo_persistence_size
+      label: Volume size
+      placeholder: 10Gi
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: string
+    - default: false
+      description: Turn on Tempo's metrics generator. It writes service graphs and span metrics (request rate, errors, duration per service) to the in-cluster Prometheus, or to Amazon Managed Prometheus without it, and Grafana's Tempo data source draws its service map from them.
+      id: traces_tempo_metrics_generator_enabled
+      label: Service graphs and span metrics
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: boolean
+    - collapsible: true
+      description: Version of the grafana-community/tempo Helm chart, for example 3.1.0.
+      id: traces_tempo_chart_version
+      label: Tempo chart version
+      placeholder: 3.1.0
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: string
+    - collapsible: true
+      default: {}
+      description: 'Any other Tempo chart values, as JSON, merged over the module''s own: replicas, resources, ingestion limits and overrides, query tuning, tolerations. For example {"tempo": {"overrides": {"defaults": {"global": {"max_bytes_per_trace": 10000000}}}}}.'
+      id: traces_tempo_helm_values
+      label: Other Tempo chart values
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: object
     - collapsible: true
       description: Region X-Ray traces are written to. Leave blank for the cluster's region.
       id: traces_xray_region
@@ -1385,7 +1444,13 @@ module:
           region: << module.input.traces_xray_region >>
         traces_tempo:
           retention_days: << module.input.traces_tempo_retention_days >>
+          storage_backend: << module.input.traces_tempo_storage_backend || "s3" >>
           s3_bucket_name: << module.input.traces_tempo_s3_bucket_name >>
+          persistence_enabled: << module.input.traces_tempo_persistence_enabled >>
+          persistence_size: << module.input.traces_tempo_persistence_size >>
+          metrics_generator_enabled: << module.input.traces_tempo_metrics_generator_enabled >>
+        tempo_chart_version: << module.input.traces_tempo_chart_version || "3.1.0" >>
+        tempo_values: '<< module.input.traces_tempo_helm_values != nil ? module.input.traces_tempo_helm_values : {} >>'
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
@@ -1629,7 +1694,7 @@ module:
     | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, as the fallback behind Amazon Managed Prometheus |
     | **Grafana Cloud / Datadog / New Relic / custom OTLP** | The same collector, one more exporter each | Ships, plus an "Open in ..." link |
 
-    **Traces.** Turn on **Traces** and the cluster's OpenTelemetry collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), with or without metrics. Every trace goes to each selected destination. AWS X-Ray writes to the cluster's region unless another is set. **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode with its blocks in an S3 bucket in your account (30 days by default), reachable only inside the cluster, and read by the in-cluster Grafana when that is on. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
+    **Traces.** Turn on **Traces** and the cluster's OpenTelemetry collector gets an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), with or without metrics. Every trace goes to each selected destination. AWS X-Ray writes to the cluster's region unless another is set. **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode, reachable only inside the cluster and read by the in-cluster Grafana when that is on. Its blocks go to an S3 bucket in your account by default (30 days), or to Tempo's own volume, which can be a persistent gp3 volume. Its metrics generator can write service graphs and span metrics to Prometheus for Grafana's service map, and any other chart value can be set as JSON. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. Point a workload's OpenTelemetry exporter at those outputs. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
 
     **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, in-cluster Prometheus or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without load balancer access Grafana has no ingress. **Load balancer access** routes a hostname on the HTTPS listener of the shared private or public ALB to Grafana. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI, and point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
 

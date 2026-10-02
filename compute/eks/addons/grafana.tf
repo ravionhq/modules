@@ -60,14 +60,27 @@ locals {
       },
     ] : [],
     local.tempo_enabled ? [
-      {
-        name      = "Ravion Traces (Tempo)"
-        uid       = "ravion-tempo"
-        type      = "tempo"
-        access    = "proxy"
-        url       = local.tempo_endpoint
-        isDefault = false
-      },
+      merge(
+        {
+          name      = "Ravion Traces (Tempo)"
+          uid       = "ravion-tempo"
+          type      = "tempo"
+          access    = "proxy"
+          url       = local.tempo_endpoint
+          isDefault = false
+        },
+        # The metrics generator's service graphs, drawn from the Prometheus it
+        # writes to.
+        {
+          for key, value in {
+            jsonData = {
+              serviceMap = {
+                datasourceUid = local.tempo_generator_to_amp ? "ravion-amp" : "ravion-prometheus"
+              }
+            }
+          } : key => value if local.tempo_generator_enabled
+        },
+      ),
     ] : [],
     local.loki_enabled ? [
       {

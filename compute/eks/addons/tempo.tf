@@ -1,10 +1,11 @@
 ################################################################################
-# Tempo — trace storage (S3 bucket + Helm)
+# Tempo — trace storage (Helm, plus an S3 bucket by default)
 #
 # The traces counterpart of loki.tf: workload traces land in Tempo running
-# inside the cluster, with every block stored in an S3 bucket in the customer's
-# own account. The add-ons' OpenTelemetry collector (otel_collector.tf) is what
-# sends to it; this file is the store.
+# inside the cluster. By default every block is stored in an S3 bucket in the
+# customer's own account; storage_backend = local keeps them on Tempo's own
+# volume instead. The add-ons' OpenTelemetry collector (otel_collector.tf) is
+# what sends to it; this file is the store.
 #
 # The same shape as Loki, for the same reasons:
 #
@@ -15,15 +16,17 @@
 #      to render without them.
 #
 #   2. MONOLITHIC MODE. Every Tempo component in one StatefulSet replica.
-#      tempo_helm_values is the escape hatch for larger clusters.
+#      tempo_values and tempo_helm_values reach every chart value for larger
+#      clusters: replicas, resources, limits, query tuning.
 #
 #   3. RETENTION IS ENFORCED TWICE. Tempo's backend scheduler is the authority:
-#      it deletes blocks once their retention has passed. The bucket's
+#      it deletes blocks once their retention has passed. A created bucket's
 #      lifecycle rule expires objects a week later, only to sweep up what a
 #      scheduler that stopped running would have orphaned.
 #
 #   4. NO CREDENTIALS ANYWHERE. The S3 config names a bucket, a region and an
-#      endpoint, and Tempo resolves credentials through the Pod Identity Agent.
+#      endpoint, and Tempo resolves credentials through the Pod Identity Agent,
+#      as it does to sign the metrics generator's writes to AMP.
 #
 # All releases set upgrade_install so an apply adopts a same-named release
 # already present in the cluster instead of failing with "cannot re-use a name
@@ -38,12 +41,53 @@ locals {
   # account id, and truncated in the cluster segment rather than as a whole.
   tempo_generated_bucket_name = "ravion-tempo-${local.loki_cluster_slug}-${data.aws_caller_identity.current.account_id}"
 
-  tempo_create_bucket = local.tempo_enabled && local.tempo_config.s3_bucket == null
+  tempo_s3_enabled    = local.tempo_enabled && local.tempo_config.storage_backend == "s3"
+  tempo_create_bucket = local.tempo_s3_enabled && local.tempo_config.s3_bucket == null
 
-  tempo_bucket_name = local.tempo_enabled ? coalesce(local.tempo_config.s3_bucket, local.tempo_generated_bucket_name) : null
-  tempo_bucket_arn  = local.tempo_enabled ? "arn:${data.aws_partition.current.partition}:s3:::${local.tempo_bucket_name}" : null
+  tempo_bucket_name = local.tempo_s3_enabled ? coalesce(local.tempo_config.s3_bucket, local.tempo_generated_bucket_name) : null
+  tempo_bucket_arn  = local.tempo_s3_enabled ? "arn:${data.aws_partition.current.partition}:s3:::${local.tempo_bucket_name}" : null
 
-  # The bucket sweeps up a week after the backend scheduler should have.
+  # The metrics generator writes to the in-cluster Prometheus when there is one,
+  # otherwise to Amazon Managed Prometheus, signed with Tempo's own role.
+  tempo_generator_enabled = local.tempo_enabled && local.tempo_config.metrics_generator_enabled
+  tempo_generator_target  = local.prometheus_enabled ? "prometheus" : (local.amp_enabled ? "amp" : null)
+  tempo_generator_to_amp  = local.tempo_generator_enabled && local.tempo_generator_target == "amp"
+
+  # Tempo needs AWS credentials only for S3 and for writing to AMP.
+  tempo_role_enabled = local.tempo_s3_enabled || local.tempo_generator_to_amp
+
+  tempo_generator_remote_write = local.tempo_generator_enabled ? [
+    merge(
+      {
+        url            = local.tempo_generator_to_amp ? local.amp_remote_write_endpoint : local.prometheus_remote_write_endpoint
+        send_exemplars = true
+      },
+      { for key, value in { sigv4 = { region = local.amp_region } } : key => value if local.tempo_generator_to_amp },
+    ),
+  ] : []
+
+  # Blocks in S3, or on Tempo's own volume. For expressions rather than a
+  # conditional, because the two shapes differ.
+  tempo_trace_storage = merge(
+    { wal = { path = "/var/tempo/wal" } },
+    {
+      for key, value in {
+        backend = "s3"
+        s3 = {
+          bucket   = local.tempo_bucket_name
+          region   = data.aws_region.current.region
+          endpoint = "s3.${data.aws_region.current.region}.${data.aws_partition.current.dns_suffix}"
+        }
+      } : key => value if local.tempo_s3_enabled
+    },
+    {
+      for key, value in {
+        backend = "local"
+        local   = { path = "/var/tempo/traces" }
+      } : key => value if !local.tempo_s3_enabled
+    },
+  )
+
   tempo_bucket_expiration_days = local.tempo_config.retention_days + 7
 
   tempo_service_host   = "${local.tempo_release_name}.${local.tempo_namespace}.svc.cluster.local"
@@ -105,55 +149,71 @@ module "tempo_bucket" {
 # Tempo write identity
 ################################################################################
 
-data "aws_iam_policy_document" "tempo_s3" {
-  count = local.tempo_enabled ? 1 : 0
+data "aws_iam_policy_document" "tempo" {
+  count = local.tempo_role_enabled ? 1 : 0
 
-  statement {
-    sid    = "ListTraceBucket"
-    effect = "Allow"
-    actions = [
-      "s3:ListBucket",
-      "s3:GetBucketLocation",
-    ]
-    resources = [local.tempo_bucket_arn]
+  dynamic "statement" {
+    for_each = local.tempo_s3_enabled ? [1] : []
+    content {
+      sid    = "ListTraceBucket"
+      effect = "Allow"
+      actions = [
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+      ]
+      resources = [local.tempo_bucket_arn]
+    }
   }
 
   # Delete is how the backend scheduler enforces retention and how compaction
   # removes the blocks it merged. The tagging actions are in Tempo's documented
   # minimal policy for S3.
-  statement {
-    sid    = "ReadWriteTraceObjects"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:GetObjectTagging",
-      "s3:PutObjectTagging",
-    ]
-    resources = ["${local.tempo_bucket_arn}/*"]
+  dynamic "statement" {
+    for_each = local.tempo_s3_enabled ? [1] : []
+    content {
+      sid    = "ReadWriteTraceObjects"
+      effect = "Allow"
+      actions = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetObjectTagging",
+        "s3:PutObjectTagging",
+      ]
+      resources = ["${local.tempo_bucket_arn}/*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = local.tempo_generator_to_amp ? [1] : []
+    content {
+      sid       = "WriteGeneratedMetrics"
+      effect    = "Allow"
+      actions   = ["aps:RemoteWrite"]
+      resources = [local.amp_workspace_arn]
+    }
   }
 }
 
 module "tempo_role" {
-  count = local.tempo_enabled ? 1 : 0
+  count = local.tempo_role_enabled ? 1 : 0
 
   source = "../../../security/iam"
 
   name        = "${local.name}-tempo"
-  description = "Tempo trace storage Pod Identity role for ${var.cluster_name}"
+  description = "Tempo Pod Identity role for ${var.cluster_name}"
 
   custom_assume_role_policy = local.pod_identity_trust_policy
 
   inline_policies = {
-    "trace-bucket-access" = data.aws_iam_policy_document.tempo_s3[0].json
+    "tempo" = data.aws_iam_policy_document.tempo[0].json
   }
 
   tags = local.tags
 }
 
 resource "aws_eks_pod_identity_association" "tempo" {
-  count = local.tempo_enabled ? 1 : 0
+  count = local.tempo_role_enabled ? 1 : 0
 
   cluster_name    = var.cluster_name
   namespace       = local.tempo_namespace
@@ -188,42 +248,57 @@ resource "helm_release" "tempo" {
         fullnameOverride = local.tempo_release_name
         replicas         = 1
 
-        tempo = {
-          reportingEnabled = false
-          resources        = local.tempo_resources
+        tempo = merge(
+          {
+            reportingEnabled = false
+            resources        = local.tempo_resources
 
-          # Rendered into the backend scheduler's block retention.
-          retention = "${local.tempo_config.retention_days * 24}h"
+            # Rendered into the backend scheduler's block retention.
+            retention = "${local.tempo_config.retention_days * 24}h"
 
-          storage = {
-            trace = {
-              backend = "s3"
-              s3 = {
-                bucket   = local.tempo_bucket_name
-                region   = data.aws_region.current.region
-                endpoint = "s3.${data.aws_region.current.region}.${data.aws_partition.current.dns_suffix}"
-              }
-              wal = {
-                path = "/var/tempo/wal"
-              }
+            storage = {
+              trace = local.tempo_trace_storage
             }
-          }
 
-          # The chart mounts /var/tempo only with persistence on. An emptyDir
-          # with a size limit keeps the WAL and the live store writable and
-          # bounded without one; blocks are in S3 as soon as they are cut.
-          extraVolumeMounts = [
-            {
-              name      = "tempo-data"
-              mountPath = "/var/tempo"
-            },
-          ]
+            # The chart mounts /var/tempo only with persistence on. An emptyDir
+            # with a size limit keeps the WAL and the live store writable and
+            # bounded without one.
+            extraVolumeMounts = local.tempo_config.persistence_enabled ? [] : [
+              {
+                name      = "tempo-data"
+                mountPath = "/var/tempo"
+              },
+            ]
+          },
+          {
+            for key, value in {
+              metricsGenerator = {
+                enabled = true
+                storage = {
+                  path         = "/var/tempo/generator"
+                  remote_write = local.tempo_generator_remote_write
+                }
+              }
+              overrides = {
+                defaults = {
+                  metrics_generator = {
+                    processors = ["service-graphs", "span-metrics"]
+                  }
+                }
+              }
+            } : key => value if local.tempo_generator_enabled
+          },
+        )
+
+        persistence = {
+          enabled = local.tempo_config.persistence_enabled
+          size    = local.tempo_config.persistence_size
         }
 
-        extraVolumes = [
+        extraVolumes = local.tempo_config.persistence_enabled ? [] : [
           {
             name     = "tempo-data"
-            emptyDir = { sizeLimit = local.tempo_config.local_storage_size }
+            emptyDir = { sizeLimit = local.tempo_config.persistence_size }
           },
         ]
 
@@ -235,6 +310,7 @@ resource "helm_release" "tempo" {
         }
       }),
     ],
+    length(keys(var.tempo_values)) > 0 ? [yamlencode(var.tempo_values)] : [],
     var.tempo_helm_values,
   )
 
@@ -244,4 +320,11 @@ resource "helm_release" "tempo" {
     aws_eks_pod_identity_association.tempo,
     module.tempo_bucket,
   ]
+
+  lifecycle {
+    precondition {
+      condition     = !local.tempo_generator_enabled || local.tempo_generator_target != null
+      error_message = "Tempo's metrics generator writes service graphs and span metrics to Prometheus, but metrics_providers has neither prometheus nor amp. Select one, or turn traces_tempo.metrics_generator_enabled off."
+    }
+  }
 }

@@ -303,11 +303,11 @@ run "tempo_stores_traces_in_cluster_on_s3" {
 
   assert {
     condition     = length(module.tempo_role) == 1 && aws_eks_pod_identity_association.tempo[0].service_account == "ravion-tempo" && aws_eks_pod_identity_association.tempo[0].namespace == "ravion-operator" && yamldecode(helm_release.tempo[0].values[0]).serviceAccount.name == "ravion-tempo"
-    error_message = "Tempo's service account must carry its S3 role through Pod Identity"
+    error_message = "Tempo's service account must carry its role through Pod Identity"
   }
 
   assert {
-    condition     = data.aws_iam_policy_document.tempo_s3[0].statement[1].resources == toset(["arn:aws:s3:::ravion-tempo-test-cluster-123456789012/*"]) && data.aws_iam_policy_document.tempo_s3[0].statement[1].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetObjectTagging", "s3:PutObjectTagging"])
+    condition     = data.aws_iam_policy_document.tempo[0].statement[1].resources == toset(["arn:aws:s3:::ravion-tempo-test-cluster-123456789012/*"]) && data.aws_iam_policy_document.tempo[0].statement[1].actions == toset(["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:GetObjectTagging", "s3:PutObjectTagging"])
     error_message = "Tempo's role must have Tempo's documented object permissions on its own bucket only"
   }
 
@@ -402,4 +402,163 @@ run "rejects_zero_tempo_retention" {
   }
 
   expect_failures = [var.traces_tempo]
+}
+
+run "tempo_keeps_blocks_on_its_own_volume_without_aws_access" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    traces_tempo = {
+      storage_backend     = "local"
+      persistence_enabled = true
+      persistence_size    = "50Gi"
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace.backend == "local" && yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace.local.path == "/var/tempo/traces" && !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo.storage.trace), "s3")
+    error_message = "Local storage must keep blocks on Tempo's volume, with no S3 settings"
+  }
+
+  assert {
+    condition     = length(module.tempo_bucket) == 0 && length(module.tempo_role) == 0 && length(aws_eks_pod_identity_association.tempo) == 0 && output.tempo_s3_bucket == null && output.tempo_role_arn == null
+    error_message = "Local storage needs no bucket and no AWS role"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).persistence.enabled == true && yamldecode(helm_release.tempo[0].values[0]).persistence.size == "50Gi" && length(yamldecode(helm_release.tempo[0].values[0]).extraVolumes) == 0 && length(yamldecode(helm_release.tempo[0].values[0]).tempo.extraVolumeMounts) == 0
+    error_message = "With persistence, Tempo's volume must be the chart's claim, not an emptyDir"
+  }
+}
+
+run "tempo_uses_a_size_limited_scratch_volume_by_default" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).persistence.enabled == false && yamldecode(helm_release.tempo[0].values[0]).extraVolumes[0].emptyDir.sizeLimit == "10Gi" && yamldecode(helm_release.tempo[0].values[0]).tempo.extraVolumeMounts[0].mountPath == "/var/tempo"
+    error_message = "Without persistence, Tempo's volume must be a 10Gi emptyDir at /var/tempo"
+  }
+
+  assert {
+    condition     = !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo), "metricsGenerator") && length(helm_release.tempo[0].values) == 1
+    error_message = "The metrics generator and extra values must be off by default"
+  }
+}
+
+run "tempo_metrics_generator_writes_to_the_in_cluster_prometheus" {
+  command = plan
+
+  variables {
+    metrics_providers = ["prometheus"]
+    traces_providers  = ["tempo"]
+    grafana_enabled   = true
+    traces_tempo = {
+      metrics_generator_enabled = true
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.enabled == true && yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0].url == "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090/api/v1/write" && !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0]), "sigv4")
+    error_message = "The generator must remote-write to the in-cluster Prometheus, unsigned"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.overrides.defaults.metrics_generator.processors == ["service-graphs", "span-metrics"]
+    error_message = "The generator must run the service graph and span metrics processors"
+  }
+
+  assert {
+    condition     = one([for source in yamldecode(helm_release.grafana[0].values[0]).datasources["datasources.yaml"].datasources : source if source.uid == "ravion-tempo"]).jsonData.serviceMap.datasourceUid == "ravion-prometheus"
+    error_message = "Grafana's Tempo data source must draw its service map from Prometheus"
+  }
+}
+
+run "tempo_metrics_generator_signs_its_writes_to_amp" {
+  command = plan
+
+  variables {
+    metrics_providers = ["amp"]
+    traces_providers  = ["tempo"]
+    traces_tempo = {
+      storage_backend           = "local"
+      metrics_generator_enabled = true
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0].sigv4.region == "us-east-2"
+    error_message = "Writes to AMP must be signed with SigV4"
+  }
+
+  assert {
+    condition     = length(module.tempo_role) == 1 && length(aws_eks_pod_identity_association.tempo) == 1 && one([for statement in data.aws_iam_policy_document.tempo[0].statement : statement if statement.sid == "WriteGeneratedMetrics"]).actions == toset(["aps:RemoteWrite"])
+    error_message = "With local storage, Tempo's role must exist for AMP remote write only"
+  }
+}
+
+run "tempo_takes_any_chart_values" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    tempo_values = {
+      replicas = 2
+      tempo = {
+        overrides = {
+          defaults = {
+            global = {
+              max_bytes_per_trace = 10000000
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(helm_release.tempo[0].values) == 2 && yamldecode(helm_release.tempo[0].values[1]).replicas == 2 && yamldecode(helm_release.tempo[0].values[1]).tempo.overrides.defaults.global.max_bytes_per_trace == 10000000
+    error_message = "tempo_values must reach the chart after the module's own values"
+  }
+}
+
+run "rejects_a_generator_with_nowhere_to_write" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    traces_tempo = {
+      metrics_generator_enabled = true
+    }
+  }
+
+  expect_failures = [helm_release.tempo]
+}
+
+run "rejects_unknown_tempo_storage" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    traces_tempo = {
+      storage_backend = "gcs"
+    }
+  }
+
+  expect_failures = [var.traces_tempo]
+}
+
+run "rejects_tempo_values_that_are_not_an_object" {
+  command = plan
+
+  variables {
+    traces_providers = ["tempo"]
+    tempo_values     = "replicas: 2"
+  }
+
+  expect_failures = [var.tempo_values]
 }

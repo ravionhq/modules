@@ -1487,17 +1487,32 @@ variable "traces_xray" {
 
 variable "traces_tempo" {
   type = object({
-    retention_days     = optional(number)
-    s3_bucket_name     = optional(string)
-    local_storage_size = optional(string)
+    retention_days            = optional(number)
+    storage_backend           = optional(string)
+    s3_bucket_name            = optional(string)
+    persistence_enabled       = optional(bool)
+    persistence_size          = optional(string)
+    metrics_generator_enabled = optional(bool)
   })
-  description = "In-cluster Tempo: how many days traces stay queryable (30 when null), an existing bucket to store blocks in (null or blank creates one), and the size limit of Tempo's local working volume for its write-ahead log and live store (10Gi when null)."
+  description = <<-EOT
+    In-cluster Tempo.
+    - retention_days: how long traces stay queryable (30 when null).
+    - storage_backend: s3 (the default) keeps blocks in an S3 bucket, s3_bucket_name or a created one. local keeps them on Tempo's own volume, which suits a single replica only and survives restarts only with persistence.
+    - persistence_enabled puts Tempo's volume (write-ahead log, live store and, with local storage, the blocks) on a PersistentVolumeClaim, which needs a StorageClass (ebs_csi_driver_enabled). Off, it is an emptyDir.
+    - persistence_size is the claim's size, or the emptyDir's size limit (10Gi when null).
+    - metrics_generator_enabled turns on Tempo's metrics generator: service graphs and span metrics, written to the in-cluster Prometheus or, without it, Amazon Managed Prometheus. Grafana's Tempo data source then draws the service map from them.
+  EOT
   default     = {}
   nullable    = false
 
   validation {
     condition     = var.traces_tempo.retention_days == null || try(var.traces_tempo.retention_days >= 1, false)
     error_message = "The traces_tempo.retention_days must be at least 1."
+  }
+
+  validation {
+    condition     = contains(["", "s3", "local"], try(trimspace(var.traces_tempo.storage_backend), ""))
+    error_message = "The traces_tempo.storage_backend must be s3 or local."
   }
 }
 
@@ -1527,9 +1542,21 @@ variable "tempo_resources" {
   nullable    = false
 }
 
+variable "tempo_values" {
+  type        = any
+  description = "Any grafana-community/tempo chart values, as an object, merged over the values this module derives and before tempo_helm_values. The route to replicas, resources, limits and overrides, query tuning, tolerations, or a private image registry."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = can(keys(var.tempo_values))
+    error_message = "The tempo_values must be an object of chart values."
+  }
+}
+
 variable "tempo_helm_values" {
   type        = list(string)
-  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives (later entries win). The route to more replicas, tolerations, or a private image registry."
+  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives and tempo_values (later entries win)."
   default     = []
   nullable    = false
 }

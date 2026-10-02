@@ -89,9 +89,12 @@ locals {
 
   # A form leaves an unused bucket field blank rather than null.
   tempo_config = {
-    retention_days     = coalesce(var.traces_tempo.retention_days, 30)
-    s3_bucket          = try(trimspace(var.traces_tempo.s3_bucket_name), "") == "" ? null : trimspace(var.traces_tempo.s3_bucket_name)
-    local_storage_size = coalesce(var.traces_tempo.local_storage_size, "10Gi")
+    retention_days            = coalesce(var.traces_tempo.retention_days, 30)
+    storage_backend           = try(trimspace(var.traces_tempo.storage_backend), "") == "" ? "s3" : trimspace(var.traces_tempo.storage_backend)
+    s3_bucket                 = try(trimspace(var.traces_tempo.s3_bucket_name), "") == "" ? null : trimspace(var.traces_tempo.s3_bucket_name)
+    persistence_enabled       = coalesce(var.traces_tempo.persistence_enabled, false)
+    persistence_size          = try(trimspace(var.traces_tempo.persistence_size), "") == "" ? "10Gi" : trimspace(var.traces_tempo.persistence_size)
+    metrics_generator_enabled = coalesce(var.traces_tempo.metrics_generator_enabled, false)
   }
 
   loki_config = {
