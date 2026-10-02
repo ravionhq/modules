@@ -7,7 +7,7 @@
 - add_button_label: Add policy ARN
   collapsible: true
   default: []
-  description: IAM managed policy ARNs for the Terraform plan runner role. Without default policies, include S3 access to the ravion-terraform-plans-<account-id> bucket.
+  description: IAM managed policy ARNs for the Terraform plan runner role. Without default policies, allow s3:CreateBucket, s3:PutObject, s3:GetObject, and s3:ListBucket on the ravion-terraform-plans-<AWS account number> bucket in this account.
   id: terraform_plan_iam_policy_arns
   label: Terraform plan IAM policies
   required: false
@@ -21,7 +21,7 @@
 - add_button_label: Add policy ARN
   collapsible: true
   default: []
-  description: IAM managed policy ARNs for the Terraform apply runner role. Without default policies, include S3 access to the ravion-terraform-plans-<account-id> bucket.
+  description: IAM managed policy ARNs for the Terraform apply runner role. Without default policies, allow s3:CreateBucket, s3:PutObject, s3:GetObject, and s3:ListBucket on the ravion-terraform-plans-<AWS account number> bucket in this account.
   id: terraform_apply_iam_policy_arns
   label: Terraform apply IAM policies
   required: false
