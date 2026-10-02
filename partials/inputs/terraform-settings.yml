@@ -21,3 +21,4 @@
   required: false
   type: object
   collapsible: true
+- $include: ./terraform-runner-permissions.yml

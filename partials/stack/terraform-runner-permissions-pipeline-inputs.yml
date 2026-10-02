@@ -1,0 +1,2 @@
+apply_permissions: '<< len(module.input.terraform_apply_iam_policy_arns) > 0 ? (module.input.terraform_apply_default_policies_enabled != false ? {"attach": module.input.terraform_apply_iam_policy_arns} : {"replace": module.input.terraform_apply_iam_policy_arns}) : nil >>'
+plan_permissions: '<< len(module.input.terraform_plan_iam_policy_arns) > 0 ? (module.input.terraform_plan_default_policies_enabled != false ? {"attach": module.input.terraform_plan_iam_policy_arns} : {"replace": module.input.terraform_plan_iam_policy_arns}) : nil >>'

@@ -4,10 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.13.2
-  description: >-
-    Prevent applies from failing with an inconsistent result when the load balancer controller CRDs are
-    upgraded.
+  version: 0.14.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: cluster

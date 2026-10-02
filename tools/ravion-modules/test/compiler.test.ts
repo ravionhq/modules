@@ -1333,6 +1333,36 @@ describe("monitoring defaults", () => {
   }
 });
 
+describe("Terraform runner permissions", () => {
+  it("adds permission inputs and pipeline values to stack modules", async () => {
+    const definitions = await Promise.all([
+      compileDefinitionFile(join(repoRoot, "compute", "lambda", "rvn-lambda-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "stack", "terraform", "rvn-stack-definition.yml")),
+    ]);
+
+    const applyPermissions =
+      '<< len(module.input.terraform_apply_iam_policy_arns) > 0 ? (module.input.terraform_apply_default_policies_enabled != false ? {"attach": module.input.terraform_apply_iam_policy_arns} : {"replace": module.input.terraform_apply_iam_policy_arns}) : nil >>';
+    const planPermissions =
+      '<< len(module.input.terraform_plan_iam_policy_arns) > 0 ? (module.input.terraform_plan_default_policies_enabled != false ? {"attach": module.input.terraform_plan_iam_policy_arns} : {"replace": module.input.terraform_plan_iam_policy_arns}) : nil >>';
+
+    for (const definition of definitions) {
+      const inputs = getModuleInputs(definition.module);
+      findInput(inputs, "terraform_plan_default_policies_enabled");
+      findInput(inputs, "terraform_plan_iam_policy_arns");
+      findInput(inputs, "terraform_apply_default_policies_enabled");
+      findInput(inputs, "terraform_apply_iam_policy_arns");
+
+      const stack = assertRecord(definition.module.stack, `${definition.type}.module.stack`);
+      const pipelines = assertRecord(stack.pipelines, `${definition.type}.module.stack.pipelines`);
+      const defaults = assertRecord(pipelines.defaults, `${definition.type}.module.stack.pipelines.defaults`);
+      const pipelineInputs = assertRecord(defaults.input, `${definition.type}.module.stack.pipelines.defaults.input`);
+      assert.equal(pipelineInputs.plan_permissions, planPermissions);
+      assert.equal(pipelineInputs.apply_permissions, applyPermissions);
+    }
+  });
+});
+
 function getModuleInputs(module: Record<string, unknown>): Record<string, unknown>[] {
   const inputs = module.inputs;
   assert.ok(Array.isArray(inputs), "module.inputs should be an array");

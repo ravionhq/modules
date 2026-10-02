@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.3.0
-  description: Add Node.js 24.x as a runtime option for zip package functions.
+  version: 1.4.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

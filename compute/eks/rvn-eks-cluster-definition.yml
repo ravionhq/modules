@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.5.0
-  description: Rename default node count inputs to system_node_min_nodes and system_node_max_nodes to make clear they count EC2 nodes.
+  version: 0.6.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: network
