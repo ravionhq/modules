@@ -218,3 +218,32 @@ run "rejects_unknown_load_balancer" {
 
   expect_failures = [var.grafana_access]
 }
+
+run "private_is_the_default_load_balancer" {
+  command = plan
+
+  override_module {
+    target = module.private_alb
+    outputs = {
+      alb_arn            = "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/private/0123456789abcdef"
+      alb_arn_suffix     = "app/private/0123456789abcdef"
+      alb_dns_name       = "internal-private-123.us-east-2.elb.amazonaws.com"
+      alb_zone_id        = "Z3AADJGX6KTTL2"
+      http_listener_arn  = "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/private/0123456789abcdef/http"
+      https_listener_arn = "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/private/0123456789abcdef/https"
+      security_group_id  = "sg-private"
+    }
+  }
+
+  variables {
+    grafana_access = {
+      enabled  = true
+      hostname = "grafana.internal.example.com"
+    }
+  }
+
+  assert {
+    condition     = aws_lb_listener_rule.grafana[0].listener_arn == "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/private/0123456789abcdef/https"
+    error_message = "Without a load_balancer, Grafana must go on the private ALB, never the public one"
+  }
+}

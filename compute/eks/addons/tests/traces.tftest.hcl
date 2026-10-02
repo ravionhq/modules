@@ -562,3 +562,18 @@ run "rejects_tempo_values_that_are_not_an_object" {
 
   expect_failures = [var.tempo_values]
 }
+
+run "tempo_bucket_name_fits_s3_for_a_long_cluster_name" {
+  command = plan
+
+  variables {
+    cluster_name                = "a-very-long-cluster-name-that-fills-the-slug-entirely"
+    public_alb_creation_enabled = false
+    traces_providers            = ["tempo"]
+  }
+
+  assert {
+    condition     = length(output.tempo_s3_bucket) <= 63 && can(regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$", output.tempo_s3_bucket)) && !strcontains(output.tempo_s3_bucket, "--")
+    error_message = "Tempo's generated bucket name must be a valid S3 name of at most 63 characters"
+  }
+}

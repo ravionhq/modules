@@ -1350,11 +1350,11 @@ variable "grafana_helm_values" {
 variable "grafana_access" {
   type = object({
     enabled                = optional(bool, false)
-    load_balancer          = optional(string, "public")
+    load_balancer          = optional(string, "private")
     hostname               = optional(string)
     listener_rule_priority = optional(number)
   })
-  description = "Serve the in-cluster Grafana on a shared ALB's HTTPS listener at hostname. load_balancer is public (the internet-facing ALB) or private (the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router). Null listener_rule_priority lets AWS assign one. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name). Who can sign in is grafana_auth and grafana_auth_providers."
+  description = "Serve the in-cluster Grafana on a shared ALB's HTTPS listener at hostname. load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB). Null listener_rule_priority lets AWS assign one. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name). Who can sign in is grafana_auth and grafana_auth_providers."
   default     = {}
   nullable    = false
 

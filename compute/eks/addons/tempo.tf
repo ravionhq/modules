@@ -39,7 +39,9 @@ locals {
 
   # The same naming as the Loki bucket: lowercase, globally unique through the
   # account id, and truncated in the cluster segment rather than as a whole.
-  tempo_generated_bucket_name = "ravion-tempo-${local.loki_cluster_slug}-${data.aws_caller_identity.current.account_id}"
+  # "ravion-tempo-" is a character longer than "ravion-loki-", so the segment
+  # is one shorter to stay within S3's 63.
+  tempo_generated_bucket_name = "ravion-tempo-${replace(substr(local.loki_cluster_slug, 0, 37), "/-+$/", "")}-${data.aws_caller_identity.current.account_id}"
 
   tempo_s3_enabled    = local.tempo_enabled && local.tempo_config.storage_backend == "s3"
   tempo_create_bucket = local.tempo_s3_enabled && local.tempo_config.s3_bucket == null
@@ -227,6 +229,17 @@ resource "aws_eks_pod_identity_association" "tempo" {
 # Tempo
 ################################################################################
 
+# Turning persistence on or off adds or removes the StatefulSet's volume claim
+# template, which Kubernetes refuses to change in place, so the release is
+# reinstalled instead. Tempo is down for that apply. With S3 storage only the
+# write-ahead log is lost; with local storage, every block. A larger volume is
+# a different case: statefulset_volume_expansion_enabled grows it in place.
+resource "terraform_data" "tempo_volume_kind" {
+  count = local.tempo_enabled ? 1 : 0
+
+  input = local.tempo_config.persistence_enabled
+}
+
 resource "helm_release" "tempo" {
   count = local.tempo_enabled ? 1 : 0
 
@@ -322,6 +335,8 @@ resource "helm_release" "tempo" {
   ]
 
   lifecycle {
+    replace_triggered_by = [terraform_data.tempo_volume_kind[count.index]]
+
     precondition {
       condition     = !local.tempo_generator_enabled || local.tempo_generator_target != null
       error_message = "Tempo's metrics generator writes service graphs and span metrics to Prometheus, but metrics_providers has neither prometheus nor amp. Select one, or turn traces_tempo.metrics_generator_enabled off."

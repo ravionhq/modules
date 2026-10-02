@@ -377,3 +377,58 @@ run "rejects_the_same_provider_twice" {
 
   expect_failures = [var.grafana_auth_providers]
 }
+
+run "rejects_settings_that_undo_a_restriction" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_domains = ["example.com"], settings = { allowed_domains = "" } },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_a_restriction_google_does_not_apply" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", team_ids = ["150"] },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "github_restricted_to_an_email_domain" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "github", client_id = "gh-client", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf", allowed_domains = ["example.com"] },
+    ]
+  }
+
+  assert {
+    condition     = jsondecode(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.github"].allowed_domains) == ["example.com"]
+    error_message = "GitHub must accept an email domain as its restriction"
+  }
+}
+
+run "store_admits_grafana_alone_when_no_workload_namespace_is_named" {
+  command = plan
+
+  variables {
+    eso_allowed_namespaces = []
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_domains = ["example.com"] },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.external_secrets_stores[0].values[0]).allowedNamespaces == ["ravion-operator"]
+    error_message = "With only the add-ons' own secrets, the store must admit Grafana's namespace and nothing else"
+  }
+}

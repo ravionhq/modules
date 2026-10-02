@@ -144,11 +144,18 @@ locals {
   )
 
   # Google, GitHub and gitlab.com sign in anyone who has an account there, so
-  # each needs a restriction. Entra ID, Okta, self-managed GitLab and a generic
-  # provider sign in only the identity provider's own users.
+  # each needs one of the restrictions Grafana applies to that provider. Entra
+  # ID, Okta, self-managed GitLab and a generic provider sign in only the
+  # identity provider's own users.
+  grafana_auth_restrictions = {
+    google = ["allowed_domains", "allowed_groups"]
+    github = ["allowed_organizations", "team_ids", "allowed_domains"]
+    gitlab = ["allowed_groups", "allowed_domains"]
+  }
+
   grafana_auth_unrestricted = [
     for provider, lists in local.grafana_auth_lists : provider
-    if contains(["google", "github", "gitlab"], provider) && !(provider == "gitlab" && local.grafana_auth_values[provider].base_url != "") && alltrue([for values in values(lists) : length(values) == 0])
+    if contains(keys(local.grafana_auth_restrictions), provider) && !(provider == "gitlab" && local.grafana_auth_values[provider].base_url != "") && alltrue([for key in local.grafana_auth_restrictions[provider] : length(lists[key]) == 0])
   ]
 
   grafana_auth_without_client = [
@@ -164,8 +171,16 @@ locals {
     )
   ]
 
-  grafana_auth_settings_with_secrets = [
+  # settings carries the keys the module does not, so it can neither switch a
+  # provider, hold a secret, nor quietly undo a restriction the checks read.
+  grafana_auth_managed_keys = [
+    "enabled", "client_id", "client_secret", "name", "scopes", "role_attribute_path",
+    "auth_url", "token_url", "api_url",
+    "allowed_domains", "allowed_groups", "allowed_organizations", "team_ids",
+  ]
+
+  grafana_auth_settings_overlapping = [
     for provider, entry in local.grafana_auth_by_provider : provider
-    if length(setintersection(keys(entry.settings), ["client_secret", "enabled"])) > 0
+    if length(setintersection(keys(entry.settings), local.grafana_auth_managed_keys)) > 0
   ]
 }

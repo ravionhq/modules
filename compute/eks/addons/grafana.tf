@@ -218,7 +218,7 @@ resource "helm_release" "grafana" {
 
     precondition {
       condition     = length(local.grafana_auth_unrestricted) == 0
-      error_message = "Anyone with an account at these providers could sign in to Grafana: ${join(", ", local.grafana_auth_unrestricted)}. Set google allowed_domains or allowed_groups, github allowed_organizations or team_ids, and gitlab allowed_groups (or a self-managed url)."
+      error_message = "Anyone with an account at these providers could sign in to Grafana: ${join(", ", local.grafana_auth_unrestricted)}. Set google allowed_domains or allowed_groups; github allowed_organizations, team_ids or allowed_domains; gitlab allowed_groups or allowed_domains (or a self-managed url)."
     }
 
     precondition {
@@ -227,8 +227,8 @@ resource "helm_release" "grafana" {
     }
 
     precondition {
-      condition     = length(local.grafana_auth_settings_with_secrets) == 0
-      error_message = "A Grafana sign-in provider's settings set client_secret or enabled: ${join(", ", local.grafana_auth_settings_with_secrets)}. The client secret is client_secret_arn, read through External Secrets, and grafana_auth_providers turns a provider on."
+      condition     = length(local.grafana_auth_settings_overlapping) == 0
+      error_message = "A Grafana sign-in provider's settings set a key the module manages: ${join(", ", local.grafana_auth_settings_overlapping)}. settings is for the other keys of [auth.<provider>]. Set client_id, the restrictions, endpoints, scopes, name and role_attribute_path as their own fields, and the client secret as client_secret_arn."
     }
   }
 }
