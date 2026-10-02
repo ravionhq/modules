@@ -75,7 +75,7 @@ resource "helm_release" "observability_secrets" {
   lifecycle {
     precondition {
       condition     = var.eso_enabled && var.eso_cluster_secret_stores_creation_enabled
-      error_message = "A secret ARN was given (a vendor observability provider's token, or Grafana's Google client secret), but the External Secrets Operator is off (eso_enabled / eso_cluster_secret_stores_creation_enabled). These secrets are materialized in-cluster by ESO and are never passed as Helm values, so the operator and its ClusterSecretStore are a hard requirement: turn External Secrets on, or drop the provider or Grafana's public access."
+      error_message = "A secret ARN was given (a vendor observability provider's token, or Grafana's Google client secret), but the External Secrets Operator is off (eso_enabled / eso_cluster_secret_stores_creation_enabled). These secrets are materialized in-cluster by ESO and are never passed as Helm values, so the operator and its ClusterSecretStore are a hard requirement: turn External Secrets on, or drop the provider or Grafana's load balancer access."
     }
   }
 }

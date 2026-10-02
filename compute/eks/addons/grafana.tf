@@ -164,7 +164,7 @@ resource "helm_release" "grafana" {
 
         # SigV4 is off in Grafana by default and a datasource that asks for it
         # without this simply fails to authenticate, with no hint as to why.
-        # Public access adds Google sign-in (grafana_public.tf).
+        # Load balancer access adds Google sign-in (grafana_access.tf).
         "grafana.ini" = local.grafana_ini
         envValueFrom  = local.grafana_env_value_from
 

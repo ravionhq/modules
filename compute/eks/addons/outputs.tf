@@ -559,11 +559,11 @@ output "prometheus_chart_version" {
 }
 
 output "grafana_url" {
-  description = "Grafana's URL on the shared public ALB (null unless grafana_public_access is enabled)."
-  value       = local.grafana_public_enabled ? "https://${local.grafana_hostname}" : null
+  description = "Grafana's URL on the chosen shared ALB (null unless grafana_access is enabled)."
+  value       = local.grafana_access_enabled ? "https://${local.grafana_hostname}" : null
 }
 
 output "grafana_target_group_arn" {
-  description = "Target group the shared public ALB routes Grafana's hostname to (null unless grafana_public_access is enabled)."
-  value       = local.grafana_public_enabled ? aws_lb_target_group.grafana[0].arn : null
+  description = "Target group the chosen shared ALB routes Grafana's hostname to (null unless grafana_access is enabled)."
+  value       = local.grafana_access_enabled ? aws_lb_target_group.grafana[0].arn : null
 }

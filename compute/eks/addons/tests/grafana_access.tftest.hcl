@@ -1,5 +1,5 @@
 ################################################################################
-# In-cluster Grafana on the shared public ALB, behind Google sign-in
+# In-cluster Grafana on a shared ALB, behind Google sign-in
 ################################################################################
 
 mock_provider "aws" {
@@ -72,7 +72,7 @@ variables {
   traces_providers            = ["tempo"]
   ravion_operator_enabled     = false
   grafana_enabled             = true
-  grafana_public_access = {
+  grafana_access = {
     enabled                  = true
     hostname                 = "grafana.example.com"
     google_client_id         = "1234.apps.googleusercontent.com"
@@ -81,25 +81,25 @@ variables {
   }
 }
 
-run "private_by_default" {
+run "in_cluster_only_by_default" {
   command = plan
 
   variables {
-    grafana_public_access = {}
+    grafana_access = {}
   }
 
   assert {
     condition     = length(aws_lb_target_group.grafana) == 0 && length(aws_lb_listener_rule.grafana) == 0 && length(helm_release.grafana_alb_binding) == 0 && output.grafana_url == null
-    error_message = "Grafana must stay in-cluster unless public access is on"
+    error_message = "Grafana must stay in-cluster unless load balancer access is on"
   }
 
   assert {
     condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].auth == { sigv4_auth_enabled = true } && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]), "auth.google") && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]), "auth.basic")
-    error_message = "A private Grafana must keep its login form and have no Google sign-in"
+    error_message = "Grafana without load balancer access must keep its login form and have no Google sign-in"
   }
 }
 
-run "routes_the_hostname_to_grafana_on_https_only" {
+run "routes_the_hostname_on_the_public_alb_https_listener" {
   command = plan
 
   assert {
@@ -138,12 +138,12 @@ run "signs_in_with_google_for_allowed_domains_only" {
 
   assert {
     condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].auth.disable_login_form == true && yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].server.root_url == "https://grafana.example.com" && yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].users.auto_assign_org_role == "Viewer"
-    error_message = "A public Grafana must drop the login form, know its external URL, and make Google users Viewers by default"
+    error_message = "Grafana behind a load balancer must drop the login form, know its external URL, and make Google users Viewers by default"
   }
 
   assert {
     condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.basic"].enabled == false
-    error_message = "A public Grafana must refuse the admin password over HTTP basic auth"
+    error_message = "Grafana behind a load balancer must refuse the admin password over HTTP basic auth"
   }
 
   assert {
@@ -177,7 +177,7 @@ run "rejects_no_allowed_domains" {
   command = plan
 
   variables {
-    grafana_public_access = {
+    grafana_access = {
       enabled                  = true
       hostname                 = "grafana.example.com"
       google_client_id         = "1234.apps.googleusercontent.com"
@@ -192,7 +192,7 @@ run "rejects_no_hostname" {
   command = plan
 
   variables {
-    grafana_public_access = {
+    grafana_access = {
       enabled                  = true
       google_client_id         = "1234.apps.googleusercontent.com"
       google_client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
@@ -207,20 +207,20 @@ run "rejects_unknown_role" {
   command = plan
 
   variables {
-    grafana_public_access = {
+    grafana_access = {
       enabled     = true
       google_role = "Owner"
     }
   }
 
-  expect_failures = [var.grafana_public_access]
+  expect_failures = [var.grafana_access]
 }
 
 run "rejects_no_client_secret" {
   command = plan
 
   variables {
-    grafana_public_access = {
+    grafana_access = {
       enabled                = true
       hostname               = "grafana.example.com"
       google_client_id       = "1234.apps.googleusercontent.com"
@@ -239,4 +239,75 @@ run "rejects_without_external_secrets" {
   }
 
   expect_failures = [helm_release.observability_secrets]
+}
+
+run "routes_the_hostname_on_the_private_alb_https_listener" {
+  command = plan
+
+  override_module {
+    target = module.private_alb
+    outputs = {
+      alb_arn            = "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/private/0123456789abcdef"
+      alb_arn_suffix     = "app/private/0123456789abcdef"
+      alb_dns_name       = "internal-private-123.us-east-2.elb.amazonaws.com"
+      alb_zone_id        = "Z3AADJGX6KTTL2"
+      http_listener_arn  = "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/private/0123456789abcdef/http"
+      https_listener_arn = "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/private/0123456789abcdef/https"
+      security_group_id  = "sg-private"
+    }
+  }
+
+  variables {
+    private_alb_creation_enabled = true
+    private_alb_https_enabled    = true
+    private_alb_certificate_arns = ["arn:aws:acm:us-east-2:123456789012:certificate/66666666-7777-8888-9999-000000000000"]
+    grafana_access = {
+      enabled                  = true
+      load_balancer            = "private"
+      hostname                 = "grafana.internal.example.com"
+      google_client_id         = "1234.apps.googleusercontent.com"
+      google_client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+      google_allowed_domains   = ["example.com"]
+    }
+  }
+
+  assert {
+    condition     = aws_lb_listener_rule.grafana[0].listener_arn == "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/app/private/0123456789abcdef/https"
+    error_message = "A private Grafana must be routed on the private ALB's HTTPS listener"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].enabled == true && yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.basic"].enabled == false && output.grafana_url == "https://grafana.internal.example.com"
+    error_message = "A private Grafana must still sign in with Google only"
+  }
+}
+
+run "rejects_private_without_the_private_alb" {
+  command = plan
+
+  variables {
+    grafana_access = {
+      enabled                  = true
+      load_balancer            = "private"
+      hostname                 = "grafana.internal.example.com"
+      google_client_id         = "1234.apps.googleusercontent.com"
+      google_client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+      google_allowed_domains   = ["example.com"]
+    }
+  }
+
+  expect_failures = [aws_lb_listener_rule.grafana]
+}
+
+run "rejects_unknown_load_balancer" {
+  command = plan
+
+  variables {
+    grafana_access = {
+      enabled       = true
+      load_balancer = "internal"
+    }
+  }
+
+  expect_failures = [var.grafana_access]
 }

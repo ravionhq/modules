@@ -1,35 +1,38 @@
 ################################################################################
-# In-cluster Grafana on the shared public ALB, behind Google sign-in (optional)
+# In-cluster Grafana on a shared ALB, behind Google sign-in (optional)
 #
-# Grafana stays a ClusterIP Service; the shared public ALB reaches its pods
+# Grafana stays a ClusterIP Service; the chosen shared ALB reaches its pods
 # through a target group the load balancer controller binds to that Service,
 # the same TargetGroupBinding pattern the EKS workload modules use. The ALB
 # routes one hostname to it on the HTTPS listener only.
 #
-# Anyone on the internet can reach the login page, so sign-in is Google OAuth
-# limited to the allowed domains, and Grafana's own login form is turned off.
+# The public ALB puts the sign-in page on the internet. The private ALB keeps it
+# inside the VPC and the networks connected to it, such as a VPN or a Tailscale
+# subnet router. Either way sign-in is Google OAuth limited to the allowed
+# domains, and Grafana's own login form and password access are turned off.
 # The client secret is a Secrets Manager ARN the External Secrets Operator
 # materializes into a Kubernetes Secret Grafana reads as an environment
 # variable: it is never a Helm value or a Terraform output.
 #
-# DNS is not managed here. Point the hostname at public_alb_dns_name, and make
-# sure one of the HTTPS listener's certificates covers it.
+# DNS is not managed here. Point the hostname at the chosen ALB's DNS name, and
+# make sure one of its HTTPS listener's certificates covers it.
 ################################################################################
 
 locals {
-  grafana_public_enabled = var.grafana_enabled && var.grafana_public_access.enabled
+  grafana_access_enabled = var.grafana_enabled && var.grafana_access.enabled
+  grafana_access_public  = var.grafana_access.load_balancer == "public"
 
-  grafana_hostname          = try(trimspace(var.grafana_public_access.hostname), "")
-  grafana_google_client_id  = try(trimspace(var.grafana_public_access.google_client_id), "")
-  grafana_google_secret_arn = try(trimspace(var.grafana_public_access.google_client_secret_arn), "")
-  grafana_google_domains    = [for domain in var.grafana_public_access.google_allowed_domains : trimspace(domain) if trimspace(domain) != ""]
+  grafana_hostname          = try(trimspace(var.grafana_access.hostname), "")
+  grafana_google_client_id  = try(trimspace(var.grafana_access.google_client_id), "")
+  grafana_google_secret_arn = try(trimspace(var.grafana_access.google_client_secret_arn), "")
+  grafana_google_domains    = [for domain in var.grafana_access.google_allowed_domains : trimspace(domain) if trimspace(domain) != ""]
 
   grafana_google_secret_name = "ravion-grafana-google-oauth"
 
   # Target group names are at most 32 characters and cannot end in a hyphen.
   grafana_target_group_name = trimsuffix(substr("${local.name}-grafana", 0, 32), "-")
 
-  grafana_google_oauth_secrets = local.grafana_public_enabled ? [{
+  grafana_google_oauth_secrets = local.grafana_access_enabled ? [{
     name      = local.grafana_google_secret_name
     namespace = local.grafana_namespace
     template  = {}
@@ -39,9 +42,10 @@ locals {
     }]
   }] : []
 
-  # grafana.ini: SigV4 for the AMP data source always; with public access, the
-  # external URL Google redirects back to, Google sign-in, and no login form.
-  grafana_public_ini = {
+  # grafana.ini: SigV4 for the AMP data source always; with load balancer
+  # access, the external URL Google redirects back to, Google sign-in, and no
+  # login form.
+  grafana_access_ini = {
     server = {
       domain   = local.grafana_hostname
       root_url = "https://${local.grafana_hostname}"
@@ -55,10 +59,10 @@ locals {
       use_pkce        = true
     }
     users = {
-      auto_assign_org_role = var.grafana_public_access.google_role
+      auto_assign_org_role = var.grafana_access.google_role
     }
     # The login form being off does not stop the admin password over HTTP
-    # basic auth, which would reach the API from the internet.
+    # basic auth, which would reach the API through the load balancer.
     "auth.basic" = {
       enabled = false
     }
@@ -70,15 +74,15 @@ locals {
     {
       auth = merge(
         { sigv4_auth_enabled = true },
-        local.grafana_public_enabled ? { disable_login_form = true } : {},
+        local.grafana_access_enabled ? { disable_login_form = true } : {},
       )
     },
-    { for section, settings in local.grafana_public_ini : section => settings if local.grafana_public_enabled },
+    { for section, settings in local.grafana_access_ini : section => settings if local.grafana_access_enabled },
   )
 
   # Grafana reads any setting from GF_<SECTION>_<KEY>, so the secret never
   # appears in grafana.ini.
-  grafana_env_value_from = local.grafana_public_enabled ? {
+  grafana_env_value_from = local.grafana_access_enabled ? {
     GF_AUTH_GOOGLE_CLIENT_SECRET = {
       secretKeyRef = {
         name = local.grafana_google_secret_name
@@ -89,7 +93,7 @@ locals {
 }
 
 resource "aws_lb_target_group" "grafana" {
-  count = local.grafana_public_enabled ? 1 : 0
+  count = local.grafana_access_enabled ? 1 : 0
 
   name        = local.grafana_target_group_name
   port        = 3000
@@ -106,10 +110,10 @@ resource "aws_lb_target_group" "grafana" {
 }
 
 resource "aws_lb_listener_rule" "grafana" {
-  count = local.grafana_public_enabled ? 1 : 0
+  count = local.grafana_access_enabled ? 1 : 0
 
-  listener_arn = module.public_alb[0].https_listener_arn
-  priority     = var.grafana_public_access.listener_rule_priority
+  listener_arn = local.grafana_access_public ? one(module.public_alb[*].https_listener_arn) : one(module.private_alb[*].https_listener_arn)
+  priority     = var.grafana_access.listener_rule_priority
 
   action {
     type             = "forward"
@@ -126,29 +130,29 @@ resource "aws_lb_listener_rule" "grafana" {
 
   lifecycle {
     precondition {
-      condition     = var.public_alb_creation_enabled && var.public_alb_https_enabled
-      error_message = "Grafana's public access needs the shared public ALB with HTTPS on (public_alb_creation_enabled and public_alb_https_enabled). Grafana is never served over plain HTTP."
+      condition     = local.grafana_access_public ? var.public_alb_creation_enabled && var.public_alb_https_enabled : var.private_alb_creation_enabled && var.private_alb_https_enabled
+      error_message = "Grafana's load balancer access needs the chosen shared ALB with HTTPS on (public_alb_creation_enabled and public_alb_https_enabled, or the private_alb_ pair). Grafana is never served over plain HTTP."
     }
 
     precondition {
       condition     = local.grafana_hostname != ""
-      error_message = "Grafana's public access needs a hostname, routed on the public ALB's HTTPS listener."
+      error_message = "Grafana's load balancer access needs a hostname, routed on the chosen ALB's HTTPS listener."
     }
 
     precondition {
       condition     = local.grafana_google_client_id != "" && local.grafana_google_secret_arn != ""
-      error_message = "Grafana's public access needs a Google OAuth client ID and the Secrets Manager ARN of its client secret."
+      error_message = "Grafana's load balancer access needs a Google OAuth client ID and the Secrets Manager ARN of its client secret."
     }
 
     precondition {
       condition     = length(local.grafana_google_domains) > 0
-      error_message = "Grafana's public access needs at least one allowed Google domain; without one, any Google account could sign in."
+      error_message = "Grafana's load balancer access needs at least one allowed Google domain; without one, any Google account could sign in."
     }
   }
 }
 
 resource "helm_release" "grafana_alb_binding" {
-  count = local.grafana_public_enabled ? 1 : 0
+  count = local.grafana_access_enabled ? 1 : 0
 
   name      = "ravion-grafana-alb-binding"
   namespace = local.grafana_namespace
