@@ -393,6 +393,88 @@ run "rejects_settings_that_undo_a_restriction" {
   expect_failures = [helm_release.grafana]
 }
 
+run "google_roles_from_workspace_groups" {
+  command = plan
+
+  variables {
+    grafana_auth = {
+      login_form_enabled = false
+      default_role       = "Viewer"
+    }
+    grafana_auth_providers = [
+      {
+        provider            = "google"
+        client_id           = "1234.apps.googleusercontent.com"
+        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains     = ["example.com"]
+        scopes              = "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"
+        role_attribute_path = "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || contains(groups[*], 'grafana-editors@example.com') && 'Editor' || 'Viewer'"
+      },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].scopes == "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"
+    error_message = "Google must request the Cloud Identity groups scope, without which Grafana reads no groups"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].role_attribute_path == "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || contains(groups[*], 'grafana-editors@example.com') && 'Editor' || 'Viewer'"
+    error_message = "The role mapping over Workspace groups must reach Grafana as it is"
+  }
+}
+
+run "google_groups_scope_may_be_comma_separated" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_groups    = ["grafana-users@example.com"]
+        scopes            = "openid,email,profile,https://www.googleapis.com/auth/cloud-identity.groups.readonly"
+      },
+    ]
+  }
+
+  assert {
+    condition     = jsondecode(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].allowed_groups) == ["grafana-users@example.com"]
+    error_message = "Google sign-in must be limited to the allowed Workspace groups"
+  }
+}
+
+run "rejects_google_allowed_groups_without_the_groups_scope" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_groups = ["grafana-users@example.com"] },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_google_roles_from_groups_without_the_groups_scope" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider            = "google"
+        client_id           = "1234.apps.googleusercontent.com"
+        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains     = ["example.com"]
+        role_attribute_path = "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || 'Viewer'"
+      },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
 run "rejects_a_restriction_google_does_not_apply" {
   command = plan
 

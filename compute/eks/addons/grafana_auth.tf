@@ -171,6 +171,19 @@ locals {
     )
   ]
 
+  # Grafana asks Google for a user's Workspace groups only when the scopes
+  # include the Cloud Identity groups scope. Without it, allowed_groups admits
+  # nobody and a role mapping over groups falls back to the default role.
+  grafana_google_groups_scope = "https://www.googleapis.com/auth/cloud-identity.groups.readonly"
+
+  grafana_auth_google_groups_without_scope = [
+    for provider, entry in local.grafana_auth_by_provider : provider
+    if provider == "google" && (
+      length(local.grafana_auth_lists[provider].allowed_groups) > 0 ||
+      strcontains(try(trimspace(entry.role_attribute_path), ""), "groups")
+    ) && !contains(split(" ", replace(try(trimspace(entry.scopes), ""), ",", " ")), local.grafana_google_groups_scope)
+  ]
+
   # settings carries the keys the module does not, so it can neither switch a
   # provider, hold a secret, nor quietly undo a restriction the checks read.
   grafana_auth_managed_keys = [

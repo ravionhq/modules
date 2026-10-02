@@ -234,6 +234,11 @@ resource "helm_release" "grafana" {
     }
 
     precondition {
+      condition     = length(local.grafana_auth_google_groups_without_scope) == 0
+      error_message = "Google sign-in uses Workspace groups (allowed_groups, or groups in role_attribute_path) but its scopes leave out ${local.grafana_google_groups_scope}. Grafana reads no groups without it. Set scopes to \"openid email profile ${local.grafana_google_groups_scope}\", and enable the Cloud Identity API in the OAuth client's Google Cloud project."
+    }
+
+    precondition {
       condition     = length(local.grafana_auth_settings_overlapping) == 0
       error_message = "A Grafana sign-in provider's settings set a key the module manages: ${join(", ", local.grafana_auth_settings_overlapping)}. settings is for the other keys of [auth.<provider>]. Set client_id, the restrictions, endpoints, scopes, name and role_attribute_path as their own fields, and the client secret as client_secret_arn."
     }

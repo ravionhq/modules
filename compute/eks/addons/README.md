@@ -403,10 +403,12 @@ The chart generates an admin password into a Secret; `grafana_helm_values` is th
   - `settings` passes any other key of the section through verbatim.
 - Every client secret is a Secrets Manager ARN. The External Secrets Operator writes it into a Secret, and Grafana reads it as `GF_AUTH_<PROVIDER>_CLIENT_SECRET`, never as a Helm value.
 - `grafana_auth.default_role` (default `Viewer`) is the role an account gets on first sign-in, unless the provider's role mapping says otherwise.
+- Roles can follow groups at every sign-in through `role_attribute_path`. For Google Workspace groups, Grafana reads a user's direct group memberships, as group emails, only when `scopes` includes `https://www.googleapis.com/auth/cloud-identity.groups.readonly`, and the Cloud Identity API is enabled in the OAuth client's Google Cloud project. For example, `scopes = "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"` with `role_attribute_path = "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || 'Viewer'"`.
 - Plan refuses these configurations:
   - No way to sign in at all.
   - A provider without its client ID and secret ARN, or without its tenant, org URL or endpoints.
   - A client secret placed in `settings`.
+  - Google using Workspace groups, in `allowed_groups` or `role_attribute_path`, without the Cloud Identity groups scope.
   - Google, GitHub or gitlab.com with no restriction, since anyone with an account there could otherwise sign in.
 - Register `https://<hostname>/login/<provider>` as each OAuth application's redirect URI.
 

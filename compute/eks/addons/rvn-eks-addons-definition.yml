@@ -1004,12 +1004,10 @@ module:
           show_when:
             provider: generic_oauth
           type: string
-        - description: Space-separated scopes to request. Leave blank for Grafana's default.
+        - description: 'Space-separated scopes to request. Leave blank for the provider''s default in Grafana. For Google Workspace groups, add https://www.googleapis.com/auth/cloud-identity.groups.readonly: openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly.'
           id: scopes
           label: Scopes
           placeholder: openid email profile
-          show_when:
-            provider: generic_oauth
           type: string
         - add_button_label: Add domain
           description: Email domains whose accounts can sign in. For Google, your Google Workspace domains.
@@ -1029,7 +1027,7 @@ module:
               - generic_oauth
           type: string_array
         - add_button_label: Add group
-          description: Groups whose members can sign in. Entra ID takes group object IDs.
+          description: Groups whose members can sign in. Google takes Workspace group emails, and needs the Cloud Identity groups scope under Scopes. Entra ID takes group object IDs.
           id: allowed_groups
           label: Allowed groups
           placeholder: grafana-users
@@ -1052,7 +1050,7 @@ module:
               - generic_oauth
           type: string_array
         - collapsible: true
-          description: 'Grafana''s role_attribute_path: a JMESPath expression over the provider''s user info that returns Admin, Editor or Viewer. Leave blank to give new accounts the default role.'
+          description: 'Grafana''s role_attribute_path: a JMESPath expression over the provider''s user info and groups that returns Admin, Editor or Viewer, applied at every sign-in. Leave blank to give new accounts the default role. For Google Workspace groups, with the groups scope: contains(groups[*], ''grafana-admins@example.com'') && ''Admin'' || ''Viewer''.'
           id: role_attribute_path
           label: Role mapping
           placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
