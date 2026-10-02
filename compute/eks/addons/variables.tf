@@ -1474,40 +1474,11 @@ variable "metrics_providers" {
 }
 
 variable "traces_destinations" {
-  type = list(object({
-    destination = string
-
-    # tempo
-    retention_days            = optional(number)
-    storage_backend           = optional(string)
-    s3_bucket_name            = optional(string)
-    persistence_enabled       = optional(bool)
-    persistence_size          = optional(string)
-    metrics_generator_enabled = optional(bool)
-    storage_class             = optional(string)
-    chart_version             = optional(string)
-    helm_values               = optional(any)
-
-    # xray
-    region = optional(string)
-
-    # grafana_cloud
-    url              = optional(string)
-    user             = optional(string)
-    token_secret_arn = optional(string)
-
-    # datadog
-    site               = optional(string)
-    api_key_secret_arn = optional(string)
-
-    # new_relic
-    new_relic_region       = optional(string)
-    license_key_secret_arn = optional(string)
-
-    # otlp
-    endpoint           = optional(string)
-    headers_secret_arn = optional(string)
-  }))
+  # A list of objects rather than list(object(...)): a list's elements must
+  # convert to one type, and the Tempo card's free-form helm_values never shares
+  # one with the other cards' (null, or {}), so the form's cards would be refused.
+  # The validations below take the place of the object type.
+  type        = any
   description = <<-EOT
     Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
     - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
@@ -1522,17 +1493,36 @@ variable "traces_destinations" {
   nullable    = false
 
   validation {
-    condition     = alltrue([for entry in var.traces_destinations : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], entry.destination)])
+    condition     = can(concat(var.traces_destinations, [])) && alltrue([for entry in var.traces_destinations : can(keys(entry)) && can(tostring(entry.destination))])
+    error_message = "traces_destinations must be a list of objects, each with a destination."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], try(entry.destination, ""))])
     error_message = "Each traces_destinations entry's destination must be one of: xray, tempo, grafana_cloud, datadog, new_relic, otlp."
   }
 
   validation {
-    condition     = length(distinct([for entry in var.traces_destinations : entry.destination])) == length(var.traces_destinations)
+    condition     = length(distinct([for entry in var.traces_destinations : try(entry.destination, "")])) == length(var.traces_destinations)
     error_message = "Each destination can appear in traces_destinations once."
   }
 
   validation {
-    condition     = alltrue([for entry in var.traces_destinations : entry.retention_days == null || try(entry.retention_days >= 1, false)])
+    condition = alltrue([for entry in var.traces_destinations : length(setsubtract(try(keys(entry), []), [
+      "destination",
+      "retention_days", "storage_backend", "s3_bucket_name", "persistence_enabled", "persistence_size",
+      "metrics_generator_enabled", "storage_class", "chart_version", "helm_values",
+      "region",
+      "url", "user", "token_secret_arn",
+      "site", "api_key_secret_arn",
+      "new_relic_region", "license_key_secret_arn",
+      "endpoint", "headers_secret_arn",
+    ])) == 0])
+    error_message = "A traces_destinations entry has a field no destination takes. The fields are listed in the variable's description."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : try(entry.retention_days, null) == null || try(entry.retention_days >= 1, false)])
     error_message = "A tempo destination's retention_days must be at least 1."
   }
 
@@ -1542,7 +1532,7 @@ variable "traces_destinations" {
   }
 
   validation {
-    condition     = alltrue([for entry in var.traces_destinations : entry.helm_values == null || can(keys(entry.helm_values))])
+    condition     = alltrue([for entry in var.traces_destinations : try(entry.helm_values, null) == null || can(keys(entry.helm_values))])
     error_message = "A tempo destination's helm_values must be an object of chart values."
   }
 }

@@ -551,6 +551,83 @@ run "tempo_takes_any_chart_values" {
   }
 }
 
+run "tempo_chart_values_beside_other_destinations" {
+  command = plan
+
+  # What the form sends: every card carries every field, null where it does not
+  # apply, beside a Tempo card whose chart values mix numbers, lists and objects.
+  variables {
+    traces_destinations = [
+      {
+        destination = "tempo"
+        helm_values = {
+          replicas    = 2
+          tolerations = [{ key = "dedicated", operator = "Exists" }]
+          resources   = { limits = { memory = "2Gi" } }
+        }
+      },
+      {
+        destination = "xray"
+        helm_values = null
+        region      = null
+      },
+      {
+        destination = "otlp"
+        endpoint    = "https://otlp.example.com"
+        helm_values = {}
+      },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[1]).replicas == 2 && yamldecode(helm_release.tempo[0].values[1]).tolerations[0].key == "dedicated" && yamldecode(helm_release.tempo[0].values[1]).resources.limits.memory == "2Gi"
+    error_message = "A Tempo card's chart values must reach the chart whatever the other cards carry"
+  }
+
+  assert {
+    condition     = toset(output.traces_providers) == toset(["otlp", "tempo", "xray"])
+    error_message = "Every card must be a destination"
+  }
+}
+
+run "tempo_card_with_empty_chart_values_beside_a_null_one" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", helm_values = {}, persistence_enabled = true, retention_days = 30 },
+      { destination = "xray", helm_values = null, persistence_enabled = null, retention_days = null },
+    ]
+  }
+
+  assert {
+    condition     = length(helm_release.tempo[0].values) == 1 && length(helm_release.otlp_collector) == 1
+    error_message = "An empty Tempo card beside a null one must plan, as the form sends them"
+  }
+}
+
+run "rejects_an_unknown_destination_field" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "xray", regoin = "us-east-1" },
+    ]
+  }
+
+  expect_failures = [var.traces_destinations]
+}
+
+run "rejects_a_destination_that_is_not_an_object" {
+  command = plan
+
+  variables {
+    traces_destinations = ["tempo"]
+  }
+
+  expect_failures = [var.traces_destinations]
+}
+
 run "rejects_a_generator_with_nowhere_to_write" {
   command = plan
 
