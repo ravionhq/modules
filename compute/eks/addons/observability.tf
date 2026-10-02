@@ -62,7 +62,11 @@ locals {
   metrics_otlp_enabled          = contains(local.metrics_providers, "otlp")
   xray_enabled                  = contains(var.traces_providers, "xray")
   tempo_enabled                 = contains(var.traces_providers, "tempo")
-  grafana_cloud_enabled         = local.logs_grafana_cloud_enabled || local.metrics_grafana_cloud_enabled
+  traces_grafana_cloud_enabled  = contains(var.traces_providers, "grafana_cloud")
+  traces_datadog_enabled        = contains(var.traces_providers, "datadog")
+  traces_new_relic_enabled      = contains(var.traces_providers, "new_relic")
+  traces_otlp_enabled           = contains(var.traces_providers, "otlp")
+  grafana_cloud_enabled         = local.logs_grafana_cloud_enabled || local.metrics_grafana_cloud_enabled || local.traces_grafana_cloud_enabled
 
   # Alloy carries the loki-family destinations; the OpenTelemetry collector
   # carries every other log destination. Either can be the only one running.
@@ -125,13 +129,13 @@ locals {
 
   # Shared across signals: the same vendor account, whichever signal named it.
   datadog_config = {
-    site               = coalesce(var.logs_datadog.site, var.metrics_datadog.site, "datadoghq.com")
-    api_key_secret_arn = try(coalesce(var.logs_datadog.api_key_secret_arn, var.metrics_datadog.api_key_secret_arn), null)
+    site               = coalesce(var.logs_datadog.site, var.metrics_datadog.site, var.traces_datadog.site, "datadoghq.com")
+    api_key_secret_arn = try(coalesce(var.logs_datadog.api_key_secret_arn, var.metrics_datadog.api_key_secret_arn, var.traces_datadog.api_key_secret_arn), null)
   }
 
   new_relic_config = {
-    region                 = coalesce(var.logs_new_relic.region, var.metrics_new_relic.region, "us")
-    license_key_secret_arn = try(coalesce(var.logs_new_relic.license_key_secret_arn, var.metrics_new_relic.license_key_secret_arn), null)
+    region                 = coalesce(var.logs_new_relic.region, var.metrics_new_relic.region, var.traces_new_relic.region, "us")
+    license_key_secret_arn = try(coalesce(var.logs_new_relic.license_key_secret_arn, var.metrics_new_relic.license_key_secret_arn, var.traces_new_relic.license_key_secret_arn), null)
   }
 
   grafana_cloud_config = {
@@ -139,7 +143,9 @@ locals {
     logs_user        = var.logs_grafana_cloud.user
     metrics_url      = var.metrics_grafana_cloud.url
     metrics_user     = var.metrics_grafana_cloud.user
-    token_secret_arn = try(coalesce(var.logs_grafana_cloud.token_secret_arn, var.metrics_grafana_cloud.token_secret_arn), null)
+    traces_url       = var.traces_grafana_cloud.url
+    traces_user      = var.traces_grafana_cloud.user
+    token_secret_arn = try(coalesce(var.logs_grafana_cloud.token_secret_arn, var.metrics_grafana_cloud.token_secret_arn, var.traces_grafana_cloud.token_secret_arn), null)
     stack_url        = try(coalesce(var.logs_grafana_cloud.stack_url, var.metrics_grafana_cloud.stack_url), null)
   }
 
@@ -168,6 +174,11 @@ locals {
   otlp_metrics_config = {
     endpoint           = var.metrics_otlp.endpoint
     headers_secret_arn = var.metrics_otlp.headers_secret_arn
+  }
+
+  otlp_traces_config = {
+    endpoint           = var.traces_otlp.endpoint
+    headers_secret_arn = var.traces_otlp.headers_secret_arn
   }
 
   # New Relic publishes one OTLP endpoint per data region.
@@ -220,14 +231,14 @@ locals {
   ##############################################################################
 
   vendor_secrets = concat(
-    local.datadog_config.api_key_secret_arn != null && (local.logs_datadog_enabled || local.metrics_datadog_enabled) ? [{
+    local.datadog_config.api_key_secret_arn != null && (local.logs_datadog_enabled || local.metrics_datadog_enabled || local.traces_datadog_enabled) ? [{
       provider    = "datadog"
       name        = "ravion-observability-datadog"
       secret_key  = "apiKey"
       remote_ref  = local.datadog_config.api_key_secret_arn
       environment = "DATADOG_API_KEY"
     }] : [],
-    local.new_relic_config.license_key_secret_arn != null && (local.logs_new_relic_enabled || local.metrics_new_relic_enabled) ? [{
+    local.new_relic_config.license_key_secret_arn != null && (local.logs_new_relic_enabled || local.metrics_new_relic_enabled || local.traces_new_relic_enabled) ? [{
       provider    = "new_relic"
       name        = "ravion-observability-new-relic"
       secret_key  = "licenseKey"
@@ -262,6 +273,13 @@ locals {
       remote_ref  = local.otlp_metrics_config.headers_secret_arn
       environment = "OTLP_METRICS_AUTHORIZATION"
     }] : [],
+    local.otlp_traces_config.headers_secret_arn != null && local.traces_otlp_enabled ? [{
+      provider    = "otlp_traces"
+      name        = "ravion-observability-otlp-traces"
+      secret_key  = "authorization"
+      remote_ref  = local.otlp_traces_config.headers_secret_arn
+      environment = "OTLP_TRACES_AUTHORIZATION"
+    }] : [],
   )
 
   # Which vendor Secrets each collector mounts as environment variables.
@@ -275,9 +293,10 @@ locals {
     if contains(["datadog", "new_relic", "splunk", "otlp_logs"], secret.provider)
   ]
 
+  # The metrics collector is also the traces collector.
   otel_metrics_secret_env = [
     for secret in local.vendor_secrets : secret
-    if contains(["datadog", "new_relic", "grafana_cloud", "otlp_metrics"], secret.provider)
+    if contains(["datadog", "new_relic", "grafana_cloud", "otlp_metrics", "otlp_traces"], secret.provider)
   ]
 
   ##############################################################################
@@ -341,8 +360,9 @@ locals {
   # which carries sigv4auth as well. Both are overridable.
   ##############################################################################
 
+  # The AWS distribution lacks the vendor exporters, for metrics and traces alike.
   metrics_needs_contrib = length([
-    for provider in local.otel_metrics_providers : provider
+    for provider in concat(local.otel_metrics_providers, var.traces_providers) : provider
     if contains(["datadog", "grafana_cloud", "new_relic", "otlp"], provider)
   ]) > 0
 

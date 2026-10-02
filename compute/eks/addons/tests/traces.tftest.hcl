@@ -264,7 +264,7 @@ run "rejects_unknown_traces_provider" {
   command = plan
 
   variables {
-    traces_providers = ["datadog"]
+    traces_providers = ["zipkin"]
   }
 
   expect_failures = [var.traces_providers]
@@ -576,4 +576,120 @@ run "tempo_bucket_name_fits_s3_for_a_long_cluster_name" {
     condition     = length(output.tempo_s3_bucket) <= 63 && can(regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$", output.tempo_s3_bucket)) && !strcontains(output.tempo_s3_bucket, "--")
     error_message = "Tempo's generated bucket name must be a valid S3 name of at most 63 characters"
   }
+}
+
+run "traces_go_to_every_vendor_destination" {
+  command = plan
+
+  variables {
+    eso_enabled            = true
+    eso_allowed_namespaces = ["apps"]
+    traces_providers       = ["grafana_cloud", "datadog", "new_relic", "otlp"]
+    traces_grafana_cloud = {
+      url              = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
+      user             = "123456"
+      token_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-cloud-AbCdEf"
+    }
+    traces_datadog = {
+      site               = "datadoghq.eu"
+      api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-AbCdEf"
+    }
+    traces_new_relic = {
+      region                 = "eu"
+      license_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:new-relic-AbCdEf"
+    }
+    traces_otlp = {
+      endpoint           = "https://api.honeycomb.io"
+      headers_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:honeycomb-AbCdEf"
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["datadog", "otlp_http/custom_traces", "otlp_http/grafana_cloud_traces", "otlp_http/new_relic"]
+    error_message = "The traces pipeline must send to each selected vendor"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/grafana_cloud_traces"].endpoint == "https://otlp-gateway-prod-us-east-0.grafana.net/otlp" && yamldecode(helm_release.otel_collector[0].values[0]).config.extensions["basicauth/grafana_cloud_traces"].client_auth.username == "123456" && contains(yamldecode(helm_release.otel_collector[0].values[0]).config.service.extensions, "basicauth/grafana_cloud_traces")
+    error_message = "Grafana Cloud traces must authenticate with the traces instance id"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters.datadog.api.site == "datadoghq.eu" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/new_relic"].endpoint == "https://otlp.eu01.nr-data.net" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/custom_traces"].endpoint == "https://api.honeycomb.io" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["otlp_http/custom_traces"].headers.authorization == "$${env:OTLP_TRACES_AUTHORIZATION}"
+    error_message = "Each vendor exporter must carry its own site, region or endpoint"
+  }
+
+  assert {
+    condition     = toset([for env in yamldecode(helm_release.otel_collector[0].values[0]).extraEnvs : env.name]) == toset(["DATADOG_API_KEY", "NEW_RELIC_LICENSE_KEY", "GRAFANA_CLOUD_TOKEN", "OTLP_TRACES_AUTHORIZATION"])
+    error_message = "Each vendor's secret must reach the collector as an environment variable"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).image.repository == "docker.io/otel/opentelemetry-collector-contrib"
+    error_message = "Vendor trace destinations need the contrib collector"
+  }
+}
+
+run "a_vendor_account_is_one_exporter_for_metrics_and_traces" {
+  command = plan
+
+  variables {
+    eso_enabled            = true
+    eso_allowed_namespaces = ["apps"]
+    metrics_providers      = ["prometheus", "datadog"]
+    traces_providers       = ["tempo", "datadog"]
+    metrics_datadog = {
+      api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-AbCdEf"
+    }
+  }
+
+  assert {
+    condition     = contains(yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters, "datadog") && contains(yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics.exporters, "datadog")
+    error_message = "Both signals must reach Datadog through the shared exporter and key"
+  }
+}
+
+run "traces_only_vendors_stay_out_of_the_metrics_pipeline" {
+  command = plan
+
+  variables {
+    eso_enabled            = true
+    eso_allowed_namespaces = ["apps"]
+    metrics_providers      = ["prometheus"]
+    traces_providers       = ["new_relic"]
+    traces_new_relic = {
+      license_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:new-relic-AbCdEf"
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"] && yamldecode(helm_release.otel_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
+    error_message = "A traces destination must not receive metrics"
+  }
+}
+
+run "rejects_grafana_cloud_traces_without_its_instance" {
+  command = plan
+
+  variables {
+    eso_enabled            = true
+    eso_allowed_namespaces = ["apps"]
+    traces_providers       = ["grafana_cloud"]
+    traces_grafana_cloud = {
+      url              = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
+      token_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-cloud-AbCdEf"
+    }
+  }
+
+  expect_failures = [helm_release.otel_collector]
+}
+
+run "rejects_otlp_traces_without_an_endpoint" {
+  command = plan
+
+  variables {
+    traces_providers = ["otlp"]
+  }
+
+  expect_failures = [helm_release.otel_collector]
 }

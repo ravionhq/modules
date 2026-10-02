@@ -1466,14 +1466,55 @@ variable "metrics_providers" {
 
 variable "traces_providers" {
   type        = list(string)
-  description = "Where workload traces go. Any combination of: xray (AWS X-Ray), tempo (in-cluster Tempo on S3). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data. An empty list turns traces off."
+  description = "Where workload traces go. Any combination of: xray (AWS X-Ray), tempo (in-cluster Tempo), grafana_cloud (Grafana Cloud Traces), datadog, new_relic, otlp (any OTLP/HTTP traces receiver). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data. An empty list turns traces off."
   default     = []
   nullable    = false
 
   validation {
-    condition     = alltrue([for provider in var.traces_providers : contains(["xray", "tempo"], provider)])
-    error_message = "Each traces_providers entry must be one of: xray, tempo."
+    condition     = alltrue([for provider in var.traces_providers : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], provider)])
+    error_message = "Each traces_providers entry must be one of: xray, tempo, grafana_cloud, datadog, new_relic, otlp."
   }
+}
+
+variable "traces_grafana_cloud" {
+  type = object({
+    url              = optional(string)
+    user             = optional(string)
+    token_secret_arn = optional(string)
+  })
+  description = "Grafana Cloud Traces: the stack's OTLP endpoint (https://otlp-gateway-<zone>.grafana.net/otlp), its numeric instance id, and a Secrets Manager ARN holding a token with traces:write. The token is shared with logs_grafana_cloud and metrics_grafana_cloud when they name one."
+  default     = {}
+  nullable    = false
+}
+
+variable "traces_datadog" {
+  type = object({
+    site               = optional(string)
+    api_key_secret_arn = optional(string)
+  })
+  description = "Datadog traces: the site and a Secrets Manager ARN holding the API key. Shared with logs_datadog and metrics_datadog when they name one."
+  default     = {}
+  nullable    = false
+}
+
+variable "traces_new_relic" {
+  type = object({
+    region                 = optional(string)
+    license_key_secret_arn = optional(string)
+  })
+  description = "New Relic traces: region (us or eu) and a Secrets Manager ARN holding the license key. Shared with logs_new_relic and metrics_new_relic when they name one."
+  default     = {}
+  nullable    = false
+}
+
+variable "traces_otlp" {
+  type = object({
+    endpoint           = optional(string)
+    headers_secret_arn = optional(string)
+  })
+  description = "Any OTLP/HTTP traces receiver, such as Honeycomb, Jaeger or an external collector: the endpoint, and optionally a Secrets Manager ARN holding the value of an Authorization header."
+  default     = {}
+  nullable    = false
 }
 
 variable "traces_xray" {

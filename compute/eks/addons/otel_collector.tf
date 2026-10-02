@@ -141,6 +141,15 @@ locals {
         }
       }
     } : {},
+    # Grafana Cloud's traces instance has an id of its own.
+    local.traces_grafana_cloud_enabled ? {
+      "basicauth/grafana_cloud_traces" = {
+        client_auth = {
+          username = local.grafana_cloud_config.traces_user
+          password = "$${env:GRAFANA_CLOUD_TOKEN}"
+        }
+      }
+    } : {},
   )
 
   otel_metrics_pipeline_exporters = [for name, _ in local.otel_metrics_exporters : name if name != "debug"]
@@ -168,6 +177,40 @@ locals {
           insecure = true
         }
       }
+    } : {},
+    local.traces_grafana_cloud_enabled ? {
+      "otlp_http/grafana_cloud_traces" = {
+        endpoint = local.grafana_cloud_config.traces_url
+        auth = {
+          authenticator = "basicauth/grafana_cloud_traces"
+        }
+      }
+    } : {},
+    # The same exporters the metrics pipelines use, under the same ids: one
+    # vendor account, one exporter, whichever signals send to it.
+    local.traces_datadog_enabled ? {
+      datadog = {
+        api = {
+          site = local.datadog_config.site
+          key  = "$${env:DATADOG_API_KEY}"
+        }
+      }
+    } : {},
+    local.traces_new_relic_enabled ? {
+      "otlp_http/new_relic" = {
+        endpoint = local.new_relic_otlp_endpoint
+        headers = {
+          "api-key" = "$${env:NEW_RELIC_LICENSE_KEY}"
+        }
+      }
+    } : {},
+    local.traces_otlp_enabled ? {
+      "otlp_http/custom_traces" = merge(
+        { endpoint = local.otlp_traces_config.endpoint },
+        local.otlp_traces_config.headers_secret_arn == null ? {} : {
+          headers = { authorization = "$${env:OTLP_TRACES_AUTHORIZATION}" }
+        },
+      )
     } : {},
   )
 
@@ -263,6 +306,26 @@ resource "helm_release" "otel_collector" {
     precondition {
       condition     = !local.metrics_otlp_enabled || local.otlp_metrics_config.endpoint != null
       error_message = "otlp is in metrics_providers but no OTLP endpoint was given. There is nowhere to send the metrics."
+    }
+
+    precondition {
+      condition     = !local.traces_grafana_cloud_enabled || (local.grafana_cloud_config.traces_url != null && local.grafana_cloud_config.traces_user != null && local.grafana_cloud_config.token_secret_arn != null)
+      error_message = "grafana_cloud is in traces_providers but its OTLP endpoint, instance id, or token secret ARN is missing. All three are required: Grafana Cloud authenticates every export with basic auth."
+    }
+
+    precondition {
+      condition     = !local.traces_datadog_enabled || local.datadog_config.api_key_secret_arn != null
+      error_message = "datadog is in traces_providers but no API key secret ARN was given. The key is read in-cluster from Secrets Manager by External Secrets."
+    }
+
+    precondition {
+      condition     = !local.traces_new_relic_enabled || local.new_relic_config.license_key_secret_arn != null
+      error_message = "new_relic is in traces_providers but no license key secret ARN was given. The key is read in-cluster from Secrets Manager by External Secrets."
+    }
+
+    precondition {
+      condition     = !local.traces_otlp_enabled || local.otlp_traces_config.endpoint != null
+      error_message = "otlp is in traces_providers but no OTLP endpoint was given. There is nowhere to send the traces."
     }
   }
 }
