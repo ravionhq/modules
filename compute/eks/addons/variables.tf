@@ -1349,14 +1349,23 @@ variable "grafana_helm_values" {
 
 variable "grafana_access" {
   type = object({
-    enabled                = optional(bool, false)
-    load_balancer          = optional(string, "private")
-    hostname               = optional(string)
-    listener_rule_priority = optional(number)
+    enabled                 = optional(bool, false)
+    method                  = optional(string, "load_balancer")
+    load_balancer           = optional(string, "private")
+    listener_rule_priority  = optional(number)
+    ingress_class_name      = optional(string)
+    ingress_annotations     = optional(map(string), {})
+    ingress_tls_secret_name = optional(string)
+    hostname                = optional(string)
   })
-  description = "Serve the in-cluster Grafana on a shared ALB's HTTPS listener at hostname. load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB). Null listener_rule_priority lets AWS assign one. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name). Who can sign in is grafana_auth and grafana_auth_providers."
+  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth and grafana_auth_providers."
   default     = {}
   nullable    = false
+
+  validation {
+    condition     = contains(["load_balancer", "ingress"], var.grafana_access.method)
+    error_message = "The grafana_access.method must be load_balancer or ingress."
+  }
 
   validation {
     condition     = contains(["public", "private"], var.grafana_access.load_balancer)

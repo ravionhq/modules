@@ -11,10 +11,10 @@
 # that is inside it. Customers who only want metrics dashboards should prefer
 # AMG and leave this off.
 #
-# No ingress and no Service type beyond ClusterIP: reaching it is a
-# port-forward, or whatever the operator adds through grafana_helm_values. A
-# module that quietly published a Grafana with a default admin password to the
-# internet would be a bug, not a convenience.
+# The Service is ClusterIP only: reaching Grafana is a port-forward unless
+# grafana_access serves it on a shared ALB or through an Ingress
+# (grafana_access.tf). A module that quietly published a Grafana with a
+# default admin password to the internet would be a bug, not a convenience.
 #
 # All releases set upgrade_install so an apply adopts a same-named release
 # already present in the cluster instead of failing with "cannot re-use a name
@@ -165,7 +165,7 @@ resource "helm_release" "grafana" {
 
   values = concat(
     [
-      yamlencode({
+      yamlencode(merge({
         fullnameOverride = local.grafana_release_name
 
         # Must match the Pod Identity association above, or the SigV4
@@ -187,7 +187,7 @@ resource "helm_release" "grafana" {
             datasources = local.grafana_datasources
           }
         }
-      }),
+      }, local.grafana_ingress_values)),
     ],
     var.grafana_helm_values,
   )
@@ -206,6 +206,11 @@ resource "helm_release" "grafana" {
     precondition {
       condition     = local.metrics_on || local.logs_on || local.tempo_enabled
       error_message = "grafana_enabled is true but logs_providers and metrics_providers are empty and tempo is not a traces provider. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
+    }
+
+    precondition {
+      condition     = !local.grafana_access_enabled || local.grafana_hostname != ""
+      error_message = "grafana_access is enabled without a hostname. Grafana is served at that hostname, and OAuth providers redirect back to it."
     }
 
     precondition {

@@ -119,8 +119,8 @@ locals {
   }
 
   # grafana.ini: SigV4 for the AMP data source always; the role new accounts
-  # get; the external URL OAuth providers redirect back to while Grafana is on
-  # a load balancer; and the sign-in methods. Turning username and password
+  # get; the external URL OAuth providers redirect back to while grafana_access
+  # serves Grafana; and the sign-in methods. Turning username and password
   # off removes the login form and HTTP basic auth both, so a password is
   # accepted nowhere.
   grafana_ini = merge(

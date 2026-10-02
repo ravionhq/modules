@@ -564,13 +564,13 @@ output "prometheus_chart_version" {
 }
 
 output "grafana_url" {
-  description = "Grafana's URL on the chosen shared ALB (null unless grafana_access is enabled)."
+  description = "Grafana's URL on the chosen shared ALB or Ingress (null unless grafana_access is enabled)."
   value       = local.grafana_access_enabled ? "https://${local.grafana_hostname}" : null
 }
 
 output "grafana_target_group_arn" {
-  description = "Target group the chosen shared ALB routes Grafana's hostname to (null unless grafana_access is enabled)."
-  value       = local.grafana_access_enabled ? aws_lb_target_group.grafana[0].arn : null
+  description = "Target group the chosen shared ALB routes Grafana's hostname to (null unless grafana_access serves Grafana on a load balancer)."
+  value       = local.grafana_access_load_balancer ? aws_lb_target_group.grafana[0].arn : null
 }
 
 output "cluster_arn" {

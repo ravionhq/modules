@@ -9,8 +9,8 @@ release:
     Default to Prometheus with Thanos history in S3 and to Tempo traces on S3, with EBS-backed working volumes.
     An OTLP receiver at an in-cluster Service sends workload traces to Tempo, AWS X-Ray or a vendor, and
     workload metrics to the metrics destinations. The in-cluster Grafana reads all three, can be served on a
-    shared private or public ALB, and signs people in with username and password or any of Grafana's
-    OAuth providers. Amazon Managed Prometheus stays available, no longer the default.
+    shared ALB or through a Kubernetes Ingress such as Tailscale's, and signs people in with username and
+    password or any of Grafana's OAuth providers. Amazon Managed Prometheus stays available, no longer the default.
 module:
   inputs:
     - id: cluster
@@ -807,23 +807,39 @@ module:
       label: Grafana
       type: section
     - default: false
-      description: Install Grafana in the cluster with data sources for the selected Loki, Prometheus (through Thanos with S3 storage), Amazon Managed Prometheus, and Tempo destinations. Without load balancer access, Grafana has no ingress; connect with a port-forward.
+      description: Install Grafana in the cluster with data sources for the selected Loki, Prometheus (through Thanos with S3 storage), Amazon Managed Prometheus, and Tempo destinations. Without access turned on, Grafana is reachable only with a port-forward.
       id: grafana_enabled
       label: In-cluster Grafana
       type: boolean
     - default: false
-      description: Serve Grafana on a shared load balancer's HTTPS listener at a hostname. Needs that load balancer with HTTPS. DNS is not managed; point the hostname at the load balancer's DNS name.
+      description: Serve Grafana over HTTPS at a hostname, on a shared load balancer or through a Kubernetes Ingress. DNS is not managed.
       id: grafana_access_enabled
-      label: Load balancer access
+      label: Access
       show_when:
         grafana_enabled: true
       type: boolean
+    - default: load_balancer
+      description: How Grafana is reached.
+      id: grafana_access_method
+      label: Served through
+      show_when:
+        grafana_access_enabled: true
+        grafana_enabled: true
+      type: string
+      values:
+        - description: A host rule on a shared ALB's HTTPS listener. Needs that load balancer with HTTPS.
+          label: Shared load balancer
+          value: load_balancer
+        - description: An Ingress served by the controller of an ingress class, such as tailscale to put Grafana on a tailnet.
+          label: Kubernetes Ingress
+          value: ingress
     - default: private
       description: Which shared load balancer serves Grafana.
       id: grafana_load_balancer
       label: Load balancer
       show_when:
         grafana_access_enabled: true
+        grafana_access_method: load_balancer
         grafana_enabled: true
       type: string
       values:
@@ -833,7 +849,16 @@ module:
         - description: Internet-facing. Anyone can reach the sign-in page.
           label: Public
           value: public
-    - description: Hostname Grafana answers on. A certificate on the chosen load balancer must cover it.
+    - description: Ingress class whose controller serves Grafana, such as tailscale, nginx or alb. Leave blank for the cluster's default IngressClass.
+      id: grafana_ingress_class_name
+      label: Ingress class
+      placeholder: tailscale
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: ingress
+        grafana_enabled: true
+      type: string
+    - description: 'Hostname Grafana answers on. On a load balancer, a certificate on it must cover the hostname; point DNS at the load balancer. Through an Ingress, it is the Ingress host and TLS host: for Tailscale, <name>.<tailnet>.ts.net, where <name> becomes the device name.'
       id: grafana_hostname
       label: Grafana hostname
       placeholder: grafana.example.com
@@ -847,8 +872,29 @@ module:
       label: Listener rule priority
       show_when:
         grafana_access_enabled: true
+        grafana_access_method: load_balancer
         grafana_enabled: true
       type: number
+    - collapsible: true
+      default: {}
+      description: 'Annotations for the Ingress, as JSON, passed to it as they are, such as {"cert-manager.io/cluster-issuer": "letsencrypt"} or {"tailscale.com/tags": "tag:grafana"}.'
+      id: grafana_ingress_annotations
+      label: Ingress annotations
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: ingress
+        grafana_enabled: true
+      type: object
+    - collapsible: true
+      description: Kubernetes Secret holding the hostname's certificate, for controllers that read one, such as nginx with cert-manager. Leave blank where the controller provides the certificate, as Tailscale does.
+      id: grafana_ingress_tls_secret_name
+      label: TLS secret
+      placeholder: grafana-tls
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: ingress
+        grafana_enabled: true
+      type: string
     - default: false
       description: Create an assumable role for querying the selected Amazon Managed Prometheus workspace plus Container Insights and EKS control-plane log groups. No Grafana workspace is created.
       id: grafana_role_creation_enabled
@@ -1640,9 +1686,13 @@ module:
         grafana_enabled: << module.input.grafana_enabled >>
         grafana_access:
           enabled: << module.input.grafana_access_enabled >>
+          method: << module.input.grafana_access_method || "load_balancer" >>
           load_balancer: << module.input.grafana_load_balancer || "private" >>
-          hostname: << module.input.grafana_hostname >>
           listener_rule_priority: << module.input.grafana_listener_rule_priority >>
+          ingress_class_name: << module.input.grafana_ingress_class_name >>
+          ingress_annotations: '<< module.input.grafana_ingress_annotations != nil ? module.input.grafana_ingress_annotations : {} >>'
+          ingress_tls_secret_name: << module.input.grafana_ingress_tls_secret_name >>
+          hostname: << module.input.grafana_hostname >>
         grafana_auth:
           login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
           default_role: << module.input.grafana_default_role || "Viewer" >>
@@ -1889,7 +1939,12 @@ module:
 
     **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode, reachable only inside the cluster and read by the in-cluster Grafana when that is on. Its blocks go to an S3 bucket in your account by default (30 days), or to Tempo's own volume. That volume is a persistent gp3 volume by default, so spans not yet in a block survive a restart, or a scratch volume that restarts empty. Its metrics generator can write service graphs and span metrics to Prometheus for Grafana's service map, and any other chart value can be set as JSON.
 
-    **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, Prometheus through Thanos or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without load balancer access Grafana has no ingress. **Load balancer access** routes a hostname on the HTTPS listener of the shared private or public ALB to Grafana. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI, and point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
+    **Grafana.** Turn on **In-cluster Grafana** for one place to query the cluster's own stores: Loki, Prometheus through Thanos or Amazon Managed Prometheus, and Tempo, each as a data source when selected. Without **Access** Grafana is reachable only with a port-forward. **Access** serves Grafana over HTTPS at a hostname, through either of two methods:
+
+    - **Shared load balancer** routes the hostname on the HTTPS listener of the shared private or public ALB. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. Point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
+    - **Kubernetes Ingress** gives Grafana an Ingress for the hostname with TLS, served by the controller of the ingress class you name, with any annotations it needs. With the Tailscale Kubernetes operator's `tailscale` class and a `<name>.<tailnet>.ts.net` hostname, Grafana becomes one device on the tailnet with a Let's Encrypt certificate, and nothing else in the VPC is reachable through it.
+
+    **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI.
 
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus when selected, then Prometheus through Thanos, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
@@ -2031,7 +2086,7 @@ module:
     | Application Signals    | No       | `false`              | CloudWatch auto-instrumentation: injects the AWS agent into the named namespaces and restarts their pods |
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to the selected logs, metrics and traces stores |
-    | Load balancer access   | No       | `false`              | Grafana on the private (default) or public ALB's HTTPS listener at a hostname |
+    | Access                 | No       | `false`              | Grafana over HTTPS at a hostname, on the private (default) or public ALB, or through a Kubernetes Ingress |
     | Username and password  | No       | `true`               | Grafana's built-in sign-in; off leaves only the providers |
     | Sign-in providers      | No       | None                 | Any of Google, GitHub, GitLab, Microsoft Entra ID, Okta and generic OAuth |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
@@ -2063,5 +2118,6 @@ module:
     - [Querying an AMP workspace from Grafana](https://docs.aws.amazon.com/grafana/latest/userguide/prometheus-data-source.html) - Configuring the data source
     - [Thanos sidecar](https://thanos.io/tip/components/sidecar.md/) - Prometheus history in object storage
     - [Grafana Tempo](https://grafana.com/docs/tempo/latest/) - The in-cluster trace store
+    - [Tailscale Kubernetes operator Ingress](https://tailscale.com/kb/1439/kubernetes-operator-cluster-ingress) - Serving a cluster Service on a tailnet
     - [Grafana Loki](https://grafana.com/docs/loki/latest/) - The in-cluster log store
     - [Grafana Alloy](https://grafana.com/docs/alloy/latest/) - The log collection agent

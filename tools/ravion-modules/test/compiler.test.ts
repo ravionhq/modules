@@ -485,6 +485,29 @@ describe("compiler", () => {
     }
   });
 
+  it("serves EKS add-ons Grafana on a load balancer or through an ingress", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+    const method = findInput(inputs, "grafana_access_method");
+    assert.equal(method.default, "load_balancer");
+    assert.ok(Array.isArray(method.values));
+    assert.deepEqual(method.values.map((value) => assertRecord(value, "grafana_access_method.values[]").value), ["load_balancer", "ingress"]);
+    assert.deepEqual(findInput(inputs, "grafana_load_balancer").show_when, {
+      grafana_access_enabled: true, grafana_access_method: "load_balancer", grafana_enabled: true,
+    });
+    assert.deepEqual(findInput(inputs, "grafana_ingress_class_name").show_when, {
+      grafana_access_enabled: true, grafana_access_method: "ingress", grafana_enabled: true,
+    });
+
+    const access = assertRecord(getTerraformVariable(compiled.module, "grafana_access"), "grafana_access");
+    assert.equal(access.method, '<< module.input.grafana_access_method || "load_balancer" >>');
+    assert.equal(access.ingress_class_name, "<< module.input.grafana_ingress_class_name >>");
+    assert.equal(access.ingress_annotations,
+      "<< module.input.grafana_ingress_annotations != nil ? module.input.grafana_ingress_annotations : {} >>");
+  });
+
   it("compiles concise EKS add-on guidance and input constraints", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
