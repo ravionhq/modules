@@ -1380,108 +1380,44 @@ variable "grafana_auth" {
 }
 
 variable "grafana_auth_providers" {
-  type        = list(string)
-  description = "OAuth providers people sign in to the in-cluster Grafana with, any of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth. Each is configured by its grafana_auth_<provider> object."
-  default     = []
-  nullable    = false
-
-  validation {
-    condition     = alltrue([for provider in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], provider)])
-    error_message = "Each grafana_auth_providers entry must be one of: google, github, gitlab, azuread, okta, generic_oauth."
-  }
-}
-
-# Each provider object takes Grafana's own [auth.<provider>] key names. settings
-# passes any other key of that section through verbatim; client_secret_arn is
-# the only setting that is not Grafana's, because the secret itself never
-# enters the configuration.
-
-variable "grafana_auth_google" {
-  type = object({
-    client_id           = optional(string)
-    client_secret_arn   = optional(string)
-    allowed_domains     = optional(list(string), [])
-    allowed_groups      = optional(list(string), [])
-    role_attribute_path = optional(string)
-    settings            = optional(map(string), {})
-  })
-  description = "Google sign-in ([auth.google]). Anyone with a Google account could sign in, so allowed_domains (Google Workspace domains) or allowed_groups is required."
-  default     = {}
-  nullable    = false
-}
-
-variable "grafana_auth_github" {
-  type = object({
+  type = list(object({
+    provider              = string
+    name                  = optional(string)
     client_id             = optional(string)
     client_secret_arn     = optional(string)
+    tenant_id             = optional(string)
+    url                   = optional(string)
+    auth_url              = optional(string)
+    token_url             = optional(string)
+    api_url               = optional(string)
+    scopes                = optional(string)
+    allowed_domains       = optional(list(string), [])
+    allowed_groups        = optional(list(string), [])
     allowed_organizations = optional(list(string), [])
     team_ids              = optional(list(string), [])
     role_attribute_path   = optional(string)
     settings              = optional(map(string), {})
-  })
-  description = "GitHub sign-in ([auth.github]). Anyone with a GitHub account could sign in, so allowed_organizations or team_ids is required."
-  default     = {}
+  }))
+  description = <<-EOT
+    OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) are required.
+    - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
+    - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
+    - role_attribute_path maps the provider's user info to a Grafana role.
+    - settings passes any other key of the section through verbatim.
+  EOT
+  default     = []
   nullable    = false
-}
 
-variable "grafana_auth_gitlab" {
-  type = object({
-    client_id           = optional(string)
-    client_secret_arn   = optional(string)
-    url                 = optional(string)
-    allowed_groups      = optional(list(string), [])
-    role_attribute_path = optional(string)
-    settings            = optional(map(string), {})
-  })
-  description = "GitLab sign-in ([auth.gitlab]). url is a self-managed GitLab's base URL; null uses gitlab.com, where anyone has an account, so allowed_groups is then required."
-  default     = {}
-  nullable    = false
-}
+  validation {
+    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
+    error_message = "Each grafana_auth_providers entry's provider must be one of: google, github, gitlab, azuread, okta, generic_oauth."
+  }
 
-variable "grafana_auth_azuread" {
-  type = object({
-    client_id         = optional(string)
-    client_secret_arn = optional(string)
-    tenant_id         = optional(string)
-    allowed_groups    = optional(list(string), [])
-    settings          = optional(map(string), {})
-  })
-  description = "Microsoft Entra ID sign-in ([auth.azuread]). tenant_id is required; roles come from the app registration's app roles."
-  default     = {}
-  nullable    = false
-}
-
-variable "grafana_auth_okta" {
-  type = object({
-    client_id           = optional(string)
-    client_secret_arn   = optional(string)
-    url                 = optional(string)
-    allowed_groups      = optional(list(string), [])
-    role_attribute_path = optional(string)
-    settings            = optional(map(string), {})
-  })
-  description = "Okta sign-in ([auth.okta]). url is the Okta org URL, such as https://example.okta.com, and is required."
-  default     = {}
-  nullable    = false
-}
-
-variable "grafana_auth_generic_oauth" {
-  type = object({
-    name                = optional(string)
-    client_id           = optional(string)
-    client_secret_arn   = optional(string)
-    auth_url            = optional(string)
-    token_url           = optional(string)
-    api_url             = optional(string)
-    scopes              = optional(string)
-    allowed_domains     = optional(list(string), [])
-    allowed_groups      = optional(list(string), [])
-    role_attribute_path = optional(string)
-    settings            = optional(map(string), {})
-  })
-  description = "Any other OAuth2 or OpenID Connect provider ([auth.generic_oauth]), such as Keycloak, Auth0 or Authentik. auth_url and token_url are required; name is the label on the sign-in button."
-  default     = {}
-  nullable    = false
+  validation {
+    condition     = length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers)
+    error_message = "Each provider can appear in grafana_auth_providers once: Grafana has one [auth.<provider>] section per provider."
+  }
 }
 
 ################################################################################

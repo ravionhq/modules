@@ -95,12 +95,14 @@ run "google_restricted_to_workspace_domains" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["google"]
-    grafana_auth_google = {
-      client_id         = "1234.apps.googleusercontent.com"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-      allowed_domains   = ["example.com", " example.org "]
-    }
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains   = ["example.com", " example.org "]
+      },
+    ]
   }
 
   assert {
@@ -128,40 +130,46 @@ run "several_providers_side_by_side" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["github", "azuread", "okta", "gitlab", "generic_oauth"]
-    grafana_auth_github = {
-      client_id             = "gh-client"
-      client_secret_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf"
-      allowed_organizations = ["Example Org"]
-      team_ids              = ["150"]
-    }
-    grafana_auth_azuread = {
-      client_id         = "entra-client"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf"
-      tenant_id         = "11111111-2222-3333-4444-555555555555"
-    }
-    grafana_auth_okta = {
-      client_id         = "okta-client"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:okta-AbCdEf"
-      url               = "https://example.okta.com/"
-      allowed_groups    = ["grafana-users"]
-    }
-    grafana_auth_gitlab = {
-      client_id         = "gl-client"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gl-AbCdEf"
-      url               = "https://gitlab.example.com"
-    }
-    grafana_auth_generic_oauth = {
-      name                = "Keycloak"
-      client_id           = "kc-client"
-      client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf"
-      auth_url            = "https://sso.example.com/realms/eng/protocol/openid-connect/auth"
-      token_url           = "https://sso.example.com/realms/eng/protocol/openid-connect/token"
-      api_url             = "https://sso.example.com/realms/eng/protocol/openid-connect/userinfo"
-      scopes              = "openid email profile"
-      role_attribute_path = "contains(roles[*], 'admin') && 'Admin' || 'Viewer'"
-      settings            = { use_pkce = "true", login_attribute_path = "preferred_username" }
-    }
+    grafana_auth_providers = [
+      {
+        provider              = "github"
+        client_id             = "gh-client"
+        client_secret_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf"
+        allowed_organizations = ["Example Org"]
+        team_ids              = ["150"]
+      },
+      {
+        provider          = "azuread"
+        client_id         = "entra-client"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf"
+        tenant_id         = "11111111-2222-3333-4444-555555555555"
+      },
+      {
+        provider          = "okta"
+        client_id         = "okta-client"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:okta-AbCdEf"
+        url               = "https://example.okta.com/"
+        allowed_groups    = ["grafana-users"]
+      },
+      {
+        provider          = "gitlab"
+        client_id         = "gl-client"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gl-AbCdEf"
+        url               = "https://gitlab.example.com"
+      },
+      {
+        provider            = "generic_oauth"
+        name                = "Keycloak"
+        client_id           = "kc-client"
+        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf"
+        auth_url            = "https://sso.example.com/realms/eng/protocol/openid-connect/auth"
+        token_url           = "https://sso.example.com/realms/eng/protocol/openid-connect/token"
+        api_url             = "https://sso.example.com/realms/eng/protocol/openid-connect/userinfo"
+        scopes              = "openid email profile"
+        role_attribute_path = "contains(roles[*], 'admin') && 'Admin' || 'Viewer'"
+        settings            = { use_pkce = "true", login_attribute_path = "preferred_username" }
+      },
+    ]
   }
 
   assert {
@@ -203,12 +211,14 @@ run "providers_only_turns_off_passwords_everywhere" {
       login_form_enabled = false
       default_role       = "Editor"
     }
-    grafana_auth_providers = ["google"]
-    grafana_auth_google = {
-      client_id         = "1234.apps.googleusercontent.com"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-      allowed_domains   = ["example.com"]
-    }
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains   = ["example.com"]
+      },
+    ]
   }
 
   assert {
@@ -233,10 +243,12 @@ run "rejects_a_provider_without_its_client" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["okta"]
-    grafana_auth_okta = {
-      url = "https://example.okta.com"
-    }
+    grafana_auth_providers = [
+      {
+        provider = "okta"
+        url      = "https://example.okta.com"
+      },
+    ]
   }
 
   expect_failures = [helm_release.grafana]
@@ -246,11 +258,13 @@ run "rejects_google_open_to_every_account" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["google"]
-    grafana_auth_google = {
-      client_id         = "1234.apps.googleusercontent.com"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-    }
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+      },
+    ]
   }
 
   expect_failures = [helm_release.grafana]
@@ -260,11 +274,13 @@ run "rejects_github_open_to_every_account" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["github"]
-    grafana_auth_github = {
-      client_id         = "gh-client"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf"
-    }
+    grafana_auth_providers = [
+      {
+        provider          = "github"
+        client_id         = "gh-client"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf"
+      },
+    ]
   }
 
   expect_failures = [helm_release.grafana]
@@ -274,11 +290,13 @@ run "rejects_entra_without_a_tenant" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["azuread"]
-    grafana_auth_azuread = {
-      client_id         = "entra-client"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf"
-    }
+    grafana_auth_providers = [
+      {
+        provider          = "azuread"
+        client_id         = "entra-client"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf"
+      },
+    ]
   }
 
   expect_failures = [helm_release.grafana]
@@ -288,14 +306,16 @@ run "rejects_a_client_secret_in_settings" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["generic_oauth"]
-    grafana_auth_generic_oauth = {
-      client_id         = "kc-client"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf"
-      auth_url          = "https://sso.example.com/auth"
-      token_url         = "https://sso.example.com/token"
-      settings          = { client_secret = "do-not-do-this" }
-    }
+    grafana_auth_providers = [
+      {
+        provider          = "generic_oauth"
+        client_id         = "kc-client"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf"
+        auth_url          = "https://sso.example.com/auth"
+        token_url         = "https://sso.example.com/token"
+        settings          = { client_secret = "do-not-do-this" }
+      },
+    ]
   }
 
   expect_failures = [helm_release.grafana]
@@ -305,7 +325,11 @@ run "rejects_unknown_provider" {
   command = plan
 
   variables {
-    grafana_auth_providers = ["facebook"]
+    grafana_auth_providers = [
+      {
+        provider = "facebook"
+      },
+    ]
   }
 
   expect_failures = [var.grafana_auth_providers]
@@ -327,14 +351,29 @@ run "rejects_provider_secrets_without_external_secrets" {
   command = plan
 
   variables {
-    eso_enabled            = false
-    grafana_auth_providers = ["google"]
-    grafana_auth_google = {
-      client_id         = "1234.apps.googleusercontent.com"
-      client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-      allowed_domains   = ["example.com"]
-    }
+    eso_enabled = false
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains   = ["example.com"]
+      },
+    ]
   }
 
   expect_failures = [helm_release.observability_secrets]
+}
+
+run "rejects_the_same_provider_twice" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "google", client_id = "a", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:a-AbCdEf", allowed_domains = ["example.com"] },
+      { provider = "google", client_id = "b", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:b-AbCdEf", allowed_domains = ["example.org"] },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
 }
