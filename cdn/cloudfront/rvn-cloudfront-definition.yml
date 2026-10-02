@@ -3,10 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.3.3
-  description: >-
-    Prevent applies from failing with CloudFront in-use errors when a private origin moves to another load
-    balancer or changes its settings. Existing private origins are recreated once on upgrade, without downtime.
+  version: 1.4.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

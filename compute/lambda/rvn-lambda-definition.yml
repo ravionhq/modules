@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.2.2
-  description: Show supported Secrets Manager and Parameter Store reference keys for build environment variables.
+  version: 1.4.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -87,8 +87,10 @@ module:
       default: $values:first
       show_when:
         package_type: Zip
-      placeholder: nodejs20.x
+      placeholder: nodejs24.x
       values:
+        - label: Node.js 24.x
+          value: nodejs24.x
         - label: Node.js 22.x
           value: nodejs22.x
         - label: Node.js 20.x
@@ -1334,7 +1336,7 @@ module:
     | Lambda function | Lambda type | Yes | Regional Lambda | Immutable because Lambda@Edge must be created in us-east-1 |
     | Lambda function | Package type | Yes | Zip package | Immutable AWS package type |
     | Lambda function | Handler | Zip only | index.handler | Zip package entrypoint |
-    | Lambda function | Runtime | Zip only | nodejs20.x | Lambda runtime string |
+    | Lambda function | Runtime | Zip only | nodejs24.x | Lambda runtime string |
     | Lambda function | Memory | Yes | 128 MB | Also affects CPU allocation |
     | Lambda function | Timeout | Yes | 5 seconds | Maximum invocation runtime |
     | Build config | Build source | Yes | Dockerfile | Zip packages support Dockerfile, Nixpacks, or Pull from S3. Container images support Dockerfile, Nixpacks, or Pull from image registry |

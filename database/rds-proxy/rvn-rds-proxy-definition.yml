@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon RDS Proxy that provides connection pooling in front of an RDS instance or Aurora cluster.
 
 release:
-  version: 0.1.0
-  description: Initial release of the RDS Proxy module definition.
+  version: 0.2.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: network

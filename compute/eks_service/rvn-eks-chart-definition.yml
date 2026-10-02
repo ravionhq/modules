@@ -4,8 +4,8 @@ definition:
   name: EKS Helm Chart
   description: Install any third-party Helm chart from an HTTP Helm repository or an OCI registry onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.1.2
-  description: Use the configured chart version and execution environment for deploys, and require encrypted transport for Helm repositories.
+  version: 0.2.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - id: section_cluster
