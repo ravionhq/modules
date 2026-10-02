@@ -38,7 +38,7 @@ mock_provider "aws" {
 variables {
   name                  = "test-lambda"
   package_type          = "Zip"
-  runtime               = "nodejs20.x"
+  runtime               = "nodejs24.x"
   handler               = "index.handler"
   s3_bucket             = "artifact-bucket"
   s3_key                = "lambda.zip"
@@ -57,6 +57,11 @@ run "basic_zip_function" {
   assert {
     condition     = aws_lambda_function.this.package_type == "Zip"
     error_message = "Package type should be Zip."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.runtime == "nodejs24.x"
+    error_message = "Runtime should match input."
   }
 
   assert {
