@@ -1253,232 +1253,197 @@ module:
       id: traces_enabled
       label: Traces
       type: boolean
-    - add_button_label: Add destination
-      default:
-        - xray
-      description: Send traces to one or more destinations.
-      id: traces_providers
+    - default:
+        - destination: xray
+      description: Send every trace to one or more destinations, each a card with its own settings.
+      id: traces_destinations
+      item_inputs:
+        - description: Where this copy of every trace goes.
+          id: destination
+          label: Destination
+          required: true
+          type: string
+          values:
+            - description: Tempo in the cluster, read by the in-cluster Grafana
+              label: Tempo in your cluster
+              value: tempo
+            - label: AWS X-Ray
+              value: xray
+            - label: Grafana Cloud Traces
+              value: grafana_cloud
+            - label: Datadog
+              value: datadog
+            - label: New Relic
+              value: new_relic
+            - description: Honeycomb, Jaeger, another collector, or any OTLP/HTTP receiver
+              label: Custom OTLP endpoint
+              value: otlp
+        - default: s3
+          description: Where Tempo keeps its trace blocks.
+          id: storage_backend
+          label: Storage
+          show_when:
+            destination: tempo
+          type: string
+          values:
+            - description: Blocks in an S3 bucket in this account, through Tempo's own Pod Identity role.
+              label: S3 bucket
+              value: s3
+            - description: Blocks on Tempo's own volume. Suits a single replica, and survives restarts only with a persistent volume.
+              label: Tempo's volume
+              value: local
+        - collapsible: true
+          description: S3 bucket name for trace storage. Leave blank to create a bucket. Lifecycle and encryption remain your responsibility for an existing bucket.
+          id: s3_bucket_name
+          label: Existing S3 bucket
+          placeholder: my-cluster-traces
+          show_when:
+            destination: tempo
+            storage_backend: s3
+          type: string
+        - default: 30
+          description: Number of days traces remain searchable in Tempo before deletion. Enter 1-3650.
+          id: retention_days
+          label: Retention (days)
+          max: 3650
+          min: 1
+          show_when:
+            destination: tempo
+          type: number
+        - default: false
+          description: Keep Tempo's volume (write-ahead log, live store and, with local storage, the blocks) on a gp3 PersistentVolumeClaim. Needs the EBS CSI driver. Off, it is a size-limited scratch volume that restarts empty.
+          id: persistence_enabled
+          label: Persistent volume
+          show_when:
+            destination: tempo
+          type: boolean
+        - default: 10Gi
+          description: Size of Tempo's volume, as a Kubernetes quantity.
+          id: persistence_size
+          label: Volume size
+          placeholder: 10Gi
+          show_when:
+            destination: tempo
+          type: string
+        - default: false
+          description: Turn on Tempo's metrics generator. It writes service graphs and span metrics (request rate, errors, duration per service) to the in-cluster Prometheus, or to Amazon Managed Prometheus without it, and Grafana's Tempo data source draws its service map from them.
+          id: metrics_generator_enabled
+          label: Service graphs and span metrics
+          show_when:
+            destination: tempo
+          type: boolean
+        - collapsible: true
+          description: Version of the grafana-community/tempo Helm chart, for example 3.1.0.
+          id: chart_version
+          label: Chart version
+          placeholder: 3.1.0
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
+          default: {}
+          description: 'Any other Tempo chart values, as JSON, merged over the module''s own: replicas, resources, ingestion limits and overrides, query tuning, tolerations. For example {"tempo": {"overrides": {"defaults": {"global": {"max_bytes_per_trace": 10000000}}}}}.'
+          id: helm_values
+          label: Other Tempo chart values
+          show_when:
+            destination: tempo
+          type: object
+        - collapsible: true
+          description: Region X-Ray traces are written to. Leave blank for the cluster's region.
+          id: region
+          label: Region
+          placeholder: The cluster's region
+          show_when:
+            destination: xray
+          type: string
+        - description: OTLP endpoint from your Grafana Cloud stack's OpenTelemetry connection details.
+          id: url
+          label: OTLP endpoint
+          placeholder: https://otlp-gateway-prod-us-east-0.grafana.net/otlp
+          show_when:
+            destination: grafana_cloud
+          type: string
+        - description: Numeric instance ID from your Grafana Cloud stack's OpenTelemetry connection details.
+          id: user
+          label: Instance ID
+          show_when:
+            destination: grafana_cloud
+          type: string
+        - description: Secrets Manager ARN containing a Grafana Cloud token with traces:write. When Grafana Cloud is also a logs or metrics destination, that token is used.
+          id: token_secret_arn
+          label: Token secret ARN
+          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-cloud-token
+          show_when:
+            destination: grafana_cloud
+          type: string
+        - default: datadoghq.com
+          description: Datadog site that receives traces. When Datadog is also a logs or metrics destination, that site is used.
+          id: site
+          label: Datadog site
+          show_when:
+            destination: datadog
+          type: string
+          values:
+            - label: US1 (datadoghq.com)
+              value: datadoghq.com
+            - label: US3 (us3.datadoghq.com)
+              value: us3.datadoghq.com
+            - label: US5 (us5.datadoghq.com)
+              value: us5.datadoghq.com
+            - label: EU1 (datadoghq.eu)
+              value: datadoghq.eu
+            - label: AP1 (ap1.datadoghq.com)
+              value: ap1.datadoghq.com
+            - label: US1-FED (ddog-gov.com)
+              value: ddog-gov.com
+        - description: Secrets Manager ARN containing the Datadog API key. When Datadog is also a logs or metrics destination, that key is used.
+          id: api_key_secret_arn
+          label: API key secret ARN
+          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:datadog-api-key
+          show_when:
+            destination: datadog
+          type: string
+        - default: us
+          description: New Relic data region used to select the ingestion endpoint. When New Relic is also a logs or metrics destination, that region is used.
+          id: new_relic_region
+          label: New Relic region
+          show_when:
+            destination: new_relic
+          type: string
+          values:
+            - label: United States
+              value: us
+            - label: Europe
+              value: eu
+        - description: Secrets Manager ARN containing the New Relic license key. When New Relic is also a logs or metrics destination, that key is used.
+          id: license_key_secret_arn
+          label: License key secret ARN
+          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:new-relic-license-key
+          show_when:
+            destination: new_relic
+          type: string
+        - description: HTTPS OTLP/HTTP endpoint that receives traces.
+          id: endpoint
+          label: OTLP traces endpoint
+          placeholder: https://api.honeycomb.io
+          show_when:
+            destination: otlp
+          type: string
+        - collapsible: true
+          description: Secrets Manager ARN containing the complete Authorization header value for the traces endpoint.
+          id: headers_secret_arn
+          label: Authorization secret ARN
+          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:otlp-authorization
+          show_when:
+            destination: otlp
+          type: string
+      item_label: Trace destination
+      item_title:
+        template: '{destination}'
       label: Trace destinations
       show_when:
         traces_enabled: true
-      type: string_array
-      values:
-        - group_label: Stored in your account
-          label: Tempo in your cluster
-          value: tempo
-        - group_label: Stored in your account
-          label: AWS X-Ray
-          value: xray
-        - group_label: External destination
-          label: Grafana Cloud Traces
-          value: grafana_cloud
-        - group_label: External destination
-          label: Datadog
-          value: datadog
-        - group_label: External destination
-          label: New Relic
-          value: new_relic
-        - group_label: External destination
-          label: Custom OTLP endpoint
-          value: otlp
-    - collapsible: true
-      default: 30
-      description: Number of days traces remain searchable in Tempo before deletion. Enter 1-3650.
-      id: traces_tempo_retention_days
-      label: Tempo retention (days)
-      max: 3650
-      min: 1
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: number
-    - default: s3
-      description: Where Tempo keeps its trace blocks.
-      id: traces_tempo_storage_backend
-      label: Tempo storage
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: string
-      values:
-        - description: Blocks in an S3 bucket in this account, through Tempo's own Pod Identity role.
-          label: S3 bucket
-          value: s3
-        - description: Blocks on Tempo's own volume. Suits a single replica, and survives restarts only with a persistent volume.
-          label: Tempo's volume
-          value: local
-    - collapsible: true
-      description: S3 bucket name for trace storage. Leave blank to create a bucket. Lifecycle and encryption remain your responsibility for an existing bucket.
-      id: traces_tempo_s3_bucket_name
-      label: Existing S3 trace bucket
-      placeholder: my-cluster-traces
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-        traces_tempo_storage_backend: s3
-      type: string
-    - default: false
-      description: Keep Tempo's volume (write-ahead log, live store and, with local storage, the blocks) on a gp3 PersistentVolumeClaim. Needs the EBS CSI driver. Off, it is a size-limited scratch volume that restarts empty.
-      id: traces_tempo_persistence_enabled
-      label: Persistent volume
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: boolean
-    - default: 10Gi
-      description: Size of Tempo's volume, as a Kubernetes quantity.
-      id: traces_tempo_persistence_size
-      label: Volume size
-      placeholder: 10Gi
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: string
-    - default: false
-      description: Turn on Tempo's metrics generator. It writes service graphs and span metrics (request rate, errors, duration per service) to the in-cluster Prometheus, or to Amazon Managed Prometheus without it, and Grafana's Tempo data source draws its service map from them.
-      id: traces_tempo_metrics_generator_enabled
-      label: Service graphs and span metrics
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: boolean
-    - collapsible: true
-      description: Version of the grafana-community/tempo Helm chart, for example 3.1.0.
-      id: traces_tempo_chart_version
-      label: Tempo chart version
-      placeholder: 3.1.0
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: string
-    - collapsible: true
-      default: {}
-      description: 'Any other Tempo chart values, as JSON, merged over the module''s own: replicas, resources, ingestion limits and overrides, query tuning, tolerations. For example {"tempo": {"overrides": {"defaults": {"global": {"max_bytes_per_trace": 10000000}}}}}.'
-      id: traces_tempo_helm_values
-      label: Other Tempo chart values
-      show_when:
-        traces_enabled: true
-        traces_providers: tempo
-      type: object
-    - collapsible: true
-      description: Region X-Ray traces are written to. Leave blank for the cluster's region.
-      id: traces_xray_region
-      label: X-Ray region
-      show_when:
-        traces_enabled: true
-        traces_providers: xray
-      type: string
-      values: $values:aws/regions
-    - description: OTLP endpoint from your Grafana Cloud stack's OpenTelemetry connection details.
-      id: grafana_cloud_traces_url
-      label: Grafana Cloud OTLP endpoint
-      placeholder: https://otlp-gateway-prod-us-east-0.grafana.net/otlp
-      show_when:
-        traces_enabled: true
-        traces_providers: grafana_cloud
-      type: string
-    - description: Numeric instance ID from your Grafana Cloud stack's OpenTelemetry connection details.
-      id: grafana_cloud_traces_user
-      label: Grafana Cloud instance ID
-      show_when:
-        traces_enabled: true
-        traces_providers: grafana_cloud
-      type: string
-    - description: Secrets Manager ARN containing a Grafana Cloud token with traces:write. The logs or metrics credential is reused when Grafana Cloud is selected there too.
-      id: grafana_cloud_traces_token_secret_arn
-      label: Grafana Cloud token secret ARN
-      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-cloud-token
-      show_when:
-        logs_providers:
-          not: grafana_cloud
-        metrics_providers:
-          not: grafana_cloud
-        traces_enabled: true
-        traces_providers: grafana_cloud
-      type: string
-    - default: datadoghq.com
-      description: Datadog site that receives traces. The logs or metrics selection is reused when Datadog is selected there too.
-      id: datadog_traces_site
-      label: Datadog site
-      show_when:
-        logs_providers:
-          not: datadog
-        metrics_providers:
-          not: datadog
-        traces_enabled: true
-        traces_providers: datadog
-      type: string
-      values:
-        - label: US1 (datadoghq.com)
-          value: datadoghq.com
-        - label: US3 (us3.datadoghq.com)
-          value: us3.datadoghq.com
-        - label: US5 (us5.datadoghq.com)
-          value: us5.datadoghq.com
-        - label: EU1 (datadoghq.eu)
-          value: datadoghq.eu
-        - label: AP1 (ap1.datadoghq.com)
-          value: ap1.datadoghq.com
-        - label: US1-FED (ddog-gov.com)
-          value: ddog-gov.com
-    - description: Secrets Manager ARN containing the Datadog API key. The logs or metrics credential is reused when Datadog is selected there too.
-      id: datadog_traces_api_key_secret_arn
-      label: Datadog API key secret ARN
-      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:datadog-api-key
-      show_when:
-        logs_providers:
-          not: datadog
-        metrics_providers:
-          not: datadog
-        traces_enabled: true
-        traces_providers: datadog
-      type: string
-    - default: us
-      description: New Relic data region used to select the ingestion endpoint. The logs or metrics selection is reused when New Relic is selected there too.
-      id: new_relic_traces_region
-      label: New Relic region
-      show_when:
-        logs_providers:
-          not: new_relic
-        metrics_providers:
-          not: new_relic
-        traces_enabled: true
-        traces_providers: new_relic
-      type: string
-      values:
-        - label: United States
-          value: us
-        - label: Europe
-          value: eu
-    - description: Secrets Manager ARN containing the New Relic license key. The logs or metrics credential is reused when New Relic is selected there too.
-      id: new_relic_traces_license_key_secret_arn
-      label: New Relic license key secret ARN
-      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:new-relic-license-key
-      show_when:
-        logs_providers:
-          not: new_relic
-        metrics_providers:
-          not: new_relic
-        traces_enabled: true
-        traces_providers: new_relic
-      type: string
-    - description: HTTPS OTLP/HTTP endpoint that receives traces, such as Honeycomb, Jaeger or another collector.
-      id: otlp_traces_endpoint
-      label: OTLP traces endpoint
-      placeholder: https://api.honeycomb.io
-      show_when:
-        traces_enabled: true
-        traces_providers: otlp
-      type: string
-    - collapsible: true
-      description: Secrets Manager ARN containing the complete Authorization header value for the traces endpoint.
-      id: otlp_traces_headers_secret_arn
-      label: OTLP authorization secret ARN
-      placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:otlp-authorization
-      show_when:
-        traces_enabled: true
-        traces_providers: otlp
-      type: string
+      type: object_array
     - description: Makes referenced Secrets Manager secrets and SSM parameters available as Kubernetes Secrets without sending their values through Ravion.
       id: section_external_secrets
       label: External secrets
@@ -1563,31 +1528,31 @@ module:
         # lists and never the toggles.
         logs_providers: '<< module.input.logs_enabled == false ? [] : (module.input.logs_providers != nil ? module.input.logs_providers : ["loki"]) >>'
         metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
-        traces_providers: '<< module.input.traces_enabled == true ? (module.input.traces_providers != nil ? module.input.traces_providers : ["xray"]) : [] >>'
+        traces_providers: '<< module.input.traces_enabled == true ? map(module.input.traces_destinations ?? [{"destination": "xray"}], .destination) : [] >>'
         traces_xray:
-          region: << module.input.traces_xray_region >>
+          region: '<< find(module.input.traces_destinations ?? [], .destination == "xray")?.region >>'
         traces_tempo:
-          retention_days: << module.input.traces_tempo_retention_days >>
-          storage_backend: << module.input.traces_tempo_storage_backend || "s3" >>
-          s3_bucket_name: << module.input.traces_tempo_s3_bucket_name >>
-          persistence_enabled: << module.input.traces_tempo_persistence_enabled >>
-          persistence_size: << module.input.traces_tempo_persistence_size >>
-          metrics_generator_enabled: << module.input.traces_tempo_metrics_generator_enabled >>
+          retention_days: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.retention_days >>'
+          storage_backend: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.storage_backend || "s3" >>'
+          s3_bucket_name: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.s3_bucket_name >>'
+          persistence_enabled: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.persistence_enabled >>'
+          persistence_size: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.persistence_size >>'
+          metrics_generator_enabled: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.metrics_generator_enabled >>'
         traces_grafana_cloud:
-          url: << module.input.grafana_cloud_traces_url >>
-          user: << module.input.grafana_cloud_traces_user >>
-          token_secret_arn: << module.input.grafana_cloud_token_secret_arn || module.input.grafana_cloud_metrics_token_secret_arn || module.input.grafana_cloud_traces_token_secret_arn >>
+          url: '<< find(module.input.traces_destinations ?? [], .destination == "grafana_cloud")?.url >>'
+          user: '<< find(module.input.traces_destinations ?? [], .destination == "grafana_cloud")?.user >>'
+          token_secret_arn: '<< module.input.grafana_cloud_token_secret_arn || module.input.grafana_cloud_metrics_token_secret_arn || find(module.input.traces_destinations ?? [], .destination == "grafana_cloud")?.token_secret_arn >>'
         traces_datadog:
-          site: << module.input.datadog_site || module.input.datadog_metrics_site || module.input.datadog_traces_site >>
-          api_key_secret_arn: << module.input.datadog_api_key_secret_arn || module.input.datadog_metrics_api_key_secret_arn || module.input.datadog_traces_api_key_secret_arn >>
+          site: '<< module.input.datadog_site || module.input.datadog_metrics_site || find(module.input.traces_destinations ?? [], .destination == "datadog")?.site >>'
+          api_key_secret_arn: '<< module.input.datadog_api_key_secret_arn || module.input.datadog_metrics_api_key_secret_arn || find(module.input.traces_destinations ?? [], .destination == "datadog")?.api_key_secret_arn >>'
         traces_new_relic:
-          region: << module.input.new_relic_region || module.input.new_relic_metrics_region || module.input.new_relic_traces_region >>
-          license_key_secret_arn: << module.input.new_relic_license_key_secret_arn || module.input.new_relic_metrics_license_key_secret_arn || module.input.new_relic_traces_license_key_secret_arn >>
+          region: '<< module.input.new_relic_region || module.input.new_relic_metrics_region || find(module.input.traces_destinations ?? [], .destination == "new_relic")?.new_relic_region >>'
+          license_key_secret_arn: '<< module.input.new_relic_license_key_secret_arn || module.input.new_relic_metrics_license_key_secret_arn || find(module.input.traces_destinations ?? [], .destination == "new_relic")?.license_key_secret_arn >>'
         traces_otlp:
-          endpoint: << module.input.otlp_traces_endpoint >>
-          headers_secret_arn: << module.input.otlp_traces_headers_secret_arn >>
-        tempo_chart_version: << module.input.traces_tempo_chart_version || "3.1.0" >>
-        tempo_values: '<< module.input.traces_tempo_helm_values != nil ? module.input.traces_tempo_helm_values : {} >>'
+          endpoint: '<< find(module.input.traces_destinations ?? [], .destination == "otlp")?.endpoint >>'
+          headers_secret_arn: '<< find(module.input.traces_destinations ?? [], .destination == "otlp")?.headers_secret_arn >>'
+        tempo_chart_version: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.chart_version || "3.1.0" >>'
+        tempo_values: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.helm_values ?? {} >>'
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
@@ -1961,7 +1926,7 @@ module:
     | Metrics                | No       | `true`               | Collect workload metrics at all                        |
     | Metrics providers      | No       | Amazon Managed Prometheus | Any combination of the metric destinations above   |
     | Traces                 | No       | `false`              | Receive workload OTLP traces at an in-cluster Service  |
-    | Traces providers       | No       | AWS X-Ray            | AWS X-Ray, Tempo in your cluster, or both              |
+    | Trace destinations     | No       | AWS X-Ray            | Cards for Tempo, AWS X-Ray, Grafana Cloud, Datadog, New Relic or any OTLP endpoint, each with its own settings |
     | Existing workspace ID  | No       | Creates one          | Write into an existing AMP workspace instead of creating `ravion-<cluster>` |
     | Retention (days)       | No       | `30`                 | How long logs stay searchable before they are deleted from the bucket |
     | Application Signals    | No       | `false`              | CloudWatch auto-instrumentation: injects the AWS agent into the named namespaces and restarts their pods |
