@@ -76,6 +76,11 @@ run "render_contract" {
   }
 
   assert {
+    condition     = !contains(yamldecode(helm_release.prometheus[0].values[0]).server.extraFlags, "web.enable-admin-api")
+    error_message = "Prometheus's admin API (delete_series, snapshots) must stay off: the sidecar only reads blocks, and the Service is reachable from every pod."
+  }
+
+  assert {
     condition     = yamldecode(local.thanos_objstore_config).config.aws_sdk_auth && !yamldecode(local.thanos_objstore_config).config.insecure
     error_message = "S3 access must use Pod Identity over TLS."
   }

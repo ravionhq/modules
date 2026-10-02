@@ -57,7 +57,6 @@ resource "helm_release" "prometheus" {
             "web.enable-lifecycle",
             "web.enable-remote-write-receiver",
             ], local.thanos_enabled ? [
-            "web.enable-admin-api",
             "storage.tsdb.min-block-duration=2h",
             "storage.tsdb.max-block-duration=2h",
           ] : [])
