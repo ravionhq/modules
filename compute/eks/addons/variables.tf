@@ -1464,104 +1464,77 @@ variable "metrics_providers" {
   }
 }
 
-variable "traces_providers" {
-  type        = list(string)
-  description = "Where workload traces go. Any combination of: xray (AWS X-Ray), tempo (in-cluster Tempo), grafana_cloud (Grafana Cloud Traces), datadog, new_relic, otlp (any OTLP/HTTP traces receiver). A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data. An empty list turns traces off."
-  default     = []
-  nullable    = false
+variable "traces_destinations" {
+  type = list(object({
+    destination = string
 
-  validation {
-    condition     = alltrue([for provider in var.traces_providers : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], provider)])
-    error_message = "Each traces_providers entry must be one of: xray, tempo, grafana_cloud, datadog, new_relic, otlp."
-  }
-}
-
-variable "traces_grafana_cloud" {
-  type = object({
-    url              = optional(string)
-    user             = optional(string)
-    token_secret_arn = optional(string)
-  })
-  description = "Grafana Cloud Traces: the stack's OTLP endpoint (https://otlp-gateway-<zone>.grafana.net/otlp), its numeric instance id, and a Secrets Manager ARN holding a token with traces:write. The token is shared with logs_grafana_cloud and metrics_grafana_cloud when they name one."
-  default     = {}
-  nullable    = false
-}
-
-variable "traces_datadog" {
-  type = object({
-    site               = optional(string)
-    api_key_secret_arn = optional(string)
-  })
-  description = "Datadog traces: the site and a Secrets Manager ARN holding the API key. Shared with logs_datadog and metrics_datadog when they name one."
-  default     = {}
-  nullable    = false
-}
-
-variable "traces_new_relic" {
-  type = object({
-    region                 = optional(string)
-    license_key_secret_arn = optional(string)
-  })
-  description = "New Relic traces: region (us or eu) and a Secrets Manager ARN holding the license key. Shared with logs_new_relic and metrics_new_relic when they name one."
-  default     = {}
-  nullable    = false
-}
-
-variable "traces_otlp" {
-  type = object({
-    endpoint           = optional(string)
-    headers_secret_arn = optional(string)
-  })
-  description = "Any OTLP/HTTP traces receiver, such as Honeycomb, Jaeger or an external collector: the endpoint, and optionally a Secrets Manager ARN holding the value of an Authorization header."
-  default     = {}
-  nullable    = false
-}
-
-variable "traces_xray" {
-  type = object({
-    region = optional(string)
-  })
-  description = "AWS X-Ray: the region traces are written to. Null or blank uses the cluster's region."
-  default     = {}
-  nullable    = false
-}
-
-variable "traces_tempo" {
-  type = object({
+    # tempo
     retention_days            = optional(number)
     storage_backend           = optional(string)
     s3_bucket_name            = optional(string)
     persistence_enabled       = optional(bool)
     persistence_size          = optional(string)
     metrics_generator_enabled = optional(bool)
-  })
+    chart_version             = optional(string)
+    helm_values               = optional(any)
+
+    # xray
+    region = optional(string)
+
+    # grafana_cloud
+    url              = optional(string)
+    user             = optional(string)
+    token_secret_arn = optional(string)
+
+    # datadog
+    site               = optional(string)
+    api_key_secret_arn = optional(string)
+
+    # new_relic
+    new_relic_region       = optional(string)
+    license_key_secret_arn = optional(string)
+
+    # otlp
+    endpoint           = optional(string)
+    headers_secret_arn = optional(string)
+  }))
   description = <<-EOT
-    In-cluster Tempo.
-    - retention_days: how long traces stay queryable (30 when null).
-    - storage_backend: s3 (the default) keeps blocks in an S3 bucket, s3_bucket_name or a created one. local keeps them on Tempo's own volume, which suits a single replica only and survives restarts only with persistence.
-    - persistence_enabled puts Tempo's volume (write-ahead log, live store and, with local storage, the blocks) on a PersistentVolumeClaim, which needs a StorageClass (ebs_csi_driver_enabled). Off, it is an emptyDir.
-    - persistence_size is the claim's size, or the emptyDir's size limit (10Gi when null).
-    - metrics_generator_enabled turns on Tempo's metrics generator: service graphs and span metrics, written to the in-cluster Prometheus or, without it, Amazon Managed Prometheus. Grafana's Tempo data source then draws the service map from them.
+    Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), and persistence_size is its size or the emptyDir's limit (10Gi); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
+    - xray: AWS X-Ray, in region (the cluster's when null).
+    - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
+    - datadog: site and a Secrets Manager ARN holding the API key.
+    - new_relic: new_relic_region (us or eu) and a Secrets Manager ARN holding the license key.
+    - otlp: any OTLP/HTTP traces receiver (endpoint), and optionally a Secrets Manager ARN holding an Authorization header value.
+    A vendor that is also a logs or metrics destination uses that signal's site, region and secret.
   EOT
-  default     = {}
+  default     = []
   nullable    = false
 
   validation {
-    condition     = var.traces_tempo.retention_days == null || try(var.traces_tempo.retention_days >= 1, false)
-    error_message = "The traces_tempo.retention_days must be at least 1."
+    condition     = alltrue([for entry in var.traces_destinations : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], entry.destination)])
+    error_message = "Each traces_destinations entry's destination must be one of: xray, tempo, grafana_cloud, datadog, new_relic, otlp."
   }
 
   validation {
-    condition     = contains(["", "s3", "local"], try(trimspace(var.traces_tempo.storage_backend), ""))
-    error_message = "The traces_tempo.storage_backend must be s3 or local."
+    condition     = length(distinct([for entry in var.traces_destinations : entry.destination])) == length(var.traces_destinations)
+    error_message = "Each destination can appear in traces_destinations once."
   }
-}
 
-variable "tempo_chart_version" {
-  type        = string
-  description = "Version of the grafana-community/tempo Helm chart to install."
-  default     = "3.1.0"
-  nullable    = false
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : entry.retention_days == null || try(entry.retention_days >= 1, false)])
+    error_message = "A tempo destination's retention_days must be at least 1."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : contains(["", "s3", "local"], try(trimspace(entry.storage_backend), ""))])
+    error_message = "A tempo destination's storage_backend must be s3 or local."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : entry.helm_values == null || can(keys(entry.helm_values))])
+    error_message = "A tempo destination's helm_values must be an object of chart values."
+  }
 }
 
 variable "tempo_service_account" {
@@ -1583,21 +1556,9 @@ variable "tempo_resources" {
   nullable    = false
 }
 
-variable "tempo_values" {
-  type        = any
-  description = "Any grafana-community/tempo chart values, as an object, merged over the values this module derives and before tempo_helm_values. The route to replicas, resources, limits and overrides, query tuning, tolerations, or a private image registry."
-  default     = {}
-  nullable    = false
-
-  validation {
-    condition     = can(keys(var.tempo_values))
-    error_message = "The tempo_values must be an object of chart values."
-  }
-}
-
 variable "tempo_helm_values" {
   type        = list(string)
-  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives and tempo_values (later entries win)."
+  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives and the tempo destination's helm_values (later entries win)."
   default     = []
   nullable    = false
 }

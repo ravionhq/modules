@@ -128,7 +128,9 @@ run "xray_with_amp_sends_traces_to_xray_and_workload_metrics_to_amp" {
 
   variables {
     metrics_providers = ["amp"]
-    traces_providers  = ["xray"]
+    traces_destinations = [
+      { destination = "xray" },
+    ]
   }
 
   assert {
@@ -181,7 +183,9 @@ run "xray_without_amp_gets_its_own_role" {
 
   variables {
     metrics_providers = ["prometheus"]
-    traces_providers  = ["xray"]
+    traces_destinations = [
+      { destination = "xray" },
+    ]
   }
 
   assert {
@@ -203,7 +207,9 @@ run "traces_without_metrics_run_a_traces_only_collector" {
   command = plan
 
   variables {
-    traces_providers = ["xray"]
+    traces_destinations = [
+      { destination = "xray" },
+    ]
   }
 
   assert {
@@ -246,8 +252,12 @@ run "xray_region_can_differ_from_the_cluster" {
 
   variables {
     metrics_providers = ["amp"]
-    traces_providers  = ["xray"]
-    traces_xray       = { region = "us-west-2" }
+    traces_destinations = [
+      {
+        destination = "xray"
+        region      = "us-west-2"
+      },
+    ]
   }
 
   assert {
@@ -264,10 +274,12 @@ run "rejects_unknown_traces_provider" {
   command = plan
 
   variables {
-    traces_providers = ["zipkin"]
+    traces_destinations = [
+      { destination = "zipkin" },
+    ]
   }
 
-  expect_failures = [var.traces_providers]
+  expect_failures = [var.traces_destinations]
 }
 
 ################################################################################
@@ -278,7 +290,9 @@ run "tempo_stores_traces_in_cluster_on_s3" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
   }
 
   assert {
@@ -332,7 +346,10 @@ run "xray_and_tempo_both_receive_every_trace" {
 
   variables {
     metrics_providers = ["amp"]
-    traces_providers  = ["xray", "tempo"]
+    traces_destinations = [
+      { destination = "xray" },
+      { destination = "tempo" },
+    ]
   }
 
   assert {
@@ -350,8 +367,9 @@ run "tempo_uses_an_existing_bucket_and_retention" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    traces_tempo     = { s3_bucket_name = "my-traces", retention_days = 7 }
+    traces_destinations = [
+      { destination = "tempo", s3_bucket_name = "my-traces", retention_days = 7 },
+    ]
   }
 
   assert {
@@ -369,8 +387,9 @@ run "tempo_creates_a_bucket_when_the_form_leaves_it_blank" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    traces_tempo     = { s3_bucket_name = "" }
+    traces_destinations = [
+      { destination = "tempo", s3_bucket_name = "" },
+    ]
   }
 
   assert {
@@ -383,8 +402,10 @@ run "in_cluster_grafana_reads_tempo" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    grafana_enabled  = true
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
+    grafana_enabled = true
   }
 
   assert {
@@ -397,23 +418,29 @@ run "rejects_zero_tempo_retention" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    traces_tempo     = { retention_days = 0 }
+    traces_destinations = [
+      {
+        destination    = "tempo"
+        retention_days = 0
+      },
+    ]
   }
 
-  expect_failures = [var.traces_tempo]
+  expect_failures = [var.traces_destinations]
 }
 
 run "tempo_keeps_blocks_on_its_own_volume_without_aws_access" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    traces_tempo = {
-      storage_backend     = "local"
-      persistence_enabled = true
-      persistence_size    = "50Gi"
-    }
+    traces_destinations = [
+      {
+        destination         = "tempo"
+        storage_backend     = "local"
+        persistence_enabled = true
+        persistence_size    = "50Gi"
+      },
+    ]
   }
 
   assert {
@@ -436,7 +463,9 @@ run "tempo_uses_a_size_limited_scratch_volume_by_default" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
   }
 
   assert {
@@ -455,11 +484,13 @@ run "tempo_metrics_generator_writes_to_the_in_cluster_prometheus" {
 
   variables {
     metrics_providers = ["prometheus"]
-    traces_providers  = ["tempo"]
-    grafana_enabled   = true
-    traces_tempo = {
-      metrics_generator_enabled = true
-    }
+    traces_destinations = [
+      {
+        destination               = "tempo"
+        metrics_generator_enabled = true
+      },
+    ]
+    grafana_enabled = true
   }
 
   assert {
@@ -483,11 +514,13 @@ run "tempo_metrics_generator_signs_its_writes_to_amp" {
 
   variables {
     metrics_providers = ["amp"]
-    traces_providers  = ["tempo"]
-    traces_tempo = {
-      storage_backend           = "local"
-      metrics_generator_enabled = true
-    }
+    traces_destinations = [
+      {
+        destination               = "tempo"
+        storage_backend           = "local"
+        metrics_generator_enabled = true
+      },
+    ]
   }
 
   assert {
@@ -505,24 +538,28 @@ run "tempo_takes_any_chart_values" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    tempo_values = {
-      replicas = 2
-      tempo = {
-        overrides = {
-          defaults = {
-            global = {
-              max_bytes_per_trace = 10000000
+    traces_destinations = [
+      {
+        destination = "tempo"
+        helm_values = {
+          replicas = 2
+          tempo = {
+            overrides = {
+              defaults = {
+                global = {
+                  max_bytes_per_trace = 10000000
+                }
+              }
             }
           }
         }
-      }
-    }
+      },
+    ]
   }
 
   assert {
     condition     = length(helm_release.tempo[0].values) == 2 && yamldecode(helm_release.tempo[0].values[1]).replicas == 2 && yamldecode(helm_release.tempo[0].values[1]).tempo.overrides.defaults.global.max_bytes_per_trace == 10000000
-    error_message = "tempo_values must reach the chart after the module's own values"
+    error_message = "A tempo destination's helm_values must reach the chart after the module's own values"
   }
 }
 
@@ -530,10 +567,12 @@ run "rejects_a_generator_with_nowhere_to_write" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    traces_tempo = {
-      metrics_generator_enabled = true
-    }
+    traces_destinations = [
+      {
+        destination               = "tempo"
+        metrics_generator_enabled = true
+      },
+    ]
   }
 
   expect_failures = [helm_release.tempo]
@@ -543,24 +582,30 @@ run "rejects_unknown_tempo_storage" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    traces_tempo = {
-      storage_backend = "gcs"
-    }
+    traces_destinations = [
+      {
+        destination     = "tempo"
+        storage_backend = "gcs"
+      },
+    ]
   }
 
-  expect_failures = [var.traces_tempo]
+  expect_failures = [var.traces_destinations]
 }
 
-run "rejects_tempo_values_that_are_not_an_object" {
+run "rejects_tempo_helm_values_that_are_not_an_object" {
   command = plan
 
   variables {
-    traces_providers = ["tempo"]
-    tempo_values     = "replicas: 2"
+    traces_destinations = [
+      {
+        destination = "tempo"
+        helm_values = "replicas: 2"
+      },
+    ]
   }
 
-  expect_failures = [var.tempo_values]
+  expect_failures = [var.traces_destinations]
 }
 
 run "tempo_bucket_name_fits_s3_for_a_long_cluster_name" {
@@ -569,7 +614,9 @@ run "tempo_bucket_name_fits_s3_for_a_long_cluster_name" {
   variables {
     cluster_name                = "a-very-long-cluster-name-that-fills-the-slug-entirely"
     public_alb_creation_enabled = false
-    traces_providers            = ["tempo"]
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
   }
 
   assert {
@@ -584,24 +631,29 @@ run "traces_go_to_every_vendor_destination" {
   variables {
     eso_enabled            = true
     eso_allowed_namespaces = ["apps"]
-    traces_providers       = ["grafana_cloud", "datadog", "new_relic", "otlp"]
-    traces_grafana_cloud = {
-      url              = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
-      user             = "123456"
-      token_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-cloud-AbCdEf"
-    }
-    traces_datadog = {
-      site               = "datadoghq.eu"
-      api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-AbCdEf"
-    }
-    traces_new_relic = {
-      region                 = "eu"
-      license_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:new-relic-AbCdEf"
-    }
-    traces_otlp = {
-      endpoint           = "https://api.honeycomb.io"
-      headers_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:honeycomb-AbCdEf"
-    }
+    traces_destinations = [
+      {
+        destination      = "grafana_cloud"
+        url              = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
+        user             = "123456"
+        token_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-cloud-AbCdEf"
+      },
+      {
+        destination        = "datadog"
+        site               = "datadoghq.eu"
+        api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-AbCdEf"
+      },
+      {
+        destination            = "new_relic"
+        new_relic_region       = "eu"
+        license_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:new-relic-AbCdEf"
+      },
+      {
+        destination        = "otlp"
+        endpoint           = "https://api.honeycomb.io"
+        headers_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:honeycomb-AbCdEf"
+      },
+    ]
   }
 
   assert {
@@ -637,7 +689,10 @@ run "a_vendor_account_is_one_exporter_for_metrics_and_traces" {
     eso_enabled            = true
     eso_allowed_namespaces = ["apps"]
     metrics_providers      = ["prometheus", "datadog"]
-    traces_providers       = ["tempo", "datadog"]
+    traces_destinations = [
+      { destination = "tempo" },
+      { destination = "datadog" },
+    ]
     metrics_datadog = {
       api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-AbCdEf"
     }
@@ -656,10 +711,12 @@ run "traces_only_vendors_stay_out_of_the_metrics_pipeline" {
     eso_enabled            = true
     eso_allowed_namespaces = ["apps"]
     metrics_providers      = ["prometheus"]
-    traces_providers       = ["new_relic"]
-    traces_new_relic = {
-      license_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:new-relic-AbCdEf"
-    }
+    traces_destinations = [
+      {
+        destination            = "new_relic"
+        license_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:new-relic-AbCdEf"
+      },
+    ]
   }
 
   assert {
@@ -674,11 +731,13 @@ run "rejects_grafana_cloud_traces_without_its_instance" {
   variables {
     eso_enabled            = true
     eso_allowed_namespaces = ["apps"]
-    traces_providers       = ["grafana_cloud"]
-    traces_grafana_cloud = {
-      url              = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
-      token_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-cloud-AbCdEf"
-    }
+    traces_destinations = [
+      {
+        destination      = "grafana_cloud"
+        url              = "https://otlp-gateway-prod-us-east-0.grafana.net/otlp"
+        token_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-cloud-AbCdEf"
+      },
+    ]
   }
 
   expect_failures = [helm_release.otel_collector]
@@ -688,7 +747,9 @@ run "rejects_otlp_traces_without_an_endpoint" {
   command = plan
 
   variables {
-    traces_providers = ["otlp"]
+    traces_destinations = [
+      { destination = "otlp" },
+    ]
   }
 
   expect_failures = [helm_release.otel_collector]

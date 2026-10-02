@@ -16,8 +16,9 @@
 #      to render without them.
 #
 #   2. MONOLITHIC MODE. Every Tempo component in one StatefulSet replica.
-#      tempo_values and tempo_helm_values reach every chart value for larger
-#      clusters: replicas, resources, limits, query tuning.
+#      The tempo destination's helm_values and tempo_helm_values reach every
+#      chart value for larger clusters: replicas, resources, limits, query
+#      tuning.
 #
 #   3. RETENTION IS ENFORCED TWICE. Tempo's backend scheduler is the authority:
 #      it deletes blocks once their retention has passed. A created bucket's
@@ -249,7 +250,7 @@ resource "helm_release" "tempo" {
   # grafana-community in January 2026, as Grafana's did.
   repository = "https://grafana-community.github.io/helm-charts"
   chart      = "tempo"
-  version    = var.tempo_chart_version
+  version    = local.tempo_config.chart_version
 
   create_namespace = true
   upgrade_install  = true
@@ -323,7 +324,7 @@ resource "helm_release" "tempo" {
         }
       }),
     ],
-    length(keys(var.tempo_values)) > 0 ? [yamlencode(var.tempo_values)] : [],
+    length(keys(local.tempo_config.helm_values)) > 0 ? [yamlencode(local.tempo_config.helm_values)] : [],
     var.tempo_helm_values,
   )
 

@@ -72,9 +72,11 @@ variables {
   eso_allowed_namespaces       = ["apps"]
   logs_providers               = ["loki"]
   metrics_providers            = ["prometheus"]
-  traces_providers             = ["tempo"]
-  ravion_operator_enabled      = false
-  grafana_enabled              = true
+  traces_destinations = [
+    { destination = "tempo" },
+  ]
+  ravion_operator_enabled = false
+  grafana_enabled         = true
   grafana_access = {
     enabled       = true
     load_balancer = "private"

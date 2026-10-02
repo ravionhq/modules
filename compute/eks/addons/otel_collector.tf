@@ -160,7 +160,7 @@ locals {
   otlp_service_host  = "${local.otel_collector_name}.${local.metrics_namespace}.svc.cluster.local"
   otlp_grpc_endpoint = local.traces_on ? "http://${local.otlp_service_host}:4317" : null
   otlp_http_endpoint = local.traces_on ? "http://${local.otlp_service_host}:4318" : null
-  xray_region        = coalesce(var.traces_xray.region, var.region, data.aws_region.current.region)
+  xray_region        = coalesce(try(trimspace(local.trace.xray.region), ""), var.region, data.aws_region.current.region)
 
   # One exporter per selected traces provider, as for metrics.
   otel_traces_exporters = merge(

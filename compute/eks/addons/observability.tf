@@ -60,12 +60,12 @@ locals {
   metrics_datadog_enabled       = contains(local.metrics_providers, "datadog")
   metrics_new_relic_enabled     = contains(local.metrics_providers, "new_relic")
   metrics_otlp_enabled          = contains(local.metrics_providers, "otlp")
-  xray_enabled                  = contains(var.traces_providers, "xray")
-  tempo_enabled                 = contains(var.traces_providers, "tempo")
-  traces_grafana_cloud_enabled  = contains(var.traces_providers, "grafana_cloud")
-  traces_datadog_enabled        = contains(var.traces_providers, "datadog")
-  traces_new_relic_enabled      = contains(var.traces_providers, "new_relic")
-  traces_otlp_enabled           = contains(var.traces_providers, "otlp")
+  xray_enabled                  = contains(local.traces_providers, "xray")
+  tempo_enabled                 = contains(local.traces_providers, "tempo")
+  traces_grafana_cloud_enabled  = contains(local.traces_providers, "grafana_cloud")
+  traces_datadog_enabled        = contains(local.traces_providers, "datadog")
+  traces_new_relic_enabled      = contains(local.traces_providers, "new_relic")
+  traces_otlp_enabled           = contains(local.traces_providers, "otlp")
   grafana_cloud_enabled         = local.logs_grafana_cloud_enabled || local.metrics_grafana_cloud_enabled || local.traces_grafana_cloud_enabled
 
   # Alloy carries the loki-family destinations; the OpenTelemetry collector
@@ -84,7 +84,15 @@ locals {
 
   # Traces ride the metrics collector, which runs for either signal: it scrapes
   # while metrics are on and receives OTLP while traces are on.
-  traces_on              = length(var.traces_providers) > 0
+  # One entry per trace destination; the variable's validation keeps each
+  # destination to a single entry. trace.<destination> is that entry, or null.
+  traces_providers = [for entry in var.traces_destinations : entry.destination]
+  trace = {
+    for destination in ["tempo", "xray", "grafana_cloud", "datadog", "new_relic", "otlp"] : destination =>
+    one([for entry in var.traces_destinations : entry if entry.destination == destination])
+  }
+
+  traces_on              = length(local.traces_providers) > 0
   otel_collector_enabled = local.otel_metrics_enabled || local.traces_on
 
   ##############################################################################
@@ -93,12 +101,14 @@ locals {
 
   # A form leaves an unused bucket field blank rather than null.
   tempo_config = {
-    retention_days            = coalesce(var.traces_tempo.retention_days, 30)
-    storage_backend           = try(trimspace(var.traces_tempo.storage_backend), "") == "" ? "s3" : trimspace(var.traces_tempo.storage_backend)
-    s3_bucket                 = try(trimspace(var.traces_tempo.s3_bucket_name), "") == "" ? null : trimspace(var.traces_tempo.s3_bucket_name)
-    persistence_enabled       = coalesce(var.traces_tempo.persistence_enabled, false)
-    persistence_size          = try(trimspace(var.traces_tempo.persistence_size), "") == "" ? "10Gi" : trimspace(var.traces_tempo.persistence_size)
-    metrics_generator_enabled = coalesce(var.traces_tempo.metrics_generator_enabled, false)
+    retention_days            = coalesce(try(local.trace.tempo.retention_days, null), 30)
+    storage_backend           = try(trimspace(local.trace.tempo.storage_backend), "") == "" ? "s3" : trimspace(local.trace.tempo.storage_backend)
+    s3_bucket                 = try(trimspace(local.trace.tempo.s3_bucket_name), "") == "" ? null : trimspace(local.trace.tempo.s3_bucket_name)
+    persistence_enabled       = coalesce(try(local.trace.tempo.persistence_enabled, null), false)
+    persistence_size          = try(trimspace(local.trace.tempo.persistence_size), "") == "" ? "10Gi" : trimspace(local.trace.tempo.persistence_size)
+    metrics_generator_enabled = coalesce(try(local.trace.tempo.metrics_generator_enabled, null), false)
+    chart_version             = try(trimspace(local.trace.tempo.chart_version), "") == "" ? "3.1.0" : trimspace(local.trace.tempo.chart_version)
+    helm_values               = try(merge({}, local.trace.tempo.helm_values), {})
   }
 
   loki_config = {
@@ -129,13 +139,13 @@ locals {
 
   # Shared across signals: the same vendor account, whichever signal named it.
   datadog_config = {
-    site               = coalesce(var.logs_datadog.site, var.metrics_datadog.site, var.traces_datadog.site, "datadoghq.com")
-    api_key_secret_arn = try(coalesce(var.logs_datadog.api_key_secret_arn, var.metrics_datadog.api_key_secret_arn, var.traces_datadog.api_key_secret_arn), null)
+    site               = coalesce(var.logs_datadog.site, var.metrics_datadog.site, try(local.trace.datadog.site, null), "datadoghq.com")
+    api_key_secret_arn = try(coalesce(var.logs_datadog.api_key_secret_arn, var.metrics_datadog.api_key_secret_arn, try(local.trace.datadog.api_key_secret_arn, null)), null)
   }
 
   new_relic_config = {
-    region                 = coalesce(var.logs_new_relic.region, var.metrics_new_relic.region, var.traces_new_relic.region, "us")
-    license_key_secret_arn = try(coalesce(var.logs_new_relic.license_key_secret_arn, var.metrics_new_relic.license_key_secret_arn, var.traces_new_relic.license_key_secret_arn), null)
+    region                 = coalesce(var.logs_new_relic.region, var.metrics_new_relic.region, try(local.trace.new_relic.new_relic_region, null), "us")
+    license_key_secret_arn = try(coalesce(var.logs_new_relic.license_key_secret_arn, var.metrics_new_relic.license_key_secret_arn, try(local.trace.new_relic.license_key_secret_arn, null)), null)
   }
 
   grafana_cloud_config = {
@@ -143,9 +153,9 @@ locals {
     logs_user        = var.logs_grafana_cloud.user
     metrics_url      = var.metrics_grafana_cloud.url
     metrics_user     = var.metrics_grafana_cloud.user
-    traces_url       = var.traces_grafana_cloud.url
-    traces_user      = var.traces_grafana_cloud.user
-    token_secret_arn = try(coalesce(var.logs_grafana_cloud.token_secret_arn, var.metrics_grafana_cloud.token_secret_arn, var.traces_grafana_cloud.token_secret_arn), null)
+    traces_url       = try(trimspace(local.trace.grafana_cloud.url), "") == "" ? null : trimspace(local.trace.grafana_cloud.url)
+    traces_user      = try(trimspace(local.trace.grafana_cloud.user), "") == "" ? null : trimspace(local.trace.grafana_cloud.user)
+    token_secret_arn = try(coalesce(var.logs_grafana_cloud.token_secret_arn, var.metrics_grafana_cloud.token_secret_arn, try(local.trace.grafana_cloud.token_secret_arn, null)), null)
     stack_url        = try(coalesce(var.logs_grafana_cloud.stack_url, var.metrics_grafana_cloud.stack_url), null)
   }
 
@@ -177,8 +187,8 @@ locals {
   }
 
   otlp_traces_config = {
-    endpoint           = var.traces_otlp.endpoint
-    headers_secret_arn = var.traces_otlp.headers_secret_arn
+    endpoint           = try(trimspace(local.trace.otlp.endpoint), "") == "" ? null : trimspace(local.trace.otlp.endpoint)
+    headers_secret_arn = try(trimspace(local.trace.otlp.headers_secret_arn), "") == "" ? null : trimspace(local.trace.otlp.headers_secret_arn)
   }
 
   # New Relic publishes one OTLP endpoint per data region.
@@ -362,7 +372,7 @@ locals {
 
   # The AWS distribution lacks the vendor exporters, for metrics and traces alike.
   metrics_needs_contrib = length([
-    for provider in concat(local.otel_metrics_providers, var.traces_providers) : provider
+    for provider in concat(local.otel_metrics_providers, local.traces_providers) : provider
     if contains(["datadog", "grafana_cloud", "new_relic", "otlp"], provider)
   ]) > 0
 

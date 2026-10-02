@@ -1528,31 +1528,7 @@ module:
         # lists and never the toggles.
         logs_providers: '<< module.input.logs_enabled == false ? [] : (module.input.logs_providers != nil ? module.input.logs_providers : ["loki"]) >>'
         metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
-        traces_providers: '<< module.input.traces_enabled == true ? map(module.input.traces_destinations ?? [{"destination": "xray"}], .destination) : [] >>'
-        traces_xray:
-          region: '<< find(module.input.traces_destinations ?? [], .destination == "xray")?.region >>'
-        traces_tempo:
-          retention_days: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.retention_days >>'
-          storage_backend: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.storage_backend || "s3" >>'
-          s3_bucket_name: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.s3_bucket_name >>'
-          persistence_enabled: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.persistence_enabled >>'
-          persistence_size: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.persistence_size >>'
-          metrics_generator_enabled: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.metrics_generator_enabled >>'
-        traces_grafana_cloud:
-          url: '<< find(module.input.traces_destinations ?? [], .destination == "grafana_cloud")?.url >>'
-          user: '<< find(module.input.traces_destinations ?? [], .destination == "grafana_cloud")?.user >>'
-          token_secret_arn: '<< module.input.grafana_cloud_token_secret_arn || module.input.grafana_cloud_metrics_token_secret_arn || find(module.input.traces_destinations ?? [], .destination == "grafana_cloud")?.token_secret_arn >>'
-        traces_datadog:
-          site: '<< module.input.datadog_site || module.input.datadog_metrics_site || find(module.input.traces_destinations ?? [], .destination == "datadog")?.site >>'
-          api_key_secret_arn: '<< module.input.datadog_api_key_secret_arn || module.input.datadog_metrics_api_key_secret_arn || find(module.input.traces_destinations ?? [], .destination == "datadog")?.api_key_secret_arn >>'
-        traces_new_relic:
-          region: '<< module.input.new_relic_region || module.input.new_relic_metrics_region || find(module.input.traces_destinations ?? [], .destination == "new_relic")?.new_relic_region >>'
-          license_key_secret_arn: '<< module.input.new_relic_license_key_secret_arn || module.input.new_relic_metrics_license_key_secret_arn || find(module.input.traces_destinations ?? [], .destination == "new_relic")?.license_key_secret_arn >>'
-        traces_otlp:
-          endpoint: '<< find(module.input.traces_destinations ?? [], .destination == "otlp")?.endpoint >>'
-          headers_secret_arn: '<< find(module.input.traces_destinations ?? [], .destination == "otlp")?.headers_secret_arn >>'
-        tempo_chart_version: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.chart_version || "3.1.0" >>'
-        tempo_values: '<< find(module.input.traces_destinations ?? [], .destination == "tempo")?.helm_values ?? {} >>'
+        traces_destinations: '<< module.input.traces_enabled == true ? (module.input.traces_destinations != nil ? module.input.traces_destinations : [{"destination": "xray"}]) : [] >>'
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
