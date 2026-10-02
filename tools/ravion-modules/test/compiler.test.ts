@@ -482,7 +482,7 @@ describe("compiler", () => {
       assert.equal(source.endpoint, "<< stack.output.prometheus_endpoint >>");
       assert.equal(source.cluster_arn, "<< stack.output.cluster_arn >>");
       assert.match(String(metric.enabled), /"prometheus" in stack.output.metrics_rendering_providers/);
-      assert.match(String(metric.enabled), /"amp" not in stack.output.metrics_rendering_providers/, "AMP renders first, so its chart alone shows when both are selected");
+      assert.doesNotMatch(String(metric.enabled), /"amp"/, "the Prometheus link stays in the chain beside AMP, as its fallback");
     }
   });
 
