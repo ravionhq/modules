@@ -44,8 +44,22 @@ locals {
   # is one shorter to stay within S3's 63.
   tempo_generated_bucket_name = "ravion-tempo-${replace(substr(local.loki_cluster_slug, 0, 37), "/-+$/", "")}-${data.aws_caller_identity.current.account_id}"
 
-  tempo_s3_enabled    = local.tempo_enabled && local.tempo_config.storage_backend == "s3"
-  tempo_create_bucket = local.tempo_s3_enabled && local.tempo_config.s3_bucket == null
+  tempo_s3_enabled = local.tempo_enabled && local.tempo_config.storage_backend == "s3"
+  # The created bucket follows Tempo, not the storage choice, so switching an
+  # existing Tempo to local storage never deletes the traces already in S3.
+  # Unused, its lifecycle rule empties it within retention plus a week.
+  tempo_create_bucket = local.tempo_enabled && local.tempo_config.s3_bucket == null
+
+  # Whether the chart ends up with a persistent volume: the last value set
+  # across the module's own, the destination's helm_values and each
+  # tempo_helm_values document, in the order Helm merges them. The scratch
+  # volume and the reinstall below follow this, not the typed field alone.
+  tempo_persistence_layers = concat(
+    [local.tempo_config.persistence_enabled],
+    [try(tobool(local.tempo_config.helm_values.persistence.enabled), null)],
+    [for document in var.tempo_helm_values : try(tobool(yamldecode(document).persistence.enabled), null)],
+  )
+  tempo_persistence_enabled = reverse([for layer in local.tempo_persistence_layers : layer if layer != null])[0]
 
   tempo_bucket_name = local.tempo_s3_enabled ? coalesce(local.tempo_config.s3_bucket, local.tempo_generated_bucket_name) : null
   tempo_bucket_arn  = local.tempo_s3_enabled ? "arn:${data.aws_partition.current.partition}:s3:::${local.tempo_bucket_name}" : null
@@ -238,7 +252,7 @@ resource "aws_eks_pod_identity_association" "tempo" {
 resource "terraform_data" "tempo_volume_kind" {
   count = local.tempo_enabled ? 1 : 0
 
-  input = local.tempo_config.persistence_enabled
+  input = local.tempo_persistence_enabled
 }
 
 resource "helm_release" "tempo" {
@@ -277,7 +291,7 @@ resource "helm_release" "tempo" {
             # The chart mounts /var/tempo only with persistence on. An emptyDir
             # with a size limit keeps the WAL and the live store writable and
             # bounded without one.
-            extraVolumeMounts = local.tempo_config.persistence_enabled ? [] : [
+            extraVolumeMounts = local.tempo_persistence_enabled ? [] : [
               {
                 name      = "tempo-data"
                 mountPath = "/var/tempo"
@@ -309,7 +323,7 @@ resource "helm_release" "tempo" {
           size    = local.tempo_config.persistence_size
         }
 
-        extraVolumes = local.tempo_config.persistence_enabled ? [] : [
+        extraVolumes = local.tempo_persistence_enabled ? [] : [
           {
             name     = "tempo-data"
             emptyDir = { sizeLimit = local.tempo_config.persistence_size }

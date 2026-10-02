@@ -449,8 +449,13 @@ run "tempo_keeps_blocks_on_its_own_volume_without_aws_access" {
   }
 
   assert {
-    condition     = length(module.tempo_bucket) == 0 && length(module.tempo_role) == 0 && length(aws_eks_pod_identity_association.tempo) == 0 && output.tempo_s3_bucket == null && output.tempo_role_arn == null
-    error_message = "Local storage needs no bucket and no AWS role"
+    condition     = length(module.tempo_role) == 0 && length(aws_eks_pod_identity_association.tempo) == 0 && output.tempo_s3_bucket == null && output.tempo_role_arn == null
+    error_message = "Local storage needs no AWS role, and no bucket in use"
+  }
+
+  assert {
+    condition     = length(module.tempo_bucket) == 1
+    error_message = "The created bucket must survive a switch to local storage, so no stored trace is deleted"
   }
 
   assert {
@@ -753,4 +758,42 @@ run "rejects_otlp_traces_without_an_endpoint" {
   }
 
   expect_failures = [helm_release.otel_collector]
+}
+
+run "tempo_follows_persistence_set_in_chart_values" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      {
+        destination = "tempo"
+        helm_values = {
+          persistence = {
+            enabled = true
+          }
+        }
+      },
+    ]
+  }
+
+  assert {
+    condition     = terraform_data.tempo_volume_kind[0].input == true && length(yamldecode(helm_release.tempo[0].values[0]).extraVolumes) == 0 && length(yamldecode(helm_release.tempo[0].values[0]).tempo.extraVolumeMounts) == 0
+    error_message = "Persistence turned on in chart values must drive the reinstall and drop the scratch volume"
+  }
+}
+
+run "tempo_follows_the_last_values_document" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", persistence_enabled = true },
+    ]
+    tempo_helm_values = ["persistence:\n  enabled: false\n"]
+  }
+
+  assert {
+    condition     = terraform_data.tempo_volume_kind[0].input == false && yamldecode(helm_release.tempo[0].values[0]).extraVolumes[0].name == "tempo-data"
+    error_message = "A later values document turning persistence off must win, as it does in Helm"
+  }
 }
