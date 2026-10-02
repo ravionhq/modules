@@ -1766,8 +1766,8 @@ module:
       (module.input.public_nlb_creation_enabled && stack.output.public_nlb_dns_name ? [{"name":"Public NLB","href":"http://" + stack.output.public_nlb_dns_name}] : []) +
       (module.input.private_nlb_creation_enabled && stack.output.private_nlb_dns_name ? [{"name":"Private NLB","href":"http://" + stack.output.private_nlb_dns_name}] : [])
       >>
-    # One chart per provider under a shared ID: AMP (when selected), then
-    # Prometheus/Thanos through Operator. Never issue AMP queries by default.
+    # One chart per provider under a shared ID, and only the store that renders
+    # shows: AMP when selected, otherwise Prometheus/Thanos through Operator.
     # Metric names must stay within the curated allow-list in locals.tf.
     metrics:
       - id: node_cpu
@@ -1784,7 +1784,7 @@ module:
       - id: node_cpu
         name: Node CPU usage
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers && "amp" not in stack.output.metrics_rendering_providers >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1805,7 +1805,7 @@ module:
       - id: node_cpu_allocatable
         name: Node CPU allocatable
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers && "amp" not in stack.output.metrics_rendering_providers >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1826,7 +1826,7 @@ module:
       - id: node_memory
         name: Node memory working set
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers && "amp" not in stack.output.metrics_rendering_providers >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1846,7 +1846,7 @@ module:
       - id: nodes_ready
         name: Nodes ready
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers && "amp" not in stack.output.metrics_rendering_providers >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1865,7 +1865,7 @@ module:
       - id: pods_running
         name: Pods running
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers && "amp" not in stack.output.metrics_rendering_providers >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1884,7 +1884,7 @@ module:
       - id: pods_pending
         name: Pods pending
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers && "amp" not in stack.output.metrics_rendering_providers >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
