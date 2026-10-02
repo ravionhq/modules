@@ -84,7 +84,7 @@ module:
       type: string
       description: Lambda runtime for Zip packages.
       required: true
-      default: nodejs22.x
+      default: $values:first
       show_when:
         package_type: Zip
       placeholder: nodejs24.x
@@ -1336,7 +1336,7 @@ module:
     | Lambda function | Lambda type | Yes | Regional Lambda | Immutable because Lambda@Edge must be created in us-east-1 |
     | Lambda function | Package type | Yes | Zip package | Immutable AWS package type |
     | Lambda function | Handler | Zip only | index.handler | Zip package entrypoint |
-    | Lambda function | Runtime | Zip only | nodejs22.x | Lambda runtime string |
+    | Lambda function | Runtime | Zip only | nodejs24.x | Lambda runtime string |
     | Lambda function | Memory | Yes | 128 MB | Also affects CPU allocation |
     | Lambda function | Timeout | Yes | 5 seconds | Maximum invocation runtime |
     | Build config | Build source | Yes | Dockerfile | Zip packages support Dockerfile, Nixpacks, or Pull from S3. Container images support Dockerfile, Nixpacks, or Pull from image registry |
