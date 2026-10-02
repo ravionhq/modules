@@ -464,7 +464,7 @@ output "metrics_external_links" {
 }
 
 output "prometheus_endpoint" {
-  description = "In-cluster Prometheus base URL (null unless prometheus is in metrics_providers). Reachable only from inside the cluster: Ravion queries it through Ravion Operator, the same way it queries Loki."
+  description = "Prometheus-compatible query URL: Thanos Query (recent plus S3 history), plain Prometheus when S3 storage is off, or the supplied endpoint. Null unless prometheus is selected; Ravion reaches it through Operator."
   value       = local.prometheus_endpoint
 }
 

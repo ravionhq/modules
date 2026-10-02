@@ -4,10 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.13.2
-  description: >-
-    Prevent applies from failing with an inconsistent result when the load balancer controller CRDs are
-    upgraded.
+  version: 1.0.0
+  description: Default to S3-backed Prometheus metrics and Tempo traces, with EBS working volumes; keep AMP optional.
 module:
   inputs:
     - id: cluster
@@ -549,8 +547,8 @@ module:
     - id: section_ebs_csi
       label: EBS CSI driver
       type: section
-    - default: false
-      description: Enable EBS-backed Kubernetes persistent volumes.
+    - default: true
+      description: Required for the default Prometheus and Tempo working volumes. Disable only when another provisioner supplies persistent storage.
       id: ebs_csi_driver_enabled
       label: EBS CSI driver
       type: boolean
@@ -804,7 +802,7 @@ module:
       label: Grafana
       type: section
     - default: false
-      description: Install private Grafana with data sources for selected Loki, Amazon Managed Prometheus, and in-cluster Prometheus destinations. No ingress is created; connect with a port-forward or advanced Helm values.
+      description: Adds data sources for selected Loki, Prometheus/Thanos, Tempo, and AMP stores. No ingress is created; connect with a port-forward or advanced Helm values.
       id: grafana_enabled
       label: In-cluster Grafana
       type: boolean
@@ -825,7 +823,7 @@ module:
       type: boolean
     - add_button_label: Add destination
       default:
-        - amp
+        - prometheus
       description: Send metrics to one or more destinations. Ravion queries Amazon Managed Prometheus first, then in-cluster Prometheus and CloudWatch. External destinations each receive a copy.
       id: metrics_providers
       label: Metrics destinations
@@ -837,7 +835,7 @@ module:
           label: Amazon Managed Prometheus
           value: amp
         - group_label: Shown in Ravion (fallback)
-          label: Prometheus in your cluster
+          label: Prometheus with S3 storage
           value: prometheus
         - group_label: Shown in Ravion (fallback)
           label: Amazon CloudWatch (Container Insights)
@@ -873,7 +871,7 @@ module:
       type: string
       values: $values:aws/regions
     - default: 15
-      description: Number of days the in-cluster Prometheus retains metrics.
+      description: Recent metrics retained on the working volume, independently of S3 retention.
       id: prometheus_retention_days
       label: Prometheus retention (days)
       min: 1
@@ -888,6 +886,42 @@ module:
       show_when:
         metrics_enabled: true
         metrics_providers: prometheus
+      type: string
+    - collapsible: true
+      id: prometheus_storage_class
+      label: Prometheus storage class
+      description: Leave blank for managed gp3, or the cluster default when EBS CSI is disabled.
+      placeholder: gp3
+      show_when:
+        metrics_enabled: true
+        metrics_providers: prometheus
+      type: string
+    - default: true
+      id: prometheus_s3_storage_enabled
+      label: Metrics S3 storage
+      description: Thanos retains and queries historical metrics in S3. Ignored when an existing Prometheus URL is supplied.
+      show_when:
+        metrics_enabled: true
+        metrics_providers: prometheus
+      type: boolean
+    - default: 365
+      id: prometheus_s3_retention_days
+      label: Metrics S3 retention (days)
+      min: 1
+      show_when:
+        metrics_enabled: true
+        metrics_providers: prometheus
+        prometheus_s3_storage_enabled: true
+      type: number
+    - collapsible: true
+      id: prometheus_s3_bucket_name
+      label: Existing metrics bucket
+      description: Leave blank to create a private encrypted bucket. Existing buckets must be dedicated and in the cluster region; KMS grants remain your responsibility.
+      placeholder: my-cluster-metrics
+      show_when:
+        metrics_enabled: true
+        metrics_providers: prometheus
+        prometheus_s3_storage_enabled: true
       type: string
     - collapsible: true
       description: In-cluster base URL of an existing Prometheus remote-write receiver. The module appends /api/v1/write and does not install Prometheus.
@@ -1034,6 +1068,58 @@ module:
         metrics_enabled: true
         metrics_providers: otlp
       type: string
+    - id: section_traces
+      label: Traces
+      type: section
+    - default: true
+      id: traces_enabled
+      label: Traces
+      description: Installs Tempo and an OTLP receiver. Applications require OpenTelemetry instrumentation; no agents are injected.
+      type: boolean
+    - default:
+        - tempo
+      id: traces_providers
+      label: Trace destinations
+      show_when:
+        traces_enabled: true
+      type: string_array
+      values:
+        - label: Grafana Tempo with S3 storage
+          value: tempo
+    - default: 7
+      id: tempo_retention_days
+      label: Trace retention (days)
+      min: 1
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: number
+    - default: 10Gi
+      id: tempo_storage_size
+      label: Tempo working volume size
+      description: Holds the write-ahead log before traces are flushed to S3.
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: string
+    - collapsible: true
+      id: tempo_storage_class
+      label: Tempo storage class
+      description: Leave blank for managed gp3, or the cluster default when EBS CSI is disabled.
+      placeholder: gp3
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: string
+    - collapsible: true
+      id: tempo_s3_bucket_name
+      label: Existing traces bucket
+      description: Leave blank to create a private encrypted bucket. Existing buckets must be dedicated and in the cluster region; KMS grants remain your responsibility.
+      placeholder: my-cluster-traces
+      show_when:
+        traces_enabled: true
+        traces_providers: tempo
+      type: string
     - description: Makes referenced Secrets Manager secrets and SSM parameters available as Kubernetes Secrets without sending their values through Ravion.
       id: section_external_secrets
       label: External secrets
@@ -1117,7 +1203,13 @@ module:
         # with nothing chosen is the default the form shows. The module reads the
         # lists and never the toggles.
         logs_providers: '<< module.input.logs_enabled == false ? [] : (module.input.logs_providers != nil ? module.input.logs_providers : ["loki"]) >>'
-        metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["amp"]) >>'
+        metrics_providers: '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["prometheus"]) >>'
+        traces_providers: '<< module.input.traces_enabled == false ? [] : (module.input.traces_providers != nil ? module.input.traces_providers : ["tempo"]) >>'
+        traces_tempo:
+          retention_days: '<< module.input.tempo_retention_days != nil ? module.input.tempo_retention_days : 7 >>'
+          storage_size: '<< module.input.tempo_storage_size || "10Gi" >>'
+          storage_class: << module.input.tempo_storage_class >>
+          s3_bucket_name: << module.input.tempo_s3_bucket_name >>
         logs_excluded_namespaces: '<< module.input.logs_excluded_namespaces != nil ? module.input.logs_excluded_namespaces : ["kube-system", "kube-node-lease", "amazon-cloudwatch", "ravion-operator", "ravion-beacon"] >>'
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
@@ -1154,7 +1246,11 @@ module:
         metrics_prometheus:
           retention_days: << module.input.prometheus_retention_days >>
           storage_size: << module.input.prometheus_storage_size >>
+          storage_class: << module.input.prometheus_storage_class >>
           endpoint: << module.input.prometheus_endpoint >>
+          s3_storage_enabled: '<< module.input.prometheus_s3_storage_enabled != nil ? module.input.prometheus_s3_storage_enabled : true >>'
+          s3_bucket_name: << module.input.prometheus_s3_bucket_name >>
+          s3_retention_days: '<< module.input.prometheus_s3_retention_days != nil ? module.input.prometheus_s3_retention_days : 365 >>'
         metrics_cloudwatch:
           enhanced_observability_enabled: '<< module.input.cloudwatch_enhanced_observability_enabled != nil ? module.input.cloudwatch_enhanced_observability_enabled : true >>'
           application_signals_enabled: '<< module.input.cloudwatch_application_signals_enabled != nil ? module.input.cloudwatch_application_signals_enabled : false >>'
@@ -1245,16 +1341,14 @@ module:
       (module.input.public_nlb_creation_enabled && stack.output.public_nlb_dns_name ? [{"name":"Public NLB","href":"http://" + stack.output.public_nlb_dns_name}] : []) +
       (module.input.private_nlb_creation_enabled && stack.output.private_nlb_dns_name ? [{"name":"Private NLB","href":"http://" + stack.output.private_nlb_dns_name}] : [])
       >>
-    # Cluster-health charts from this module's own Amazon Managed Prometheus
-    # workspace. Every workspace identifier is a stack output that is null
-    # while Metrics is disabled, so the charts sit in their pending state
-    # rather than erroring - and light up on the first apply that enables
-    # Metrics. Metric names must stay within the curated allow-list in
-    # locals.tf.
+    # One chart per provider under a shared ID: AMP (when selected), then
+    # Prometheus/Thanos through Operator. Never issue AMP queries by default.
+    # Metric names must stay within the curated allow-list in locals.tf.
     metrics:
       - id: node_cpu
         name: Node CPU usage
         type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "amp" in stack.output.metrics_rendering_providers >>
         source:
           type: amp
           aws_account_id: << module.input.aws_account_id >>
@@ -1262,9 +1356,20 @@ module:
           workspace_id: << stack.output.amp_workspace_id >>
           query: 'sum(rate(node_cpu_usage_seconds_total[$__interval]))'
           unit: cores
+      - id: node_cpu
+        name: Node CPU usage
+        type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << stack.output.cluster_arn >>
+          endpoint: << stack.output.prometheus_endpoint >>
+          query: 'sum(rate(node_cpu_usage_seconds_total[$__interval]))'
+          unit: cores
       - id: node_cpu_allocatable
         name: Node CPU allocatable
         type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "amp" in stack.output.metrics_rendering_providers >>
         source:
           type: amp
           aws_account_id: << module.input.aws_account_id >>
@@ -1272,9 +1377,20 @@ module:
           workspace_id: << stack.output.amp_workspace_id >>
           query: 'sum(kube_node_status_allocatable{resource="cpu"})'
           unit: cores
+      - id: node_cpu_allocatable
+        name: Node CPU allocatable
+        type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << stack.output.cluster_arn >>
+          endpoint: << stack.output.prometheus_endpoint >>
+          query: 'sum(kube_node_status_allocatable{resource="cpu"})'
+          unit: cores
       - id: node_memory
         name: Node memory working set
         type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "amp" in stack.output.metrics_rendering_providers >>
         source:
           type: amp
           aws_account_id: << module.input.aws_account_id >>
@@ -1282,32 +1398,72 @@ module:
           workspace_id: << stack.output.amp_workspace_id >>
           query: 'sum(node_memory_working_set_bytes)'
           unit: B
+      - id: node_memory
+        name: Node memory working set
+        type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << stack.output.cluster_arn >>
+          endpoint: << stack.output.prometheus_endpoint >>
+          query: 'sum(node_memory_working_set_bytes)'
+          unit: B
       - id: nodes_ready
         name: Nodes ready
         type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "amp" in stack.output.metrics_rendering_providers >>
         source:
           type: amp
           aws_account_id: << module.input.aws_account_id >>
           region: << stack.output.amp_region >>
           workspace_id: << stack.output.amp_workspace_id >>
           query: 'sum(kube_node_status_condition{condition="Ready",status="true"})'
+      - id: nodes_ready
+        name: Nodes ready
+        type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << stack.output.cluster_arn >>
+          endpoint: << stack.output.prometheus_endpoint >>
+          query: 'sum(kube_node_status_condition{condition="Ready",status="true"})'
       - id: pods_running
         name: Pods running
         type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "amp" in stack.output.metrics_rendering_providers >>
         source:
           type: amp
           aws_account_id: << module.input.aws_account_id >>
           region: << stack.output.amp_region >>
           workspace_id: << stack.output.amp_workspace_id >>
           query: 'sum(kube_pod_status_phase{phase="Running"})'
+      - id: pods_running
+        name: Pods running
+        type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << stack.output.cluster_arn >>
+          endpoint: << stack.output.prometheus_endpoint >>
+          query: 'sum(kube_pod_status_phase{phase="Running"})'
       - id: pods_pending
         name: Pods pending
         type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "amp" in stack.output.metrics_rendering_providers >>
         source:
           type: amp
           aws_account_id: << module.input.aws_account_id >>
           region: << stack.output.amp_region >>
           workspace_id: << stack.output.amp_workspace_id >>
+          query: 'sum(kube_pod_status_phase{phase="Pending"})'
+      - id: pods_pending
+        name: Pods pending
+        type: line
+        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        source:
+          type: eks_prometheus
+          cluster_arn: << stack.output.cluster_arn >>
+          endpoint: << stack.output.prometheus_endpoint >>
           query: 'sum(kube_pod_status_phase{phase="Pending"})'
   readme: |-
     Selectable add-ons for an existing EKS cluster. Each add-on is toggled independently and brings its own IAM wiring, so the cluster module stays lean and clusters only carry what they use.
@@ -1319,9 +1475,10 @@ module:
     | **Karpenter** | On | Just-in-time node autoscaling: controller and node IAM roles, Pod Identity association, instance profile, SQS interruption queue, EventBridge rules, the controller Helm charts, and an optional default NodePool |
     | **Load balancer controller** | With load balancers | Installed automatically when any shared load balancer is enabled; registers workload pods into their target groups (TargetGroupBinding) via the AWS Load Balancer Controller Helm chart wired to the cluster module's Pod Identity role. Opt in without shared load balancers via advanced Terraform variables to provision ALBs/NLBs directly from Ingress and LoadBalancer resources |
     | **External Secrets Operator** | On | Reference-only secrets: workloads name a Secrets Manager secret or SSM parameter by ARN, and the operator materializes it into a Kubernetes secret using its own scoped Pod Identity role |
-    | **EBS CSI driver** | Off | EBS-backed persistent volumes via the aws-ebs-csi-driver EKS add-on and its Pod Identity role, a default encrypted `gp3` StorageClass, and online growth of StatefulSet volumes |
+    | **EBS CSI driver** | On | EBS-backed persistent volumes via the aws-ebs-csi-driver EKS add-on and its Pod Identity role, a default encrypted `gp3` StorageClass, and online growth of StatefulSet volumes |
     | **Logs** | On (in-cluster store) | Container output collected on every node and delivered to the destinations you choose - an in-cluster store on S3 by default, plus CloudWatch Logs or a vendor on request |
-    | **Metrics** | On (Amazon Managed Prometheus) | Per-container CPU, memory, network, restart and scaling metrics, delivered to the destinations you choose - Amazon Managed Prometheus by default, plus CloudWatch Container Insights or a vendor on request |
+    | **Metrics** | On (Prometheus with S3) | Prometheus retains recent metrics on EBS; Thanos stores and queries history in S3. AMP, CloudWatch and vendors remain optional destinations |
+    | **Traces** | On (Tempo with S3) | Private OTLP receiver and Tempo trace storage with a persistent working volume; applications need separate instrumentation |
     | **Ravion EKS Management** | On | Registers the cluster with the Ravion control plane and installs Ravion Operator, which reports workload and node state outbound over a single WebSocket and can run Ravion's deploys from inside the cluster |
     | **Shared load balancers** | Public ALB on | Terraform-managed public/private ALBs and NLBs that web workloads attach to via the load balancer controller's TargetGroupBinding — the same shared-LB pattern the ECS Cluster module uses |
 
@@ -1337,7 +1494,7 @@ module:
 
     ## Logs and metrics destinations
 
-    Each signal is one multi-select. **The in-cluster log store and Amazon Managed Prometheus are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in. CloudWatch log and metrics collectors are not installed unless selected. The interruption queue uses native SQS metrics independently of these collectors.
+    Each signal is one multi-select. **Loki, Prometheus with Thanos, and Tempo on S3 are the defaults**. Logs and metrics render through Ravion Operator; traces are explored in Grafana. CloudWatch log and metrics collectors are not installed unless selected. The interruption queue uses native SQS metrics independently of these collectors.
 
     | Logs destination | What runs | In Ravion |
     | ---------------- | --------- | --------- |
@@ -1348,19 +1505,30 @@ module:
 
     | Metrics destination | What runs | In Ravion |
     | ------------------- | --------- | --------- |
-    | **Amazon Managed Prometheus** - default | One collector scraping a curated metric set, remote-writing over SigV4 | Renders in the Metrics tabs |
-    | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, as the fallback behind Amazon Managed Prometheus |
+    | **Prometheus with S3 storage** - default | One metrics collector, Prometheus on EBS, and Thanos for S3 history | Renders through Ravion Operator |
+    | **Amazon Managed Prometheus** | The same collector remote-writing over SigV4 | Renders; first when explicitly selected |
+    | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, behind selected AMP and Prometheus stores |
     | **Grafana Cloud / Datadog / New Relic / custom OTLP** | The same collector, one more exporter each | Ships, plus an "Open in ..." link |
 
-    **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
+    **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - Loki, then CloudWatch Logs; selected AMP, then Prometheus/Thanos, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
-    **What each costs.** The in-cluster store costs S3 storage and requests plus the collector pods, with no per-gigabyte ingestion charge. Amazon Managed Prometheus bills per metric sample - roughly $25-50 a month for a 20-service cluster. CloudWatch bills per gigabyte of logs ingested and per metric. Every vendor bills for what it receives, so choosing two of them ships - and pays for - the same lines twice. That is a choice the form makes visible rather than one it prevents.
+    **What each costs.** The private stores cost S3 storage and requests, pod capacity, and EBS working volumes; S3 does not replace the persistent WAL. The single-replica defaults are not highly available. Amazon Managed Prometheus bills per metric sample. CloudWatch bills per gigabyte of logs ingested and per metric. Every vendor bills for what it receives, so choosing two of them ships - and pays for - the same lines twice. That is a choice the form makes visible rather than one it prevents.
 
     **Vendor keys are references, never values.** Every API key, token and license key is a Secrets Manager ARN. The External Secrets Operator this module installs reads it in-cluster with its own IAM role and hands it to the collector; the value passes through neither Ravion nor Helm, and appears in no release history. Selecting a vendor with External secrets turned off fails the deployment rather than installing a collector that cannot authenticate.
 
     **CloudWatch Container Insights** is one of these destinations now, not a section of its own. Choosing it installs the add-on with **Auto-Monitor off**: left at its default, that webhook injects the AWS OpenTelemetry agent into every workload in the cluster and restarts the pods to do it. Application Signals auto-instrumentation is a separate toggle, off unless asked for, with a namespace list.
 
-    **Upgrading from 0.7.x** changes nothing you did not ask for: a cluster with Logs on keeps the in-cluster store, a cluster with Logs off stays off, and a cluster that had Container Insights on keeps it as the fallback behind Amazon Managed Prometheus. The one behavioural change is that the CloudWatch add-on is re-applied with Auto-Monitor off, so agents it had injected leave workloads on their next rollout.
+    ## S3 metrics and traces
+
+    **Metrics S3 storage** is enabled by default. Prometheus retains 15 days on a 50Gi working volume; Thanos uploads two-hour blocks and queries both recent and S3 data. **Metrics S3 retention** defaults to 365 days and is enforced by the singleton Compactor, not bucket object age. Turn S3 storage off for local-only Prometheus. An **Existing Prometheus URL** skips all managed Prometheus/Thanos storage and must support both queries and remote writes. **Prometheus storage class** uses managed encrypted gp3 unless overridden, or the cluster default when EBS CSI is off.
+
+    **Traces** installs an OTLP collector and single-binary Tempo, with seven-day retention and a 10Gi persistent working volume. Use the published `traces_otlp_http_endpoint` as `OTEL_EXPORTER_OTLP_ENDPOINT` with protocol `http/protobuf`, or `traces_otlp_grpc_endpoint` with protocol `grpc`. A signal-specific HTTP endpoint appends `/v1/traces`. Applications must configure OpenTelemetry SDKs or separately managed instrumentation: this module injects no agents and restarts no application pods. The collector enriches spans with Kubernetes metadata. Sampling remains application-controlled; its in-memory queue can lose pending spans on restart or prolonged failures.
+
+    Enable **In-cluster Grafana** to explore the selected metrics, logs and Tempo traces. No public endpoint or native Ravion trace tab is created. The internal OTLP/query endpoints are unauthenticated: isolate untrusted workloads with network policies or add an authenticated gateway before exposing them.
+
+    **Existing metrics bucket** and **Existing traces bucket** must name dedicated buckets in the cluster region. The module does not manage their lifecycle, encryption settings or customer-managed KMS grants. Generated buckets are private and encrypted, but non-versioned and force-destroyable. Disabling their provider, disabling metrics S3 storage, or destroying the stack deletes those managed buckets and their history; existing buckets are not destroyed. Export data before making these changes.
+
+    **Upgrading to 1.0** changes the metrics default from AMP to Prometheus/Thanos, enables Tempo traces and defaults EBS CSI on. Explicit destination selections remain unchanged. To retain an existing AMP workspace, keep AMP selected, alone or alongside Prometheus; removing AMP destroys its managed workspace and history. AMP history is not automatically copied to S3. Existing Prometheus keeps its release/PVC and gets a Thanos sidecar, but older compacted blocks are not automatically imported. Review the plan before upgrading, retain existing namespace overrides, and disable Traces if installation should be deferred.
 
     ## Ravion EKS Management
 
@@ -1470,18 +1638,22 @@ module:
     | Load balancer controller chart version | No | `3.5.0`     | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
     | External Secrets Operator | No    | `true`               | Reference-only secrets, ClusterSecretStores, and a scoped Pod Identity role |
     | Readable secret ARNs   | No       | Account + region     | Scopes which Secrets Manager secrets and SSM parameters the operator may read |
-    | EBS CSI driver         | No       | `false`              | EBS persistent volumes add-on and Pod Identity role    |
+    | EBS CSI driver         | No       | `true`              | EBS persistent volumes add-on and Pod Identity role    |
     | Default gp3 storage class | No    | `true`               | Encrypted, expandable `gp3` StorageClass as the cluster default (with EBS CSI) |
     | Online StatefulSet volume growth | No | `true`         | Grow StatefulSet volumes in place when a deploy raises their size (with EBS CSI, Kubernetes 1.36+) |
     | Logs                   | No       | `true`               | Collect container logs at all                          |
     | Logs providers         | No       | In-cluster store     | Any combination of the log destinations above           |
     | Metrics                | No       | `true`               | Collect workload metrics at all                        |
-    | Metrics providers      | No       | Amazon Managed Prometheus | Any combination of the metric destinations above   |
+    | Metrics destinations   | No       | Prometheus with S3   | Any combination of the metric destinations above |
+    | Metrics S3 retention (days) | No   | `365`                | Thanos retention, independent of local volume retention |
+    | Traces                 | No       | `true`               | OTLP receiver and Tempo on S3 |
+    | Trace retention (days) | No       | `7`                  | How long traces remain queryable |
+    | Tempo working volume size | No    | `10Gi`               | Persistent trace WAL before S3 flush |
     | Existing workspace ID  | No       | Creates one          | Write into an existing AMP workspace instead of creating `ravion-<cluster>` |
     | Retention (days)       | No       | `30`                 | How long logs stay searchable before they are deleted from the bucket |
     | Application Signals    | No       | `false`              | CloudWatch auto-instrumentation: injects the AWS agent into the named namespaces and restarts their pods |
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
-    | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to both metrics and logs |
+    | In-cluster Grafana     | No       | `false`              | Private Grafana wired to selected metrics, logs and traces |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |
@@ -1509,5 +1681,7 @@ module:
     - [External Secrets Operator](https://external-secrets.io/) - How vendor credentials reach the collectors
     - [Amazon Managed Prometheus](https://docs.aws.amazon.com/prometheus/latest/userguide/what-is-Amazon-Managed-Service-Prometheus.html) - Managed Prometheus workspaces and pricing
     - [Querying an AMP workspace from Grafana](https://docs.aws.amazon.com/grafana/latest/userguide/prometheus-data-source.html) - Configuring the data source
+    - [Thanos](https://thanos.io/tip/components/sidecar.md/) - Prometheus history on object storage
+    - [Grafana Tempo](https://grafana.com/docs/tempo/latest/) - Trace storage and TraceQL
     - [Grafana Loki](https://grafana.com/docs/loki/latest/) - The in-cluster log store
     - [Grafana Alloy](https://grafana.com/docs/alloy/latest/) - The log collection agent

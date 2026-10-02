@@ -77,15 +77,17 @@ mock_provider "helm" {}
 mock_provider "ravion" {}
 
 # Both signals start empty so every run opts into exactly the providers it is
-# about. The defaults ([loki] and [amp]) have their own coverage in
+# about. Default S3 stores have their own coverage in
 # observability.tftest.hcl.
 variables {
-  cluster_name      = "test-cluster"
-  region            = "us-east-2"
-  karpenter_enabled = false
-  eso_enabled       = false
-  logs_providers    = []
-  metrics_providers = []
+  traces_providers       = []
+  ebs_csi_driver_enabled = false
+  cluster_name           = "test-cluster"
+  region                 = "us-east-2"
+  karpenter_enabled      = false
+  eso_enabled            = false
+  logs_providers         = []
+  metrics_providers      = []
 }
 
 ################################################################################

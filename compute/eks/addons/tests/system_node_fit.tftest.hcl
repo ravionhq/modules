@@ -57,6 +57,8 @@ override_resource {
 # forever and times out every Helm upgrade, so both counts fit the node group.
 
 variables {
+  traces_providers                        = []
+  ebs_csi_driver_enabled                  = false
   cluster_name                            = "test-cluster"
   region                                  = "us-east-2"
   cluster_security_group_id               = "sg-12345678"

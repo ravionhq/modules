@@ -1,0 +1,73 @@
+{{- range $component := list "query" "store" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: {{ $component }}
+      annotations:
+        checksum/objstore: {{ $.Values.objstoreConfig | sha256sum }}
+    spec:
+      serviceAccountName: {{ $.Release.Name }}-{{ $component }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      nodeSelector: {{ $.Values.nodeSelector | toJson }}
+      tolerations: {{ $.Values.tolerations | toJson }}
+      containers:
+        - name: {{ $component }}
+          image: {{ $.Values.image | quote }}
+          args:
+            - {{ $component }}
+            - --http-address=0.0.0.0:10902
+            {{- if eq $component "query" }}
+            - --endpoint=dns+{{ $.Release.Name }}-sidecar.{{ $.Release.Namespace }}.svc.cluster.local:10901
+            - --endpoint=dns+{{ $.Release.Name }}-store.{{ $.Release.Namespace }}.svc.cluster.local:10901
+            {{- else }}
+            - --grpc-address=0.0.0.0:10901
+            - --objstore.config-file=/etc/thanos/bucket.yaml
+            - --data-dir=/data
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 10902
+            {{- if eq $component "store" }}
+            - name: grpc
+              containerPort: 10901
+            {{- end }}
+          resources: {{ index $.Values $component "resources" | toJson }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /-/ready, port: http}
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: http}
+          {{- if eq $component "store" }}
+          volumeMounts:
+            - {name: objstore, mountPath: /etc/thanos, readOnly: true}
+            - {name: data, mountPath: /data}
+          {{- end }}
+      {{- if eq $component "store" }}
+      volumes:
+        - name: objstore
+          configMap:
+            name: {{ $.Release.Name }}-objstore
+        - name: data
+          emptyDir: {sizeLimit: 10Gi}
+      {{- end }}
+{{- end }}

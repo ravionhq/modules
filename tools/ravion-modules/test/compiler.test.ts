@@ -384,7 +384,8 @@ describe("compiler", () => {
     for (const metric of addonsMetrics) {
       const metricRecord = assertRecord(metric, "addons.module.ui.metrics[]");
       const source = assertRecord(metricRecord.source, `addons metric ${String(metricRecord.id)} source`);
-      assert.equal(source.type, "amp", `addons metric ${String(metricRecord.id)} should use the AMP source`);
+      assert.ok(source.type === "amp" || source.type === "eks_prometheus", `addons metric ${String(metricRecord.id)} must use a selected Prometheus-compatible store`);
+      assert.match(String(metricRecord.enabled), /stack.output.metrics_rendering_providers/, "metrics must be gated on their selected provider");
     }
 
     const deploy = assertRecord(web.module.deploy, "module.deploy");
@@ -432,6 +433,49 @@ describe("compiler", () => {
     assert.equal(getTerraformVariable(cluster.module, "...overrides"), "<< module.input.advanced_terraform_variables >>");
     assert.equal(getTerraformVariable(addons.module, "metrics_server_enabled"), undefined);
     assert.equal(getTerraformVariable(addons.module, "metrics_server_chart_version"), undefined);
+  });
+
+  it("defaults EKS observability to S3 metrics and traces with nil-safe hidden settings", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+    assert.deepEqual(findInput(inputs, "metrics_providers").default, ["prometheus"]);
+    assert.deepEqual(findInput(inputs, "traces_providers").default, ["tempo"]);
+    assert.equal(findInput(inputs, "traces_enabled").default, true);
+    assert.equal(findInput(inputs, "ebs_csi_driver_enabled").default, true);
+    assert.equal(findInput(inputs, "prometheus_s3_storage_enabled").default, true);
+    assert.deepEqual(findInput(inputs, "tempo_retention_days").show_when, {
+      traces_enabled: true, traces_providers: "tempo",
+    });
+    assert.deepEqual(findInput(inputs, "prometheus_s3_retention_days").show_when, {
+      metrics_enabled: true, metrics_providers: "prometheus", prometheus_s3_storage_enabled: true,
+    });
+    assert.equal(getTerraformVariable(compiled.module, "metrics_providers"),
+      '<< module.input.metrics_enabled == false ? [] : (module.input.metrics_providers != nil ? module.input.metrics_providers : ["prometheus"]) >>');
+    assert.equal(getTerraformVariable(compiled.module, "traces_providers"),
+      '<< module.input.traces_enabled == false ? [] : (module.input.traces_providers != nil ? module.input.traces_providers : ["tempo"]) >>');
+    const prometheus = assertRecord(getTerraformVariable(compiled.module, "metrics_prometheus"), "metrics_prometheus");
+    assert.equal(prometheus.s3_storage_enabled,
+      "<< module.input.prometheus_s3_storage_enabled != nil ? module.input.prometheus_s3_storage_enabled : true >>");
+    assert.equal(prometheus.s3_retention_days,
+      "<< module.input.prometheus_s3_retention_days != nil ? module.input.prometheus_s3_retention_days : 365 >>");
+    const tempo = assertRecord(getTerraformVariable(compiled.module, "traces_tempo"), "traces_tempo");
+    assert.equal(tempo.retention_days, "<< module.input.tempo_retention_days != nil ? module.input.tempo_retention_days : 7 >>");
+    assert.equal(tempo.storage_size, '<< module.input.tempo_storage_size || "10Gi" >>');
+    const ui = assertRecord(compiled.module.ui, "ui");
+    assert.ok(Array.isArray(ui.metrics));
+    for (const id of ["node_cpu", "node_cpu_allocatable", "node_memory", "nodes_ready", "pods_running", "pods_pending"]) {
+      const entries: unknown[] = ui.metrics.filter((entry: unknown) => assertRecord(entry, "metric").id === id);
+      assert.equal(entries.length, 2);
+      assert.equal(assertRecord(assertRecord(entries[0], "metric").source, "source").type, "amp");
+      const metric = assertRecord(entries[1], "metric");
+      const source = assertRecord(metric.source, "source");
+      assert.equal(source.type, "eks_prometheus");
+      assert.equal(source.endpoint, "<< stack.output.prometheus_endpoint >>");
+      assert.equal(source.cluster_arn, "<< stack.output.cluster_arn >>");
+      assert.match(String(metric.enabled), /"prometheus" in stack.output.metrics_rendering_providers/);
+    }
   });
 
   it("compiles concise EKS add-on guidance and input constraints", async () => {

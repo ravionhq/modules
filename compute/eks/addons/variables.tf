@@ -115,8 +115,8 @@ variable "aws_load_balancer_controller_helm_values" {
 
 variable "ebs_csi_driver_enabled" {
   type        = bool
-  description = "Install the aws-ebs-csi-driver add-on and create its Pod Identity role so workloads can use EBS-backed persistent volumes."
-  default     = false
+  description = "Install the aws-ebs-csi-driver add-on and its Pod Identity role. Enabled by default for the Prometheus and Tempo working volumes; disable when another provisioner supplies persistent storage."
+  default     = true
 }
 
 variable "ebs_csi_addon_version" {
@@ -1310,7 +1310,7 @@ variable "alloy_helm_values" {
 
 variable "grafana_enabled" {
   type        = bool
-  description = "Install Grafana in the cluster, preprovisioned with both Ravion datasources: Amazon Managed Prometheus over SigV4 and the in-cluster Loki. This is the only way to see the logs in Grafana - Amazon Managed Grafana runs outside the cluster and cannot reach Loki, which is deliberately not exposed. No ingress is created; reach it with a port-forward or add one through grafana_helm_values."
+  description = "Install private Grafana with datasources for selected Loki, Prometheus/Thanos, Tempo, and AMP stores. No ingress is created; use a port-forward or grafana_helm_values. Amazon Managed Grafana cannot reach the private stores without additional networking."
   default     = false
   nullable    = false
 }
@@ -1350,7 +1350,7 @@ variable "grafana_helm_values" {
 ################################################################################
 # Observability providers
 #
-# One multi-select per signal. Loki (in-cluster) and Amazon Managed Prometheus
+# One multi-select per signal. Loki, Prometheus with Thanos, and Tempo on S3
 # are the defaults: a fresh instance gets Ravion's full Logs and Metrics
 # experience with no configuration, and nothing CloudWatch is ever installed as
 # a side effect. Every other destination — including CloudWatch — is a member of
@@ -1379,7 +1379,7 @@ variable "logs_providers" {
 variable "metrics_providers" {
   type        = list(string)
   description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
-  default     = ["amp"]
+  default     = ["prometheus"]
   nullable    = false
 
   validation {
@@ -1533,13 +1533,42 @@ variable "metrics_cloudwatch" {
 
 variable "metrics_prometheus" {
   type = object({
-    retention_days = optional(number)
-    storage_size   = optional(string)
-    endpoint       = optional(string)
+    retention_days     = optional(number)
+    storage_size       = optional(string)
+    storage_class      = optional(string)
+    endpoint           = optional(string)
+    s3_storage_enabled = optional(bool)
+    s3_bucket_name     = optional(string)
+    s3_retention_days  = optional(number)
   })
-  description = "Prometheus running in the cluster, with the remote-write receiver on and a PersistentVolume behind it. Set endpoint to point at a Prometheus you already run, and the module installs nothing and only remote-writes to it. Installing needs a working StorageClass, which on a Ravion cluster means ebs_csi_driver_enabled."
+  description = "In-cluster Prometheus: local retention (15 days), working volume (50Gi), and Thanos S3 storage (enabled, 365-day retention). Set endpoint to use an existing remote-write receiver and skip all managed Prometheus/Thanos resources. storage_class defaults to managed gp3 or the cluster default. Existing buckets must be dedicated, in the cluster region, and allow the generated Pod Identity roles; customer-managed KMS grants are not provisioned."
   default     = {}
   nullable    = false
+
+  validation {
+    condition     = var.metrics_prometheus.retention_days == null ? true : var.metrics_prometheus.retention_days >= 1 && floor(var.metrics_prometheus.retention_days) == var.metrics_prometheus.retention_days
+    error_message = "metrics_prometheus.retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.s3_retention_days == null ? true : var.metrics_prometheus.s3_retention_days >= 1 && floor(var.metrics_prometheus.s3_retention_days) == var.metrics_prometheus.s3_retention_days
+    error_message = "metrics_prometheus.s3_retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.endpoint == null ? true : can(regex("^https?://[^/]+", var.metrics_prometheus.endpoint))
+    error_message = "metrics_prometheus.endpoint must be an HTTP or HTTPS base URL."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.s3_bucket_name == null ? true : can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.metrics_prometheus.s3_bucket_name))
+    error_message = "metrics_prometheus.s3_bucket_name must be a valid 3-63 character lowercase S3 bucket name, or null to create one."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.storage_size == null ? true : can(regex("^[1-9][0-9]*(Mi|Gi|Ti)$", var.metrics_prometheus.storage_size))
+    error_message = "metrics_prometheus.storage_size must be a positive volume size such as 50Gi."
+  }
 }
 
 variable "metrics_grafana_cloud" {

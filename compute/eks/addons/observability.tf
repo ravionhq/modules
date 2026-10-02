@@ -2,7 +2,7 @@
 # Observability providers — selection, fallbacks, and everything derived
 #
 # ONE MULTI-SELECT PER SIGNAL. logs_providers and metrics_providers name every
-# destination the cluster ships to. Loki and AMP are the defaults, so a fresh
+# destination the cluster ships to. Loki and Prometheus are the defaults, so a fresh
 # instance renders both tabs with no configuration; CloudWatch is a member of
 # the same lists and is never installed as a side effect of anything.
 #
@@ -33,6 +33,11 @@ locals {
 
   logs_providers    = distinct(var.logs_providers)
   metrics_providers = distinct(var.metrics_providers)
+  traces_providers  = distinct(var.traces_providers)
+  tempo_enabled     = contains(local.traces_providers, "tempo")
+
+  # Leave room for the longer metrics/traces prefixes and the account ID.
+  s3_observability_cluster_slug = replace(substr(local.loki_cluster_slug, 0, 35), "/-+$/", "")
 
   # Selected members of the rendering lists, in fallback order. Empty when the
   # signal is off, which is what the tabs read as "turned off for this cluster".
@@ -127,9 +132,13 @@ locals {
   }
 
   prometheus_config = {
-    retention_days = coalesce(var.metrics_prometheus.retention_days, 15)
-    storage_size   = coalesce(var.metrics_prometheus.storage_size, "50Gi")
-    endpoint       = var.metrics_prometheus.endpoint
+    retention_days     = coalesce(var.metrics_prometheus.retention_days, 15)
+    storage_size       = coalesce(var.metrics_prometheus.storage_size, "50Gi")
+    storage_class      = var.metrics_prometheus.storage_class != null ? var.metrics_prometheus.storage_class : (local.ebs_default_storage_class_enabled ? "gp3" : null)
+    endpoint           = var.metrics_prometheus.endpoint
+    s3_storage_enabled = coalesce(var.metrics_prometheus.s3_storage_enabled, true)
+    s3_bucket_name     = var.metrics_prometheus.s3_bucket_name
+    s3_retention_days  = coalesce(var.metrics_prometheus.s3_retention_days, 365)
   }
 
   opensearch_config = {
@@ -176,11 +185,17 @@ locals {
   # Installed here, or one the customer already runs.
   prometheus_install = local.prometheus_enabled && local.prometheus_config.endpoint == null
 
-  prometheus_endpoint = local.prometheus_enabled ? (
-    local.prometheus_config.endpoint != null ? local.prometheus_config.endpoint : "http://${local.prometheus_service_host}:9090"
+  # Writes always reach Prometheus, never Thanos Query. Reads include S3 history
+  # through Query when Thanos is installed. Existing endpoints keep both paths.
+  prometheus_write_endpoint = local.prometheus_enabled ? (
+    local.prometheus_config.endpoint != null ? trimsuffix(local.prometheus_config.endpoint, "/") : "http://${local.prometheus_service_host}:9090"
   ) : null
 
-  prometheus_remote_write_endpoint = local.prometheus_enabled ? "${local.prometheus_endpoint}/api/v1/write" : null
+  prometheus_endpoint = local.prometheus_enabled ? (
+    local.thanos_enabled ? local.thanos_query_endpoint : local.prometheus_write_endpoint
+  ) : null
+
+  prometheus_remote_write_endpoint = local.prometheus_enabled ? "${local.prometheus_write_endpoint}/api/v1/write" : null
 
   # Grafana Cloud hands out a push URL; the query base is the same service with
   # the push path removed. Loki: <base>/loki/api/v1/push -> <base>/loki.

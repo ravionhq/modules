@@ -1,0 +1,20 @@
+image: quay.io/thanos/thanos:v0.42.4
+objstoreConfig: ""
+prometheusRelease: ravion-prometheus
+retentionDays: 365
+nodeSelector: {}
+tolerations: []
+query:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+store:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+compactor:
+  storageSize: 20Gi
+  storageClass: null
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}

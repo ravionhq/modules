@@ -48,6 +48,8 @@ mock_provider "helm" {}
 mock_provider "ravion" {}
 
 variables {
+  traces_providers          = []
+  ebs_csi_driver_enabled    = false
   cluster_name              = "test-cluster"
   region                    = "us-east-2"
   cluster_security_group_id = "sg-12345678"

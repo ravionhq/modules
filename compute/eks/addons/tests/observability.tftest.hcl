@@ -1,8 +1,8 @@
 ################################################################################
 # Observability providers
 #
-# The provider multi-selects: what a default instance installs, how the
-# deprecated booleans map onto the lists, and what each provider adds. Run from
+# Provider multi-selects: default S3 stores, signal opt-outs, and what each
+# optional provider adds. Run from
 # the module root: `tofu test`.
 #
 # Karpenter is off in every run: it pulls in submodules and Helm releases that
@@ -49,6 +49,7 @@ mock_provider "aws" {
     defaults = {
       arn                   = "arn:aws:eks:us-east-2:123456789012:cluster/test-cluster"
       endpoint              = "https://mock.gr7.us-east-2.eks.amazonaws.com"
+      version               = "1.36"
       certificate_authority = [{ data = "bW9jay1jYQ==" }]
       vpc_config = [{
         vpc_id                    = "vpc-12345678"
@@ -81,9 +82,7 @@ mock_provider "helm" {}
 # to configure without a runner JWT. Nothing here exercises it.
 mock_provider "ravion" {}
 
-# Both signals start empty so every run opts into exactly the providers it is
-# about. The defaults ([loki] and [amp]) have their own coverage in
-# observability.tftest.hcl.
+# The first run exercises all defaults; later runs override specific signals.
 
 variables {
   cluster_name      = "test-cluster"
@@ -95,21 +94,20 @@ variables {
 }
 
 ################################################################################
-# The default instance. Loki and AMP, nothing else — and in particular nothing
-# CloudWatch, which is the whole point of the restructure.
+# The default instance: Loki, Prometheus/Thanos, and Tempo; no AMP or CloudWatch.
 ################################################################################
 
-run "defaults_are_loki_and_amp_and_nothing_cloudwatch" {
+run "defaults_are_loki_prometheus_tempo_and_nothing_cloudwatch" {
   command = plan
 
   assert {
-    condition     = join(",", output.logs_providers) == "loki" && join(",", output.metrics_providers) == "amp"
-    error_message = "A fresh instance must select the in-cluster log store and Amazon Managed Prometheus"
+    condition     = join(",", output.logs_providers) == "loki" && join(",", output.metrics_providers) == "prometheus" && join(",", output.traces_providers) == "tempo"
+    error_message = "A fresh instance must select Loki, Prometheus, and Tempo"
   }
 
   assert {
-    condition     = join(",", output.logs_rendering_providers) == "loki" && join(",", output.metrics_rendering_providers) == "amp"
-    error_message = "Both defaults render in Ravion, so both must appear in the rendering chains"
+    condition     = join(",", output.logs_rendering_providers) == "loki" && join(",", output.metrics_rendering_providers) == "prometheus"
+    error_message = "Default logs and metrics must render in Ravion"
   }
 
   assert {
@@ -128,6 +126,16 @@ run "defaults_are_loki_and_amp_and_nothing_cloudwatch" {
   }
 
   assert {
+    condition     = length(aws_prometheus_workspace.this) == 0 && length(module.amp_remote_write_role) == 0
+    error_message = "AMP must not be installed by default"
+  }
+
+  assert {
+    condition     = length(helm_release.thanos) == 1 && length(helm_release.tempo) == 1 && length(helm_release.otel_traces_collector) == 1 && length(aws_eks_addon.ebs_csi) == 1
+    error_message = "Defaults must install S3 metrics, traces, and their volume provisioner"
+  }
+
+  assert {
     condition     = length(helm_release.observability_secrets) == 0
     error_message = "No vendor is selected, so there is no credential to materialize"
   }
@@ -138,12 +146,18 @@ run "defaults_are_loki_and_amp_and_nothing_cloudwatch" {
   }
 }
 
-run "both_signals_can_be_turned_off" {
+run "all_signals_can_be_turned_off" {
   command = plan
 
   variables {
     logs_providers    = []
     metrics_providers = []
+    traces_providers  = []
+  }
+
+  assert {
+    condition     = length(helm_release.tempo) == 0 && length(helm_release.otel_traces_collector) == 0 && length(helm_release.thanos) == 0 && length(module.tempo_bucket) == 0 && length(module.thanos_bucket) == 0
+    error_message = "An empty selection installs no trace store or S3 metrics store"
   }
 
   assert {
@@ -657,7 +671,7 @@ run "in_cluster_prometheus_is_a_rendering_provider" {
   }
 
   assert {
-    condition     = output.prometheus_endpoint == "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090"
+    condition     = output.prometheus_endpoint == "http://ravion-thanos-query.ravion-operator.svc.cluster.local:9090"
     error_message = "The in-cluster endpoint is what Ravion Operator proxies to and what the service modules map"
   }
 
@@ -668,7 +682,7 @@ run "in_cluster_prometheus_is_a_rendering_provider" {
 
   # It has no route out of the cluster, so Ravion Operator is the only way to read it.
   assert {
-    condition     = contains(yamldecode(local.ravion_operator_observability_proxy_values[0]).httpProxy.allowedEndpoints, "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090")
+    condition     = contains(yamldecode(local.ravion_operator_observability_proxy_values[0]).httpProxy.allowedEndpoints, "http://ravion-thanos-query.ravion-operator.svc.cluster.local:9090")
     error_message = "The in-cluster Prometheus must be on Ravion Operator's proxy allowlist"
   }
 }

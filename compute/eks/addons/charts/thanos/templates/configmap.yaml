@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-objstore
+  namespace: {{ .Release.Namespace }}
+data:
+  bucket.yaml: |
+    {{- required "objstoreConfig is required" .Values.objstoreConfig | nindent 4 }}

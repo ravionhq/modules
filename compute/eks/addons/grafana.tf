@@ -1,15 +1,15 @@
 ################################################################################
 # In-cluster Grafana (optional)
 #
-# Grafana running beside Loki, preprovisioned with both Ravion datasources:
-# Amazon Managed Prometheus over SigV4, and the in-cluster Loki over plain HTTP.
+# Private Grafana with selected Loki, Prometheus/Thanos and Tempo datasources,
+# plus AMP over SigV4 when selected.
 #
 # WHY IN-CLUSTER AND NOT AMAZON MANAGED GRAFANA. AMG can query AMP perfectly
 # well — grafana_role.tf exists for exactly that — but it runs in an AWS-managed
 # VPC and cannot reach a ClusterIP Service. Loki is deliberately not exposed
 # outside the cluster, so "the logs, in Grafana" is only answerable by a Grafana
-# that is inside it. Customers who only want metrics dashboards should prefer
-# AMG and leave this off.
+# that can reach the cluster's private Services. AMG remains an option for
+# customers who select AMP instead of the private metrics store.
 #
 # No ingress and no Service type beyond ClusterIP: reaching it is a
 # port-forward, or whatever the operator adds through grafana_helm_values. A
@@ -57,6 +57,16 @@ locals {
         jsonData = {
           httpMethod = "POST"
         }
+      },
+    ] : [],
+    local.tempo_enabled ? [
+      {
+        name      = "Ravion Traces (Tempo)"
+        uid       = "ravion-tempo"
+        type      = "tempo"
+        access    = "proxy"
+        url       = local.tempo_endpoint
+        isDefault = !local.loki_enabled && !local.amp_enabled && !local.prometheus_enabled
       },
     ] : [],
     local.loki_enabled ? [
@@ -175,12 +185,14 @@ resource "helm_release" "grafana" {
     helm_release.lb_controller,
     aws_eks_pod_identity_association.grafana,
     helm_release.loki,
+    helm_release.thanos,
+    helm_release.tempo,
   ]
 
   lifecycle {
     precondition {
-      condition     = local.metrics_on || local.logs_on
-      error_message = "grafana_enabled is true but both logs_providers and metrics_providers are empty. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
+      condition     = local.amp_enabled || local.prometheus_enabled || local.loki_enabled || local.tempo_enabled
+      error_message = "grafana_enabled requires at least one supported datasource: Loki, Prometheus, AMP, or Tempo."
     }
   }
 }
