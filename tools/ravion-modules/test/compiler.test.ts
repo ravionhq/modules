@@ -1342,9 +1342,9 @@ describe("Terraform runner permissions", () => {
     ]);
 
     const applyPermissions =
-      '<< len(module.input.terraform_apply_iam_policy_arns) > 0 ? (module.input.terraform_apply_default_policies_enabled != false ? {"attach": module.input.terraform_apply_iam_policy_arns} : {"replace": module.input.terraform_apply_iam_policy_arns}) : nil >>';
+      '<< module.input.terraform_apply_default_policies_enabled == false ? {"replace": module.input.terraform_apply_iam_policy_arns} : (module.input.terraform_apply_iam_policy_arns ? {"attach": module.input.terraform_apply_iam_policy_arns} : nil) >>';
     const planPermissions =
-      '<< len(module.input.terraform_plan_iam_policy_arns) > 0 ? (module.input.terraform_plan_default_policies_enabled != false ? {"attach": module.input.terraform_plan_iam_policy_arns} : {"replace": module.input.terraform_plan_iam_policy_arns}) : nil >>';
+      '<< module.input.terraform_plan_default_policies_enabled == false ? {"replace": module.input.terraform_plan_iam_policy_arns} : (module.input.terraform_plan_iam_policy_arns ? {"attach": module.input.terraform_plan_iam_policy_arns} : nil) >>';
 
     for (const definition of definitions) {
       const inputs = getModuleInputs(definition.module);

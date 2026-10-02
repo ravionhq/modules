@@ -1,6 +1,6 @@
 - default: true
   collapsible: true
-  description: Turn off to plan with only the policies below instead of the default read-only policies.
+  description: Turn off to plan with only the policies below instead of the default read-only policies. Requires at least one policy below.
   id: terraform_plan_default_policies_enabled
   label: Include default plan policies
   type: boolean
@@ -14,7 +14,7 @@
   type: string_array
 - default: true
   collapsible: true
-  description: Turn off to apply and destroy with only the policies below instead of AdministratorAccess.
+  description: Turn off to apply and destroy with only the policies below instead of AdministratorAccess. Requires at least one policy below.
   id: terraform_apply_default_policies_enabled
   label: Include default apply policies
   type: boolean
