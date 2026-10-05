@@ -4,7 +4,7 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.0.0
+  version: 0.15.0
   description: >-
     Default to Prometheus with Thanos history in S3 and to Tempo traces on S3, with EBS-backed working volumes.
     An OTLP receiver at an in-cluster Service sends workload traces to Tempo, AWS X-Ray or a vendor, and
@@ -1959,7 +1959,7 @@ module:
 
     **Existing metrics bucket** and Tempo's **Existing S3 bucket** must name buckets dedicated to this cluster, in its region. The module does not manage their lifecycle, encryption settings or customer-managed KMS grants. Buckets the module creates are private and encrypted, but not versioned, and are deleted with what is in them when their destination is removed, when metrics history in S3 or Tempo's S3 storage is turned off, or when the stack is destroyed. Existing buckets are never deleted. Export what you need before any of those changes.
 
-    **Upgrading to 1.0** changes the defaults: metrics go to Prometheus with Thanos instead of Amazon Managed Prometheus, Traces is on with Tempo, and the EBS CSI driver is on. Destinations you selected explicitly stay as they are. To keep an existing Amazon Managed Prometheus workspace, keep it selected, alone or beside Prometheus: removing it destroys the workspace the module created and its history, which is not copied to S3. An existing Prometheus keeps its release and volume and gets a Thanos sidecar; blocks it compacted earlier are not uploaded. Review the plan before upgrading, keep any namespace overrides, and turn Traces off to defer installing it. Upgrading from 0.7.x also re-applies the CloudWatch add-on with Auto-Monitor off, so agents it had injected leave workloads on their next rollout.
+    **Upgrading to 0.15** changes the defaults: metrics go to Prometheus with Thanos instead of Amazon Managed Prometheus, Traces is on with Tempo, and the EBS CSI driver is on. Destinations you selected explicitly stay as they are. To keep an existing Amazon Managed Prometheus workspace, keep it selected, alone or beside Prometheus: removing it destroys the workspace the module created and its history, which is not copied to S3. An existing Prometheus keeps its release and volume and gets a Thanos sidecar; blocks it compacted earlier are not uploaded. Review the plan before upgrading, keep any namespace overrides, and turn Traces off to defer installing it. Upgrading from 0.7.x also re-applies the CloudWatch add-on with Auto-Monitor off, so agents it had injected leave workloads on their next rollout.
 
     ## Ravion EKS Management
 

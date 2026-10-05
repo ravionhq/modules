@@ -358,11 +358,11 @@ That is a base URL: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` takes it with `/v1/trac
 
 `{ destination = "xray" }` writes to AWS X-Ray in `region` (the cluster's when null) through the collector's own Pod Identity role. `grafana_cloud`, `datadog`, `new_relic` and `otlp` take the same site and Secrets Manager ARN fields as their logs and metrics counterparts, and a vendor that is also a logs or metrics destination uses that signal's site and credential.
 
-### S3 buckets and upgrading to 1.0
+### S3 buckets and upgrading to 0.15
 
 Existing metrics and trace buckets must be dedicated to this cluster, in its region, and allow the generated roles. The module changes neither their encryption nor their lifecycle and grants no customer-managed KMS access. Buckets the module creates are not versioned and are force-destroyable: removing their destination, turning off `metrics_prometheus.s3_storage_enabled` or Tempo's S3 storage, or destroying the stack deletes the bucket **and its history**. Existing buckets are never deleted. Export what you need first.
 
-**Upgrading to 1.0** changes the defaults: metrics go to Prometheus with Thanos instead of AMP, traces go to Tempo, and the EBS CSI driver is on. Explicit selections are kept. To keep a managed AMP workspace, keep `amp` in `metrics_providers`, alone or beside `prometheus`: removing it destroys the workspace and its history, which is not copied to S3. An existing in-cluster Prometheus keeps its release and volume, gets a Thanos sidecar, and its published query URL becomes Thanos Query; blocks it compacted before are not uploaded. Namespace moves still do not migrate volumes. Set `traces_destinations = []` to defer traces, and set `ebs_csi_driver_enabled` explicitly where another stack owns the add-on.
+**Upgrading to 0.15** changes the defaults: metrics go to Prometheus with Thanos instead of AMP, traces go to Tempo, and the EBS CSI driver is on. Explicit selections are kept. To keep a managed AMP workspace, keep `amp` in `metrics_providers`, alone or beside `prometheus`: removing it destroys the workspace and its history, which is not copied to S3. An existing in-cluster Prometheus keeps its release and volume, gets a Thanos sidecar, and its published query URL becomes Thanos Query; blocks it compacted before are not uploaded. Namespace moves still do not migrate volumes. Set `traces_destinations = []` to defer traces, and set `ebs_csi_driver_enabled` explicitly where another stack owns the add-on.
 
 ### Grafana
 
