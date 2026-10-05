@@ -14,6 +14,8 @@ resource "aws_lambda_permission" "this" {
   source_account         = try(each.value.source_account, null)
   event_source_token     = try(each.value.event_source_token, null)
   function_url_auth_type = try(each.value.function_url_auth_type, null)
-  qualifier              = try(each.value.qualifier, null)
-  principal_org_id       = try(each.value.principal_org_id, null)
+  qualifier = try(each.value.qualifier, null) != null ? each.value.qualifier : (
+    try(each.value.function_url_auth_type, null) != null || try(each.value.action, null) == "lambda:InvokeFunctionUrl" ? aws_lambda_alias.this["live"].name : null
+  )
+  principal_org_id = try(each.value.principal_org_id, null)
 }

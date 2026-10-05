@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 2.0.0
+  description: Route function URLs and event sources through the live alias so rollbacks restore traffic. Existing function URLs are replaced with a new hostname.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1295,6 +1295,14 @@ module:
     The Lambda Function module creates an AWS Lambda function, execution role, CloudWatch log group, optional artifact bucket, and a live alias that Ravion updates during deployments. Terraform provisions the long-lived function infrastructure with either a bootstrap zip package or a bootstrap container image. Deployments publish a new function version and move the live alias.
 
     Terraform source: [ravionhq/modules/compute/lambda](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/lambda)
+
+    ## Rollback and URL migration
+
+    Rollbacks move the live alias to an existing published version, restoring its code and function configuration without rebuilding. Function URLs and event source mappings now invoke that alias. Terraform does not reset alias versions after deployment or rollback.
+
+    **Breaking change:** upgrading to 2.0.0 replaces an existing unqualified function URL with a new hostname. Apply the stack, copy the new function_url output, and update callers, DNS targets, and IAM policies referencing the old endpoint. AWS_IAM callers need lambda:InvokeFunctionUrl and lambda:InvokeFunction on the live alias ARN. Older stacks can still roll back, but unqualified URLs and event sources continue invoking $LATEST until upgraded and applied.
+
+    Image rollback targets must have a recorded digest that still exists in ECR; deployments made before digest recording are not offered. Keep rollback images outside destructive ECR lifecycle rules.
 
     ## Use cases
 
