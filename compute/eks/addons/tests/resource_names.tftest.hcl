@@ -117,3 +117,24 @@ run "name_too_long_for_the_nlb_name_is_rejected" {
   }
   expect_failures = [var.name]
 }
+
+run "public_alb_without_web_acl_skips_waf_association" {
+  command = plan
+
+  assert {
+    condition     = module.public_alb[0].web_acl_arn == null
+    error_message = "The public ALB must not be associated with a WAF web ACL when public_alb_web_acl_arn is unset."
+  }
+}
+
+run "public_alb_web_acl_arn_associates_waf" {
+  command = plan
+  variables {
+    public_alb_web_acl_arn = "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/test/12345678-1234-1234-1234-123456789012"
+  }
+
+  assert {
+    condition     = module.public_alb[0].web_acl_arn == "arn:aws:wafv2:us-east-2:123456789012:regional/webacl/test/12345678-1234-1234-1234-123456789012"
+    error_message = "Setting public_alb_web_acl_arn must associate that WAF web ACL with the public ALB."
+  }
+}

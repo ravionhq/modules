@@ -37,7 +37,8 @@ module "public_alb" {
   access_logs_bucket_arn = var.public_alb_access_logs_bucket_arn
 
   # WAF
-  web_acl_arn = var.public_alb_web_acl_arn
+  waf_association_enabled = var.public_alb_web_acl_arn != null
+  web_acl_arn             = var.public_alb_web_acl_arn
 
   # CloudWatch alarms
   cloudwatch_alarms_creation_enabled              = var.alb_cloudwatch_alarms_creation_enabled

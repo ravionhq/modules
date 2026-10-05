@@ -63,7 +63,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | ---------- | ---- | ------- | ----------- |
 | `rvn-acm-certificate` | ACM Certificate | v1.1.0 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.4.0 | `database/aurora/` |
-| `rvn-aws-alb` | AWS Application Load Balancer | v1.2.0 | `networking/alb/` |
+| `rvn-aws-alb` | AWS Application Load Balancer | v1.2.1 | `networking/alb/` |
 | `rvn-aws-ami` | AMI | v0.3.0 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.2.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.0 | `security/iam_policy/` |
@@ -74,12 +74,12 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-static` | Static Hosting | v1.3.0 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.4.0 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.1.0 | `compute/ec2_service/` |
-| `rvn-ecs-cluster` | ECS Cluster | v2.1.0 | `compute/ecs_cluster/` |
+| `rvn-ecs-cluster` | ECS Cluster | v2.1.1 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v2.1.0 | `compute/ecs_service/` |
 | `rvn-ecs-web` | ECS Web Service | v2.1.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.1.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.14.0 | `compute/eks/addons/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.14.1 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v0.2.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.6.0 | `compute/eks/` |
 | `rvn-eks-web` | EKS Web Service | v1.5.0 | `compute/eks_service/` |

@@ -80,6 +80,15 @@ output "access_logs_bucket_arn" {
 }
 
 ################################################################################
+# WAF
+################################################################################
+
+output "web_acl_arn" {
+  description = "The ARN of the WAFv2 Web ACL associated with the ALB (null when no WAF association is enabled)."
+  value       = var.waf_association_enabled ? aws_wafv2_web_acl_association.this[0].web_acl_arn : null
+}
+
+################################################################################
 # CloudWatch Alarms
 ################################################################################
 
