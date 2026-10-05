@@ -1,0 +1,5 @@
+apiVersion: v2
+name: grafana-alb-binding
+description: Binds the in-cluster Grafana's pods to its target group on the shared public ALB.
+type: application
+version: 0.1.0

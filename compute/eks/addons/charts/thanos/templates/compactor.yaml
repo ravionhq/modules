@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-compactor
+  namespace: {{ .Release.Namespace }}
+spec:
+  # Exactly one compactor may modify a bucket, including during upgrades.
+  replicas: 1
+  serviceName: {{ .Release.Name }}-compactor
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: compactor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: compactor
+      annotations:
+        checksum/objstore: {{ .Values.objstoreConfig | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-compactor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      nodeSelector: {{ .Values.nodeSelector | toJson }}
+      tolerations: {{ .Values.tolerations | toJson }}
+      containers:
+        - name: compactor
+          image: {{ .Values.image | quote }}
+          args:
+            - compact
+            - --wait
+            - --http-address=0.0.0.0:10902
+            - --objstore.config-file=/etc/thanos/bucket.yaml
+            - --data-dir=/data
+            - --retention.resolution-raw={{ .Values.retentionDays }}d
+            - --retention.resolution-5m={{ .Values.retentionDays }}d
+            - --retention.resolution-1h={{ .Values.retentionDays }}d
+          ports:
+            - {name: http, containerPort: 10902}
+          resources: {{ .Values.compactor.resources | toJson }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /-/ready, port: http}
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: http}
+          volumeMounts:
+            - {name: objstore, mountPath: /etc/thanos, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: objstore
+          configMap:
+            name: {{ .Release.Name }}-objstore
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- if .Values.compactor.storageClass }}
+        storageClassName: {{ .Values.compactor.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.compactor.storageSize | quote }}
