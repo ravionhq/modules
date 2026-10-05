@@ -137,5 +137,13 @@ locals {
     ? var.eso_allowed_namespaces
     : local.ravion_operator_required_namespaces
   ))
+
+  # The add-ons' own ExternalSecrets (vendor tokens, Ravion Operator's proxy
+  # credentials, Grafana's Google client secret) live in the add-ons'
+  # namespaces, which a workload allow-list does not name.
+  eso_store_namespaces = sort(distinct(concat(
+    local.eso_allowed_namespaces,
+    [for secret in local.observability_external_secrets : secret.namespace],
+  )))
 }
 
