@@ -32,6 +32,26 @@ locals {
   public_subnet_cidrs  = var.public_subnet_cidrs != null && length(var.public_subnet_cidrs) == local.subnet_count ? var.public_subnet_cidrs : local.automatic_public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs != null && length(var.private_subnet_cidrs) == local.subnet_count ? var.private_subnet_cidrs : local.automatic_private_subnet_cidrs
 
+  # Private subnet groups: one subnet per availability zone for each group, keyed
+  # "<group>-<zone index>", and the group's route tables: one per zone when the
+  # NAT gateways are highly available, otherwise one, keyed "<group>-0".
+  private_subnet_group_subnets = merge([
+    for name, group in var.private_subnet_groups : {
+      for index in range(local.subnet_count) : "${name}-${index}" => {
+        group = name
+        index = index
+      }
+    }
+  ]...)
+  private_subnet_group_route_tables = merge([
+    for name, group in var.private_subnet_groups : {
+      for index in range(local.nat_gateway_high_availability_enabled ? local.subnet_count : 1) : "${name}-${index}" => {
+        group = name
+        index = index
+      }
+    }
+  ]...)
+
   # NAT Gateway HA mode (with deprecated single_nat_gateway override)
   nat_gateway_high_availability_enabled = var.single_nat_gateway != null ? !var.single_nat_gateway : var.nat_gateway_high_availability_enabled
 
@@ -57,6 +77,17 @@ locals {
   # Callers that template tfvars often can't omit the key, so treat null the
   # same as an empty list (no interface endpoints).
   vpc_endpoint_interface_services = var.vpc_endpoint_interface_services != null ? var.vpc_endpoint_interface_services : []
+
+  # Gateway endpoints attach to the public and private route tables when enabled
+  # VPC-wide, and to each private subnet group's route tables when the group asks.
+  s3_gateway_private_group_route_tables = [
+    for key, table in local.private_subnet_group_route_tables : key
+    if var.private_subnet_groups[table.group].s3_gateway_endpoint_enabled
+  ]
+  dynamodb_gateway_private_group_route_tables = [
+    for key, table in local.private_subnet_group_route_tables : key
+    if var.private_subnet_groups[table.group].dynamodb_gateway_endpoint_enabled
+  ]
 
   # Flow Logs
   create_flow_log_cloudwatch = var.flow_logs_enabled && var.flow_logs_destination == "cloudwatch"

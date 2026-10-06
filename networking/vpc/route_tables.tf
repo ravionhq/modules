@@ -53,3 +53,27 @@ resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = local.nat_gateway_high_availability_enabled ? aws_route_table.private[count.index].id : aws_route_table.private[0].id
 }
+
+################################################################################
+# Private Subnet Group Route Tables
+################################################################################
+
+# Like the private route tables: one per AZ when NAT gateways are highly
+# available, otherwise one per group.
+resource "aws_route_table" "private_group" {
+  for_each = local.private_subnet_group_route_tables
+
+  vpc_id = aws_vpc.this.id
+
+  tags = merge(local.tags, {
+    Name        = local.nat_gateway_high_availability_enabled ? "${var.name}-${each.value.group}-${local.azs[each.value.index]}" : "${var.name}-${each.value.group}"
+    SubnetGroup = each.value.group
+  })
+}
+
+resource "aws_route_table_association" "private_group" {
+  for_each = local.private_subnet_group_subnets
+
+  subnet_id      = aws_subnet.private_group[each.key].id
+  route_table_id = aws_route_table.private_group[local.nat_gateway_high_availability_enabled ? each.key : "${each.value.group}-0"].id
+}

@@ -982,3 +982,242 @@ run "vpc_peering_multiple" {
     error_message = "Should create 1 public peering route per connection"
   }
 }
+
+# Private subnet groups: none by default, and no endpoint without a flag
+run "private_subnet_groups_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_subnet.private_group) == 0 && length(aws_route_table.private_group) == 0
+    error_message = "No private subnet groups should be created by default"
+  }
+
+  assert {
+    condition     = length(aws_vpc_endpoint.s3) == 0 && length(aws_vpc_endpoint.dynamodb) == 0
+    error_message = "No gateway endpoints should be created by default"
+  }
+}
+
+# A group with the S3 endpoint gets it on its own route table only
+run "private_subnet_group_s3_endpoint_only" {
+  command = apply
+
+  variables {
+    nat_gateway_enabled                   = true
+    subnet_count                          = 3
+    nat_gateway_high_availability_enabled = false
+    private_subnet_groups = {
+      builds = {
+        cidrs                       = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
+        s3_gateway_endpoint_enabled = true
+      }
+    }
+  }
+
+  assert {
+    condition     = [for index in range(3) : aws_subnet.private_group["builds-${index}"].cidr_block] == ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
+    error_message = "Group subnets should take the given CIDRs in availability zone order"
+  }
+
+  assert {
+    condition     = [for index in range(3) : aws_subnet.private_group["builds-${index}"].availability_zone] == aws_subnet.private[*].availability_zone
+    error_message = "Group subnets should be in the same availability zones as the private subnets"
+  }
+
+  assert {
+    condition     = length(aws_route_table.private_group) == 1 && length(aws_route_table_association.private_group) == 3
+    error_message = "A group should share one route table across its subnets with a single NAT gateway"
+  }
+
+  assert {
+    condition     = aws_route.private_group_nat["builds-0"].nat_gateway_id == aws_nat_gateway.this[0].id
+    error_message = "The group route table should route to the NAT gateway"
+  }
+
+  assert {
+    condition     = toset(aws_vpc_endpoint.s3[0].route_table_ids) == toset([aws_route_table.private_group["builds-0"].id])
+    error_message = "The S3 endpoint should attach to the group route table only, leaving the public and private route tables on the NAT gateway"
+  }
+
+  assert {
+    condition     = length(aws_vpc_endpoint.dynamodb) == 0
+    error_message = "The DynamoDB endpoint should not be created when nothing asks for it"
+  }
+
+  assert {
+    condition     = output.vpc_endpoint_s3_id == aws_vpc_endpoint.s3[0].id
+    error_message = "vpc_endpoint_s3_id should name the endpoint a group asked for"
+  }
+
+  assert {
+    condition     = output.private_subnet_group_subnet_ids["builds"] == [for index in range(3) : aws_subnet.private_group["builds-${index}"].id]
+    error_message = "private_subnet_group_subnet_ids should list the group's subnets in availability zone order"
+  }
+}
+
+# The VPC-wide flag keeps attaching to the public and private route tables, and
+# a group that does not ask stays off the endpoint
+run "private_subnet_group_without_endpoint_beside_vpc_endpoint" {
+  command = apply
+
+  variables {
+    subnet_count                    = 2
+    vpc_endpoint_s3_gateway_enabled = true
+    private_subnet_groups = {
+      jobs = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
+      }
+    }
+  }
+
+  assert {
+    condition     = toset(aws_vpc_endpoint.s3[0].route_table_ids) == toset(concat([aws_route_table.public.id], aws_route_table.private[*].id))
+    error_message = "The S3 endpoint should attach to the public and private route tables, not the group's"
+  }
+}
+
+# Both endpoints, two groups
+run "private_subnet_groups_dynamodb_endpoint" {
+  command = apply
+
+  variables {
+    subnet_count = 2
+    private_subnet_groups = {
+      builds = {
+        cidrs                             = ["10.0.21.0/24", "10.0.22.0/24"]
+        s3_gateway_endpoint_enabled       = true
+        dynamodb_gateway_endpoint_enabled = true
+      }
+      jobs = {
+        cidrs                             = ["10.0.31.0/24", "10.0.32.0/24"]
+        dynamodb_gateway_endpoint_enabled = true
+      }
+    }
+  }
+
+  assert {
+    condition     = toset(aws_vpc_endpoint.s3[0].route_table_ids) == toset([aws_route_table.private_group["builds-0"].id])
+    error_message = "Only the builds group should route S3 through the endpoint"
+  }
+
+  assert {
+    condition     = toset(aws_vpc_endpoint.dynamodb[0].route_table_ids) == toset([aws_route_table.private_group["builds-0"].id, aws_route_table.private_group["jobs-0"].id])
+    error_message = "Both groups should route DynamoDB through the endpoint"
+  }
+}
+
+# With highly available NAT gateways, a group gets a route table per AZ, each
+# routed to the NAT gateway in its AZ
+run "private_subnet_group_nat_ha" {
+  command = apply
+
+  variables {
+    nat_gateway_enabled                   = true
+    subnet_count                          = 3
+    nat_gateway_high_availability_enabled = true
+    private_subnet_groups = {
+      builds = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_route_table.private_group) == 3
+    error_message = "A group should get one route table per AZ with highly available NAT gateways"
+  }
+
+  assert {
+    condition = alltrue([
+      for index in range(3) : aws_route.private_group_nat["builds-${index}"].nat_gateway_id == aws_nat_gateway.this[index].id
+    ])
+    error_message = "Each group route table should route to the NAT gateway in its AZ"
+  }
+
+  assert {
+    condition = alltrue([
+      for index in range(3) : aws_route_table_association.private_group["builds-${index}"].route_table_id == aws_route_table.private_group["builds-${index}"].id
+    ])
+    error_message = "Each group subnet should use its own AZ's route table"
+  }
+}
+
+# Without a NAT gateway, group route tables have no default route
+run "private_subnet_group_nat_disabled" {
+  command = plan
+
+  variables {
+    subnet_count        = 2
+    nat_gateway_enabled = false
+    private_subnet_groups = {
+      builds = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_route.private_group_nat) == 0
+    error_message = "No NAT routes should be created without a NAT gateway"
+  }
+}
+
+# Group route tables take the private peering routes
+run "private_subnet_group_vpc_peering" {
+  command = plan
+
+  variables {
+    subnet_count = 2
+    private_subnet_groups = {
+      builds = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
+      }
+    }
+    vpc_peering_connections = {
+      shared = {
+        peer_vpc_id      = "vpc-0123456789abcdef0"
+        peer_cidr_blocks = ["10.50.0.0/16", "10.51.0.0/16"]
+      }
+      public_only = {
+        peer_vpc_id                        = "vpc-0fedcba9876543210"
+        peer_cidr_blocks                   = ["10.60.0.0/16"]
+        private_route_table_routes_enabled = false
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_route.private_group_vpc_peering) == 2
+    error_message = "The group route table should get one route per peer CIDR of peerings with private routes enabled"
+  }
+}
+
+# A group needs one CIDR per subnet pair
+run "private_subnet_group_wrong_cidr_count" {
+  command = plan
+
+  variables {
+    subnet_count = 3
+    private_subnet_groups = {
+      builds = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
+      }
+    }
+  }
+
+  expect_failures = [aws_subnet.private_group]
+}
+
+run "private_subnet_group_invalid_name" {
+  command = plan
+
+  variables {
+    private_subnet_groups = {
+      "Builds_Group" = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
+      }
+    }
+  }
+
+  expect_failures = [var.private_subnet_groups]
+}

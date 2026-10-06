@@ -3,12 +3,15 @@
 ################################################################################
 
 resource "aws_vpc_endpoint" "s3" {
-  count = var.vpc_endpoint_s3_gateway_enabled ? 1 : 0
+  count = var.vpc_endpoint_s3_gateway_enabled || length(local.s3_gateway_private_group_route_tables) > 0 ? 1 : 0
 
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${local.region}.s3"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = concat([aws_route_table.public.id], aws_route_table.private[*].id)
+  route_table_ids = concat(
+    var.vpc_endpoint_s3_gateway_enabled ? concat([aws_route_table.public.id], aws_route_table.private[*].id) : [],
+    [for key in local.s3_gateway_private_group_route_tables : aws_route_table.private_group[key].id],
+  )
 
   tags = merge(local.tags, {
     Name = "${var.name}-s3"
@@ -16,12 +19,15 @@ resource "aws_vpc_endpoint" "s3" {
 }
 
 resource "aws_vpc_endpoint" "dynamodb" {
-  count = var.vpc_endpoint_dynamodb_gateway_enabled ? 1 : 0
+  count = var.vpc_endpoint_dynamodb_gateway_enabled || length(local.dynamodb_gateway_private_group_route_tables) > 0 ? 1 : 0
 
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${local.region}.dynamodb"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = concat([aws_route_table.public.id], aws_route_table.private[*].id)
+  route_table_ids = concat(
+    var.vpc_endpoint_dynamodb_gateway_enabled ? concat([aws_route_table.public.id], aws_route_table.private[*].id) : [],
+    [for key in local.dynamodb_gateway_private_group_route_tables : aws_route_table.private_group[key].id],
+  )
 
   tags = merge(local.tags, {
     Name = "${var.name}-dynamodb"
