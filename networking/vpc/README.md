@@ -91,7 +91,7 @@ The list length must equal `1` when `nat_gateway_high_availability_enabled = fal
 
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=rvn-aws-network@2.0.0"
 
   name     = "my-vpc"
   vpc_cidr = "10.0.0.0/16"
@@ -120,7 +120,7 @@ A private subnet group is an extra set of private subnets with its own route tab
 
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=rvn-aws-network@2.0.0"
 
   name                = "my-vpc"
   vpc_cidr            = "10.0.0.0/16"

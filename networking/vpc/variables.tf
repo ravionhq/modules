@@ -245,7 +245,7 @@ variable "private_subnet_groups" {
 
   validation {
     condition = alltrue([
-      for name, group in var.private_subnet_groups : alltrue([for cidr in group.cidrs : can(cidrhost(cidr, 0))])
+      for name, group in var.private_subnet_groups : alltrue([for cidr in group.cidrs : can(cidrnetmask(cidr))])
     ])
     error_message = "All private subnet group cidrs must be valid IPv4 CIDR blocks."
   }

@@ -1267,3 +1267,18 @@ run "private_subnet_group_reserved_name" {
 
   expect_failures = [var.private_subnet_groups]
 }
+
+# Group subnets are IPv4-only, so an IPv6 block is refused at plan time
+run "private_subnet_group_ipv6_cidr" {
+  command = plan
+
+  variables {
+    private_subnet_groups = {
+      builds = {
+        cidrs = ["2600:1f14:abcd:1::/64", "2600:1f14:abcd:2::/64", "2600:1f14:abcd:3::/64"]
+      }
+    }
+  }
+
+  expect_failures = [var.private_subnet_groups]
+}
