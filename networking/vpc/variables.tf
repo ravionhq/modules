@@ -178,23 +178,35 @@ variable "nat_gateway_eip_allocation_ids" {
 # VPC Endpoints
 ################################################################################
 
-variable "vpc_endpoint_s3_gateway_enabled" {
-  type        = bool
-  description = "Create a free S3 gateway VPC endpoint and attach it to the public and private route tables. S3 traffic stays inside AWS instead of routing through the NAT gateway, avoiding NAT data processing charges (including ECR image layer pulls). Private subnet groups choose for themselves with s3_gateway_endpoint_enabled."
-  default     = false
+variable "vpc_endpoint_s3_gateway_subnets" {
+  type        = list(string)
+  description = <<-EOT
+    The subnets whose S3 traffic goes through a free S3 gateway VPC endpoint instead of
+    the NAT gateway: "public", "private", or the name of a private subnet group. The
+    endpoint is attached to those subnets' route tables, so their S3 traffic stays inside
+    AWS and avoids NAT data processing charges (including ECR image layer pulls). The
+    other subnets keep reaching S3 through the NAT gateway. An empty list creates no
+    endpoint.
+  EOT
+  default     = []
+  nullable    = false
 }
 
-variable "vpc_endpoint_dynamodb_gateway_enabled" {
-  type        = bool
-  description = "Create a free DynamoDB gateway VPC endpoint and attach it to the public and private route tables. DynamoDB traffic stays inside AWS instead of routing through the NAT gateway. Private subnet groups choose for themselves with dynamodb_gateway_endpoint_enabled."
-  default     = false
+variable "vpc_endpoint_dynamodb_gateway_subnets" {
+  type        = list(string)
+  description = <<-EOT
+    The subnets whose DynamoDB traffic goes through a free DynamoDB gateway VPC endpoint
+    instead of the NAT gateway: "public", "private", or the name of a private subnet
+    group. The endpoint is attached to those subnets' route tables; the other subnets
+    keep reaching DynamoDB through the NAT gateway. An empty list creates no endpoint.
+  EOT
+  default     = []
+  nullable    = false
 }
 
 variable "private_subnet_groups" {
   type = map(object({
-    cidrs                             = list(string)
-    s3_gateway_endpoint_enabled       = optional(bool, false)
-    dynamodb_gateway_endpoint_enabled = optional(bool, false)
+    cidrs = list(string)
   }))
   description = <<-EOT
     Additional groups of private subnets, keyed by group name. Each group gets one
@@ -203,24 +215,20 @@ variable "private_subnet_groups" {
     available, otherwise one for the group. A group's route tables carry the same
     NAT gateway and VPC peering routes as the private route tables.
 
-    A group decides on its own whether its S3 and DynamoDB traffic goes through the
-    gateway endpoints, independently of vpc_endpoint_s3_gateway_enabled and
-    vpc_endpoint_dynamodb_gateway_enabled. Use a group to send one set of workloads
-    through an endpoint while the rest of the VPC keeps reaching the service through
-    the NAT gateway, for example when other workloads rely on bucket policies or IAM
-    conditions on the NAT gateway's public IP (aws:SourceIp), which requests through a
-    gateway endpoint do not carry.
+    Name a group in vpc_endpoint_s3_gateway_subnets or
+    vpc_endpoint_dynamodb_gateway_subnets to route its traffic through that gateway
+    endpoint. A group sends one set of workloads through an endpoint while the rest of
+    the VPC keeps reaching the service through the NAT gateway, for example when other
+    workloads rely on bucket policies or IAM conditions on the NAT gateway's public IP
+    (aws:SourceIp), which requests through a gateway endpoint do not carry.
 
     Each value configures one group:
       - cidrs: One IPv4 CIDR block per subnet pair, in availability zone order. They
         must not overlap the public, private, or other groups' subnets; with the
         default 10.0.0.0/16 VPC, 10.0.21.0/24, 10.0.22.0/24, and 10.0.23.0/24 are free.
-      - s3_gateway_endpoint_enabled: Route the group's S3 traffic through the S3
-        gateway endpoint.
-      - dynamodb_gateway_endpoint_enabled: Route the group's DynamoDB traffic through
-        the DynamoDB gateway endpoint.
 
-    Group subnets are IPv4-only.
+    "public" and "private" name the VPC's own subnets, so no group can take them. Group
+    subnets are IPv4-only.
   EOT
   default     = {}
   nullable    = false
@@ -228,6 +236,11 @@ variable "private_subnet_groups" {
   validation {
     condition     = alltrue([for name in keys(var.private_subnet_groups) : can(regex("^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$", name))])
     error_message = "Each private subnet group name must be 1-20 characters of lowercase letters, numbers, and hyphens, starting and ending with a letter or number."
+  }
+
+  validation {
+    condition     = !contains(keys(var.private_subnet_groups), "public") && !contains(keys(var.private_subnet_groups), "private")
+    error_message = "No private subnet group can be named public or private: the gateway endpoint subnet lists use those names for the VPC's own subnets."
   }
 
   validation {

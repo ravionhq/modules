@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.3.0
-  description: Add private subnet groups, extra private subnets with their own route tables that can route S3 and DynamoDB through the gateway endpoints on their own.
+  version: 2.0.0
+  description: Each gateway endpoint names the subnets that route through it (public, private, or a private subnet group), replacing the S3 and DynamoDB gateway endpoint toggles, and private subnet groups add extra private subnets with their own route tables. To keep an endpoint you had on, list public and private.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -73,18 +73,21 @@ module:
     - id: section_vpc_endpoints
       label: VPC endpoints
       type: section
-    - default: true
-      collapsible: true
-      description: Route S3 traffic through a free gateway VPC endpoint instead of the NAT gateway. Avoids NAT data processing charges (including ECR image layer pulls) and keeps S3 traffic inside AWS.
-      id: vpc_endpoint_s3_gateway_enabled
-      label: S3 gateway endpoint
-      type: boolean
     - collapsible: true
-      default: false
-      description: Route DynamoDB traffic through a free gateway VPC endpoint instead of the NAT gateway.
-      id: vpc_endpoint_dynamodb_gateway_enabled
-      label: DynamoDB gateway endpoint
-      type: boolean
+      default:
+        - public
+        - private
+      description: The subnets whose S3 traffic goes through a free gateway VPC endpoint instead of the NAT gateway, each one of public, private, or the name of a private subnet group. Avoids NAT data processing charges (including ECR image layer pulls) and keeps S3 traffic inside AWS. The subnets not listed keep reaching S3 through the NAT gateway. Leave empty for no S3 endpoint.
+      id: vpc_endpoint_s3_gateway_subnets
+      label: S3 gateway endpoint subnets
+      required: false
+      type: string_array
+    - collapsible: true
+      description: The subnets whose DynamoDB traffic goes through a free gateway VPC endpoint instead of the NAT gateway, each one of public, private, or the name of a private subnet group. The subnets not listed keep reaching DynamoDB through the NAT gateway. Leave empty for no DynamoDB endpoint.
+      id: vpc_endpoint_dynamodb_gateway_subnets
+      label: DynamoDB gateway endpoint subnets
+      required: false
+      type: string_array
     - collapsible: true
       description: |-
         Create interface VPC endpoints (AWS PrivateLink) in the private subnets for private access to AWS services without a NAT gateway.
@@ -125,9 +128,9 @@ module:
       label: Private subnet groups
       type: section
     - description: |-
-        Extra private subnets, one per availability zone, grouped under a name and given their own route table. A group's route tables carry the same NAT gateway and peering routes as the private subnets, and each group decides on its own whether its S3 and DynamoDB traffic goes through the gateway endpoints.
+        Extra private subnets, one per availability zone, grouped under a name and given their own route table. A group's route tables carry the same NAT gateway and peering routes as the private subnets. List a group's name in a gateway endpoint's subnets to route its traffic through that endpoint.
 
-        Use a group to send one set of workloads through an endpoint while the rest of the VPC keeps reaching the service through the NAT gateway, for example when other workloads depend on bucket policies or IAM conditions on the NAT gateway's public IP, which requests through a gateway endpoint do not carry. Group subnets are IPv4-only.
+        Use a group to send one set of workloads through an endpoint while the rest of the VPC keeps reaching the service through the NAT gateway, for example when other workloads depend on bucket policies or IAM conditions on the NAT gateway's public IP, which requests through a gateway endpoint do not carry. public and private name the VPC's own subnets and cannot be group names. Group subnets are IPv4-only.
       id: private_subnet_groups
       item_inputs:
         - description: One IPv4 CIDR block per subnet pair, in availability zone order. They must not overlap the public, private, or other groups' subnets. With the default 10.0.0.0/16 VPC, 10.0.21.0/24, 10.0.22.0/24, and 10.0.23.0/24 are free.
@@ -135,16 +138,6 @@ module:
           label: Subnet CIDR blocks
           required: true
           type: string_array
-        - default: false
-          description: Route this group's S3 traffic through the free S3 gateway endpoint instead of the NAT gateway.
-          id: s3_gateway_endpoint_enabled
-          label: S3 gateway endpoint
-          type: boolean
-        - default: false
-          description: Route this group's DynamoDB traffic through the free DynamoDB gateway endpoint instead of the NAT gateway.
-          id: dynamodb_gateway_endpoint_enabled
-          label: DynamoDB gateway endpoint
-          type: boolean
       item_label: Subnet group
       key:
         label: Group name
@@ -421,9 +414,9 @@ module:
         tags:
           $include: ../stack/ravion-tags.yml
         vpc_cidr: << module.input.vpc_cidr >>
-        vpc_endpoint_dynamodb_gateway_enabled: << module.input.vpc_endpoint_dynamodb_gateway_enabled >>
+        vpc_endpoint_dynamodb_gateway_subnets: << module.input.vpc_endpoint_dynamodb_gateway_subnets >>
         vpc_endpoint_interface_services: << module.input.vpc_endpoint_interface_services >>
-        vpc_endpoint_s3_gateway_enabled: << module.input.vpc_endpoint_s3_gateway_enabled >>
+        vpc_endpoint_s3_gateway_subnets: << module.input.vpc_endpoint_s3_gateway_subnets >>
         vpc_peering_connections: << module.input.vpc_peering_connections >>
   ui:
     logs: |-

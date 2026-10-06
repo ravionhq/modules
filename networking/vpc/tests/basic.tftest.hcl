@@ -1006,10 +1006,10 @@ run "private_subnet_group_s3_endpoint_only" {
     nat_gateway_enabled                   = true
     subnet_count                          = 3
     nat_gateway_high_availability_enabled = false
+    vpc_endpoint_s3_gateway_subnets       = ["builds"]
     private_subnet_groups = {
       builds = {
-        cidrs                       = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
-        s3_gateway_endpoint_enabled = true
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
       }
     }
   }
@@ -1041,12 +1041,12 @@ run "private_subnet_group_s3_endpoint_only" {
 
   assert {
     condition     = length(aws_vpc_endpoint.dynamodb) == 0
-    error_message = "The DynamoDB endpoint should not be created when nothing asks for it"
+    error_message = "The DynamoDB endpoint should not be created when it names no subnets"
   }
 
   assert {
     condition     = output.vpc_endpoint_s3_id == aws_vpc_endpoint.s3[0].id
-    error_message = "vpc_endpoint_s3_id should name the endpoint a group asked for"
+    error_message = "vpc_endpoint_s3_id should name the endpoint the group routes through"
   }
 
   assert {
@@ -1055,14 +1055,14 @@ run "private_subnet_group_s3_endpoint_only" {
   }
 }
 
-# The VPC-wide flag keeps attaching to the public and private route tables, and
-# a group that does not ask stays off the endpoint
-run "private_subnet_group_without_endpoint_beside_vpc_endpoint" {
+# Naming the public and private subnets attaches the endpoint to their route
+# tables, and a group the list leaves out stays on the NAT gateway
+run "private_subnet_group_left_out_of_the_s3_endpoint" {
   command = apply
 
   variables {
     subnet_count                    = 2
-    vpc_endpoint_s3_gateway_enabled = true
+    vpc_endpoint_s3_gateway_subnets = ["public", "private"]
     private_subnet_groups = {
       jobs = {
         cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
@@ -1081,16 +1081,15 @@ run "private_subnet_groups_dynamodb_endpoint" {
   command = apply
 
   variables {
-    subnet_count = 2
+    subnet_count                          = 2
+    vpc_endpoint_s3_gateway_subnets       = ["builds"]
+    vpc_endpoint_dynamodb_gateway_subnets = ["builds", "jobs"]
     private_subnet_groups = {
       builds = {
-        cidrs                             = ["10.0.21.0/24", "10.0.22.0/24"]
-        s3_gateway_endpoint_enabled       = true
-        dynamodb_gateway_endpoint_enabled = true
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
       }
       jobs = {
-        cidrs                             = ["10.0.31.0/24", "10.0.32.0/24"]
-        dynamodb_gateway_endpoint_enabled = true
+        cidrs = ["10.0.31.0/24", "10.0.32.0/24"]
       }
     }
   }
@@ -1214,6 +1213,53 @@ run "private_subnet_group_invalid_name" {
   variables {
     private_subnet_groups = {
       "Builds_Group" = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
+      }
+    }
+  }
+
+  expect_failures = [var.private_subnet_groups]
+}
+
+# The private subnets and a group can share an endpoint, and the public subnets
+# stay on the NAT gateway when the list leaves them out
+run "s3_endpoint_on_the_private_subnets_and_a_group" {
+  command = apply
+
+  variables {
+    subnet_count                    = 2
+    vpc_endpoint_s3_gateway_subnets = ["private", "builds"]
+    private_subnet_groups = {
+      builds = {
+        cidrs = ["10.0.21.0/24", "10.0.22.0/24"]
+      }
+    }
+  }
+
+  assert {
+    condition     = toset(aws_vpc_endpoint.s3[0].route_table_ids) == toset(concat(aws_route_table.private[*].id, [aws_route_table.private_group["builds-0"].id]))
+    error_message = "The S3 endpoint should attach to the private route tables and the builds group's, not the public one"
+  }
+}
+
+# A name that is neither public, private nor a group is refused
+run "gateway_endpoint_unknown_subnets" {
+  command = plan
+
+  variables {
+    vpc_endpoint_s3_gateway_subnets = ["sandbox"]
+  }
+
+  expect_failures = [aws_vpc_endpoint.s3]
+}
+
+# public and private name the VPC's own subnets, so no group may take them
+run "private_subnet_group_reserved_name" {
+  command = plan
+
+  variables {
+    private_subnet_groups = {
+      private = {
         cidrs = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
       }
     }

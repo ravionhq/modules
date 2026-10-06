@@ -78,16 +78,9 @@ locals {
   # same as an empty list (no interface endpoints).
   vpc_endpoint_interface_services = var.vpc_endpoint_interface_services != null ? var.vpc_endpoint_interface_services : []
 
-  # Gateway endpoints attach to the public and private route tables when enabled
-  # VPC-wide, and to each private subnet group's route tables when the group asks.
-  s3_gateway_private_group_route_tables = [
-    for key, table in local.private_subnet_group_route_tables : key
-    if var.private_subnet_groups[table.group].s3_gateway_endpoint_enabled
-  ]
-  dynamodb_gateway_private_group_route_tables = [
-    for key, table in local.private_subnet_group_route_tables : key
-    if var.private_subnet_groups[table.group].dynamodb_gateway_endpoint_enabled
-  ]
+  # The names a gateway endpoint subnet list can use: the VPC's own public and
+  # private subnets, and each private subnet group.
+  gateway_endpoint_subnet_names = concat(["public", "private"], keys(var.private_subnet_groups))
 
   # Flow Logs
   create_flow_log_cloudwatch = var.flow_logs_enabled && var.flow_logs_destination == "cloudwatch"
