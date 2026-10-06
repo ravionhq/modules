@@ -482,8 +482,8 @@ Each entry in `vpc_peering_connections` accepts the following attributes:
 
 | Name | Description |
 |------|-------------|
-| vpc_endpoint_s3_id | The ID of the S3 gateway VPC endpoint (if enabled VPC-wide or for any private subnet group) |
-| vpc_endpoint_dynamodb_id | The ID of the DynamoDB gateway VPC endpoint (if enabled VPC-wide or for any private subnet group) |
+| vpc_endpoint_s3_id | The ID of the S3 gateway VPC endpoint (when vpc_endpoint_s3_gateway_subnets is not empty) |
+| vpc_endpoint_dynamodb_id | The ID of the DynamoDB gateway VPC endpoint (when vpc_endpoint_dynamodb_gateway_subnets is not empty) |
 | vpc_endpoint_interface_ids | Map of interface VPC endpoint service short names to their endpoint IDs |
 | vpc_endpoints_security_group_id | The ID of the shared security group for interface VPC endpoints (if any interface endpoints are created) |
 

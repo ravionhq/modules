@@ -150,12 +150,12 @@ output "private_subnet_group_route_table_ids" {
 ################################################################################
 
 output "vpc_endpoint_s3_id" {
-  description = "The ID of the S3 gateway VPC endpoint (if enabled VPC-wide or for any private subnet group)."
+  description = "The ID of the S3 gateway VPC endpoint (when vpc_endpoint_s3_gateway_subnets is not empty)."
   value       = length(aws_vpc_endpoint.s3) > 0 ? aws_vpc_endpoint.s3[0].id : null
 }
 
 output "vpc_endpoint_dynamodb_id" {
-  description = "The ID of the DynamoDB gateway VPC endpoint (if enabled VPC-wide or for any private subnet group)."
+  description = "The ID of the DynamoDB gateway VPC endpoint (when vpc_endpoint_dynamodb_gateway_subnets is not empty)."
   value       = length(aws_vpc_endpoint.dynamodb) > 0 ? aws_vpc_endpoint.dynamodb[0].id : null
 }
 

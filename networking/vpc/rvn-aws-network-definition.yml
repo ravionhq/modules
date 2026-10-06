@@ -297,7 +297,7 @@ module:
 
     ### Gateway endpoints (free)
 
-    Gateway endpoints for **S3** and **DynamoDB** are free and simply add routes to the VPC's route tables. The S3 gateway endpoint is enabled by default for new VPCs: it keeps S3 traffic — including ECR image layer downloads — off the NAT gateway, cutting NAT data processing charges.
+    Gateway endpoints for **S3** and **DynamoDB** are free and simply add routes to route tables. Each endpoint lists the subnets it serves — `public`, `private`, or a private subnet group's name — and is attached to those subnets' route tables; the subnets not listed keep reaching the service through the NAT gateway. New VPCs route the public and private subnets' S3 traffic through the S3 gateway endpoint by default: it keeps S3 traffic — including ECR image layer downloads — off the NAT gateway, cutting NAT data processing charges.
 
     One caveat: S3 traffic no longer exits through the NAT gateway's public IP, so S3 bucket policies that allowlist your NAT IP need to be updated (for example to match the endpoint via `aws:SourceVpce`).
 
@@ -325,25 +325,23 @@ module:
     | NAT Gateway                    | No       | `true`               | Enable outbound internet from private subnets                          |
     | NAT Gateway High Availability  | No       | `false`              | Deploy one NAT per AZ instead of a single shared NAT                   |
     | NAT Gateway EIP Allocation IDs | No       | —                    | Pre-allocated EIPs for stable NAT public IPs                           |
-    | S3 gateway endpoint            | No       | `true`               | Free gateway endpoint keeping S3 traffic off the NAT gateway           |
-    | DynamoDB gateway endpoint      | No       | `false`              | Free gateway endpoint keeping DynamoDB traffic off the NAT gateway     |
+    | S3 gateway endpoint subnets    | No       | `public`, `private`  | Subnets whose S3 traffic goes through the free gateway endpoint        |
+    | DynamoDB gateway endpoint subnets | No    | —                    | Subnets whose DynamoDB traffic goes through the free gateway endpoint  |
     | Interface endpoints            | No       | —                    | Interface VPC endpoints (PrivateLink) for private AWS service access   |
-    | Private subnet groups          | No       | —                    | Extra private subnets with their own route tables and endpoint choice  |
+    | Private subnet groups          | No       | —                    | Extra private subnets with their own route tables                      |
     | Flow Logs                      | No       | `false`              | Enable VPC Flow Logs (required for SOC 2)                              |
     | Tags                           | No       | Environment, Project | Custom tags applied to all resources                                   |
 
     ## Private subnet groups
 
-    A private subnet group is an extra set of private subnets, one per availability zone, with its own route table. It reaches the internet through the same NAT gateway and takes the same peering routes as the private subnets, and it chooses on its own whether its S3 and DynamoDB traffic goes through the free gateway endpoints.
+    A private subnet group is an extra set of private subnets, one per availability zone, with its own route table. It reaches the internet through the same NAT gateway and takes the same peering routes as the private subnets. A gateway endpoint that lists the group's name routes the group's traffic through the endpoint.
 
-    The VPC-wide **S3 gateway endpoint** setting attaches the endpoint to the public and private route tables. Requests through a gateway endpoint reach S3 from a private IP address, so they no longer match bucket policies or IAM conditions on the NAT gateway's public IP (`aws:SourceIp`). When some workloads depend on such a condition, leave the VPC-wide setting off, put the workloads that move the most data to and from S3 in a group, and turn the endpoint on for that group alone.
+    Requests through a gateway endpoint reach S3 from a private IP address, so they no longer match bucket policies or IAM conditions on the NAT gateway's public IP (`aws:SourceIp`). When some workloads depend on such a condition, leave `public` and `private` out of the S3 gateway endpoint subnets, put the workloads that move the most data to and from S3 in a group, and list only that group.
 
-    | Field                     | Description                                                     |
-    | ------------------------- | --------------------------------------------------------------- |
-    | Group name                | Names the group's subnets and route tables                      |
-    | Subnet CIDR blocks        | One per subnet pair, in availability zone order                 |
-    | S3 gateway endpoint       | Route the group's S3 traffic through the S3 gateway endpoint    |
-    | DynamoDB gateway endpoint | Route the group's DynamoDB traffic through the gateway endpoint |
+    | Field              | Description                                                                       |
+    | ------------------ | --------------------------------------------------------------------------------- |
+    | Group name         | Names the group's subnets and route tables; `public` and `private` are reserved   |
+    | Subnet CIDR blocks | One IPv4 block per subnet pair, in availability zone order                        |
 
     The group's subnet and route table IDs are in the `private_subnet_group_subnet_ids` and `private_subnet_group_route_table_ids` outputs, keyed by group name.
 
