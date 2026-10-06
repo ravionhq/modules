@@ -77,13 +77,13 @@ module:
       default:
         - public
         - private
-      description: The subnets whose S3 traffic goes through a free gateway VPC endpoint instead of the NAT gateway, each one of public, private, or the name of a private subnet group. Avoids NAT data processing charges (including ECR image layer pulls) and keeps S3 traffic inside AWS. The subnets not listed keep their own default route to S3: the internet gateway for the public subnets, and the NAT gateway, when there is one, for the private subnets and groups. Leave empty for no S3 endpoint.
+      description: The subnets whose S3 traffic goes through a free gateway VPC endpoint instead of the NAT gateway, each one of public, private, or the name of a private subnet group. Avoids NAT data processing charges (including ECR image layer pulls) and keeps S3 traffic inside AWS. The subnets not listed keep their own default route to S3, which is the internet gateway for the public subnets and the NAT gateway, when there is one, for the private subnets and groups. Leave empty for no S3 endpoint.
       id: vpc_endpoint_s3_gateway_subnets
       label: S3 gateway endpoint subnets
       required: false
       type: string_array
     - collapsible: true
-      description: The subnets whose DynamoDB traffic goes through a free gateway VPC endpoint instead of the NAT gateway, each one of public, private, or the name of a private subnet group. The subnets not listed keep their own default route to DynamoDB: the internet gateway for the public subnets, and the NAT gateway, when there is one, for the private subnets and groups. Leave empty for no DynamoDB endpoint.
+      description: The subnets whose DynamoDB traffic goes through a free gateway VPC endpoint instead of the NAT gateway, each one of public, private, or the name of a private subnet group. The subnets not listed keep their own default route to DynamoDB, which is the internet gateway for the public subnets and the NAT gateway, when there is one, for the private subnets and groups. Leave empty for no DynamoDB endpoint.
       id: vpc_endpoint_dynamodb_gateway_subnets
       label: DynamoDB gateway endpoint subnets
       required: false
