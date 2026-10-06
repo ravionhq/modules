@@ -25,12 +25,22 @@ output "branch_id" {
 
 output "keyspace" {
   description = "Default keyspace name, discovered from PlanetScale."
-  value       = planetscale_vitess_keyspace.main.name
+  value       = local.default_keyspace_name
+
+  precondition {
+    condition     = local.default_keyspace_name != null
+    error_message = "The branch must have exactly one default keyspace."
+  }
 }
 
 output "cluster_size" {
-  description = "Managed main-keyspace cluster size."
-  value       = planetscale_vitess_keyspace.main.cluster_size
+  description = "Current default-keyspace cluster size."
+  value       = var.manage_default_keyspace ? planetscale_vitess_keyspace.main[0].cluster_size : planetscale_vitess_branch.main.cluster_size
+}
+
+output "default_keyspace_managed" {
+  description = "Whether Terraform has adopted the default keyspace; false on the first deployment, true after its automatic import."
+  value       = var.manage_default_keyspace
 }
 
 output "host" {

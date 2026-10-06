@@ -1,6 +1,6 @@
 locals {
   default_keyspace_name = one([
-    for keyspace in data.planetscale_vitess_keyspaces.main.data : keyspace.name if keyspace.is_default
+    for keyspace in(var.manage_default_keyspace ? data.planetscale_vitess_keyspaces.main[0].data : data.planetscale_vitess_keyspaces.initial[0].data) : keyspace.name if keyspace.is_default
   ])
 
   # URI escaping is important for credentials and database names. MySQL driver

@@ -32,15 +32,22 @@ variable "region" {
 }
 
 variable "cluster_size" {
-  description = "Main keyspace cluster SKU. Changes resize the keyspace in place after bootstrap."
+  description = "Main keyspace Vitess SKU. Network-storage and Metal are supported; the complete Metal SKU includes disk capacity. The first deployment creates this size; later deployments import and resize the existing keyspace in place."
   type        = string
   default     = "PS_10"
   nullable    = false
 
   validation {
-    condition     = can(regex("^PS_[0-9]+$", var.cluster_size))
-    error_message = "The cluster_size must be a network-storage Vitess SKU such as PS_10 or PS_80."
+    condition     = can(regex("^(PS_[A-Z0-9_]+|M[0-9]*_[0-9]+(_(AWS|GCP)_(ARM|X86|AMD|INTEL))?_D_METAL_[0-9]+)$", var.cluster_size))
+    error_message = "The cluster_size must be a Vitess SKU such as PS_10 or M_160_D_METAL_110. Metal SKUs include disk capacity."
   }
+}
+
+variable "manage_default_keyspace" {
+  description = "Enable automatic default-keyspace import and management after the branch exists. Ravion sets false for the first deployment and true from the previous branch_id output afterward. The true default preserves management for existing callers. Never set false after importing. Extra replicas are first reconciled when true."
+  type        = bool
+  default     = true
+  nullable    = false
 }
 
 variable "deletion_protection_enabled" {
@@ -58,7 +65,7 @@ variable "safe_migrations_enabled" {
 }
 
 variable "extra_replicas" {
-  description = "Additional main-keyspace replicas beyond those included by PlanetScale."
+  description = "Additional main-keyspace replicas beyond those included by PlanetScale. Reconciled from the second deployment, when manage_default_keyspace is true."
   type        = number
   default     = 0
   nullable    = false
@@ -135,6 +142,11 @@ variable "additional_passwords" {
     ])
     error_message = "Additional passwords require a nonempty name, a supported role, valid CIDRs, and a positive integer TTL when provided."
   }
+
+  validation {
+    condition     = !contains(keys(var.additional_passwords), var.application_password.name)
+    error_message = "An additional password cannot have the same name as the application password."
+  }
 }
 
 variable "additional_keyspaces" {
@@ -150,11 +162,11 @@ variable "additional_keyspaces" {
   validation {
     condition = alltrue([for name, keyspace in var.additional_keyspaces :
       can(regex("^[a-zA-Z0-9_][a-zA-Z0-9_-]*$", name)) &&
-      can(regex("^PS_[0-9]+$", keyspace.cluster_size)) &&
+      can(regex("^(PS_[A-Z0-9_]+|M[0-9]*_[0-9]+(_(AWS|GCP)_(ARM|X86|AMD|INTEL))?_D_METAL_[0-9]+)$", keyspace.cluster_size)) &&
       keyspace.shards >= 1 && floor(keyspace.shards) == keyspace.shards &&
       keyspace.extra_replicas >= 0 && floor(keyspace.extra_replicas) == keyspace.extra_replicas
     ])
-    error_message = "Keyspaces require a valid name, a PS_ SKU, a positive integer shard count, and a nonnegative integer extra replica count."
+    error_message = "Keyspaces require a valid name, a network-storage or Metal Vitess SKU, a positive integer shard count, and a nonnegative integer extra replica count."
   }
 }
 

@@ -4,25 +4,19 @@ definition:
   description: Managed PlanetScale MySQL with application credentials, safe migrations, and in-place cluster resizing.
 release:
   version: 0.1.0
-  description: Add PlanetScale MySQL databases with application credentials and in-place cluster resizing.
+  description: Add PlanetScale MySQL with saved integrations, regional Metal sizes, standard Terraform pipelines, automatic default-keyspace adoption, and short-lived credentials.
 module:
   inputs:
     - id: section_planetscale
-      label: PlanetScale account
+      label: PlanetScale integration
       type: section
-    - id: organization
-      label: Organization
-      description: PlanetScale organization slug, not your Ravion organization.
+    - id: planetscale
+      label: PlanetScale integration
+      description: Select an active integration from Settings → Integrations. The organization and short-lived credentials come from this connection.
       type: string
       required: true
       immutable: true
-      placeholder: acme
-    - id: service_token_secret
-      label: Service token secret
-      description: AWS Secrets Manager secret accessible to the runner, containing service_token_id and service_token JSON keys.
-      type: string
-      required: true
-      placeholder: planetscale/service-token
+      values: $values:ravion/integrations?provider=PLANETSCALE
     - id: section_database
       label: Database
       type: section
@@ -37,39 +31,34 @@ module:
           message: 1-64 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
     - id: region
       label: Database region
-      description: PlanetScale region slug, such as us-east (AWS N. Virginia) or eu-west (AWS Ireland). Choose a Vitess-supported region near your application.
+      description: Choose a MySQL region available to the selected PlanetScale organization near your application.
       type: string
       required: true
       immutable: true
-      placeholder: us-east
+      values: "$values:planetscale/regions?integrationId=<< module.input.planetscale >>"
     - id: cluster_size
       label: Cluster size
-      description: Compute per database instance; the production cluster includes a primary and two replicas. Changes resize in place. Availability and pricing vary by region.
+      description: Choose a regional MySQL size. Metal options include local NVMe disk capacity in the SKU. Compute is per instance; the cluster includes a primary and two replicas. Changes resize in place.
       type: string
       required: true
       default: PS_10
-      values:
-        - label: PS-10 — 1/8 vCPU, 1 GB
-          value: PS_10
-        - label: PS-20 — 1/4 vCPU, 2 GB
-          value: PS_20
-        - label: PS-40 — 1/2 vCPU, 4 GB
-          value: PS_40
-        - label: PS-80 — 1 vCPU, 8 GB
-          value: PS_80
-        - label: PS-160 — 2 vCPU, 16 GB
-          value: PS_160
-        - label: PS-320 — 4 vCPU, 32 GB
-          value: PS_320
-        - label: PS-640 — 8 vCPU, 64 GB
-          value: PS_640
-        - label: PS-1280 — 16 vCPU, 128 GB
-          value: PS_1280
-        - label: PS-2560 — 32 vCPU, 256 GB
-          value: PS_2560
+      values: "$values:planetscale/cluster-sizes?integrationId=<< module.input.planetscale >>&region=<< module.input.region >>"
+    - id: extra_replicas
+      label: Extra replicas
+      description: Additional replicas beyond PlanetScale's included replicas; increases cost. Applied from the second deployment, after automatic default-keyspace adoption.
+      type: number
+      default: 0
+      min: 0
+    - id: application_password_cidrs
+      label: Application credential CIDRs
+      description: Restrict application connections to these IPv4 or IPv6 CIDR ranges. Empty permits connections from any source IP.
+      type: string_array
+      default: []
+      add_button_label: Add CIDR range
+      collapsible: true
     - id: deletion_protection_enabled
       label: Deletion protection
-      description: Disable and apply before destroying the database.
+      description: Disable and apply before destroying the database. The default keyspace is deleted before the branch.
       type: boolean
       default: true
     - id: safe_migrations_enabled
@@ -80,17 +69,11 @@ module:
     - $include: ../../partials/inputs/terraform-settings.yml
     - id: execution_environment_id
       label: Terraform execution environment
-      description: Runs OpenTofu and reads the service token secret. This does not select the database's cloud account or region.
+      description: Runs OpenTofu with short-lived credentials from the selected integration. This does not select the database's cloud account or region.
       type: string
       required: true
       default: << defaults.execution_environment_id >>
       values: $values:ravion/execution_environments
-    - id: change_pipeline_id
-      label: PlanetScale provisioning pipeline ID
-      description: Install database/planetscale_vitess/pipelines/change.yml once in your Ravion project and enter its pipeline ID. It bootstraps the branch before importing the default keyspace.
-      type: string
-      required: true
-      placeholder: pipe_...
   stack:
     type: opentofu
     ravion_state_backend_workspace: >-
@@ -108,25 +91,22 @@ module:
           tool: opentofu
           tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
           execution_environment_id: << module.input.execution_environment_id >>
-          environment_variables:
-            PLANETSCALE_SERVICE_TOKEN_ID:
-              from_secrets_manager:
-                key: << module.input.service_token_secret >>
-                json_key: service_token_id
-            PLANETSCALE_SERVICE_TOKEN:
-              from_secrets_manager:
-                key: << module.input.service_token_secret >>
-                json_key: service_token
+          integrations:
+            - << module.input.planetscale >>
+          timeout: 2700
           terraform_variables:
             ...overrides: << module.input.advanced_terraform_variables >>
-            organization: << module.input.organization >>
             name: << module.input.name >>
             region: << module.input.region >>
             cluster_size: << module.input.cluster_size >>
+            extra_replicas: << module.input.extra_replicas >>
+            manage_default_keyspace: '<< stack.output && stack.output["branch_id"] ? true : false >>'
+            application_password:
+              cidrs: << module.input.application_password_cidrs >>
             deletion_protection_enabled: << module.input.deletion_protection_enabled >>
             safe_migrations_enabled: << module.input.safe_migrations_enabled >>
       change:
-        pipeline_id: << module.input.change_pipeline_id >>
+        pipeline_id: << defaults.change_pipeline_id >>
       destroy:
         pipeline_id: << defaults.destroy_pipeline_id >>
   ui:
@@ -153,28 +133,29 @@ module:
 
     ## Provisioning
 
-    This module uses a dedicated two-stage provisioning pipeline. The first stage
-    creates the branch; the second imports its automatically created default
-    keyspace and applies credentials and other settings. Later runs reuse the same
-    state and resize the keyspace in place. A failed second stage can be retried.
+    Uses the standard Ravion Terraform change and destroy pipelines. No separate
+    PlanetScale pipeline or pipeline ID is required.
 
-    Ask your project administrator for the PlanetScale provisioning pipeline ID.
-    The source-controlled pipeline is bundled with this module. A standard
-    single-stage change pipeline cannot bootstrap a new database for this module.
+    The first deployment creates the branch at the selected size, its default
+    keyspace, and application credentials. From the second deployment, the module
+    automatically imports that existing keyspace into Terraform state and manages
+    its size and extra replicas. An import can resize it in the same apply; it
+    does not copy data or create another keyspace. Extra replicas are first applied
+    on the second deployment, even if configured initially.
 
     ## Configuration
 
     | Setting | Behavior |
     | --- | --- |
-    | Organization | Required PlanetScale organization slug. |
-    | Service token secret | Required AWS Secrets Manager secret with service_token_id and service_token JSON keys. |
+    | PlanetScale integration | Required active connection from Settings → Integrations. Supplies the organization and short-lived credentials. |
     | Database name | Generated from project, environment and module names. |
     | Database region | Required PlanetScale region slug, such as us-east; choose a Vitess-supported region near the application. |
     | Cluster size | PS-10 by default. Region availability and pricing vary. |
-    | Deletion protection | Enabled. Disable and apply before destroying the database. |
+    | Extra replicas | Zero by default; reconciled from the second deployment. Additional replicas increase cost. |
+    | Application credential CIDRs | Empty by default (no source-IP restriction). Enter CIDR ranges to restrict access. |
+    | Deletion protection | Enabled. Disable and apply before destroying; Terraform deletes the default keyspace before the branch. |
     | Safe migrations | Enabled. Main-branch schema changes require PlanetScale deploy requests. |
-    | Terraform execution environment | Runner location and access to the service token secret; independent of database placement. |
-    | PlanetScale provisioning pipeline ID | Required project pipeline implementing the two-stage workflow. |
+    | Terraform execution environment | Runner location; independent of database placement. Each Terraform step has a 45-minute timeout. |
 
     ## Application connections
 
@@ -188,18 +169,33 @@ module:
 
     ## Advanced configuration
 
-    Advanced Terraform variables can configure additional keyspaces, replicas,
-    passwords and CIDR restrictions, VTGate sizing/autoscaling, and custom backup
-    policies. These options can add charges. Custom backups are optional; built-in
-    backups remain available without them. Metal disk selection, additional
-    branches, VSchema and deploy requests are outside this release's scope.
+    Uses the same Terraform settings as other Ravion modules: OpenTofu version
+    override, Ravion Terraform workspace name, and Advanced Terraform variables.
+    Change and destroy pipelines inherit the environment's normal pipeline defaults;
+    configure those defaults at organization, project, or environment scope, not as
+    PlanetScale-specific module inputs. Advanced Terraform variables override the
+    generated variables.
+
+    Advanced Terraform variables can configure additional keyspaces and passwords,
+    VTGate sizing/autoscaling, and custom backup policies. These options can add
+    charges. Custom backups are optional; built-in backups remain available
+    without them. Cluster sizes are listed for the selected organization and
+    region, including Metal SKUs with their NVMe disk capacity. Additional branches,
+    VSchema and deploy requests are outside this release's scope.
 
     ## Design decisions
 
     Database identity and region are fixed after creation. Compute sizing remains
-    editable. The default keyspace is discovered and imported rather than created
-    twice. No AWS resources are needed for the PlanetScale database itself; AWS is
-    used by the Terraform runner and its secret reference.
+    editable. The first deployment uses PlanetScale's automatically-created default
+    keyspace. Later deployments adopt it automatically, using the previous
+    deployment's branch ID; they never create a second default keyspace. On
+    destroy, Terraform deletes an already-imported default keyspace before
+    deleting the branch. Disable branch deletion protection and apply first.
+    This deletion order needs verification with a disposable PlanetScale database
+    before production use. No AWS resources are needed for the PlanetScale
+    database itself; AWS is used by the Terraform runner and short-lived secret
+    delivery. Plan, apply, and destroy each use their own temporary token from
+    the selected integration; no bootstrap credential reaches the runner.
 
     ## Learn more
 

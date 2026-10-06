@@ -1,5 +1,5 @@
-# Stage one targets only this resource. Its automatically provisioned default
-# keyspace is imported by the full stage-two plan (see vitess_keyspace.tf).
+# The first ordinary deployment creates the branch and its default keyspace.
+# Later deployments import and manage that keyspace (see vitess_keyspace.tf).
 resource "planetscale_vitess_branch" "main" {
   organization       = var.organization
   database           = var.name

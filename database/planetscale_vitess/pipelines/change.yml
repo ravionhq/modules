@@ -16,6 +16,14 @@ inputs:
     type: object
   - id: environment_variables
     type: object
+    default: {}
+    required: false
+  - id: integrations
+    type: string_array
+    required: true
+  - id: timeout
+    type: number
+    default: 2700
   - id: execution_environment_id
     type: string
   - id: stack_id
@@ -47,6 +55,8 @@ steps:
       - id: bootstrap_plan
         name: Plan main branch
         type: terraform:plan
+        integrations: << pipeline.input.integrations >>
+        timeout: << pipeline.input.timeout >>
         infrastructure: &infrastructure
           type: ec2
           instance_size: t3.medium
@@ -71,6 +81,8 @@ steps:
       - id: bootstrap_apply
         name: Apply main branch
         type: terraform:apply
+        integrations: << pipeline.input.integrations >>
+        timeout: << pipeline.input.timeout >>
         if: << steps.bootstrap_plan.output.has_changes >>
         infrastructure: *infrastructure
         tool: << pipeline.input.tool >>
@@ -82,6 +94,8 @@ steps:
       - id: plan
         name: Import default keyspace and plan database configuration
         type: terraform:plan
+        integrations: << pipeline.input.integrations >>
+        timeout: << pipeline.input.timeout >>
         infrastructure: *infrastructure
         tool: << pipeline.input.tool >>
         version: << pipeline.input.tool_version >>
@@ -96,6 +110,8 @@ steps:
       - id: apply
         name: Apply database configuration
         type: terraform:apply
+        integrations: << pipeline.input.integrations >>
+        timeout: << pipeline.input.timeout >>
         if: << steps.plan.output.has_changes >>
         infrastructure: *infrastructure
         tool: << pipeline.input.tool >>

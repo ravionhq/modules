@@ -3,7 +3,8 @@
 Run `tofu init -backend=false` in the module, then:
   python3 -m unittest discover -s tests -v
 
-This tests Terraform's actual import/target/state behavior, not just HCL text.
+This tests ordinary plan/apply, automatic import/resize, and state behavior,
+not just HCL text. No targeted plan or separate bootstrap pipeline is used.
 It is not a substitute for a live PlanetScale acceptance run.
 """
 
@@ -66,6 +67,7 @@ class API(BaseHTTPRequestHandler):
                 result = {"type": "list", "data": [api.keyspace] if page == 1 else []}
         elif "/keyspaces/" in path:
             if self.command == "DELETE":
+                api.keyspace = None
                 status = 204
             else:
                 result = api.keyspace
@@ -83,8 +85,12 @@ class API(BaseHTTPRequestHandler):
             if api.branch is None:
                 status = 404
             elif self.command == "DELETE":
-                api.branch = None
-                status = 204
+                if api.branch["deletion_protected"]:
+                    status, result = 422, {"message": "Branch is deletion protected"}
+                else:
+                    api.branch = None
+                    api.keyspace = None  # Also removes the keyspace if still present.
+                    status = 204
             else:
                 if self.command == "PATCH":
                     api.branch.update(body)
@@ -133,7 +139,8 @@ class LifecycleTest(unittest.TestCase):
         self.thread.join()
 
     def set_variables(self, **overrides):
-        values = dict(organization="acme", name="app", region="us-east")
+        values = dict(organization="acme", name="app", region="us-east",
+                      manage_default_keyspace=False)
         values.update(overrides)
         (self.directory / "test.auto.tfvars.json").write_text(json.dumps(values))
 
@@ -149,38 +156,79 @@ class LifecycleTest(unittest.TestCase):
             stdout, stderr = process.communicate()
             self.fail(f"Timed out: {args}\n{stdout}\n{stderr}\nLast API calls: {self.api.calls[-15:]}")
         self.assertEqual(process.returncode, expected, stdout + stderr)
-        return stdout
+        return stdout if expected == 0 else stdout + stderr
 
     def plan(self, *args):
         self.tofu("plan", "-input=false", "-out=test.tfplan", *args)
         return json.loads(self.tofu("show", "-json", "test.tfplan"))
 
-    def test_bootstrap_import_retry_and_resize(self):
-        plan = self.plan("-target=planetscale_vitess_branch.main")
-        changes = {r["address"]: r["change"]["actions"] for r in plan["resource_changes"]}
-        self.assertEqual(changes, {"planetscale_vitess_branch.main": ["create"]})
-        self.assertFalse(self.api.calls, "Bootstrap plan must not try to import a nonexistent keyspace")
-        self.tofu("apply", "-input=false", "test.tfplan")
+    def test_standard_first_plan_and_second_import_resize(self):
+        self.exercise_lifecycle("PS_10", "PS_20")
 
-        # A failed/cancelled stage two must be recoverable: repeating bootstrap
-        # must leave the existing branch alone and still permit the import.
-        retry = self.plan("-target=planetscale_vitess_branch.main")
-        self.assertTrue(all(r["change"]["actions"] == ["no-op"] for r in retry["resource_changes"]))
-        plan = self.plan()
-        keyspace = next(r for r in plan["resource_changes"] if r["address"] == "planetscale_vitess_keyspace.main")
+    def test_metal_standard_import_and_disk_resize(self):
+        self.exercise_lifecycle("M_160_D_METAL_110", "M_160_D_METAL_230")
+
+    def test_legacy_targeted_first_plan_remains_compatible(self):
+        # Older module definitions omit the internal flag and still run their
+        # targeted first stage. The true default must preserve that workflow.
+        self.set_variables(manage_default_keyspace=True)
+        self.plan("-target=planetscale_vitess_branch.main")
+        self.assertFalse(self.api.calls)
+
+    def test_destroy_after_only_first_deployment(self):
+        self.set_variables(deletion_protection_enabled=False)
+        self.plan()
+        self.tofu("apply", "-input=false", "test.tfplan")
+        # Ravion now has branch_id, even though no keyspace import has run.
+        self.set_variables(manage_default_keyspace=True, deletion_protection_enabled=False)
+        self.plan("-destroy")
+        self.tofu("apply", "-input=false", "test.tfplan")
+        self.assertIsNone(self.api.branch)
+        self.assertIsNone(self.api.keyspace)
+        self.assertFalse(any(method == "DELETE" and "/keyspaces/" in path
+                             for method, path, _ in self.api.calls))
+
+    def exercise_lifecycle(self, initial_size, resized_size):
+        address = "planetscale_vitess_keyspace.main[0]"
+        self.set_variables(cluster_size=initial_size)
+        first = self.plan()
+        self.assertFalse(self.api.calls, "A fresh full plan must not read a nonexistent keyspace")
+        self.assertFalse(any("importing" in r["change"] for r in first["resource_changes"]))
+        self.assertNotIn(address, [r["address"] for r in first["resource_changes"]])
+        self.tofu("apply", "-input=false", "test.tfplan")
+        outputs = json.loads(self.tofu("output", "-json"))
+        self.assertEqual(outputs["keyspace"]["value"], "app")
+        self.assertEqual(outputs["cluster_size"]["value"], initial_size)
+        self.assertFalse(outputs["default_keyspace_managed"]["value"])
+        self.assertTrue(outputs["password"]["sensitive"])
+        self.assertTrue(outputs["connection_string"]["sensitive"])
+        self.assertIn("p%40ss%2Fword", outputs["connection_string"]["value"])
+        password_id = self.api.password["id"]
+
+        # Retrying the first deployment with unchanged inputs is safe.
+        retry = self.plan()
+        self.assertTrue(all(r["change"]["actions"] == ["no-op"]
+                            for r in retry["resource_changes"] if r["mode"] == "managed"))
+
+        # Import and resize happen in the SAME normal plan/apply. Changing branch
+        # settings at the same time must not make the import ID unknown.
+        self.set_variables(cluster_size=resized_size, manage_default_keyspace=True,
+                           extra_replicas=2, safe_migrations_enabled=False,
+                           deletion_protection_enabled=False)
+        second = self.plan()
+        keyspace = next(r for r in second["resource_changes"] if r["address"] == address)
         self.assertIn("importing", keyspace["change"])
-        self.assertNotIn("create", keyspace["change"]["actions"])
+        self.assertEqual(keyspace["change"]["actions"], ["update"])
+        branch = next(r for r in second["resource_changes"]
+                      if r["address"] == "planetscale_vitess_branch.main")
+        self.assertEqual(branch["change"]["actions"], ["update"])
         self.tofu("apply", "-input=false", "test.tfplan")
-
-        self.set_variables(cluster_size="PS_20")
-        bootstrap = self.plan("-target=planetscale_vitess_branch.main")
-        self.assertTrue(all(r["change"]["actions"] == ["no-op"] for r in bootstrap["resource_changes"]))
-        resized = self.plan()
-        changed = {r["address"]: r["change"]["actions"] for r in resized["resource_changes"]
-                   if r["mode"] == "managed" and r["change"]["actions"] != ["no-op"]}
-        self.assertEqual(changed, {"planetscale_vitess_keyspace.main": ["update"]})
-        self.tofu("apply", "-input=false", "test.tfplan")
-        self.assertEqual(self.api.keyspace["cluster_name"], "PS_20")
+        self.assertEqual(self.api.keyspace["cluster_name"], resized_size)
+        self.assertEqual(self.api.keyspace["extra_replicas"], 2)
+        self.assertFalse(self.api.branch["deletion_protected"])
+        self.assertFalse(self.api.branch["safe_migrations"])
+        self.assertEqual(self.api.password["id"], password_id)
+        self.assertTrue(json.loads(self.tofu("output", "-json"))["default_keyspace_managed"]["value"])
         self.assertFalse(any(method == "POST" and path.endswith("/keyspaces")
                              for method, path, _ in self.api.calls))
         self.assertFalse(any(method == "DELETE" for method, _, _ in self.api.calls))
@@ -190,36 +238,65 @@ class LifecycleTest(unittest.TestCase):
         final = self.plan()
         self.assertTrue(all(r["change"]["actions"] == ["no-op"] for r in final["resource_changes"]
                             if r["mode"] == "managed"))
-        outputs = json.loads(self.tofu("output", "-json"))
-        self.assertTrue(outputs["password"]["sensitive"])
-        self.assertTrue(outputs["connection_string"]["sensitive"])
-        self.assertIn("p%40ss%2Fword", outputs["connection_string"]["value"])
 
-        # Losing only the keyspace state must recover through an import-only
-        # plan, not a duplicate keyspace or credential recreation.
-        self.tofu("state", "rm", "planetscale_vitess_keyspace.main")
+        # Existing users of the old unindexed resource upgrade via the moved
+        # block, without re-importing, deleting, or recreating the keyspace.
+        self.tofu("state", "mv", address, "planetscale_vitess_keyspace.main")
+        # Legacy module versions do not pass the new internal flag. Its true
+        # default must preserve their managed keyspace, never plan deletion.
+        variables = self.directory / "test.auto.tfvars.json"
+        legacy_values = json.loads(variables.read_text())
+        legacy_values.pop("manage_default_keyspace")
+        variables.write_text(json.dumps(legacy_values))
+        upgrade = self.plan()
+        migrated = next(r for r in upgrade["resource_changes"] if r["address"] == address)
+        self.assertEqual(migrated["previous_address"], "planetscale_vitess_keyspace.main")
+        self.assertEqual(migrated["change"]["actions"], ["no-op"])
+        self.assertNotIn("importing", migrated["change"])
+        self.tofu("apply", "-input=false", "test.tfplan")
+
+        # Recover missing keyspace state with an import-only apply.
+        self.tofu("state", "rm", address)
         recovery = self.plan()
-        recovered_keyspace = next(r for r in recovery["resource_changes"]
-                                  if r["address"] == "planetscale_vitess_keyspace.main")
-        self.assertIn("importing", recovered_keyspace["change"])
-        self.assertEqual(recovered_keyspace["change"]["actions"], ["no-op"])
+        recovered = next(r for r in recovery["resource_changes"] if r["address"] == address)
+        self.assertIn("importing", recovered["change"])
+        self.assertEqual(recovered["change"]["actions"], ["no-op"])
         self.tofu("apply", "-input=false", "test.tfplan")
 
-        # Branch settings are reconciled before the full plan, so discovery is
-        # known during the import plan even when safe migrations/protection change.
-        self.set_variables(cluster_size="PS_20", safe_migrations_enabled=False,
+        # External keyspace drift is corrected in place, not by replacing the branch.
+        self.api.keyspace["cluster_name"] = initial_size
+        self.api.keyspace["extra_replicas"] = 0
+        drift = self.plan()
+        changed = {r["address"]: r["change"]["actions"] for r in drift["resource_changes"]
+                   if r["mode"] == "managed" and r["change"]["actions"] != ["no-op"]}
+        self.assertEqual(changed, {address: ["update"]})
+        self.tofu("apply", "-input=false", "test.tfplan")
+        self.assertEqual(self.api.keyspace["cluster_name"], resized_size)
+        self.assertEqual(self.api.keyspace["extra_replicas"], 2)
+
+        self.set_variables(cluster_size=resized_size, manage_default_keyspace=True,
+                           additional_passwords={"application": {}})
+        error = self.tofu("plan", "-input=false", expected=1)
+        self.assertIn("An additional password cannot have the same name", error)
+        self.set_variables(cluster_size=resized_size, manage_default_keyspace=True,
+                           extra_replicas=2, safe_migrations_enabled=False,
                            deletion_protection_enabled=False)
-        self.plan("-target=planetscale_vitess_branch.main")
-        self.tofu("apply", "-input=false", "test.tfplan")
-        self.assertFalse(self.api.branch["deletion_protected"])
-        self.assertFalse(self.api.branch["safe_migrations"])
-        self.plan()
-        self.tofu("apply", "-input=false", "test.tfplan")
+        # The mock allows default-keyspace DELETE before branch DELETE; a live
+        # disposable database must still verify this real PlanetScale behavior.
         destruction = self.plan("-destroy")
         self.assertTrue(all(r["change"]["actions"] == ["delete"]
                             for r in destruction["resource_changes"] if r["mode"] == "managed"))
+        self.assertIn(address, [r["address"] for r in destruction["resource_changes"]])
         self.tofu("apply", "-input=false", "test.tfplan")
         self.assertIsNone(self.api.branch)
+        self.assertIsNone(self.api.keyspace)
+        deletes = [path for method, path, _ in self.api.calls if method == "DELETE"]
+        branch_deletes = [i for i, path in enumerate(deletes)
+                          if "/branches/" in path and "/keyspaces/" not in path
+                          and "/passwords/" not in path]
+        self.assertEqual(len(branch_deletes), 1)
+        self.assertLess(next(i for i, path in enumerate(deletes) if "/keyspaces/" in path),
+                        branch_deletes[0])
 
 
 if __name__ == "__main__":
