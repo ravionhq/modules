@@ -185,8 +185,9 @@ variable "vpc_endpoint_s3_gateway_subnets" {
     the NAT gateway: "public", "private", or the name of a private subnet group. The
     endpoint is attached to those subnets' route tables, so their S3 traffic stays inside
     AWS and avoids NAT data processing charges (including ECR image layer pulls). The
-    other subnets keep reaching S3 through the NAT gateway. An empty list creates no
-    endpoint.
+    subnets not listed keep their own default route to S3: the internet gateway for the
+    public subnets, and the NAT gateway, when there is one, for the private subnets and
+    groups. An empty list creates no endpoint.
   EOT
   default     = []
   nullable    = false
@@ -197,8 +198,10 @@ variable "vpc_endpoint_dynamodb_gateway_subnets" {
   description = <<-EOT
     The subnets whose DynamoDB traffic goes through a free DynamoDB gateway VPC endpoint
     instead of the NAT gateway: "public", "private", or the name of a private subnet
-    group. The endpoint is attached to those subnets' route tables; the other subnets
-    keep reaching DynamoDB through the NAT gateway. An empty list creates no endpoint.
+    group. The endpoint is attached to those subnets' route tables; the subnets not
+    listed keep their own default route to DynamoDB: the internet gateway for the public
+    subnets, and the NAT gateway, when there is one, for the private subnets and groups.
+    An empty list creates no endpoint.
   EOT
   default     = []
   nullable    = false

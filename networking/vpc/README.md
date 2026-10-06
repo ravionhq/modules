@@ -112,7 +112,7 @@ module "vpc" {
 }
 ```
 
-Gateway endpoints are free. Each one adds a route for its service to the route tables of the subnets it lists, and the subnets it leaves out keep reaching the service through the NAT gateway. Interface endpoints are placed in every private subnet with private DNS enabled and share a module-managed security group allowing HTTPS (443) from the VPC CIDR. Pulling ECR images privately requires `ecr.api`, `ecr.dkr`, and the S3 gateway endpoint together.
+Gateway endpoints are free. Each one adds a route for its service to the route tables of the subnets it lists, and the subnets it leaves out keep their own default route to it: the internet gateway for the public subnets, and the NAT gateway, when there is one, for the private subnets and groups. Interface endpoints are placed in every private subnet with private DNS enabled and share a module-managed security group allowing HTTPS (443) from the VPC CIDR. Pulling ECR images privately requires `ecr.api`, `ecr.dkr`, and the S3 gateway endpoint together.
 
 ### With a Private Subnet Group
 
