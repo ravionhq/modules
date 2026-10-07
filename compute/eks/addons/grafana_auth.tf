@@ -18,23 +18,16 @@ locals {
   # The validation guarantees each provider appears once.
   grafana_auth_by_provider = { for entry in local.grafana_auth_entries : entry.provider => entry }
 
-  # A client ID is a string or a reference, and a client secret a reference:
-  # {from_secrets_manager = "..."} or {from_parameter_store = "..."}, reduced
-  # here to the store it names and what to read from it.
+  # A client ID is a string or a reference, and a client secret a reference,
+  # read with the env vars below.
   grafana_auth_values = {
     for provider, entry in local.grafana_auth_by_provider : provider => {
-      client_id = try(trimspace(tostring(entry.client_id)), "")
-      client_id_ref = {
-        store = try(trimspace(entry.client_id.from_parameter_store), "") != "" ? "parameter_store" : try(trimspace(entry.client_id.from_secrets_manager), "") != "" ? "secrets_manager" : ""
-        key   = try(trimspace(entry.client_id.from_secrets_manager), trimspace(entry.client_id.from_parameter_store), "")
-      }
-      client_secret_ref = {
-        store = try(trimspace(entry.client_secret.from_parameter_store), "") != "" ? "parameter_store" : try(trimspace(entry.client_secret.from_secrets_manager), "") != "" ? "secrets_manager" : ""
-        key   = try(trimspace(entry.client_secret.from_secrets_manager), trimspace(entry.client_secret.from_parameter_store), "")
-      }
-      base_url  = trimsuffix(try(trimspace(entry.url), ""), "/")
-      tenant_id = try(trimspace(entry.tenant_id), "")
-      settings  = try({ for key, value in entry.settings : key => tostring(value) }, {})
+      client_id                = try(trimspace(tostring(entry.client_id)), "")
+      client_id_referenced     = can(keys(entry.client_id))
+      client_secret_referenced = can(keys(entry.client_secret))
+      base_url                 = trimsuffix(try(trimspace(entry.url), ""), "/")
+      tenant_id                = try(trimspace(entry.tenant_id), "")
+      settings                 = try({ for key, value in entry.settings : key => tostring(value) }, {})
     }
   }
 
@@ -114,34 +107,59 @@ locals {
     for name, value in var.grafana_env_variables : name => tostring(value) if can(tostring(value))
   }
 
+  # A Secrets Manager version id, which a reference's version may be in place
+  # of a stage, as the deploy runner reads it.
+  secrets_manager_version_id = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
   # Every reference Grafana reads, each into a key of a Kubernetes Secret and
   # from there into an env var. An ExternalSecret reads from one store, so a
   # Parameter Store reference goes into its own Secret, suffixed -parameters.
-  grafana_secret_references = concat(
+  grafana_raw_references = concat(
     flatten([
-      for provider, value in local.grafana_auth_values : [
-        for key, reference in {
-          clientSecret = value.client_secret_ref
-          clientId     = value.client_id_ref
+      for provider, entry in local.grafana_auth_by_provider : [
+        for key, value in {
+          clientId     = try(entry.client_id, null)
+          clientSecret = try(entry.client_secret, null)
           } : {
-          secret = "${local.grafana_auth_secret_names[provider]}${reference.store == "parameter_store" ? "-parameters" : ""}"
-          store  = reference.store
-          key    = key
-          ref    = reference.key
-          env    = "GF_AUTH_${upper(provider)}_${key == "clientSecret" ? "CLIENT_SECRET" : "CLIENT_ID"}"
-        } if reference.store != ""
+          base            = local.grafana_auth_secret_names[provider]
+          key             = key
+          env             = "GF_AUTH_${upper(provider)}_${key == "clientSecret" ? "CLIENT_SECRET" : "CLIENT_ID"}"
+          parameter_store = can(value.from_parameter_store)
+          source          = try(value.from_secrets_manager, value.from_parameter_store)
+        } if can(keys(value))
       ]
     ]),
     [
       for name, value in var.grafana_env_variables : {
-        secret = "ravion-grafana-env${try(trimspace(value.from_parameter_store), "") != "" ? "-parameters" : ""}"
-        store  = try(trimspace(value.from_parameter_store), "") != "" ? "parameter_store" : "secrets_manager"
-        key    = name
-        ref    = try(trimspace(value.from_secrets_manager), trimspace(value.from_parameter_store))
-        env    = name
-      } if var.grafana_enabled && !can(tostring(value))
+        base            = "ravion-grafana-env"
+        key             = name
+        env             = name
+        parameter_store = can(value.from_parameter_store)
+        source          = try(value.from_secrets_manager, value.from_parameter_store)
+      } if var.grafana_enabled && can(keys(value))
     ],
   )
+
+  grafana_secret_references = [
+    for reference in local.grafana_raw_references : {
+      secret = "${reference.base}${reference.parameter_store ? "-parameters" : ""}"
+      store  = reference.parameter_store ? "parameter_store" : "secrets_manager"
+      key    = reference.key
+      env    = reference.env
+      # A string reference is kept as written, an ARN or name that may end in
+      # :<json key>:<version stage>:<version id>. An object, {key, json_key,
+      # version}, is written the same way, a Secrets Manager version id in the
+      # last place, so that one reader takes both.
+      ref = can(tostring(reference.source)) ? trimspace(reference.source) : "${trimspace(reference.source.key)}${
+        try(trimspace(reference.source.json_key), "") == "" && try(trimspace(reference.source.version), "") == "" ? "" : join(":", [
+          "",
+          try(trimspace(reference.source.json_key), ""),
+          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? "" : try(trimspace(reference.source.version), ""),
+          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? trimspace(reference.source.version) : "",
+        ])
+      }"
+    }
+  ]
 
   grafana_reference_secrets = [
     for secret, references in { for reference in local.grafana_secret_references : reference.secret => reference... } : {
@@ -212,7 +230,7 @@ locals {
 
   grafana_auth_without_client = [
     for provider, value in local.grafana_auth_values : provider
-    if(value.client_id == "" && value.client_id_ref.store == "") || value.client_secret_ref.store == ""
+    if(value.client_id == "" && !value.client_id_referenced) || !value.client_secret_referenced
   ]
 
   # The module's own env vars, which grafana_env_variables may not replace.

@@ -954,16 +954,16 @@ module:
           show_when:
             provider: generic_oauth
           type: string
-        - description: 'Client ID of the OAuth application, as a string or a from_parameter_store or from_secrets_manager reference. A Secrets Manager ARN may end in :<json key>:: to read one key of a JSON secret. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.'
+        - description: 'Client ID of the OAuth application, as a string or a from_parameter_store or from_secrets_manager reference, as in a stack''s environment variables. Read one key of a JSON secret with {"from_secrets_manager": {"key": "<ARN>", "json_key": "<key>"}}. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.'
           id: client_id
           label: Client ID
-          placeholder: '{"from_secrets_manager": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:GRAFANA_CLIENT_ID::"}'
+          placeholder: '{"from_secrets_manager": {"key": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf", "json_key": "GRAFANA_CLIENT_ID"}}'
           required: true
           type: object
-        - description: 'The client secret, as a from_parameter_store or from_secrets_manager reference. A Secrets Manager ARN may end in :<json key>:: to read one key of a JSON secret. External Secrets reads it into the cluster; it is never a Helm value.'
+        - description: 'The client secret, as a from_parameter_store or from_secrets_manager reference, as in a stack''s environment variables. Read one key of a JSON secret with {"from_secrets_manager": {"key": "<ARN>", "json_key": "<key>"}}. External Secrets reads it into the cluster; it is never a Helm value.'
           id: client_secret
           label: Client secret
-          placeholder: '{"from_secrets_manager": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:GRAFANA_CLIENT_SECRET::"}'
+          placeholder: '{"from_secrets_manager": {"key": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf", "json_key": "GRAFANA_CLIENT_SECRET"}}'
           required: true
           type: object
         - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.

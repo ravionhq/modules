@@ -1394,7 +1394,7 @@ variable "grafana_auth_providers" {
   type        = any
   description = <<-EOT
     OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
-    - client_id and client_secret are required. client_id is a string or a reference, and client_secret is a reference. A reference is {from_secrets_manager = "<ARN or name>"} or {from_parameter_store = "<ARN or name>"}, as in a stack's env_variables, read through External Secrets and never a Helm value. A Secrets Manager ARN may end in :<json key>:<version stage>:<version id> to read one key of a JSON secret, as EKS workloads' secrets do.
+    - client_id and client_secret are required. client_id is a string or a reference, and client_secret is a reference. A reference is {from_secrets_manager = "<ARN or name>"} or {from_parameter_store = "<ARN or name>"}, as in a stack's env_variables, read through External Secrets and never a Helm value. To read one key of a JSON secret, write {from_secrets_manager = {key = "<ARN or name>", json_key = "<key>", version = "<stage or version id>"}}, or end the ARN in :<json key>:<version stage>:<version id> as EKS workloads' secrets do.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
@@ -1433,10 +1433,20 @@ variable "grafana_auth_providers" {
   validation {
     condition = try(alltrue([
       for entry in var.grafana_auth_providers :
-      (try(entry.client_id, null) == null || can(tostring(entry.client_id)) || (can(keys(entry.client_id)) && length(keys(entry.client_id)) == 1 && (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_id.from_secrets_manager))) || can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_id.from_parameter_store)))))) &&
-      (try(entry.client_secret, null) == null || (can(keys(entry.client_secret)) && length(keys(entry.client_secret)) == 1 && (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_secret.from_secrets_manager))) || can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_secret.from_parameter_store))))))
+      (try(entry.client_id, null) == null || can(tostring(entry.client_id)) || (can(keys(entry.client_id)) && length(keys(entry.client_id)) == 1 && (
+        can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)(:[^:]*){0,3}$", trimspace(entry.client_id.from_secrets_manager))) ||
+        (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_id.from_secrets_manager.key))) && length(setsubtract(keys(entry.client_id.from_secrets_manager), ["key", "json_key", "version"])) == 0) ||
+        can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_id.from_parameter_store))) ||
+        (can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_id.from_parameter_store.key))) && length(setsubtract(keys(entry.client_id.from_parameter_store), ["key", "version"])) == 0)
+      ))) &&
+      (try(entry.client_secret, null) == null || (can(keys(entry.client_secret)) && length(keys(entry.client_secret)) == 1 && (
+        can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)(:[^:]*){0,3}$", trimspace(entry.client_secret.from_secrets_manager))) ||
+        (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_secret.from_secrets_manager.key))) && length(setsubtract(keys(entry.client_secret.from_secrets_manager), ["key", "json_key", "version"])) == 0) ||
+        can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_secret.from_parameter_store))) ||
+        (can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_secret.from_parameter_store.key))) && length(setsubtract(keys(entry.client_secret.from_parameter_store), ["key", "version"])) == 0)
+      )))
     ]), false)
-    error_message = "A Grafana sign-in provider's client_id must be a string or a reference, and its client_secret a reference: {from_secrets_manager = \"<Secrets Manager ARN or name>\"}, where an ARN may end in :<json key>:<version stage>:<version id>, or {from_parameter_store = \"<Parameter Store ARN or name>\"}."
+    error_message = "A Grafana sign-in provider's client_id must be a string or a reference, and its client_secret a reference, as in a stack's env_variables: {from_secrets_manager = \"<ARN or name>\"} or {from_secrets_manager = {key, json_key, version}}, where a string may end in :<json key>:<version stage>:<version id>, or {from_parameter_store = \"<ARN or name>\"} or {from_parameter_store = {key, version}}."
   }
 
   validation {
@@ -1454,7 +1464,7 @@ variable "grafana_env_variables" {
   # A value is a string in one entry and a reference in another, which a typed
   # map cannot hold, so the shape is checked below.
   type        = any
-  description = "Environment variables for the in-cluster Grafana, as a stack's env_variables: a map from name to a string, or to a reference, {from_secrets_manager = \"<ARN or name>\"} or {from_parameter_store = \"<ARN or name>\"}. A reference is read through External Secrets and never a Helm value, and a Secrets Manager ARN may end in :<json key>:<version stage>:<version id> to read one key of a JSON secret. Use one in any Grafana setting as $__env{NAME}, or name it GF_<SECTION>_<KEY> to set that setting directly."
+  description = "Environment variables for the in-cluster Grafana, as a stack's env_variables: a map from name to a string, or to a reference, {from_secrets_manager = \"<ARN or name>\"} or {from_parameter_store = \"<ARN or name>\"}. A reference is read through External Secrets and never a Helm value. To read one key of a JSON secret, write {from_secrets_manager = {key = \"<ARN or name>\", json_key = \"<key>\"}}, or end the ARN in :<json key>:<version stage>:<version id>. Use one in any Grafana setting as $__env{NAME}, or name it GF_<SECTION>_<KEY> to set that setting directly."
   default     = {}
   nullable    = false
 
@@ -1464,8 +1474,13 @@ variable "grafana_env_variables" {
   }
 
   validation {
-    condition     = try(alltrue([for value in values(var.grafana_env_variables) : (value != null && can(tostring(value))) || (can(keys(value)) && length(keys(value)) == 1 && (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}|[A-Za-z0-9/_+=.@-]+)$", trimspace(value.from_secrets_manager))) || can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(value.from_parameter_store)))))]), false)
-    error_message = "Each grafana_env_variables value must be a string or a reference: {from_secrets_manager = \"<Secrets Manager ARN or name>\"}, where an ARN may end in :<json key>:<version stage>:<version id>, or {from_parameter_store = \"<Parameter Store ARN or name>\"}."
+    condition = try(alltrue([for value in values(var.grafana_env_variables) : (value != null && can(tostring(value))) || (can(keys(value)) && length(keys(value)) == 1 && (
+      can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)(:[^:]*){0,3}$", trimspace(value.from_secrets_manager))) ||
+      (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(value.from_secrets_manager.key))) && length(setsubtract(keys(value.from_secrets_manager), ["key", "json_key", "version"])) == 0) ||
+      can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(value.from_parameter_store))) ||
+      (can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(value.from_parameter_store.key))) && length(setsubtract(keys(value.from_parameter_store), ["key", "version"])) == 0)
+    ))]), false)
+    error_message = "Each grafana_env_variables value must be a string or a reference, as in a stack's env_variables: {from_secrets_manager = \"<ARN or name>\"} or {from_secrets_manager = {key, json_key, version}}, where a string may end in :<json key>:<version stage>:<version id>, or {from_parameter_store = \"<ARN or name>\"} or {from_parameter_store = {key, version}}."
   }
 }
 

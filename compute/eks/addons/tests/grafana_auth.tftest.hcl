@@ -508,6 +508,50 @@ run "client_id_and_secret_from_one_json_secret" {
   }
 }
 
+run "client_id_and_secret_as_a_stack_writes_them" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider = "google"
+        client_id = {
+          from_secrets_manager = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", json_key = "GRAFANA_GOOGLE_CLIENT_ID" }
+        }
+        client_secret = {
+          from_secrets_manager = { key = "prod/app", json_key = "GRAFANA_GOOGLE_CLIENT_SECRET", version = "11111111-2222-3333-4444-555555555555" }
+        }
+        allowed_domains = ["example.com"]
+      },
+    ]
+  }
+
+  assert {
+    condition = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-google-oauth"][0] == [
+      { secretKey = "clientId", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_ID" } },
+      { secretKey = "clientSecret", remoteRef = { key = "prod/app", property = "GRAFANA_GOOGLE_CLIENT_SECRET", version = "uuid/11111111-2222-3333-4444-555555555555" } },
+    ]
+    error_message = "A {key, json_key, version} reference must read that key and version, by ARN or by name"
+  }
+}
+
+run "rejects_a_reference_object_with_an_unknown_key" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        client_secret   = { from_secrets_manager = { key = "prod/app", json_key = "SECRET", region = "us-east-1" } }
+        allowed_domains = ["example.com"]
+      },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
+}
+
 run "client_secret_from_parameter_store" {
   command = plan
 
@@ -592,6 +636,8 @@ run "grafana_env_variables_as_strings_and_references" {
     grafana_env_variables = {
       GRAFANA_ADMINS_GROUP   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_ADMINS_GROUP::" }
       GRAFANA_EDITORS_GROUP  = { from_parameter_store = "/grafana/editors-group" }
+      GRAFANA_VIEWERS_GROUP  = { from_parameter_store = { key = "arn:aws:ssm:us-east-2:123456789012:parameter/grafana/viewers-group", version = "3" } }
+      GRAFANA_ORG_NAME       = { from_secrets_manager = "prod/app:GRAFANA_ORG_NAME::" }
       GF_USERS_DEFAULT_THEME = "light"
     }
     grafana_auth_providers = [
@@ -617,13 +663,26 @@ run "grafana_env_variables_as_strings_and_references" {
   }
 
   assert {
-    condition     = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env"][0] == [{ secretKey = "GRAFANA_ADMINS_GROUP", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_ADMINS_GROUP" } }]
+    condition     = contains([for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env"][0], { secretKey = "GRAFANA_ADMINS_GROUP", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_ADMINS_GROUP" } })
     error_message = "External Secrets must read the env var's key of the JSON secret"
   }
 
   assert {
     condition     = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.storeName if secret.name == "ravion-grafana-env-parameters"][0] == "ravion-aws-parameter-store"
     error_message = "A Parameter Store reference must be read through the Parameter Store store"
+  }
+
+  assert {
+    condition = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env-parameters"][0] == [
+      { secretKey = "GRAFANA_EDITORS_GROUP", remoteRef = { key = "/grafana/editors-group" } },
+      { secretKey = "GRAFANA_VIEWERS_GROUP", remoteRef = { key = "arn:aws:ssm:us-east-2:123456789012:parameter/grafana/viewers-group", version = "3" } },
+    ]
+    error_message = "Parameter Store references must read the parameter by name or ARN, at the version given"
+  }
+
+  assert {
+    condition     = contains([for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env"][0], { secretKey = "GRAFANA_ORG_NAME", remoteRef = { key = "prod/app", property = "GRAFANA_ORG_NAME" } })
+    error_message = "A secret name may end in the JSON-key suffix as an ARN may"
   }
 
   assert {
