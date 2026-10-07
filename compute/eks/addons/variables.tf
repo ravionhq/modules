@@ -115,8 +115,8 @@ variable "aws_load_balancer_controller_helm_values" {
 
 variable "ebs_csi_driver_enabled" {
   type        = bool
-  description = "Install the aws-ebs-csi-driver add-on and create its Pod Identity role so workloads can use EBS-backed persistent volumes."
-  default     = false
+  description = "Install the aws-ebs-csi-driver add-on and its Pod Identity role. Enabled by default for the Prometheus and Tempo working volumes; disable when another provisioner supplies persistent storage."
+  default     = true
 }
 
 variable "ebs_csi_addon_version" {
@@ -1310,7 +1310,7 @@ variable "alloy_helm_values" {
 
 variable "grafana_enabled" {
   type        = bool
-  description = "Install Grafana in the cluster, preprovisioned with both Ravion datasources: Amazon Managed Prometheus over SigV4 and the in-cluster Loki. This is the only way to see the logs in Grafana - Amazon Managed Grafana runs outside the cluster and cannot reach Loki, which is deliberately not exposed. No ingress is created; reach it with a port-forward or add one through grafana_helm_values."
+  description = "Install Grafana in the cluster with data sources for the selected Loki, Prometheus/Thanos, Tempo and AMP stores. Without grafana_access it has no ingress: use a port-forward. Amazon Managed Grafana cannot reach these private stores without additional networking."
   default     = false
   nullable    = false
 }
@@ -1347,10 +1347,92 @@ variable "grafana_helm_values" {
   nullable    = false
 }
 
+variable "grafana_access" {
+  type = object({
+    enabled                 = optional(bool, false)
+    method                  = optional(string, "load_balancer")
+    load_balancer           = optional(string, "private")
+    listener_rule_priority  = optional(number)
+    ingress_class_name      = optional(string)
+    ingress_annotations     = optional(map(string), {})
+    ingress_tls_secret_name = optional(string)
+    hostname                = optional(string)
+  })
+  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. Install that controller before turning this on: the AWS Load Balancer Controller, which this module runs alongside any shared load balancer, refuses an Ingress whose IngressClass does not exist yet. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth and grafana_auth_providers."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = contains(["load_balancer", "ingress"], var.grafana_access.method)
+    error_message = "The grafana_access.method must be load_balancer or ingress."
+  }
+
+  validation {
+    condition     = contains(["public", "private"], var.grafana_access.load_balancer)
+    error_message = "The grafana_access.load_balancer must be public or private."
+  }
+}
+
+variable "grafana_auth" {
+  type = object({
+    login_form_enabled = optional(bool, true)
+    default_role       = optional(string, "Viewer")
+  })
+  description = "Grafana's own sign-in settings. login_form_enabled keeps username and password sign-in for Grafana's local users, including the generated admin; false removes the login form and HTTP basic auth both. default_role is the role an account gets the first time it signs in through a provider (users.auto_assign_org_role): Viewer, Editor or Admin."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_auth.default_role)
+    error_message = "The grafana_auth.default_role must be Viewer, Editor or Admin."
+  }
+}
+
+variable "grafana_auth_providers" {
+  type = list(object({
+    provider              = string
+    name                  = optional(string)
+    client_id             = optional(string)
+    client_secret_arn     = optional(string)
+    tenant_id             = optional(string)
+    url                   = optional(string)
+    auth_url              = optional(string)
+    token_url             = optional(string)
+    api_url               = optional(string)
+    scopes                = optional(string)
+    allowed_domains       = optional(list(string), [])
+    allowed_groups        = optional(list(string), [])
+    allowed_organizations = optional(list(string), [])
+    team_ids              = optional(list(string), [])
+    role_attribute_path   = optional(string)
+    settings              = optional(map(string), {})
+  }))
+  description = <<-EOT
+    OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) are required.
+    - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
+    - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
+    - role_attribute_path maps the provider's user info to a Grafana role.
+    - settings passes any other key of the section through verbatim.
+  EOT
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
+    error_message = "Each grafana_auth_providers entry's provider must be one of: google, github, gitlab, azuread, okta, generic_oauth."
+  }
+
+  validation {
+    condition     = length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers)
+    error_message = "Each provider can appear in grafana_auth_providers once: Grafana has one [auth.<provider>] section per provider."
+  }
+}
+
 ################################################################################
 # Observability providers
 #
-# One multi-select per signal. Loki (in-cluster) and Amazon Managed Prometheus
+# One multi-select per signal. Loki, Prometheus with Thanos, and Tempo on S3
 # are the defaults: a fresh instance gets Ravion's full Logs and Metrics
 # experience with no configuration, and nothing CloudWatch is ever installed as
 # a side effect. Every other destination — including CloudWatch — is a member of
@@ -1379,7 +1461,7 @@ variable "logs_providers" {
 variable "metrics_providers" {
   type        = list(string)
   description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
-  default     = ["amp"]
+  default     = ["prometheus"]
   nullable    = false
 
   validation {
@@ -1389,6 +1471,122 @@ variable "metrics_providers" {
     ])
     error_message = "Each metrics_providers entry must be one of: amp, prometheus, cloudwatch, grafana_cloud, datadog, new_relic, otlp."
   }
+}
+
+variable "traces_destinations" {
+  # A list of objects rather than list(object(...)): a list's elements must
+  # convert to one type, and the Tempo card's free-form helm_values never shares
+  # one with the other cards' (null, or {}), so the form's cards would be refused.
+  # The validations below take the place of the object type.
+  type        = any
+  description = <<-EOT
+    Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
+    - xray: AWS X-Ray, in region (the cluster's when null).
+    - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
+    - datadog: site and a Secrets Manager ARN holding the API key.
+    - new_relic: new_relic_region (us or eu) and a Secrets Manager ARN holding the license key.
+    - otlp: any OTLP/HTTP traces receiver (endpoint), and optionally a Secrets Manager ARN holding an Authorization header value.
+    A vendor that is also a logs or metrics destination uses that signal's site, region and secret.
+  EOT
+  default     = [{ destination = "tempo" }]
+  nullable    = false
+
+  validation {
+    condition     = can(concat(var.traces_destinations, [])) && alltrue([for entry in var.traces_destinations : can(keys(entry)) && can(tostring(entry.destination))])
+    error_message = "traces_destinations must be a list of objects, each with a destination."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], try(entry.destination, ""))])
+    error_message = "Each traces_destinations entry's destination must be one of: xray, tempo, grafana_cloud, datadog, new_relic, otlp."
+  }
+
+  validation {
+    condition     = length(distinct([for entry in var.traces_destinations : try(entry.destination, "")])) == length(var.traces_destinations)
+    error_message = "Each destination can appear in traces_destinations once."
+  }
+
+  validation {
+    condition = alltrue([for entry in var.traces_destinations : length(setsubtract(try(keys(entry), []), [
+      "destination",
+      "retention_days", "storage_backend", "s3_bucket_name", "persistence_enabled", "persistence_size",
+      "metrics_generator_enabled", "storage_class", "chart_version", "helm_values",
+      "region",
+      "url", "user", "token_secret_arn",
+      "site", "api_key_secret_arn",
+      "new_relic_region", "license_key_secret_arn",
+      "endpoint", "headers_secret_arn",
+    ])) == 0])
+    error_message = "A traces_destinations entry has a field no destination takes. The fields are listed in the variable's description."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : try(entry.retention_days, null) == null || try(entry.retention_days >= 1, false)])
+    error_message = "A tempo destination's retention_days must be at least 1."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : contains(["", "s3", "local"], try(trimspace(entry.storage_backend), ""))])
+    error_message = "A tempo destination's storage_backend must be s3 or local."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : try(entry.helm_values, null) == null || can(keys(entry.helm_values))])
+    error_message = "A tempo destination's helm_values must be an object of chart values."
+  }
+}
+
+variable "tempo_service_account" {
+  type        = string
+  description = "Service account Tempo runs as. The Pod Identity association binds the S3 role to this name, so the chart and the association are driven from this single value."
+  default     = "ravion-tempo"
+  nullable    = false
+}
+
+variable "tempo_resources" {
+  type = object({
+    cpu_request    = optional(string, "200m")
+    memory_request = optional(string, "512Mi")
+    cpu_limit      = optional(string)
+    memory_limit   = optional(string, "2Gi")
+  })
+  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted."
+  default     = {}
+  nullable    = false
+}
+
+variable "tempo_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives and the tempo destination's helm_values (later entries win)."
+  default     = []
+  nullable    = false
+}
+
+variable "thanos_image" {
+  type        = string
+  description = "Pinned Thanos image used by the Prometheus sidecar, Query, Store Gateway, and Compactor."
+  default     = "quay.io/thanos/thanos:v0.42.4"
+  nullable    = false
+
+  validation {
+    condition     = length(trimspace(var.thanos_image)) > 0
+    error_message = "thanos_image must not be empty."
+  }
+}
+
+variable "thanos_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents for the local Thanos chart, including query/store/compactor resources and placement (later entries win). Compactor must remain a singleton for its bucket."
+  default     = []
+  nullable    = false
+}
+
+variable "otlp_collector_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents for the OTLP collector that receives workload traces and metrics: resources, replicas, placement, processors (later entries win)."
+  default     = []
+  nullable    = false
 }
 
 variable "observability_namespace" {
@@ -1533,13 +1731,42 @@ variable "metrics_cloudwatch" {
 
 variable "metrics_prometheus" {
   type = object({
-    retention_days = optional(number)
-    storage_size   = optional(string)
-    endpoint       = optional(string)
+    retention_days     = optional(number)
+    storage_size       = optional(string)
+    storage_class      = optional(string)
+    endpoint           = optional(string)
+    s3_storage_enabled = optional(bool)
+    s3_bucket_name     = optional(string)
+    s3_retention_days  = optional(number)
   })
-  description = "Prometheus running in the cluster, with the remote-write receiver on and a PersistentVolume behind it. Set endpoint to point at a Prometheus you already run, and the module installs nothing and only remote-writes to it. Installing needs a working StorageClass, which on a Ravion cluster means ebs_csi_driver_enabled."
+  description = "In-cluster Prometheus: local retention (15 days), working volume (50Gi), and Thanos S3 storage (enabled, 365-day retention). Set endpoint to use an existing remote-write receiver and skip all managed Prometheus/Thanos resources. storage_class defaults to managed gp3 or the cluster default. Existing buckets must be dedicated, in the cluster region, and allow the generated Pod Identity roles; customer-managed KMS grants are not provisioned."
   default     = {}
   nullable    = false
+
+  validation {
+    condition     = var.metrics_prometheus.retention_days == null ? true : var.metrics_prometheus.retention_days >= 1 && floor(var.metrics_prometheus.retention_days) == var.metrics_prometheus.retention_days
+    error_message = "metrics_prometheus.retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.s3_retention_days == null ? true : var.metrics_prometheus.s3_retention_days >= 1 && floor(var.metrics_prometheus.s3_retention_days) == var.metrics_prometheus.s3_retention_days
+    error_message = "metrics_prometheus.s3_retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.endpoint), "") == "" || can(regex("^https?://[^/]+", trimspace(var.metrics_prometheus.endpoint)))
+    error_message = "metrics_prometheus.endpoint must be an HTTP or HTTPS base URL."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.s3_bucket_name), "") == "" || can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", trimspace(var.metrics_prometheus.s3_bucket_name)))
+    error_message = "metrics_prometheus.s3_bucket_name must be a valid 3-63 character lowercase S3 bucket name, or null or blank to create one."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.storage_size), "") == "" || can(regex("^[1-9][0-9]*(Mi|Gi|Ti)$", trimspace(var.metrics_prometheus.storage_size)))
+    error_message = "metrics_prometheus.storage_size must be a positive volume size such as 50Gi."
+  }
 }
 
 variable "metrics_grafana_cloud" {

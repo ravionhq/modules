@@ -11,10 +11,10 @@
 # that is inside it. Customers who only want metrics dashboards should prefer
 # AMG and leave this off.
 #
-# No ingress and no Service type beyond ClusterIP: reaching it is a
-# port-forward, or whatever the operator adds through grafana_helm_values. A
-# module that quietly published a Grafana with a default admin password to the
-# internet would be a bug, not a convenience.
+# The Service is ClusterIP only: reaching Grafana is a port-forward unless
+# grafana_access serves it on a shared ALB or through an Ingress
+# (grafana_access.tf). A module that quietly published a Grafana with a
+# default admin password to the internet would be a bug, not a convenience.
 #
 # All releases set upgrade_install so an apply adopts a same-named release
 # already present in the cluster instead of failing with "cannot re-use a name
@@ -58,6 +58,29 @@ locals {
           httpMethod = "POST"
         }
       },
+    ] : [],
+    local.tempo_enabled ? [
+      merge(
+        {
+          name      = "Ravion Traces (Tempo)"
+          uid       = "ravion-tempo"
+          type      = "tempo"
+          access    = "proxy"
+          url       = local.tempo_endpoint
+          isDefault = !local.amp_enabled && !local.prometheus_enabled && !local.loki_enabled
+        },
+        # The metrics generator's service graphs, drawn from the Prometheus it
+        # writes to.
+        {
+          for key, value in {
+            jsonData = {
+              serviceMap = {
+                datasourceUid = local.tempo_generator_to_amp ? "ravion-amp" : "ravion-prometheus"
+              }
+            }
+          } : key => value if local.tempo_generator_enabled
+        },
+      ),
     ] : [],
     local.loki_enabled ? [
       {
@@ -142,7 +165,7 @@ resource "helm_release" "grafana" {
 
   values = concat(
     [
-      yamlencode({
+      yamlencode(merge({
         fullnameOverride = local.grafana_release_name
 
         # Must match the Pod Identity association above, or the SigV4
@@ -154,11 +177,9 @@ resource "helm_release" "grafana" {
 
         # SigV4 is off in Grafana by default and a datasource that asks for it
         # without this simply fails to authenticate, with no hint as to why.
-        "grafana.ini" = {
-          auth = {
-            sigv4_auth_enabled = true
-          }
-        }
+        # Sign-in and load balancer access settings come from grafana_auth.tf.
+        "grafana.ini" = local.grafana_ini
+        envValueFrom  = local.grafana_env_value_from
 
         datasources = {
           "datasources.yaml" = {
@@ -166,7 +187,7 @@ resource "helm_release" "grafana" {
             datasources = local.grafana_datasources
           }
         }
-      }),
+      }, local.grafana_ingress_values)),
     ],
     var.grafana_helm_values,
   )
@@ -175,12 +196,51 @@ resource "helm_release" "grafana" {
     helm_release.lb_controller,
     aws_eks_pod_identity_association.grafana,
     helm_release.loki,
+    helm_release.thanos,
+    helm_release.tempo,
+    # The sign-in providers' client secrets must exist before its pod starts.
+    helm_release.observability_secrets,
   ]
 
   lifecycle {
     precondition {
-      condition     = local.metrics_on || local.logs_on
-      error_message = "grafana_enabled is true but both logs_providers and metrics_providers are empty. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
+      condition     = local.metrics_on || local.logs_on || local.tempo_enabled
+      error_message = "grafana_enabled is true but logs_providers and metrics_providers are empty and tempo is not a traces provider. Grafana would install with no datasources at all — select the provider you want to look at, or leave Grafana off."
+    }
+
+    precondition {
+      condition     = !local.grafana_access_enabled || local.grafana_hostname != ""
+      error_message = "grafana_access is enabled without a hostname. Grafana is served at that hostname, and OAuth providers redirect back to it."
+    }
+
+    precondition {
+      condition     = var.grafana_auth.login_form_enabled || length(local.grafana_auth_entries) > 0
+      error_message = "Grafana would have no way to sign in: grafana_auth.login_form_enabled is false and grafana_auth_providers is empty."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_without_client) == 0
+      error_message = "Each Grafana sign-in provider needs a client ID and the Secrets Manager ARN of its client secret: ${join(", ", local.grafana_auth_without_client)}."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_unrestricted) == 0
+      error_message = "Anyone with an account at these providers could sign in to Grafana: ${join(", ", local.grafana_auth_unrestricted)}. Set google allowed_domains or allowed_groups; github allowed_organizations, team_ids or allowed_domains; gitlab allowed_groups or allowed_domains (or a self-managed url)."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_without_endpoint) == 0
+      error_message = "These Grafana sign-in providers are missing where to sign in: ${join(", ", local.grafana_auth_without_endpoint)}. azuread needs tenant_id, okta needs url, and generic_oauth needs auth_url and token_url."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_google_groups_without_scope) == 0
+      error_message = "Google sign-in uses Workspace groups (allowed_groups, or groups in role_attribute_path) but its scopes leave out ${local.grafana_google_groups_scope}. Grafana reads no groups without it. Set scopes to \"openid email profile ${local.grafana_google_groups_scope}\", and enable the Cloud Identity API in the OAuth client's Google Cloud project."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_settings_overlapping) == 0
+      error_message = "A Grafana sign-in provider's settings set a key the module manages: ${join(", ", local.grafana_auth_settings_overlapping)}. settings is for the other keys of [auth.<provider>]. Set client_id, the restrictions, endpoints, scopes, name and role_attribute_path as their own fields, and the client secret as client_secret_arn."
     }
   }
 }

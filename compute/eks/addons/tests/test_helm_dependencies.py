@@ -85,6 +85,7 @@ class HelmDependenciesTest(unittest.TestCase):
         webhook = "[root] helm_release.lb_controller (expand)"
         for release in (
             "external_secrets", "kube_state_metrics", "loki", "prometheus",
+            "thanos", "tempo", "otlp_collector",
             "grafana", "alloy", "otel_collector", "otel_logs_collector",
             "karpenter",
         ):
