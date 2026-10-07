@@ -2,13 +2,13 @@
 
 This module creates an AWS Lambda function with broad runtime configuration support, optional IAM role creation, CloudWatch log group management, and optional integrations such as permissions, event source mappings, aliases, and function URL.
 
-## Rollback and URL migration (2.0.0)
+## Deployment and rollback
 
-Function URLs and event source mappings invoke the `live` alias, which is created automatically when either integration is enabled. Aliases require published versions, so version publishing is enabled automatically when aliases exist. Ravion owns only the `live` alias version after creation; Terraform applies do not reset its deployments or rollbacks. Change `live` through Ravion (or explicitly in AWS), not its Terraform `function_version` input after creation. Other aliases, such as `staging`, remain Terraform-managed and honor configured version changes. The existing `live` alias state is migrated without recreating it; other aliases keep their resource addresses.
+Function URLs and event source mappings invoke the `live` alias, which is created automatically when either integration is enabled. Aliases require published versions, so version publishing is enabled automatically when aliases exist. Ravion owns only the `live` alias version after creation; Terraform applies do not reset its deployments or rollbacks. Change `live` through Ravion (or explicitly in AWS), not its Terraform `function_version` input after creation. Other aliases, such as `staging`, remain Terraform-managed and honor configured version changes.
 
-**Breaking change:** applying this upgrade replaces existing unqualified function URLs with a **new hostname**. Copy the new `function_url` output and update callers, DNS targets, and IAM policies. `AWS_IAM` callers need `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the `live` alias ARN. Public (`NONE`) URLs receive alias-qualified permissions restricted to URL invocations.
+`AWS_IAM` function URL callers need `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the `live` alias ARN. Public (`NONE`) URLs receive alias-qualified permissions restricted to URL invocations.
 
-Rollback restores the published version's code and configuration without rebuilding. Older stacks may roll back, but their unqualified URLs and event sources continue invoking `$LATEST` until this upgrade is applied. Image targets require a recorded image digest that still exists in ECR; keep rollback images outside destructive lifecycle rules.
+Rollback restores the published version's code and configuration without rebuilding. Only invocations through the deployment alias follow rollback; unqualified invocations use `$LATEST`. Image targets require a recorded image digest that still exists in ECR; keep rollback images outside destructive lifecycle rules.
 
 ## Features
 
