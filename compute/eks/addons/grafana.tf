@@ -220,7 +220,12 @@ resource "helm_release" "grafana" {
 
     precondition {
       condition     = length(local.grafana_auth_without_client) == 0
-      error_message = "Each Grafana sign-in provider needs a client ID and the Secrets Manager ARN of its client secret: ${join(", ", local.grafana_auth_without_client)}."
+      error_message = "Each Grafana sign-in provider needs a client ID (client_id, or client_id_arn) and the Secrets Manager ARN of its client secret: ${join(", ", local.grafana_auth_without_client)}."
+    }
+
+    precondition {
+      condition     = length(local.grafana_auth_client_id_twice) == 0
+      error_message = "These Grafana sign-in providers set both client_id and client_id_arn: ${join(", ", local.grafana_auth_client_id_twice)}. Set one."
     }
 
     precondition {

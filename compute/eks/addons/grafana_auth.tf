@@ -21,6 +21,7 @@ locals {
   grafana_auth_values = {
     for provider, entry in local.grafana_auth_by_provider : provider => {
       client_id         = try(trimspace(entry.client_id), "")
+      client_id_arn     = try(trimspace(entry.client_id_arn), "")
       client_secret_arn = try(trimspace(entry.client_secret_arn), "")
       base_url          = trimsuffix(try(trimspace(entry.url), ""), "/")
       tenant_id         = try(trimspace(entry.tenant_id), "")
@@ -74,12 +75,13 @@ locals {
   grafana_auth_ini = {
     for provider, entry in local.grafana_auth_by_provider : "auth.${provider}" => merge(
       {
-        enabled   = true
-        client_id = local.grafana_auth_values[provider].client_id
+        enabled = true
       },
       {
         for key, value in merge(
           {
+            # Absent when read from Secrets Manager, through GF_AUTH_<PROVIDER>_CLIENT_ID.
+            client_id           = local.grafana_auth_values[provider].client_id
             name                = try(trimspace(entry.name), "")
             scopes              = try(trimspace(entry.scopes), "")
             role_attribute_path = try(trimspace(entry.role_attribute_path), "")
@@ -101,22 +103,38 @@ locals {
       name      = local.grafana_auth_secret_names[provider]
       namespace = local.grafana_namespace
       template  = {}
-      data = [{
-        secretKey = "clientSecret"
-        remoteRef = local.grafana_auth_values[provider].client_secret_arn
-      }]
+      data = concat(
+        [{
+          secretKey = "clientSecret"
+          remoteRef = local.grafana_auth_values[provider].client_secret_arn
+        }],
+        [for arn in [local.grafana_auth_values[provider].client_id_arn] : {
+          secretKey = "clientId"
+          remoteRef = arn
+        } if arn != ""],
+      )
     }
   ]
 
   # Grafana reads any setting from GF_<SECTION>_<KEY>.
-  grafana_env_value_from = {
-    for provider in keys(local.grafana_auth_by_provider) : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" => {
-      secretKeyRef = {
-        name = local.grafana_auth_secret_names[provider]
-        key  = "clientSecret"
+  grafana_env_value_from = merge(
+    {
+      for provider in keys(local.grafana_auth_by_provider) : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" => {
+        secretKeyRef = {
+          name = local.grafana_auth_secret_names[provider]
+          key  = "clientSecret"
+        }
       }
-    }
-  }
+    },
+    {
+      for provider, value in local.grafana_auth_values : "GF_AUTH_${upper(provider)}_CLIENT_ID" => {
+        secretKeyRef = {
+          name = local.grafana_auth_secret_names[provider]
+          key  = "clientId"
+        }
+      } if value.client_id_arn != ""
+    },
+  )
 
   # grafana.ini: SigV4 for the AMP data source always; the role new accounts
   # get; the external URL OAuth providers redirect back to while grafana_access
@@ -160,7 +178,12 @@ locals {
 
   grafana_auth_without_client = [
     for provider, value in local.grafana_auth_values : provider
-    if value.client_id == "" || value.client_secret_arn == ""
+    if(value.client_id == "" && value.client_id_arn == "") || value.client_secret_arn == ""
+  ]
+
+  grafana_auth_client_id_twice = [
+    for provider, value in local.grafana_auth_values : provider
+    if value.client_id != "" && value.client_id_arn != ""
   ]
 
   grafana_auth_without_endpoint = [

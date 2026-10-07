@@ -1393,6 +1393,7 @@ variable "grafana_auth_providers" {
     provider              = string
     name                  = optional(string)
     client_id             = optional(string)
+    client_id_arn         = optional(string)
     client_secret_arn     = optional(string)
     tenant_id             = optional(string)
     url                   = optional(string)
@@ -1409,7 +1410,7 @@ variable "grafana_auth_providers" {
   }))
   description = <<-EOT
     OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
-    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) are required.
+    - client_id (or client_id_arn) and client_secret_arn are required. The ARNs are Secrets Manager ARNs, read through External Secrets, and may end in :<json key>:: to read one key of a JSON secret, as EKS workloads' secrets do.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
@@ -1417,6 +1418,16 @@ variable "grafana_auth_providers" {
   EOT
   default     = []
   nullable    = false
+
+  validation {
+    condition = alltrue(flatten([
+      for entry in var.grafana_auth_providers : [
+        for arn in [entry.client_secret_arn, entry.client_id_arn] :
+        try(trimspace(arn), "") == "" || can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}$", trimspace(arn)))
+      ]
+    ]))
+    error_message = "A Grafana sign-in provider's client_secret_arn and client_id_arn must be Secrets Manager secret ARNs, optionally ending in :<json key>:<version stage>:<version id>."
+  }
 
   validation {
     condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])

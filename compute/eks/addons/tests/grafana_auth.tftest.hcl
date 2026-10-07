@@ -475,6 +475,69 @@ run "rejects_google_roles_from_groups_without_the_groups_scope" {
   expect_failures = [helm_release.grafana]
 }
 
+run "client_id_and_secret_from_one_json_secret" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::"
+        allowed_domains   = ["example.com"]
+      },
+    ]
+  }
+
+  assert {
+    condition     = !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"]), "client_id")
+    error_message = "A client ID read from Secrets Manager must stay out of grafana.ini"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GF_AUTH_GOOGLE_CLIENT_ID.secretKeyRef == { name = "ravion-grafana-google-oauth", key = "clientId" } && yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GF_AUTH_GOOGLE_CLIENT_SECRET.secretKeyRef == { name = "ravion-grafana-google-oauth", key = "clientSecret" }
+    error_message = "Grafana must read the client ID and secret from the materialized Secret"
+  }
+
+  assert {
+    condition = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-google-oauth"][0] == [
+      { secretKey = "clientSecret", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_SECRET" } },
+      { secretKey = "clientId", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_ID" } },
+    ]
+    error_message = "External Secrets must read each key of the one JSON secret"
+  }
+}
+
+run "rejects_a_client_id_given_twice" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_id_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains   = ["example.com"]
+      },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_a_secret_that_is_not_a_secrets_manager_arn" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "grafana-google-client-secret", allowed_domains = ["example.com"] },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
+}
+
 run "rejects_a_restriction_google_does_not_apply" {
   command = plan
 
