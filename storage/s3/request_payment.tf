@@ -7,6 +7,7 @@
 resource "aws_s3_bucket_request_payment_configuration" "this" {
   count = var.requester_pays_enabled ? 1 : 0
 
+  region = var.region
   bucket = aws_s3_bucket.this.id
   payer  = "Requester"
 }
