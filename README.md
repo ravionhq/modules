@@ -89,7 +89,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |
-| `rvn-s3` | S3 Bucket | v1.2.0 | `storage/s3/` |
+| `rvn-s3` | S3 Bucket | v2.0.0 | `storage/s3/` |
 | `rvn-stack` | Terraform Stack | v1.4.0 | `stack/terraform/` |
 
 <!-- END GENERATED: module-definitions -->
