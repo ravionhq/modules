@@ -100,10 +100,10 @@ run "google_restricted_to_workspace_domains" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id         = "1234.apps.googleusercontent.com"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-        allowed_domains   = ["example.com", " example.org "]
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        client_secret   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
+        allowed_domains = ["example.com", " example.org "]
       },
     ]
   }
@@ -137,34 +137,34 @@ run "several_providers_side_by_side" {
       {
         provider              = "github"
         client_id             = "gh-client"
-        client_secret_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf"
+        client_secret         = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf" }
         allowed_organizations = ["Example Org"]
         team_ids              = ["150"]
       },
       {
-        provider          = "azuread"
-        client_id         = "entra-client"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf"
-        tenant_id         = "11111111-2222-3333-4444-555555555555"
+        provider      = "azuread"
+        client_id     = "entra-client"
+        client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf" }
+        tenant_id     = "11111111-2222-3333-4444-555555555555"
       },
       {
-        provider          = "okta"
-        client_id         = "okta-client"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:okta-AbCdEf"
-        url               = "https://example.okta.com/"
-        allowed_groups    = ["grafana-users"]
+        provider       = "okta"
+        client_id      = "okta-client"
+        client_secret  = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:okta-AbCdEf" }
+        url            = "https://example.okta.com/"
+        allowed_groups = ["grafana-users"]
       },
       {
-        provider          = "gitlab"
-        client_id         = "gl-client"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gl-AbCdEf"
-        url               = "https://gitlab.example.com"
+        provider      = "gitlab"
+        client_id     = "gl-client"
+        client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gl-AbCdEf" }
+        url           = "https://gitlab.example.com"
       },
       {
         provider            = "generic_oauth"
         name                = "Keycloak"
         client_id           = "kc-client"
-        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf"
+        client_secret       = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf" }
         auth_url            = "https://sso.example.com/realms/eng/protocol/openid-connect/auth"
         token_url           = "https://sso.example.com/realms/eng/protocol/openid-connect/token"
         api_url             = "https://sso.example.com/realms/eng/protocol/openid-connect/userinfo"
@@ -216,10 +216,10 @@ run "providers_only_turns_off_passwords_everywhere" {
     }
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id         = "1234.apps.googleusercontent.com"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-        allowed_domains   = ["example.com"]
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        client_secret   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
+        allowed_domains = ["example.com"]
       },
     ]
   }
@@ -263,9 +263,9 @@ run "rejects_google_open_to_every_account" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id         = "1234.apps.googleusercontent.com"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        provider      = "google"
+        client_id     = "1234.apps.googleusercontent.com"
+        client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
       },
     ]
   }
@@ -279,9 +279,9 @@ run "rejects_github_open_to_every_account" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "github"
-        client_id         = "gh-client"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf"
+        provider      = "github"
+        client_id     = "gh-client"
+        client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf" }
       },
     ]
   }
@@ -295,9 +295,9 @@ run "rejects_entra_without_a_tenant" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "azuread"
-        client_id         = "entra-client"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf"
+        provider      = "azuread"
+        client_id     = "entra-client"
+        client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:entra-AbCdEf" }
       },
     ]
   }
@@ -311,12 +311,12 @@ run "rejects_a_client_secret_in_settings" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "generic_oauth"
-        client_id         = "kc-client"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf"
-        auth_url          = "https://sso.example.com/auth"
-        token_url         = "https://sso.example.com/token"
-        settings          = { client_secret = "do-not-do-this" }
+        provider      = "generic_oauth"
+        client_id     = "kc-client"
+        client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:kc-AbCdEf" }
+        auth_url      = "https://sso.example.com/auth"
+        token_url     = "https://sso.example.com/token"
+        settings      = { client_secret = "do-not-do-this" }
       },
     ]
   }
@@ -357,10 +357,10 @@ run "rejects_provider_secrets_without_external_secrets" {
     eso_enabled = false
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id         = "1234.apps.googleusercontent.com"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-        allowed_domains   = ["example.com"]
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        client_secret   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
+        allowed_domains = ["example.com"]
       },
     ]
   }
@@ -373,8 +373,8 @@ run "rejects_the_same_provider_twice" {
 
   variables {
     grafana_auth_providers = [
-      { provider = "google", client_id = "a", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:a-AbCdEf", allowed_domains = ["example.com"] },
-      { provider = "google", client_id = "b", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:b-AbCdEf", allowed_domains = ["example.org"] },
+      { provider = "google", client_id = "a", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:a-AbCdEf" }, allowed_domains = ["example.com"] },
+      { provider = "google", client_id = "b", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:b-AbCdEf" }, allowed_domains = ["example.org"] },
     ]
   }
 
@@ -386,7 +386,7 @@ run "rejects_settings_that_undo_a_restriction" {
 
   variables {
     grafana_auth_providers = [
-      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_domains = ["example.com"], settings = { allowed_domains = "" } },
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, allowed_domains = ["example.com"], settings = { allowed_domains = "" } },
     ]
   }
 
@@ -405,7 +405,7 @@ run "google_roles_from_workspace_groups" {
       {
         provider            = "google"
         client_id           = "1234.apps.googleusercontent.com"
-        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        client_secret       = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
         allowed_domains     = ["example.com"]
         scopes              = "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"
         role_attribute_path = "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || contains(groups[*], 'grafana-editors@example.com') && 'Editor' || 'Viewer'"
@@ -430,11 +430,11 @@ run "google_groups_scope_may_be_comma_separated" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id         = "1234.apps.googleusercontent.com"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-        allowed_groups    = ["grafana-users@example.com"]
-        scopes            = "openid,email,profile,https://www.googleapis.com/auth/cloud-identity.groups.readonly"
+        provider       = "google"
+        client_id      = "1234.apps.googleusercontent.com"
+        client_secret  = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
+        allowed_groups = ["grafana-users@example.com"]
+        scopes         = "openid,email,profile,https://www.googleapis.com/auth/cloud-identity.groups.readonly"
       },
     ]
   }
@@ -450,7 +450,7 @@ run "rejects_google_allowed_groups_without_the_groups_scope" {
 
   variables {
     grafana_auth_providers = [
-      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_groups = ["grafana-users@example.com"] },
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, allowed_groups = ["grafana-users@example.com"] },
     ]
   }
 
@@ -465,7 +465,7 @@ run "rejects_google_roles_from_groups_without_the_groups_scope" {
       {
         provider            = "google"
         client_id           = "1234.apps.googleusercontent.com"
-        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        client_secret       = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
         allowed_domains     = ["example.com"]
         role_attribute_path = "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || 'Viewer'"
       },
@@ -481,10 +481,10 @@ run "client_id_and_secret_from_one_json_secret" {
   variables {
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::"
-        allowed_domains   = ["example.com"]
+        provider        = "google"
+        client_id       = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::" }
+        client_secret   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" }
+        allowed_domains = ["example.com"]
       },
     ]
   }
@@ -501,55 +501,104 @@ run "client_id_and_secret_from_one_json_secret" {
 
   assert {
     condition = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-google-oauth"][0] == [
-      { secretKey = "clientSecret", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_SECRET" } },
       { secretKey = "clientId", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_ID" } },
+      { secretKey = "clientSecret", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_SECRET" } },
     ]
     error_message = "External Secrets must read each key of the one JSON secret"
   }
 }
 
-run "rejects_a_client_id_given_twice" {
+run "client_secret_from_parameter_store" {
   command = plan
 
   variables {
     grafana_auth_providers = [
       {
-        provider          = "google"
-        client_id         = "1234.apps.googleusercontent.com"
-        client_id_arn     = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::"
-        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
-        allowed_domains   = ["example.com"]
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        client_secret   = { from_parameter_store = "/grafana/google-client-secret" }
+        allowed_domains = ["example.com"]
       },
     ]
   }
 
-  expect_failures = [helm_release.grafana]
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].client_id == "1234.apps.googleusercontent.com"
+    error_message = "A client ID given as a string must go into grafana.ini"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GF_AUTH_GOOGLE_CLIENT_SECRET.secretKeyRef == { name = "ravion-grafana-google-oauth-parameters", key = "clientSecret" }
+    error_message = "Grafana must read the client secret from the Secret External Secrets fills from Parameter Store"
+  }
+
+  assert {
+    condition = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret if secret.name == "ravion-grafana-google-oauth-parameters"][0] == {
+      name      = "ravion-grafana-google-oauth-parameters"
+      namespace = "ravion-operator"
+      storeName = "ravion-aws-parameter-store"
+      template  = {}
+      data      = [{ secretKey = "clientSecret", remoteRef = { key = "/grafana/google-client-secret" } }]
+    }
+    error_message = "External Secrets must read the client secret through the Parameter Store store"
+  }
 }
 
-run "rejects_a_secret_that_is_not_a_secrets_manager_arn" {
+run "rejects_a_reference_to_two_stores" {
   command = plan
 
   variables {
     grafana_auth_providers = [
-      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "grafana-google-client-secret", allowed_domains = ["example.com"] },
+      {
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        client_secret   = { from_secrets_manager = "grafana-google", from_parameter_store = "/grafana/google" }
+        allowed_domains = ["example.com"]
+      },
     ]
   }
 
   expect_failures = [var.grafana_auth_providers]
 }
 
-run "grafana_env_from_secrets_manager_for_role_groups" {
+run "rejects_a_client_secret_written_in_plain_text" {
   command = plan
 
   variables {
-    grafana_secret_env = {
-      GRAFANA_ADMINS_GROUP = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_ADMINS_GROUP::"
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = "plain-text-secret", allowed_domains = ["example.com"] },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
+}
+
+run "rejects_a_key_the_module_does_not_know" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, allowed_domain = ["example.com"], allowed_domains = ["example.com"] },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
+}
+
+run "grafana_env_variables_as_strings_and_references" {
+  command = plan
+
+  variables {
+    grafana_env_variables = {
+      GRAFANA_ADMINS_GROUP   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_ADMINS_GROUP::" }
+      GRAFANA_EDITORS_GROUP  = { from_parameter_store = "/grafana/editors-group" }
+      GF_USERS_DEFAULT_THEME = "light"
     }
     grafana_auth_providers = [
       {
         provider            = "google"
         client_id           = "1234.apps.googleusercontent.com"
-        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        client_secret       = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }
         allowed_domains     = ["example.com"]
         scopes              = "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"
         role_attribute_path = "contains(groups[*], '$__env{GRAFANA_ADMINS_GROUP}') && 'Admin' || 'Viewer'"
@@ -558,8 +607,13 @@ run "grafana_env_from_secrets_manager_for_role_groups" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GRAFANA_ADMINS_GROUP.secretKeyRef == { name = "ravion-grafana-env", key = "GRAFANA_ADMINS_GROUP" }
-    error_message = "Grafana must get the env var from the materialized Secret"
+    condition     = yamldecode(helm_release.grafana[0].values[0]).env == { GF_USERS_DEFAULT_THEME = "light" }
+    error_message = "A string must reach Grafana as a plain env var, and only a string"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GRAFANA_ADMINS_GROUP.secretKeyRef == { name = "ravion-grafana-env", key = "GRAFANA_ADMINS_GROUP" } && yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GRAFANA_EDITORS_GROUP.secretKeyRef == { name = "ravion-grafana-env-parameters", key = "GRAFANA_EDITORS_GROUP" }
+    error_message = "Grafana must get each reference from the Secret of its store"
   }
 
   assert {
@@ -568,36 +622,53 @@ run "grafana_env_from_secrets_manager_for_role_groups" {
   }
 
   assert {
+    condition     = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.storeName if secret.name == "ravion-grafana-env-parameters"][0] == "ravion-aws-parameter-store"
+    error_message = "A Parameter Store reference must be read through the Parameter Store store"
+  }
+
+  assert {
     condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].role_attribute_path == "contains(groups[*], '$__env{GRAFANA_ADMINS_GROUP}') && 'Admin' || 'Viewer'"
     error_message = "The role mapping must reach Grafana unexpanded, for Grafana to expand at startup"
   }
 }
 
-run "rejects_a_secret_env_var_the_module_sets" {
+run "rejects_an_env_var_the_module_sets" {
   command = plan
 
   variables {
-    grafana_secret_env = {
-      GF_AUTH_GOOGLE_CLIENT_SECRET = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:X::"
+    grafana_env_variables = {
+      GF_AUTH_GOOGLE_CLIENT_SECRET = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:X::" }
     }
     grafana_auth_providers = [
-      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_domains = ["example.com"] },
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, allowed_domains = ["example.com"] },
     ]
   }
 
   expect_failures = [helm_release.grafana]
 }
 
-run "rejects_a_secret_env_var_that_is_not_an_env_name" {
+run "rejects_an_env_var_that_is_not_an_env_name" {
   command = plan
 
   variables {
-    grafana_secret_env = {
-      "admins group" = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:X::"
+    grafana_env_variables = {
+      "admins group" = "grafana-admins@example.com"
     }
   }
 
-  expect_failures = [var.grafana_secret_env]
+  expect_failures = [var.grafana_env_variables]
+}
+
+run "rejects_an_env_var_reference_that_is_not_one" {
+  command = plan
+
+  variables {
+    grafana_env_variables = {
+      ADMINS_GROUP = { from_vault = "grafana/admins" }
+    }
+  }
+
+  expect_failures = [var.grafana_env_variables]
 }
 
 run "rejects_a_restriction_google_does_not_apply" {
@@ -605,7 +676,7 @@ run "rejects_a_restriction_google_does_not_apply" {
 
   variables {
     grafana_auth_providers = [
-      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", team_ids = ["150"] },
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, team_ids = ["150"] },
     ]
   }
 
@@ -617,7 +688,7 @@ run "github_restricted_to_an_email_domain" {
 
   variables {
     grafana_auth_providers = [
-      { provider = "github", client_id = "gh-client", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf", allowed_domains = ["example.com"] },
+      { provider = "github", client_id = "gh-client", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:gh-AbCdEf" }, allowed_domains = ["example.com"] },
     ]
   }
 
@@ -633,7 +704,7 @@ run "store_admits_grafana_alone_when_no_workload_namespace_is_named" {
   variables {
     eso_allowed_namespaces = []
     grafana_auth_providers = [
-      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_domains = ["example.com"] },
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, allowed_domains = ["example.com"] },
     ]
   }
 

@@ -7,8 +7,9 @@ release:
   version: 0.16.0
   description: >-
     Read secrets the way EKS workloads do: any secret ARN may end in :<json key>:: to read one key of a JSON
-    secret. A Grafana sign-in provider's client ID may come from Secrets Manager too, and so may any Grafana
-    environment variable, for $__env{NAME} in a setting such as a role mapping's group emails.
+    secret. Grafana sign-in providers take client_id and client_secret as a stack's env_variables do, a string or
+    a from_secrets_manager or from_parameter_store reference, in place of client_secret_arn. Grafana takes
+    environment variables the same way, for $__env{NAME} in any setting.
 module:
   inputs:
     - id: cluster
@@ -926,7 +927,6 @@ module:
           value: Admin
     - description: Grafana's OAuth providers people can sign in with, each a button on Grafana's sign-in page. Google, GitHub and gitlab.com need allowed domains, organizations, teams or groups, since anyone with an account there could otherwise sign in.
       id: grafana_auth_providers
-      item_description: Client ID {client_id}
       item_inputs:
         - description: Which of Grafana's OAuth providers this is.
           id: provider
@@ -954,22 +954,18 @@ module:
           show_when:
             provider: generic_oauth
           type: string
-        - description: Client ID of the OAuth application, or leave blank and set Client ID ARN. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.
+        - description: 'Client ID of the OAuth application, as a string or a from_parameter_store or from_secrets_manager reference. A Secrets Manager ARN may end in :<json key>:: to read one key of a JSON secret. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.'
           id: client_id
           label: Client ID
-          type: string
-        - collapsible: true
-          description: 'Secrets Manager ARN holding the client ID, in place of Client ID. End it in :<json key>:: to read one key of a JSON secret, as EKS workloads do.'
-          id: client_id_arn
-          label: Client ID ARN
-          placeholder: 'arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:GRAFANA_CLIENT_ID::'
-          type: string
-        - description: 'Secrets Manager ARN holding the client secret. End it in :<json key>:: to read one key of a JSON secret, as EKS workloads do. External Secrets reads it into the cluster; it is never a Helm value.'
-          id: client_secret_arn
-          label: Client secret ARN
-          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-oauth-client-secret
+          placeholder: '{"from_secrets_manager": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:GRAFANA_CLIENT_ID::"}'
           required: true
-          type: string
+          type: object
+        - description: 'The client secret, as a from_parameter_store or from_secrets_manager reference. A Secrets Manager ARN may end in :<json key>:: to read one key of a JSON secret. External Secrets reads it into the cluster; it is never a Helm value.'
+          id: client_secret
+          label: Client secret
+          placeholder: '{"from_secrets_manager": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:GRAFANA_CLIENT_SECRET::"}'
+          required: true
+          type: object
         - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
           id: tenant_id
           label: Tenant ID
@@ -1063,7 +1059,7 @@ module:
           type: string
         - collapsible: true
           default: {}
-          description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+          description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in Client secret, never here.'
           id: settings
           label: Other Grafana settings
           type: object
@@ -1076,9 +1072,10 @@ module:
       type: object_array
     - collapsible: true
       default: {}
-      description: 'Environment variables for Grafana, each read from a Secrets Manager ARN through External Secrets, as JSON: {"ADMINS_GROUP": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:ADMINS_GROUP::"}. Use one in any setting as $__env{ADMINS_GROUP}, such as a group email in a role mapping, or name it GF_<SECTION>_<KEY> to set that setting directly.'
-      id: grafana_secret_env
-      label: Environment from Secrets Manager
+      description: 'Environment variables for Grafana. A reference is read through External Secrets, never a Helm value. Use one in any setting as $__env{NAME}, such as a group email in a role mapping, or name it GF_<SECTION>_<KEY> to set that setting directly.'
+      id: grafana_env_variables
+      label: Environment variables
+      placeholder: key/value format with support for from_parameter_store and from_secrets_manager
       show_when:
         grafana_enabled: true
       type: object
@@ -1706,7 +1703,7 @@ module:
           login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
           default_role: << module.input.grafana_default_role || "Viewer" >>
         grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
-        grafana_secret_env: '<< module.input.grafana_secret_env != nil ? module.input.grafana_secret_env : {} >>'
+        grafana_env_variables: '<< module.input.grafana_env_variables != nil ? module.input.grafana_env_variables : {} >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>

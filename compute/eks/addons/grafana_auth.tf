@@ -6,25 +6,35 @@
 # supports out of the box. Each grafana_auth_providers entry becomes one
 # [auth.<provider>] section in grafana.ini.
 #
-# Every client secret is a Secrets Manager ARN. The External Secrets Operator
-# materializes it into a Kubernetes Secret, and Grafana reads it from
-# GF_AUTH_<PROVIDER>_CLIENT_SECRET: it is never a Helm value, a grafana.ini
-# line or a Terraform output.
+# Every client secret is a reference to Secrets Manager or Parameter Store, as
+# in a stack's env_variables. The External Secrets Operator materializes it into
+# a Kubernetes Secret, and Grafana reads it from GF_AUTH_<PROVIDER>_CLIENT_SECRET:
+# it is never a Helm value, a grafana.ini line or a Terraform output.
 ################################################################################
 
 locals {
-  grafana_auth_entries = var.grafana_enabled ? var.grafana_auth_providers : []
+  grafana_auth_entries = [for entry in var.grafana_auth_providers : entry if var.grafana_enabled]
 
   # The validation guarantees each provider appears once.
   grafana_auth_by_provider = { for entry in local.grafana_auth_entries : entry.provider => entry }
 
+  # A client ID is a string or a reference, and a client secret a reference:
+  # {from_secrets_manager = "..."} or {from_parameter_store = "..."}, reduced
+  # here to the store it names and what to read from it.
   grafana_auth_values = {
     for provider, entry in local.grafana_auth_by_provider : provider => {
-      client_id         = try(trimspace(entry.client_id), "")
-      client_id_arn     = try(trimspace(entry.client_id_arn), "")
-      client_secret_arn = try(trimspace(entry.client_secret_arn), "")
-      base_url          = trimsuffix(try(trimspace(entry.url), ""), "/")
-      tenant_id         = try(trimspace(entry.tenant_id), "")
+      client_id = try(trimspace(tostring(entry.client_id)), "")
+      client_id_ref = {
+        store = try(trimspace(entry.client_id.from_parameter_store), "") != "" ? "parameter_store" : try(trimspace(entry.client_id.from_secrets_manager), "") != "" ? "secrets_manager" : ""
+        key   = try(trimspace(entry.client_id.from_secrets_manager), trimspace(entry.client_id.from_parameter_store), "")
+      }
+      client_secret_ref = {
+        store = try(trimspace(entry.client_secret.from_parameter_store), "") != "" ? "parameter_store" : try(trimspace(entry.client_secret.from_secrets_manager), "") != "" ? "secrets_manager" : ""
+        key   = try(trimspace(entry.client_secret.from_secrets_manager), trimspace(entry.client_secret.from_parameter_store), "")
+      }
+      base_url  = trimsuffix(try(trimspace(entry.url), ""), "/")
+      tenant_id = try(trimspace(entry.tenant_id), "")
+      settings  = try({ for key, value in entry.settings : key => tostring(value) }, {})
     }
   }
 
@@ -62,10 +72,10 @@ locals {
   grafana_auth_lists = {
     for provider, entry in local.grafana_auth_by_provider : provider => {
       for key, values in {
-        allowed_domains       = entry.allowed_domains
-        allowed_groups        = entry.allowed_groups
-        allowed_organizations = entry.allowed_organizations
-        team_ids              = entry.team_ids
+        allowed_domains       = try([for value in entry.allowed_domains : tostring(value)], [])
+        allowed_groups        = try([for value in entry.allowed_groups : tostring(value)], [])
+        allowed_organizations = try([for value in entry.allowed_organizations : tostring(value)], [])
+        team_ids              = try([for value in entry.team_ids : tostring(value)], [])
       } : key => [for value in values : trimspace(value) if trimspace(value) != ""]
     }
   }
@@ -80,7 +90,7 @@ locals {
       {
         for key, value in merge(
           {
-            # Absent when read from Secrets Manager, through GF_AUTH_<PROVIDER>_CLIENT_ID.
+            # Absent when it is a reference, read through GF_AUTH_<PROVIDER>_CLIENT_ID.
             client_id           = local.grafana_auth_values[provider].client_id
             name                = try(trimspace(entry.name), "")
             scopes              = try(trimspace(entry.scopes), "")
@@ -90,7 +100,7 @@ locals {
           { for key, values in local.grafana_auth_lists[provider] : key => length(values) > 0 ? jsonencode(values) : "" },
         ) : key => value if value != ""
       },
-      entry.settings,
+      local.grafana_auth_values[provider].settings,
     )
   }
 
@@ -98,68 +108,67 @@ locals {
     for provider in keys(local.grafana_auth_by_provider) : provider => "ravion-grafana-${replace(provider, "_", "-")}-oauth"
   }
 
-  grafana_auth_secrets = [
-    for provider in keys(local.grafana_auth_by_provider) : {
-      name      = local.grafana_auth_secret_names[provider]
-      namespace = local.grafana_namespace
-      template  = {}
-      data = concat(
-        [{
-          secretKey = "clientSecret"
-          remoteRef = local.grafana_auth_values[provider].client_secret_arn
-        }],
-        [for arn in [local.grafana_auth_values[provider].client_id_arn] : {
-          secretKey = "clientId"
-          remoteRef = arn
-        } if arn != ""],
-      )
-    }
-  ]
+  # grafana_env_variables: a string is a Helm value, and a reference is read
+  # like the client secrets.
+  grafana_env_plain = {
+    for name, value in var.grafana_env_variables : name => tostring(value) if can(tostring(value))
+  }
 
-  # grafana_secret_env, materialized like the client secrets.
-  grafana_secret_env_name = "ravion-grafana-env"
+  # Every reference Grafana reads, each into a key of a Kubernetes Secret and
+  # from there into an env var. An ExternalSecret reads from one store, so a
+  # Parameter Store reference goes into its own Secret, suffixed -parameters.
+  grafana_secret_references = concat(
+    flatten([
+      for provider, value in local.grafana_auth_values : [
+        for key, reference in {
+          clientSecret = value.client_secret_ref
+          clientId     = value.client_id_ref
+          } : {
+          secret = "${local.grafana_auth_secret_names[provider]}${reference.store == "parameter_store" ? "-parameters" : ""}"
+          store  = reference.store
+          key    = key
+          ref    = reference.key
+          env    = "GF_AUTH_${upper(provider)}_${key == "clientSecret" ? "CLIENT_SECRET" : "CLIENT_ID"}"
+        } if reference.store != ""
+      ]
+    ]),
+    [
+      for name, value in var.grafana_env_variables : {
+        secret = "ravion-grafana-env${try(trimspace(value.from_parameter_store), "") != "" ? "-parameters" : ""}"
+        store  = try(trimspace(value.from_parameter_store), "") != "" ? "parameter_store" : "secrets_manager"
+        key    = name
+        ref    = try(trimspace(value.from_secrets_manager), trimspace(value.from_parameter_store))
+        env    = name
+      } if var.grafana_enabled && !can(tostring(value))
+    ],
+  )
 
-  grafana_secret_env_secrets = [
-    for name in(var.grafana_enabled && length(var.grafana_secret_env) > 0 ? [local.grafana_secret_env_name] : []) : {
-      name      = name
+  grafana_reference_secrets = [
+    for secret, references in { for reference in local.grafana_secret_references : reference.secret => reference... } : {
+      name      = secret
       namespace = local.grafana_namespace
+      storeName = references[0].store == "parameter_store" ? var.eso_parameter_store_store_name : var.eso_secrets_manager_store_name
       template  = {}
       data = [
-        for env, arn in var.grafana_secret_env : {
-          secretKey = env
-          remoteRef = trimspace(arn)
+        for reference in references : {
+          secretKey = reference.key
+          remoteRef = reference.ref
         }
       ]
     }
   ]
 
-  # Grafana reads any setting from GF_<SECTION>_<KEY>.
-  grafana_env_value_from = merge(
-    {
-      for env in keys(var.grafana_secret_env) : env => {
-        secretKeyRef = {
-          name = local.grafana_secret_env_name
-          key  = env
-        }
+  # Grafana reads any setting from GF_<SECTION>_<KEY>. An env var named twice
+  # is refused by a precondition on Grafana's release; the first one stands
+  # until then.
+  grafana_env_value_from = {
+    for env, references in { for reference in local.grafana_secret_references : reference.env => reference... } : env => {
+      secretKeyRef = {
+        name = references[0].secret
+        key  = references[0].key
       }
-    },
-    {
-      for provider in keys(local.grafana_auth_by_provider) : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" => {
-        secretKeyRef = {
-          name = local.grafana_auth_secret_names[provider]
-          key  = "clientSecret"
-        }
-      }
-    },
-    {
-      for provider, value in local.grafana_auth_values : "GF_AUTH_${upper(provider)}_CLIENT_ID" => {
-        secretKeyRef = {
-          name = local.grafana_auth_secret_names[provider]
-          key  = "clientId"
-        }
-      } if value.client_id_arn != ""
-    },
-  )
+    }
+  }
 
   # grafana.ini: SigV4 for the AMP data source always; the role new accounts
   # get; the external URL OAuth providers redirect back to while grafana_access
@@ -203,18 +212,13 @@ locals {
 
   grafana_auth_without_client = [
     for provider, value in local.grafana_auth_values : provider
-    if(value.client_id == "" && value.client_id_arn == "") || value.client_secret_arn == ""
+    if(value.client_id == "" && value.client_id_ref.store == "") || value.client_secret_ref.store == ""
   ]
 
-  # The module's own env vars, which grafana_secret_env may not replace.
-  grafana_secret_env_overlapping = [
-    for env in keys(var.grafana_secret_env) : env
+  # The module's own env vars, which grafana_env_variables may not replace.
+  grafana_env_overlapping = [
+    for env in keys(var.grafana_env_variables) : env
     if contains(flatten([for provider in keys(local.grafana_auth_by_provider) : ["GF_AUTH_${upper(provider)}_CLIENT_SECRET", "GF_AUTH_${upper(provider)}_CLIENT_ID"]]), env)
-  ]
-
-  grafana_auth_client_id_twice = [
-    for provider, value in local.grafana_auth_values : provider
-    if value.client_id != "" && value.client_id_arn != ""
   ]
 
   grafana_auth_without_endpoint = [
@@ -248,6 +252,6 @@ locals {
 
   grafana_auth_settings_overlapping = [
     for provider, entry in local.grafana_auth_by_provider : provider
-    if length(setintersection(keys(entry.settings), local.grafana_auth_managed_keys)) > 0
+    if length(setintersection(keys(local.grafana_auth_values[provider].settings), local.grafana_auth_managed_keys)) > 0
   ]
 }
