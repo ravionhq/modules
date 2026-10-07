@@ -719,6 +719,49 @@ run "test_versioning_enabled_variable_default" {
 }
 
 #-------------------------------------------------------------------------------
+# Requester Pays Tests
+#-------------------------------------------------------------------------------
+
+# Test: the bucket owner pays by default, with no request payment configuration
+run "test_requester_pays_disabled_default" {
+  command = plan
+
+  variables {
+    name = "test-bucket"
+  }
+
+  assert {
+    condition     = length(aws_s3_bucket_request_payment_configuration.this) == 0
+    error_message = "No request payment configuration should be created by default."
+  }
+}
+
+# Test: Requester Pays can be enabled
+run "test_requester_pays_enabled" {
+  command = plan
+
+  variables {
+    name                   = "test-bucket"
+    requester_pays_enabled = true
+  }
+
+  assert {
+    condition     = length(aws_s3_bucket_request_payment_configuration.this) == 1
+    error_message = "A request payment configuration should be created when requester_pays_enabled is true."
+  }
+
+  assert {
+    condition     = aws_s3_bucket_request_payment_configuration.this[0].payer == "Requester"
+    error_message = "The requester should pay when requester_pays_enabled is true."
+  }
+
+  assert {
+    condition     = aws_s3_bucket_request_payment_configuration.this[0].bucket == aws_s3_bucket.this.id
+    error_message = "The request payment configuration should reference the bucket."
+  }
+}
+
+#-------------------------------------------------------------------------------
 # CORS Configuration Tests
 #-------------------------------------------------------------------------------
 
