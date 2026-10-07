@@ -538,6 +538,68 @@ run "rejects_a_secret_that_is_not_a_secrets_manager_arn" {
   expect_failures = [var.grafana_auth_providers]
 }
 
+run "grafana_env_from_secrets_manager_for_role_groups" {
+  command = plan
+
+  variables {
+    grafana_secret_env = {
+      GRAFANA_ADMINS_GROUP = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_ADMINS_GROUP::"
+    }
+    grafana_auth_providers = [
+      {
+        provider            = "google"
+        client_id           = "1234.apps.googleusercontent.com"
+        client_secret_arn   = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains     = ["example.com"]
+        scopes              = "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"
+        role_attribute_path = "contains(groups[*], '$__env{GRAFANA_ADMINS_GROUP}') && 'Admin' || 'Viewer'"
+      },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GRAFANA_ADMINS_GROUP.secretKeyRef == { name = "ravion-grafana-env", key = "GRAFANA_ADMINS_GROUP" }
+    error_message = "Grafana must get the env var from the materialized Secret"
+  }
+
+  assert {
+    condition     = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env"][0] == [{ secretKey = "GRAFANA_ADMINS_GROUP", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_ADMINS_GROUP" } }]
+    error_message = "External Secrets must read the env var's key of the JSON secret"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].role_attribute_path == "contains(groups[*], '$__env{GRAFANA_ADMINS_GROUP}') && 'Admin' || 'Viewer'"
+    error_message = "The role mapping must reach Grafana unexpanded, for Grafana to expand at startup"
+  }
+}
+
+run "rejects_a_secret_env_var_the_module_sets" {
+  command = plan
+
+  variables {
+    grafana_secret_env = {
+      GF_AUTH_GOOGLE_CLIENT_SECRET = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:X::"
+    }
+    grafana_auth_providers = [
+      { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf", allowed_domains = ["example.com"] },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_a_secret_env_var_that_is_not_an_env_name" {
+  command = plan
+
+  variables {
+    grafana_secret_env = {
+      "admins group" = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:X::"
+    }
+  }
+
+  expect_failures = [var.grafana_secret_env]
+}
+
 run "rejects_a_restriction_google_does_not_apply" {
   command = plan
 

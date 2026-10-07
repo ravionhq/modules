@@ -224,6 +224,11 @@ resource "helm_release" "grafana" {
     }
 
     precondition {
+      condition     = length(local.grafana_secret_env_overlapping) == 0
+      error_message = "grafana_secret_env sets env vars the module sets for the sign-in providers' clients: ${join(", ", local.grafana_secret_env_overlapping)}. Set those through client_id, client_id_arn and client_secret_arn."
+    }
+
+    precondition {
       condition     = length(local.grafana_auth_client_id_twice) == 0
       error_message = "These Grafana sign-in providers set both client_id and client_id_arn: ${join(", ", local.grafana_auth_client_id_twice)}. Set one."
     }

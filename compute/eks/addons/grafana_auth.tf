@@ -116,8 +116,33 @@ locals {
     }
   ]
 
+  # grafana_secret_env, materialized like the client secrets.
+  grafana_secret_env_name = "ravion-grafana-env"
+
+  grafana_secret_env_secrets = [
+    for name in(var.grafana_enabled && length(var.grafana_secret_env) > 0 ? [local.grafana_secret_env_name] : []) : {
+      name      = name
+      namespace = local.grafana_namespace
+      template  = {}
+      data = [
+        for env, arn in var.grafana_secret_env : {
+          secretKey = env
+          remoteRef = trimspace(arn)
+        }
+      ]
+    }
+  ]
+
   # Grafana reads any setting from GF_<SECTION>_<KEY>.
   grafana_env_value_from = merge(
+    {
+      for env in keys(var.grafana_secret_env) : env => {
+        secretKeyRef = {
+          name = local.grafana_secret_env_name
+          key  = env
+        }
+      }
+    },
     {
       for provider in keys(local.grafana_auth_by_provider) : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" => {
         secretKeyRef = {
@@ -179,6 +204,12 @@ locals {
   grafana_auth_without_client = [
     for provider, value in local.grafana_auth_values : provider
     if(value.client_id == "" && value.client_id_arn == "") || value.client_secret_arn == ""
+  ]
+
+  # The module's own env vars, which grafana_secret_env may not replace.
+  grafana_secret_env_overlapping = [
+    for env in keys(var.grafana_secret_env) : env
+    if contains(flatten([for provider in keys(local.grafana_auth_by_provider) : ["GF_AUTH_${upper(provider)}_CLIENT_SECRET", "GF_AUTH_${upper(provider)}_CLIENT_ID"]]), env)
   ]
 
   grafana_auth_client_id_twice = [

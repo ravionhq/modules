@@ -7,7 +7,8 @@ release:
   version: 0.16.0
   description: >-
     Read secrets the way EKS workloads do: any secret ARN may end in :<json key>:: to read one key of a JSON
-    secret, and a Grafana sign-in provider's client ID may come from Secrets Manager too.
+    secret. A Grafana sign-in provider's client ID may come from Secrets Manager too, and so may any Grafana
+    environment variable, for $__env{NAME} in a setting such as a role mapping's group emails.
 module:
   inputs:
     - id: cluster
@@ -1073,6 +1074,14 @@ module:
       show_when:
         grafana_enabled: true
       type: object_array
+    - collapsible: true
+      default: {}
+      description: 'Environment variables for Grafana, each read from a Secrets Manager ARN through External Secrets, as JSON: {"ADMINS_GROUP": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:ADMINS_GROUP::"}. Use one in any setting as $__env{ADMINS_GROUP}, such as a group email in a role mapping, or name it GF_<SECTION>_<KEY> to set that setting directly.'
+      id: grafana_secret_env
+      label: Environment from Secrets Manager
+      show_when:
+        grafana_enabled: true
+      type: object
     - id: section_metrics
       label: Metrics
       type: section
@@ -1697,6 +1706,7 @@ module:
           login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
           default_role: << module.input.grafana_default_role || "Viewer" >>
         grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_secret_env: '<< module.input.grafana_secret_env != nil ? module.input.grafana_secret_env : {} >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>

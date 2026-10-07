@@ -1440,6 +1440,23 @@ variable "grafana_auth_providers" {
   }
 }
 
+variable "grafana_secret_env" {
+  type        = map(string)
+  description = "Environment variables for the in-cluster Grafana, each read from a Secrets Manager ARN through External Secrets and never a Helm value. The ARN may end in :<json key>:<version stage>:<version id> to read one key of a JSON secret, as EKS workloads' secrets do. Use one in any Grafana setting as $__env{NAME}, such as a group email in a sign-in provider's role_attribute_path, or name it GF_<SECTION>_<KEY> to set that setting directly."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for name in keys(var.grafana_secret_env) : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", name))])
+    error_message = "Each grafana_secret_env name must be an environment variable name: letters, digits and underscores, not starting with a digit."
+  }
+
+  validation {
+    condition     = alltrue([for arn in values(var.grafana_secret_env) : can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}$", trimspace(arn)))])
+    error_message = "Each grafana_secret_env value must be a Secrets Manager secret ARN, optionally ending in :<json key>:<version stage>:<version id>."
+  }
+}
+
 ################################################################################
 # Observability providers
 #
