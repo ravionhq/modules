@@ -27,7 +27,6 @@ destinations:
 environment_variables: << module.input.build_environment_variables >>
 infrastructure:
   $include: ./infrastructure.yml
-interruptible: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_interruptible_enabled : nil >>'
 inputs:
   - $include: ../inputs/build-inputs.yml
 source:

@@ -23,7 +23,6 @@ module:
     environment_variables: << module.input.build_environment_variables >>
     infrastructure:
       $include: ../../partials/build/infrastructure.yml
-    interruptible: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_interruptible_enabled : nil >>'
     inputs:
       - $include: ../../partials/inputs/build-inputs.yml
     source:

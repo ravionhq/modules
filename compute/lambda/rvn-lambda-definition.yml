@@ -1185,7 +1185,6 @@ module:
       stack.output.code_bucket_id, directory: pipeline.run.id, region: stack.output.region}] >>
     infrastructure:
       $include: ../../partials/build/infrastructure.yml
-    interruptible: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_interruptible_enabled : nil >>'
   deploy:
     type: aws:lambda
     timeout: 1800
