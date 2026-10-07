@@ -535,6 +535,7 @@ module "s3" {
 | `aws_s3_bucket_public_access_block` | 1 | Block public access settings |
 | `aws_s3_bucket_server_side_encryption_configuration` | 1 | Encryption configuration (SSE-S3 or SSE-KMS) |
 | `aws_s3_bucket_versioning` | 1 | Versioning configuration |
+| `aws_s3_bucket_request_payment_configuration` | 0 or 1 | Requester Pays (when `requester_pays_enabled` is true) |
 | `aws_s3_bucket_cors_configuration` | 0 or 1 | CORS rules (when rules provided) |
 | `aws_s3_bucket_lifecycle_configuration` | 0 or 1 | Lifecycle rules (when rules provided) |
 | `aws_s3_bucket_policy` | 0 or 1 | Bucket policy (when templates or custom policy provided) |
@@ -553,6 +554,7 @@ module "s3" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | force_destroy_enabled | Whether to force destroy the bucket even if it contains objects. Use with caution. | `bool` | `false` | no |
+| requester_pays_enabled | Whether the requesting account pays for requests and data transfer instead of the bucket owner. Anonymous requests and requests without the `x-amz-request-payer` header are refused. | `bool` | `false` | no |
 
 ### Encryption
 
