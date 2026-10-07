@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.3.1
-  description: Shorten builder input help text so it no longer repeats field labels.
+  version: 1.3.2
+  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   build:
     builder: >-
