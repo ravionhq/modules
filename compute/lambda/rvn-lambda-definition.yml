@@ -3,8 +3,13 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 2.0.0
+  description: |
+    Route function URLs and event sources through the live alias so deployments and rollbacks control traffic. Terraform preserves the live version after creation; other aliases remain Terraform-managed.
+
+    **Breaking change:** applying 2.0.0 replaces existing unqualified function URLs with a new hostname. Apply the stack, copy the new function_url output, and update callers, DNS targets, and IAM policies referencing the old endpoint. AWS_IAM callers need lambda:InvokeFunctionUrl and lambda:InvokeFunction on the live alias ARN.
+
+    Existing live aliases migrate without recreation; other aliases keep their resource addresses. Until this upgrade is applied, older stacks' unqualified URLs and event sources continue invoking $LATEST and do not follow rollback.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1295,6 +1300,14 @@ module:
     The Lambda Function module creates an AWS Lambda function, execution role, CloudWatch log group, optional artifact bucket, and a live alias that Ravion updates during deployments. Terraform provisions the long-lived function infrastructure with either a bootstrap zip package or a bootstrap container image. Deployments publish a new function version and move the live alias.
 
     Terraform source: [ravionhq/modules/compute/lambda](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/lambda)
+
+    ## Deployment and rollback
+
+    Rollbacks move the live alias to an existing published version, restoring its code and function configuration without rebuilding. Function URLs and event source mappings invoke that alias. Terraform does not reset the live alias version after deployment or rollback; other aliases remain Terraform-managed. Only invocations through the deployment alias follow rollback; unqualified invocations use $LATEST.
+
+    AWS_IAM function URL callers need lambda:InvokeFunctionUrl and lambda:InvokeFunction on the live alias ARN. Public (NONE) URLs receive alias-qualified permissions restricted to URL invocations.
+
+    Image rollback targets must have a recorded digest that still exists in ECR. Keep rollback images outside destructive ECR lifecycle rules.
 
     ## Use cases
 

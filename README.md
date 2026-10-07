@@ -25,7 +25,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `eks`             | Composite EKS stack: cluster, system node group, CoreDNS, default-on AWS-managed Metrics Server, and optional Fargate profiles; Pod Identity defaults, opt-in IRSA/VPC controller permissions and node SSM access, and pull-only node ECR access (includes `rvn-eks-cluster` module definition) | Unreleased |
 | `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, default S3-backed Loki logs, Prometheus/Thanos metrics and Tempo traces with optional AMP, X-Ray and vendors, an OTLP receiver, in-cluster Grafana on a shared ALB or a Kubernetes Ingress with Grafana's OAuth sign-in, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI with a default gp3 StorageClass and online StatefulSet volume growth (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, `rvn-eks-cron`, and `rvn-eks-chart` module definitions) | Unreleased |
-| `compute/`    | `lambda`          | AWS Lambda functions with regional and Lambda@Edge error-rate alarms   | v1.0.0  |
+| `compute/`    | `lambda`          | AWS Lambda functions with live-alias rollback and Terraform-managed custom aliases   | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
 | `database/`   | `rds`             | AWS RDS instances with free storage and read/write IOPS alarms          | v1.1.0  |
@@ -85,7 +85,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-web` | EKS Web Service | v1.5.0 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v0.8.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.0 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v1.4.0 | `compute/lambda/` |
+| `rvn-lambda` | Lambda Function | v2.0.0 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |
