@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.5.1
-  description: Shorten builder input help text so it no longer repeats field labels.
+  version: 1.5.2
+  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   inputs:
     - id: section_cluster

@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.1.1
-  description: Shorten builder input help text so it no longer repeats field labels.
+  version: 2.1.2
+  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   inputs:
     - id: section_cluster
