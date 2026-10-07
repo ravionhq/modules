@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.8.2
+  version: 0.8.3
   description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   inputs:

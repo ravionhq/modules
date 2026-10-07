@@ -3,7 +3,7 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.0.2
+  version: 2.0.3
   description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   inputs:
@@ -1185,6 +1185,7 @@ module:
       stack.output.code_bucket_id, directory: pipeline.run.id, region: stack.output.region}] >>
     infrastructure:
       $include: ../../partials/build/infrastructure.yml
+    interruptible: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_interruptible_enabled : nil >>'
   deploy:
     type: aws:lambda
     timeout: 1800

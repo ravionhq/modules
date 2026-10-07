@@ -3,7 +3,7 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.3.2
+  version: 1.3.3
   description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   build:
@@ -23,6 +23,7 @@ module:
     environment_variables: << module.input.build_environment_variables >>
     infrastructure:
       $include: ../../partials/build/infrastructure.yml
+    interruptible: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_interruptible_enabled : nil >>'
     inputs:
       - $include: ../../partials/inputs/build-inputs.yml
     source:

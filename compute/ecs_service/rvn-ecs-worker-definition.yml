@@ -3,7 +3,7 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.1.2
+  version: 2.1.3
   description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
 module:
   inputs:
