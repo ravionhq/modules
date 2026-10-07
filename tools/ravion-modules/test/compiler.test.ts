@@ -1243,7 +1243,11 @@ describe("compiler", () => {
       }
 
       const builderType = findInput(inputs, "build_capacity_type");
-      assert.equal(builderType.description, undefined, `${definition.type} builder type should rely on option descriptions`);
+      assert.equal(
+        builderType.description,
+        "EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted. Sandbox starts fastest by running a microVM on the execution environment's pool. Contact support to enable sandbox for your organization.",
+        `${definition.type} should include shared builder guidance`,
+      );
       const builderOptions = builderType.values;
       assert.ok(Array.isArray(builderOptions), `${definition.type} builder type should have values`);
       assert.deepEqual(
