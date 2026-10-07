@@ -6,7 +6,7 @@ resource "aws_lambda_event_source_mapping" "this" {
   for_each = local.event_source_mappings_map
 
   event_source_arn = each.value.event_source_arn
-  function_name    = aws_lambda_alias.this["live"].arn
+  function_name    = aws_lambda_alias.live["live"].arn
 
   enabled                            = try(each.value.enabled, true)
   batch_size                         = try(each.value.batch_size, null)

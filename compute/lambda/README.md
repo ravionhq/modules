@@ -4,7 +4,7 @@ This module creates an AWS Lambda function with broad runtime configuration supp
 
 ## Rollback and URL migration (2.0.0)
 
-Function URLs and event source mappings invoke the `live` alias, which is created automatically when either integration is enabled. Aliases require published versions, so version publishing is enabled automatically when aliases exist. Ravion owns the alias version after creation; Terraform applies do not reset deployments or rollbacks. Change alias versions through Ravion (or explicitly in AWS), not the Terraform `function_version` input after creation.
+Function URLs and event source mappings invoke the `live` alias, which is created automatically when either integration is enabled. Aliases require published versions, so version publishing is enabled automatically when aliases exist. Ravion owns only the `live` alias version after creation; Terraform applies do not reset its deployments or rollbacks. Change `live` through Ravion (or explicitly in AWS), not its Terraform `function_version` input after creation. Other aliases, such as `staging`, remain Terraform-managed and honor configured version changes. The existing `live` alias state is migrated without recreating it; other aliases keep their resource addresses.
 
 **Breaking change:** applying this upgrade replaces existing unqualified function URLs with a **new hostname**. Copy the new `function_url` output and update callers, DNS targets, and IAM policies. `AWS_IAM` callers need `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the `live` alias ARN. Public (`NONE`) URLs receive alias-qualified permissions restricted to URL invocations.
 
