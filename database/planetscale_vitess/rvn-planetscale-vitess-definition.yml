@@ -4,7 +4,7 @@ definition:
   description: Managed PlanetScale MySQL with application credentials, safe migrations, and in-place cluster resizing.
 release:
   version: 0.1.0
-  description: Add PlanetScale MySQL with saved integrations, regional Metal sizes, standard Terraform pipelines, automatic default-keyspace adoption, and short-lived credentials.
+  description: Add PlanetScale MySQL with saved integrations, regional Metal sizes, standard Terraform pipelines, automatic default-keyspace adoption, short-lived credentials, and native module metrics.
 module:
   inputs:
     - id: section_planetscale
@@ -113,6 +113,70 @@ module:
     links:
       - name: PlanetScale database
         href: << stack.output.dashboard_url >>
+    metrics:
+      - {id: primary_cpu_usage, name: Primary CPU usage, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: primary_cpu_usage}}
+      - {id: primary_memory_usage, name: Primary memory usage, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: primary_memory_usage}}
+      - {id: primary_iops, name: Primary IOPS, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: primary_iops}}
+      - {id: primary_queries, name: Primary queries, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: primary_queries}}
+      - {id: primary_rows_read, name: Primary rows read, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: primary_rows_read}}
+      - {id: primary_rows_written, name: Primary rows written, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: primary_rows_written}}
+      - {id: replication_lag, name: Replication lag, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: replication_lag}}
+      - {id: vreplication_lag, name: VReplication lag, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vreplication_lag}}
+      - {id: pod_cpu_usage, name: Tablet CPU usage, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: pod_cpu_usage}}
+      - {id: pod_memory_usage, name: Tablet memory usage, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: pod_memory_usage}}
+      - {id: pod_queries, name: Tablet queries, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: pod_queries}}
+      - {id: pod_rows_read, name: Tablet rows read, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: pod_rows_read}}
+      - {id: pod_iops, name: Tablet IOPS, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: pod_iops}}
+      - {id: pod_ooms, name: Tablet out-of-memory events, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: pod_ooms}}
+      - {id: shard_storage_usage, name: Shard storage used, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: shard_storage_usage}}
+      - {id: shard_storage_available, name: Shard storage available, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: shard_storage_available}}
+      - {id: avg_parallel_workers, name: Average parallel workers, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: avg_parallel_workers}}
+      - {id: avg_shard_queries, name: Average shard queries, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: avg_shard_queries}}
+      - {id: block_cache_hit_ratio, name: Block cache hit ratio, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: block_cache_hit_ratio}}
+      - {id: blocks_dirtied, name: Blocks dirtied, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: blocks_dirtied}}
+      - {id: blocks_hit, name: Blocks hit, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: blocks_hit}}
+      - {id: blocks_read, name: Blocks read, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: blocks_read}}
+      - {id: blocks_written, name: Blocks written, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: blocks_written}}
+      - {id: connections, name: Connections, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: connections}}
+      - {id: cpu_duration_millis, name: CPU execution duration, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: cpu_duration_millis}}
+      - {id: egress_bytes, name: Egress bytes, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: egress_bytes}}
+      - {id: egress_bytes_per_query, name: Egress bytes per query, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: egress_bytes_per_query}}
+      - {id: ingress_bytes, name: Ingress bytes, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: ingress_bytes}}
+      - {id: ingress_bytes_per_query, name: Ingress bytes per query, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: ingress_bytes_per_query}}
+      - {id: io_duration_millis, name: IO execution duration, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: io_duration_millis}}
+      - {id: latency_max, name: Maximum query latency, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: latency_max}}
+      - {id: latency_p50, name: Query latency p50, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: latency_p50}}
+      - {id: latency_p95, name: Query latency p95, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: latency_p95}}
+      - {id: latency_p99, name: Query latency p99, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: latency_p99}}
+      - {id: latency_p999, name: Query latency p99.9, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: latency_p999}}
+      - {id: max_egress_bytes, name: Maximum egress bytes, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: max_egress_bytes}}
+      - {id: max_ingress_bytes, name: Maximum ingress bytes, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: max_ingress_bytes}}
+      - {id: max_shard_queries, name: Maximum shard queries, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: max_shard_queries}}
+      - {id: planetscale_edge_bytes_received, name: Edge bytes received, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: planetscale_edge_bytes_received}}
+      - {id: planetscale_edge_bytes_received_rate, name: Edge receive rate, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: planetscale_edge_bytes_received_rate}}
+      - {id: planetscale_edge_bytes_sent, name: Edge bytes sent, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: planetscale_edge_bytes_sent}}
+      - {id: planetscale_edge_bytes_sent_rate, name: Edge send rate, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: planetscale_edge_bytes_sent_rate}}
+      - {id: queries, name: Queries, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: queries}}
+      - {id: query_errors, name: Query errors, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: query_errors}}
+      - {id: rows_affected_per_query, name: Rows affected per query, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_affected_per_query}}
+      - {id: rows_read, name: Rows read, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_read}}
+      - {id: rows_read_per_query, name: Rows read per query, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_read_per_query}}
+      - {id: rows_read_per_returned, name: Rows read per returned row, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_read_per_returned}}
+      - {id: rows_returned, name: Rows returned, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_returned}}
+      - {id: rows_returned_per_query, name: Rows returned per query, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_returned_per_query}}
+      - {id: rows_written, name: Rows written, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: rows_written}}
+      - {id: storage_per_table, name: Storage per table, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: storage_per_table}}
+      - {id: total_duration_millis, name: Total execution duration, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: total_duration_millis}}
+      - {id: traffic_control_throttled, name: Traffic control throttled, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: traffic_control_throttled}}
+      - {id: traffic_control_warnings, name: Traffic control warnings, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: traffic_control_warnings}}
+      - {id: violations, name: Traffic control violations, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: violations}}
+      - {id: vtgate_cpu_avg_by_az, name: Average VTGate CPU by AZ, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_cpu_avg_by_az}}
+      - {id: vtgate_cpu_by_az, name: VTGate CPU by AZ, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_cpu_by_az}}
+      - {id: vtgate_latency_p50, name: VTGate latency p50, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_latency_p50}}
+      - {id: vtgate_latency_p95, name: VTGate latency p95, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_latency_p95}}
+      - {id: vtgate_memory_avg_by_az, name: Average VTGate memory by AZ, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_memory_avg_by_az}}
+      - {id: vtgate_memory_by_az, name: VTGate memory by AZ, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_memory_by_az}}
+      - {id: vtgate_requests, name: VTGate requests, type: line, source: {type: planetscale, integration_id: '<< module.input.planetscale >>', database: '<< stack.output.database >>', branch: '<< stack.output.branch >>', name: vtgate_requests}}
   readme: |
     Managed PlanetScale MySQL with application credentials, safe migrations, and in-place cluster resizing.
 
@@ -156,6 +220,18 @@ module:
     | Deletion protection | Enabled. Disable and apply before destroying; Terraform deletes the default keyspace before the branch. |
     | Safe migrations | Enabled. Main-branch schema changes require PlanetScale deploy requests. |
     | Terraform execution environment | Runner location; independent of database placement. Each Terraform step has a 45-minute timeout. |
+
+    ## Metrics
+
+    Declares 63 native branch/tablet chart candidates using the saved integration.
+    Metrics work from the first successful deployment; no keyspace adoption,
+    CloudWatch account, exporter, or separate metrics database setting is required.
+    Shard, tablet, and availability-zone series remain separate. Missing or
+    engine-specific metrics are shown as unavailable rather than zero.
+
+    Metrics currently preserve raw native values. Unit/rate semantics and live
+    availability are not fully verified; metric support depends on the engine,
+    topology, and activity of the branch.
 
     ## Application connections
 
