@@ -3,6 +3,7 @@
 ################################################################################
 
 resource "aws_s3_bucket" "this" {
+  region        = var.region
   bucket        = var.name
   force_destroy = var.force_destroy_enabled
 

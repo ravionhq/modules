@@ -719,6 +719,40 @@ run "test_versioning_enabled_variable_default" {
 }
 
 #-------------------------------------------------------------------------------
+# Region Tests
+#-------------------------------------------------------------------------------
+
+# Test: the bucket and its configuration are managed in the selected region,
+# not the provider's
+run "test_region_is_where_the_bucket_is_managed" {
+  command = plan
+
+  variables {
+    name                   = "test-bucket"
+    region                 = "eu-west-1"
+    versioning_enabled     = true
+    requester_pays_enabled = true
+    policy_templates       = ["deny_insecure_transport"]
+  }
+
+  assert {
+    condition     = aws_s3_bucket.this.region == "eu-west-1"
+    error_message = "The bucket should be created in the selected region."
+  }
+
+  assert {
+    condition = alltrue([
+      aws_s3_bucket_public_access_block.this.region == "eu-west-1",
+      aws_s3_bucket_server_side_encryption_configuration.this.region == "eu-west-1",
+      aws_s3_bucket_versioning.this.region == "eu-west-1",
+      aws_s3_bucket_request_payment_configuration.this[0].region == "eu-west-1",
+      aws_s3_bucket_policy.this[0].region == "eu-west-1",
+    ])
+    error_message = "The bucket's configuration should be managed in the bucket's region."
+  }
+}
+
+#-------------------------------------------------------------------------------
 # Requester Pays Tests
 #-------------------------------------------------------------------------------
 

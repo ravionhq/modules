@@ -3,8 +3,8 @@ definition:
   name: S3 Bucket
   description: S3 bucket with public access blocking, encryption, versioning, CORS, lifecycle rules, and configurable bucket policies.
 release:
-  version: 1.2.0
-  description: Add Requester Pays as an advanced Terraform variable, so the accounts that read a bucket pay for its requests and data transfer.
+  version: 2.0.0
+  description: Create the bucket in the selected region instead of the Terraform runner's. A bucket an earlier version created in another region is replaced there, and the apply fails while that bucket still holds objects.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -447,7 +447,7 @@ module:
     | Setting | Required | Default | Notes |
     | --- | --- | --- | --- |
     | AWS account | Yes | None | AWS account where the bucket is created. |
-    | Region | Yes | None | AWS Region for the bucket. |
+    | Region | Yes | None | AWS Region the bucket is created in. |
     | Bucket name | Yes | Project, environment, and module given IDs | Must be globally unique and follow S3 naming rules. |
     | Force destroy | No | false | Deletes objects during bucket destroy. Use with caution. |
     | Public access block settings | No | true | Four independent controls for ACLs and public bucket policies. |
