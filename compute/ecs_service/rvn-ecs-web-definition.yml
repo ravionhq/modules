@@ -4,7 +4,7 @@ definition:
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
   version: 2.1.3
-  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
+  description: Sandbox builds can run on spot hosts and start over if AWS reclaims the host. Turn off Interruptible build if your build commands change anything outside the build, such as running database migrations.
 module:
   inputs:
     - id: section_cluster
