@@ -3,13 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.0.0
-  description: |
-    Route function URLs and event sources through the live alias so deployments and rollbacks control traffic. Terraform preserves the live version after creation; other aliases remain Terraform-managed.
-
-    **Breaking change:** applying 2.0.0 replaces existing unqualified function URLs with a new hostname. Apply the stack, copy the new function_url output, and update callers, DNS targets, and IAM policies referencing the old endpoint. AWS_IAM callers need lambda:InvokeFunctionUrl and lambda:InvokeFunction on the live alias ARN.
-
-    Existing live aliases migrate without recreation; other aliases keep their resource addresses. Until this upgrade is applied, older stacks' unqualified URLs and event sources continue invoking $LATEST and do not follow rollback.
+  version: 2.0.1
+  description: Shorten builder input help text so it no longer repeats field labels.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
