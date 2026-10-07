@@ -150,12 +150,12 @@ locals {
       # :<json key>:<version stage>:<version id>. An object, {key, json_key,
       # version}, is written the same way, a Secrets Manager version id in the
       # last place, so that one reader takes both.
-      ref = can(tostring(reference.source)) ? trimspace(reference.source) : "${trimspace(reference.source.key)}${
+      ref = can(tostring(reference.source)) ? try(trimspace(tostring(reference.source)), "") : "${try(trimspace(reference.source.key), "")}${
         try(trimspace(reference.source.json_key), "") == "" && try(trimspace(reference.source.version), "") == "" ? "" : join(":", [
           "",
           try(trimspace(reference.source.json_key), ""),
           !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? "" : try(trimspace(reference.source.version), ""),
-          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? trimspace(reference.source.version) : "",
+          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? try(trimspace(reference.source.version), "") : "",
         ])
       }"
     }

@@ -54,7 +54,7 @@ locals {
       data = [
         for entry in secret.data : [
           for parts in [split(":", entry.remoteRef)] : [
-            for fields in [startswith(entry.remoteRef, "arn:") ? (parts[2] == "ssm" ? 6 : 7) : 1] : {
+            for fields in [startswith(entry.remoteRef, "arn:") ? (try(parts[2], "") == "ssm" ? 6 : 7) : 1] : {
               secretKey = entry.secretKey
               remoteRef = {
                 for name, value in {
