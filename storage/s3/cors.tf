@@ -5,6 +5,7 @@
 resource "aws_s3_bucket_cors_configuration" "this" {
   count = local.create_cors_configuration ? 1 : 0
 
+  region = var.region
   bucket = aws_s3_bucket.this.id
 
   dynamic "cors_rule" {
