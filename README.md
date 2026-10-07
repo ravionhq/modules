@@ -80,7 +80,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-worker` | ECS Worker | v2.1.2 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
 | `rvn-eks-addons` | EKS Add-ons | v0.16.0 | `compute/eks/addons/` |
-| `rvn-eks-chart` | EKS Helm Chart | v0.2.0 | `compute/eks_service/` |
+| `rvn-eks-chart` | EKS Helm Chart | v0.2.1 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.6.0 | `compute/eks/` |
 | `rvn-eks-web` | EKS Web Service | v1.5.2 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v0.8.2 | `compute/eks_service/` |
