@@ -1243,11 +1243,7 @@ describe("compiler", () => {
       }
 
       const builderType = findInput(inputs, "build_capacity_type");
-      assert.equal(
-        builderType.description,
-        "Use on-demand EC2 for predictable availability, EC2 Spot for lower cost with possible capacity delays or interruption, or a sandbox microVM on the execution environment's pool for the fastest start. Sandbox is in preview. Contact support to enable it for your organization.",
-        `${definition.type} should include shared builder guidance`,
-      );
+      assert.equal(builderType.description, undefined, `${definition.type} builder type should rely on option descriptions`);
       const builderOptions = builderType.values;
       assert.ok(Array.isArray(builderOptions), `${definition.type} builder type should have values`);
       assert.deepEqual(
@@ -1261,7 +1257,7 @@ describe("compiler", () => {
           [
             "sandbox",
             "Sandbox (preview)",
-            "In preview, available on request. Contact support to enable it for your organization. Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds.",
+            "Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds. Contact support to enable it for your organization.",
           ],
         ],
       );
