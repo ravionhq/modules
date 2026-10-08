@@ -336,7 +336,7 @@ test_spot_burst_chart() {
   if helm template test-release "$(chart_path "${chart}")" --values "${values}" \
     --set spotBurst.kedaEnabled=false >"${WORK_DIR}/missing-keda.out" 2>&1; then
     fail "${chart}: burst requires KEDA add-on" "clear prerequisite error" "render succeeded"
-  elif rg -q "requires KEDA to be installed by rvn-eks-addons" "${WORK_DIR}/missing-keda.out"; then
+  elif [[ "$(<"${WORK_DIR}/missing-keda.out")" == *"requires KEDA to be installed by rvn-eks-addons"* ]]; then
     pass "${chart}: burst requires KEDA add-on"
   else
     fail "${chart}: burst requires KEDA add-on" "clear prerequisite error" "$(cat "${WORK_DIR}/missing-keda.out")"
