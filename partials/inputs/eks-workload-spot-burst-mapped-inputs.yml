@@ -1,0 +1,6 @@
+- id: keda_enabled
+  label: KEDA enabled
+  type: boolean
+  description: Inherited from the selected EKS Add-ons module; missing KEDA output defaults to false.
+  required: false
+  default: '<< ref.stack.output.keda_enabled != nil ? ref.stack.output.keda_enabled : false >>'

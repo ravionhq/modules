@@ -4,6 +4,7 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 
 | Add-on | Toggle | Default | What it creates |
 |---|---|---|---|
+| **KEDA** | `keda_enabled` | `false` | Operator, external metrics API server, admission webhooks and CRDs from the official KEDA Helm chart; workload triggers are separate |
 | **Karpenter** | `karpenter_enabled` | `true` | Controller + node IAM roles, Pod Identity association, instance profile, EKS access entry, SQS interruption queue, EventBridge rules (via `modules/eks_karpenter`), plus the `karpenter-crd` and `karpenter` Helm charts and optional default and static Spot warm NodePools |
 | **AWS Load Balancer Controller** | automatic with any load balancer, or `aws_load_balancer_controller_enabled` opt-in | `false` | `aws-load-balancer-controller` Helm chart wired to the Pod Identity role created by the `compute/eks` composite; registers workload pods into shared load balancer target groups (`TargetGroupBinding`); Ingress → ALB, LoadBalancer Service → NLB |
 | **External Secrets Operator** | `eso_enabled` | `true` | `external-secrets` Helm chart + Pod Identity role scoped to Secrets Manager / Parameter Store reads, plus the cluster-scoped `ravion-aws` and `ravion-aws-parameter-store` `ClusterSecretStore`s |
@@ -32,6 +33,23 @@ replacing nodes, unless explicitly included in
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
+
+## Event-driven autoscaling with KEDA
+
+Set `keda_enabled = true` to install KEDA through this add-ons module. KEDA scales application pods; Karpenter supplies nodes. Neither toggle enables the other, and neither creates application scaling triggers automatically. The controller components default to On-Demand EC2 placement to remain available during Spot interruptions.
+
+| Input | Type | Default | Purpose |
+|---|---|---|---|
+| `keda_enabled` | `bool` | `false` | Install KEDA |
+| `keda_namespace` | `string` | `"keda"` | Controller namespace |
+| `keda_chart_version` | `string` | `"2.20.2"` | Pinned official chart version |
+| `keda_helm_values` | `list(string)` | `[]` | Advanced values overrides, without credentials |
+
+Outputs are `keda_enabled`, `keda_namespace` and `keda_chart_version`; the last two are null when disabled. Install the add-ons before deploying a workload's `ScaledObject`. Configure scaler authentication separately with narrowly scoped access and Secret references; installation grants no AWS data-source permissions. Do not copy credentials into Helm values or trigger metadata.
+
+The chart templates its CRDs, so Helm manages them during upgrades. Remove dependent ScaledObjects and TriggerAuthentications before uninstalling KEDA, and check CRD retention and migration requirements for each version. Do not turn the add-on off while applications depend on it. Only one provider can serve the cluster's `external.metrics.k8s.io` API; check for an existing external-metrics adapter before installing. Control-plane access to KEDA's metrics API and admission webhook must be allowed.
+
+KEDA 2.20's [published test matrix](https://keda.sh/docs/2.20/operate/cluster/) covers Kubernetes 1.33–1.35. Compatibility with Kubernetes 1.36 must be verified in staging; this change does not downgrade a cluster or claim that newer Kubernetes versions have been tested. The configurable chart pin allows a separately verified upgrade.
 
 ## EBS storage defaults
 

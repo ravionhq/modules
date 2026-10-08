@@ -68,6 +68,17 @@ autoscaling:
   # -- Set to a number to add a memory metric.
   targetMemoryUtilizationPercentage: null
 
+# -- Keep a fixed baseline on On-Demand and use KEDA to scale a second,
+# Spot-only Deployment from zero. Requires KEDA installed by rvn-eks-addons.
+spotBurst:
+  enabled: false
+  kedaEnabled: false
+  baselineReplicas: 2
+  maxReplicas: 8
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers: []
+
 serviceAccount:
   create: true
   # -- Stable name the EKS Pod Identity association targets. Defaults to the

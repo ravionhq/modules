@@ -1,3 +1,16 @@
+{{- $root := . -}}
+{{- if and .Values.spotBurst.enabled (not .Values.spotBurst.kedaEnabled) -}}
+{{- fail "spotBurst.enabled requires KEDA to be installed by rvn-eks-addons before this workload is deployed" -}}
+{{- end -}}
+{{- $pools := list false -}}
+{{- if .Values.spotBurst.enabled -}}
+{{- $pools = append $pools true -}}
+{{- end -}}
+{{- range $index, $isSpot := $pools -}}
+{{- if gt $index 0 }}
+---
+{{- end }}
+{{- with $root }}
 {{/*
 Worker Deployment: no Service, no ports, no load-balancer attachment. The pod
 spec is otherwise identical to rvn-eks-web so an app can move between the two
@@ -6,7 +19,7 @@ shapes without rewriting its image/env/resources/secrets values.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "rvn-eks-worker.fullname" . }}
+  name: {{ if $isSpot }}{{ include "rvn-eks-worker.spotDeploymentName" $ }}{{ else }}{{ include "rvn-eks-worker.fullname" . }}{{ end }}
   labels:
     {{- include "rvn-eks-worker.labels" . | nindent 4 }}
   {{- with .Values.annotations }}
@@ -14,13 +27,21 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if $isSpot }}
+  replicas: {{ include "rvn-eks-worker.spotDeploymentReplicas" $ }}
+  {{- else if .Values.spotBurst.enabled }}
+  replicas: {{ .Values.spotBurst.baselineReplicas }}
+  {{- else if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   selector:
     matchLabels:
+      {{- if and .Values.spotBurst.enabled $isSpot }}
+      {{- include "rvn-eks-worker.spotSelectorLabels" $ | nindent 6 }}
+      {{- else }}
       {{- include "rvn-eks-worker.selectorLabels" . | nindent 6 }}
+      {{- end }}
   strategy:
     type: {{ .Values.strategy.type }}
     {{- if eq .Values.strategy.type "RollingUpdate" }}
@@ -31,11 +52,26 @@ spec:
   template:
     metadata:
       labels:
+        {{- if and .Values.spotBurst.enabled $isSpot }}
+        {{- include "rvn-eks-worker.spotSelectorLabels" $ | nindent 8 }}
+        {{- else }}
         {{- include "rvn-eks-worker.selectorLabels" . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.spotBurst.enabled }}
+        ravion.com/spot-burst-pool: {{ ternary "spot" "baseline" $isSpot }}
+        {{- with (omit .Values.podLabels "app.kubernetes.io/name" "app.kubernetes.io/instance" "ravion.com/spot-burst-pool") }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- else }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+        {{- end }}
+      {{- $podAnnotations := deepCopy (.Values.podAnnotations | default dict) }}
+      {{- if .Values.spotBurst.enabled }}
+      {{- $_ := set $podAnnotations "eks.amazonaws.com/compute-type" "ec2" }}
+      {{- end }}
+      {{- with $podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -90,9 +126,10 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- $poolAffinity := include "rvn-eks-worker.affinityForPool" (list $ $isSpot) | trim }}
+      {{- with $poolAffinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- . | fromYaml | toYaml | nindent 8 }}
       {{- end }}
       {{- if .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
@@ -104,5 +141,14 @@ spec:
           whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
           labelSelector:
             matchLabels:
+              {{- if and .Values.spotBurst.enabled $isSpot }}
+              {{- include "rvn-eks-worker.spotSelectorLabels" $ | nindent 14 }}
+              {{- else }}
               {{- include "rvn-eks-worker.selectorLabels" . | nindent 14 }}
+              {{- end }}
+              {{- if .Values.spotBurst.enabled }}
+              ravion.com/spot-burst-pool: {{ ternary "spot" "baseline" $isSpot }}
+              {{- end }}
       {{- end }}
+{{- end }}
+{{- end }}
