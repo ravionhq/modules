@@ -146,18 +146,22 @@ locals {
       store  = reference.parameter_store ? "parameter_store" : "secrets_manager"
       key    = reference.key
       env    = reference.env
-      # A string reference is kept as written, an ARN or name that may end in
-      # :<json key>:<version stage>:<version id>. An object, {key, json_key,
-      # version}, is written the same way, a Secrets Manager version id in the
-      # last place, so that one reader takes both.
-      ref = can(tostring(reference.source)) ? try(trimspace(tostring(reference.source)), "") : "${try(trimspace(reference.source.key), "")}${
-        try(trimspace(reference.source.json_key), "") == "" && try(trimspace(reference.source.version), "") == "" ? "" : join(":", [
-          "",
-          try(trimspace(reference.source.json_key), ""),
-          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? "" : try(trimspace(reference.source.version), ""),
-          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version))) ? try(trimspace(reference.source.version), "") : "",
-        ])
-      }"
+      # A string is the secret's ARN or name. {key, json_key, version} reads one
+      # key of it: json_key is External Secrets' property, and a Secrets Manager
+      # version id goes in as uuid/<id>, as External Secrets takes one.
+      remote = can(tostring(reference.source)) ? {
+        key      = try(trimspace(tostring(reference.source)), "")
+        property = ""
+        version  = ""
+        } : {
+        key      = try(trimspace(reference.source.key), "")
+        property = try(trimspace(reference.source.json_key), "")
+        version = (
+          !reference.parameter_store && can(regex(local.secrets_manager_version_id, trimspace(reference.source.version)))
+          ? "uuid/${try(trimspace(reference.source.version), "")}"
+          : try(trimspace(reference.source.version), "")
+        )
+      }
     }
   ]
 
@@ -170,7 +174,7 @@ locals {
       data = [
         for reference in references : {
           secretKey = reference.key
-          remoteRef = reference.ref
+          remoteRef = { for name, value in reference.remote : name => value if value != "" }
         }
       ]
     }

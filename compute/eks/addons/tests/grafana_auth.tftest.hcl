@@ -475,37 +475,22 @@ run "rejects_google_roles_from_groups_without_the_groups_scope" {
   expect_failures = [helm_release.grafana]
 }
 
-run "client_id_and_secret_from_one_json_secret" {
+run "rejects_a_json_key_written_after_the_arn" {
   command = plan
 
+  # One key of a JSON secret is {key, json_key}, as a stack takes it.
   variables {
     grafana_auth_providers = [
       {
         provider        = "google"
-        client_id       = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::" }
+        client_id       = "1234.apps.googleusercontent.com"
         client_secret   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" }
         allowed_domains = ["example.com"]
       },
     ]
   }
 
-  assert {
-    condition     = !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"]), "client_id")
-    error_message = "A client ID read from Secrets Manager must stay out of grafana.ini"
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GF_AUTH_GOOGLE_CLIENT_ID.secretKeyRef == { name = "ravion-grafana-google-oauth", key = "clientId" } && yamldecode(helm_release.grafana[0].values[0]).envValueFrom.GF_AUTH_GOOGLE_CLIENT_SECRET.secretKeyRef == { name = "ravion-grafana-google-oauth", key = "clientSecret" }
-    error_message = "Grafana must read the client ID and secret from the materialized Secret"
-  }
-
-  assert {
-    condition = [for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-google-oauth"][0] == [
-      { secretKey = "clientId", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_ID" } },
-      { secretKey = "clientSecret", remoteRef = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_SECRET" } },
-    ]
-    error_message = "External Secrets must read each key of the one JSON secret"
-  }
+  expect_failures = [var.grafana_auth_providers]
 }
 
 run "client_id_and_secret_as_a_stack_writes_them" {
@@ -634,10 +619,10 @@ run "grafana_env_variables_as_strings_and_references" {
 
   variables {
     grafana_env_variables = {
-      GRAFANA_ADMINS_GROUP   = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_ADMINS_GROUP::" }
+      GRAFANA_ADMINS_GROUP   = { from_secrets_manager = { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", json_key = "GRAFANA_ADMINS_GROUP" } }
       GRAFANA_EDITORS_GROUP  = { from_parameter_store = "/grafana/editors-group" }
       GRAFANA_VIEWERS_GROUP  = { from_parameter_store = { key = "arn:aws:ssm:us-east-2:123456789012:parameter/grafana/viewers-group", version = "3" } }
-      GRAFANA_ORG_NAME       = { from_secrets_manager = "prod/app:GRAFANA_ORG_NAME::" }
+      GRAFANA_ORG_NAME       = { from_secrets_manager = "prod/grafana-org-name" }
       GF_USERS_DEFAULT_THEME = "light"
     }
     grafana_auth_providers = [
@@ -681,8 +666,8 @@ run "grafana_env_variables_as_strings_and_references" {
   }
 
   assert {
-    condition     = contains([for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env"][0], { secretKey = "GRAFANA_ORG_NAME", remoteRef = { key = "prod/app", property = "GRAFANA_ORG_NAME" } })
-    error_message = "A secret name may end in the JSON-key suffix as an ARN may"
+    condition     = contains([for secret in yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets : secret.data if secret.name == "ravion-grafana-env"][0], { secretKey = "GRAFANA_ORG_NAME", remoteRef = { key = "prod/grafana-org-name" } })
+    error_message = "A string reference must read the whole secret, by name as by ARN"
   }
 
   assert {
@@ -696,7 +681,7 @@ run "rejects_an_env_var_the_module_sets" {
 
   variables {
     grafana_env_variables = {
-      GF_AUTH_GOOGLE_CLIENT_SECRET = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:X::" }
+      GF_AUTH_GOOGLE_CLIENT_SECRET = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf" }
     }
     grafana_auth_providers = [
       { provider = "google", client_id = "1234.apps.googleusercontent.com", client_secret = { from_secrets_manager = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf" }, allowed_domains = ["example.com"] },

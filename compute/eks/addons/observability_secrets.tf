@@ -38,37 +38,11 @@ locals {
     }
   ]
 
-  observability_external_secrets_unresolved = concat(
+  observability_external_secrets = concat(
     local.observability_collector_secrets,
     local.ravion_operator_proxy_credential_secrets,
     local.grafana_reference_secrets,
   )
-
-  # A secret ARN or name may end in ECS's valueFrom suffix,
-  # :<json key>:<version stage>:<version id>, as EKS workloads' secrets do: the
-  # key is the ARN (seven fields for Secrets Manager, six for Parameter Store)
-  # or the name without it, the JSON key is the property, and a version id
-  # (uuid/<id> to External Secrets) wins over a stage.
-  observability_external_secrets = [
-    for secret in local.observability_external_secrets_unresolved : merge(secret, {
-      data = [
-        for entry in secret.data : [
-          for parts in [split(":", entry.remoteRef)] : [
-            for fields in [startswith(entry.remoteRef, "arn:") ? (try(parts[2], "") == "ssm" ? 6 : 7) : 1] : {
-              secretKey = entry.secretKey
-              remoteRef = {
-                for name, value in {
-                  key      = join(":", slice(parts, 0, min(fields, length(parts))))
-                  property = try(parts[fields], "")
-                  version  = try(parts[fields + 2], "") != "" ? "uuid/${parts[fields + 2]}" : try(parts[fields + 1], "")
-                } : name => value if value != ""
-              }
-            }
-          ][0]
-        ][0]
-      ]
-    })
-  ]
 
   observability_secrets_enabled = length(local.observability_external_secrets) > 0
 }

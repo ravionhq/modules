@@ -6,10 +6,10 @@ definition:
 release:
   version: 0.16.0
   description: >-
-    Read secrets the way EKS workloads do: any secret ARN may end in :<json key>:: to read one key of a JSON
-    secret. Grafana sign-in providers take client_id and client_secret as a stack's env_variables do, a string or
-    a from_secrets_manager or from_parameter_store reference, in place of client_secret_arn. Grafana takes
-    environment variables the same way, for $__env{NAME} in any setting.
+    Grafana sign-in providers take client_id and client_secret as a stack's env_variables do, a string or a
+    from_secrets_manager or from_parameter_store reference, in place of client_secret_arn; {key, json_key,
+    version} reads one key of a JSON secret. Grafana takes environment variables the same way, for $__env{NAME}
+    in any setting.
 module:
   inputs:
     - id: cluster

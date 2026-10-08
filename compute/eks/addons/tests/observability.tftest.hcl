@@ -329,58 +329,6 @@ run "namespace_exclusions_reach_both_collectors" {
 # Ship-only vendors: fan-out, credentials by reference, and the deep links.
 ################################################################################
 
-run "a_vendor_key_from_one_json_secret" {
-  command = plan
-
-  # The extraction suffix ECS takes in valueFrom: secret:<name>:<json key>:<version stage>:<version id>.
-  variables {
-    logs_providers    = ["loki", "datadog"]
-    metrics_providers = []
-    logs_datadog = {
-      api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/shared-AbCdEf:DATADOG_API_KEY::"
-    }
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets[0].data[0].remoteRef == { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/shared-AbCdEf", property = "DATADOG_API_KEY" }
-    error_message = "A JSON key after the ARN must become the ExternalSecret's property, read from the secret without the suffix"
-  }
-}
-
-run "a_vendor_key_pinned_to_a_version_stage" {
-  command = plan
-
-  variables {
-    logs_providers    = ["loki", "datadog"]
-    metrics_providers = []
-    logs_datadog = {
-      api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/shared-AbCdEf:DATADOG_API_KEY:AWSPREVIOUS:"
-    }
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets[0].data[0].remoteRef == { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/shared-AbCdEf", property = "DATADOG_API_KEY", version = "AWSPREVIOUS" }
-    error_message = "A version stage after the JSON key must reach the ExternalSecret"
-  }
-}
-
-run "a_vendor_key_pinned_to_a_version_id" {
-  command = plan
-
-  variables {
-    logs_providers    = ["loki", "datadog"]
-    metrics_providers = []
-    logs_datadog = {
-      api_key_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/shared-AbCdEf::AWSCURRENT:11111111-2222-3333-4444-555555555555"
-    }
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets[0].data[0].remoteRef == { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/shared-AbCdEf", version = "uuid/11111111-2222-3333-4444-555555555555" }
-    error_message = "A version id is stricter than a stage, and External Secrets takes it with the uuid/ prefix"
-  }
-}
-
 run "datadog_ships_both_signals_from_one_credential" {
   command = plan
 
@@ -406,7 +354,7 @@ run "datadog_ships_both_signals_from_one_credential" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets[0].data[0].remoteRef == { key = "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-api-key" }
+    condition     = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets[0].data[0].remoteRef == "arn:aws:secretsmanager:us-east-2:123456789012:secret:datadog-api-key"
     error_message = "The ExternalSecret must reference the Secrets Manager ARN, never a value"
   }
 
