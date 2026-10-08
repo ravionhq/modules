@@ -61,6 +61,11 @@ jobs:
           tofu -chdir=compute/eks init -backend=false
           tofu -chdir=compute/eks test -filter=tests/node_group_scaling.tftest.hcl
 
+      - name: Test PlanetScale Vitess lifecycle
+        run: |
+          tofu -chdir=database/planetscale_vitess init -backend=false -input=false -lockfile=readonly
+          python3 -m unittest discover -s database/planetscale_vitess/tests -p 'test_*.py' -v
+
       - name: Lint modules
         run: tflint --recursive
 

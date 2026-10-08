@@ -15,6 +15,12 @@ function record(value: unknown): Record<string, unknown> {
   return value;
 }
 
+it("keeps PlanetScale publication organization-scoped", async () => {
+  const compiled = await compileDefinitionFile(`${modulePath}/rvn-planetscale-vitess-definition.yml`);
+  assert.equal(compiled.published, true);
+  assert.equal(compiled.global, false);
+});
+
 it("uses standard pipelines and automatically adopts the default keyspace after creation", async () => {
   const compiled = await compileDefinitionFile(`${modulePath}/rvn-planetscale-vitess-definition.yml`);
   const pipelines = record(record(compiled.module.stack).pipelines);

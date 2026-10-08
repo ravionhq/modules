@@ -1,10 +1,11 @@
+global: false
 definition:
   type: rvn-planetscale-vitess
   name: PlanetScale MySQL
   description: Managed PlanetScale MySQL with application credentials, safe migrations, and in-place cluster resizing.
 release:
   version: 0.1.0
-  description: Add PlanetScale MySQL with saved integrations, regional Metal sizes, standard Terraform pipelines, automatic default-keyspace adoption, short-lived credentials, and native module metrics.
+  description: Add organization-only PlanetScale MySQL with saved integrations, regional Metal sizes, standard Terraform pipelines, automatic default-keyspace adoption, short-lived credentials, and native module metrics.
 module:
   inputs:
     - id: section_planetscale
