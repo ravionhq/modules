@@ -372,7 +372,7 @@ describe("compiler", () => {
     });
     assert.equal(
       getTerraformVariable(addons.module, "karpenter_spot_warm_min_instances"),
-      "<< module.input.karpenter_enabled == true && module.input.karpenter_default_node_pool_creation_enabled == true && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>",
+      "<< module.input.karpenter_enabled == true && (module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true) && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>",
     );
     const addonsCluster = findInput(addonsInputs, "cluster");
     const addonsClusterMappedInputs = (addonsCluster.mapped_inputs as unknown[]).map((input) =>

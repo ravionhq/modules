@@ -356,7 +356,7 @@ variable "karpenter_default_node_pool_creation_enabled" {
 
 variable "karpenter_spot_warm_min_instances" {
   type        = number
-  description = "Minimum number of Spot instances in a static warm NodePool. Zero disables the pool; workloads must tolerate and select Spot capacity to use it."
+  description = "Minimum number of Spot instances in a static warm NodePool. A positive value enables alpha static Spot capacity; zero disables the feature. Workloads must tolerate and select Spot capacity to use it."
   default     = 0
   nullable    = false
 

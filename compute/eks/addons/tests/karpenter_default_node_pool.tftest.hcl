@@ -226,7 +226,7 @@ run "static_spot_gate_wins_without_discarding_caller_settings" {
   }
 }
 
-run "zero_after_enabled_removes_static_capacity" {
+run "zero_disables_static_capacity_despite_helm_override" {
   command = plan
 
   variables {

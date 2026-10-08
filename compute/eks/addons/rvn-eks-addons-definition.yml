@@ -473,7 +473,7 @@ module:
         karpenter_enabled: true
       type: boolean
     - default: 0
-      description: Minimum warm Spot instances in a static NodePool. Zero removes the pool; workloads must tolerate and select Spot capacity to use it.
+      description: Enables alpha static Spot capacity when above zero. Zero removes the pool and disables the feature.
       id: karpenter_spot_warm_min_instances
       label: Minimum warm Spot instances
       min: 0
@@ -1603,7 +1603,7 @@ module:
         karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.1" >>
         karpenter_helm_values: []
         karpenter_default_node_pool_creation_enabled: '<< module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true >>'
-        karpenter_spot_warm_min_instances: '<< module.input.karpenter_enabled == true && module.input.karpenter_default_node_pool_creation_enabled == true && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>'
+        karpenter_spot_warm_min_instances: '<< module.input.karpenter_enabled == true && (module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true) && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>'
         karpenter_default_node_pool:
           capacity_types: '<< module.input.karpenter_default_node_pool_capacity_types != nil ? module.input.karpenter_default_node_pool_capacity_types : ["on-demand", "spot"] >>'
           instance_categories: '<< module.input.karpenter_default_node_pool_instance_categories != nil ? module.input.karpenter_default_node_pool_instance_categories : ["c", "m", "r"] >>'
