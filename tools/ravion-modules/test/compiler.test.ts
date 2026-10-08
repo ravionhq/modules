@@ -334,8 +334,16 @@ describe("compiler", () => {
           ? '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? false : (module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : true) >>'
           : '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? false : (module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : false) >>',
       );
+      const replicaCount = String(values.replicaCount);
+      assert.match(
+        replicaCount,
+        name === "rvn-eks-web"
+          ? /module\.input\.autoscaling_enabled != false \?/
+          : /module\.input\.autoscaling_enabled == true \?/,
+      );
+      assert.doesNotMatch(replicaCount, /module\.input\.autoscaling_enabled \?/);
       assert.ok(
-        String(values.replicaCount).includes(
+        replicaCount.includes(
           `module.input.replica_count != nil ? module.input.replica_count : ${inputDefault}) >>`,
         ),
       );

@@ -102,12 +102,39 @@ count() {
   q "$1" "[.[] | select(.kind == \"$2\")] | length"
 }
 
+assert_json_unique_keys() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    json.load(stream, object_pairs_hook=unique_object)
+PY
+}
+
 ################################################################################
 # helm lint — every chart against every ci/*-values.yaml
 ################################################################################
 
 lint_chart() {
   local chart="$1"
+  local schema
+  schema="$(chart_path "${chart}")/values.schema.json"
+  if [[ -f "${schema}" ]]; then
+    if assert_json_unique_keys "${schema}" >"${WORK_DIR}/schema-keys.out" 2>&1; then
+      pass "schema ${chart} has no duplicate JSON keys"
+    else
+      fail "schema ${chart} has no duplicate JSON keys" "unique object keys" "$(cat "${WORK_DIR}/schema-keys.out")"
+    fi
+  fi
   for values in "$(chart_path "${chart}")"/ci/*-values.yaml; do
     local label
     label="$(basename "${values}")"
@@ -149,7 +176,7 @@ test_spot_burst_chart() {
   assert_eq "${chart}: Spot Deployment name ends in -spot" \
     "${spot_name}" "$(q "${burst}" "${spot} | .metadata.name")"
   assert_eq "${chart}: Spot Deployment selector uses a distinct app name" \
-    "${spot_name}" "$(q "${burst}" "${spot} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
+    "${chart}-spot" "$(q "${burst}" "${spot} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
   assert_eq "${chart}: Spot Deployment and ScaledObject target names agree" \
     "${spot_name}" "$(q "${burst}" "${scaled} | .spec.scaleTargetRef.name")"
   assert_eq "${chart}: no CPU/memory HPA competes with KEDA" \
@@ -165,6 +192,11 @@ test_spot_burst_chart() {
   assert_eq "${chart}: scaler receives the configured external trigger unchanged" \
     "prometheus vector(0)" \
     "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query] | join(\" \")")"
+  local utilization
+  utilization="$(render "${chart}" utilization-metric-type --values "${values}" \
+    --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"serverAddress":"http://example.invalid:9090","query":"vector(0)","threshold":"1","activationThreshold":"0","ignoreNullValues":"false"},"metricType":"Utilization"}]')"
+  assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering" \
+    "Utilization" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].metricType')"
   assert_eq "${chart}: baseline and Spot pods use the same image" \
     "1" \
     "$(q "${burst}" "[.[] | select(.kind == \"Deployment\") | .spec.template.spec.containers[0].image] | unique | length")"
@@ -181,7 +213,7 @@ test_spot_burst_chart() {
     "retained" \
     "$(q "${burst}" "${baseline} | .spec.template.metadata.annotations.\"example.com/test-annotation\"")"
   assert_eq "${chart}: user pod labels cannot replace reserved identity or pool labels" \
-    "rvn-eks-${chart#rvn-eks-} test-release baseline ${spot_name} test-release spot" \
+    "rvn-eks-${chart#rvn-eks-} test-release baseline ${chart}-spot test-release spot" \
     "$(q "${burst}" "${baseline} | [.spec.template.metadata.labels.\"app.kubernetes.io/name\", .spec.template.metadata.labels.\"app.kubernetes.io/instance\", .spec.template.metadata.labels.\"ravion.com/spot-burst-pool\"] | join(\" \")") $(q "${burst}" "${spot} | [.spec.template.metadata.labels.\"app.kubernetes.io/name\", .spec.template.metadata.labels.\"app.kubernetes.io/instance\", .spec.template.metadata.labels.\"ravion.com/spot-burst-pool\"] | join(\" \")")"
   assert_eq "${chart}: non-reserved user pod labels remain present" \
     "retained" "$(q "${burst}" "${spot} | .spec.template.metadata.labels.\"example.com/test-label\"")"
@@ -191,6 +223,9 @@ test_spot_burst_chart() {
   assert_eq "${chart}: Spot spread is scoped to the Spot pool" \
     "spot" \
     "$(q "${burst}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"ravion.com/spot-burst-pool\"")"
+  assert_eq "${chart}: Spot spread selector matches the Spot app name" \
+    "${chart}-spot" \
+    "$(q "${burst}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"app.kubernetes.io/name\"")"
   assert_eq "${chart}: each pool gets separate required affinity terms" \
     "4 4" \
     "$(q "${burst}" "${baseline} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms | length") $(q "${burst}" "${spot} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms | length")"
@@ -220,7 +255,7 @@ test_spot_burst_chart() {
   assert_eq "${chart}: explicit spread is not silently made pool-specific" \
     "" "$(q "${explicit_spread}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"ravion.com/spot-burst-pool\"")"
 
-  local disabled long_name long_first long_second
+  local disabled long_name long_first long_second override_case
   disabled="$(render "${chart}" disabled-stale-values --values "${values}" \
     --set spotBurst.enabled=false --set spotBurst.baselineReplicas=7 --set autoscaling.enabled=true)"
   assert_eq "${chart}: disabled burst ignores stale settings and restores ordinary HPA" \
@@ -244,8 +279,6 @@ test_spot_burst_chart() {
   else
     fail "${chart}: long Spot name includes a deterministic hash" "8 lowercase hex digits before -spot" "${hashed_spot_name}"
   fi
-  assert_eq "${chart}: long-name Spot selectors use the same deterministic hashed name" \
-    "${hashed_spot_name}" "$(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
   assert_eq "${chart}: long-name Spot hashes are deterministic" \
     "${hashed_spot_name}" "$(q "${long_second}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .metadata.name')"
   if [[ "${long_baseline_name}" == "${hashed_spot_name}" ]]; then
@@ -253,6 +286,40 @@ test_spot_burst_chart() {
   else
     pass "${chart}: long Spot and baseline names remain distinct"
   fi
+  local long_baseline_selector long_spot_selector
+  long_baseline_selector="$(q "${long_first}" '.[] | select(.kind == "Deployment") | select((.metadata.name | test("-spot$")) | not) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
+  long_spot_selector="$(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
+  if [[ ${#long_spot_selector} -le 63 ]]; then
+    pass "${chart}: long Spot selector name fits the Kubernetes 63-character limit"
+  else
+    fail "${chart}: long Spot selector name fits the Kubernetes 63-character limit" "at most 63" "${#long_spot_selector}"
+  fi
+  if [[ "${long_spot_selector}" =~ -[a-f0-9]{8}-spot$ ]]; then
+    pass "${chart}: long Spot selector retains its deterministic hash"
+  else
+    fail "${chart}: long Spot selector retains its deterministic hash" "8 lowercase hex digits before -spot" "${long_spot_selector}"
+  fi
+  assert_eq "${chart}: long baseline selector matches its pod label" \
+    "${long_baseline_selector}" "$(q "${long_first}" '.[] | select(.kind == "Deployment") | select((.metadata.name | test("-spot$")) | not) | .spec.template.metadata.labels."app.kubernetes.io/name"')"
+  assert_eq "${chart}: long Spot selector matches its pod label and spread selector" \
+    "${long_spot_selector} ${long_spot_selector}" "$(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.template.metadata.labels."app.kubernetes.io/name"') $(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels."app.kubernetes.io/name"')"
+  assert_eq "${chart}: long Spot selector is distinct from the baseline selector" \
+    "true" "$([[ "${long_baseline_selector}" != "${long_spot_selector}" ]] && echo true || echo false)"
+  assert_eq "${chart}: long Spot selector hash is deterministic" \
+    "${long_spot_selector}" "$(q "${long_second}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
+
+  override_case="$(render "${chart}" selector-name-override --values "${values}" \
+    --set fullnameOverride=api --set nameOverride=api-spot)"
+  local override_baseline='.[] | select(.kind == "Deployment" and .metadata.name == "api")'
+  local override_spot='.[] | select(.kind == "Deployment" and .metadata.name == "api-spot")'
+  assert_eq "${chart}: fullname/name override baseline selector remains stable" \
+    "api-spot" "$(q "${override_case}" "${override_baseline} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: fullname/name override baseline pod matches its selector" \
+    "api-spot" "$(q "${override_case}" "${override_baseline} | .spec.template.metadata.labels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: fullname/name override Spot selector derives from baseline name" \
+    "api-spot-spot" "$(q "${override_case}" "${override_spot} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: fullname/name override Spot selector matches pod and spread selectors" \
+    "api-spot-spot api-spot-spot" "$(q "${override_case}" "${override_spot} | .spec.template.metadata.labels.\"app.kubernetes.io/name\"") $(q "${override_case}" "${override_spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"app.kubernetes.io/name\"")"
 
   expect_template_failure "${chart}" "${chart}: burst requires at least one external trigger" \
     --values "${values}" --set-json 'spotBurst.triggers=[]'

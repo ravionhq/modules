@@ -125,8 +125,17 @@ otherwise the fixed replica count.
 {{- end -}}
 {{- end -}}
 
+{{- define "rvn-eks-web.spotSelectorName" -}}
+{{- $name := include "rvn-eks-web.name" . -}}
+{{- if le (len $name) 58 -}}
+{{- printf "%s-spot" $name -}}
+{{- else -}}
+{{- printf "%s-%s-spot" ($name | trunc 49 | trimSuffix "-") ($name | sha256sum | trunc 8) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "rvn-eks-web.spotSelectorLabels" -}}
-app.kubernetes.io/name: {{ include "rvn-eks-web.spotDeploymentName" . }}
+app.kubernetes.io/name: {{ include "rvn-eks-web.spotSelectorName" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 

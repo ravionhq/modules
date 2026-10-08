@@ -179,7 +179,7 @@ module:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
                 replicaCount: >-
-                  << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
+                  << module.input.autoscaling_enabled == true ? (module.input.autoscaling_min_replicas != nil ?
                   module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
                   module.input.replica_count : 1) >>
                 autoscaling:
@@ -338,7 +338,7 @@ module:
 
     Select **KEDA** in the EKS add-ons module and apply the add-ons before enabling burst mode. Authentication resources and any referenced Kubernetes Secrets must be provisioned separately in the appropriate namespace or cluster scope. Put references, not credentials, in the trigger configuration; this module does not create trigger IAM permissions. KEDA 2.20.2's published Kubernetes test matrix covers versions 1.33–1.35; verify compatibility with newer clusters, including 1.36, in staging.
 
-    The Spot Deployment reuses the same image and pod configuration, so review duplicate job processing and idempotency before enabling it; no application code or configuration is migrated automatically. Each active Spot pod and the KEDA controllers add cost, and Spot capacity may be interrupted or unavailable. The first Spot Deployment render starts at zero, including on an existing release. Later Helm upgrades preserve its live replica count using Kubernetes `lookup`; offline renders show zero and the deployment identity needs permission to read Deployments in the namespace. Validate permissions, trigger behavior, and scaling in staging before production.
+    The Spot Deployment reuses the same image and pod configuration, so review duplicate job processing and idempotency before enabling it; no application code or configuration is migrated automatically. Each active Spot pod and the KEDA controllers add cost, and Spot capacity may be interrupted or unavailable. The first Spot Deployment render starts at zero, including on an existing release. Zero replicas do not exercise the new Spot image; verify activation and readiness separately in staging. Later Helm upgrades preserve its live replica count using Kubernetes `lookup`; offline renders show zero and the deployment identity needs permission to read Deployments in the namespace. Validate permissions, trigger behavior, and scaling in staging before production.
 
     **Shutdown grace period (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
 

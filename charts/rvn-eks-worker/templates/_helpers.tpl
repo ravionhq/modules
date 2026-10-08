@@ -115,8 +115,17 @@ render above it.
 {{- end -}}
 {{- end -}}
 
+{{- define "rvn-eks-worker.spotSelectorName" -}}
+{{- $name := include "rvn-eks-worker.name" . -}}
+{{- if le (len $name) 58 -}}
+{{- printf "%s-spot" $name -}}
+{{- else -}}
+{{- printf "%s-%s-spot" ($name | trunc 49 | trimSuffix "-") ($name | sha256sum | trunc 8) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "rvn-eks-worker.spotSelectorLabels" -}}
-app.kubernetes.io/name: {{ include "rvn-eks-worker.spotDeploymentName" . }}
+app.kubernetes.io/name: {{ include "rvn-eks-worker.spotSelectorName" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
