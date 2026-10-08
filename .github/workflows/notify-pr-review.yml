@@ -15,7 +15,7 @@ jobs:
         contains(fromJSON('["approved", "changes_requested"]'), github.event.review.state) &&
         github.event.pull_request.head.repo.fork == false
       }}
-    runs-on: ravion/ee=github-actions/type=sandbox/cpu=1/memory=2/disk_cache=auto/id=${{ github.run_id }}-notify-pr-review-notify/idempotent=false
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=1/memory=2/disk_cache=auto/id=${{ github.run_id }}-notify-pr-review-notify/interruptible=false
     steps:
       - name: Check out reviewer map
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

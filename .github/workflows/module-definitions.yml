@@ -14,7 +14,7 @@ permissions:
 jobs:
   validate:
     name: Validate Module Definitions
-    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-validate/idempotent=true
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-validate/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -49,7 +49,7 @@ jobs:
 
   publish-plan:
     name: Publish Dry-Run Plan
-    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish-plan/idempotent=true
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish-plan/interruptible=true
     needs: validate
     # Fork PRs receive no repository or organization secrets; skip the plan.
     if: >-
@@ -161,7 +161,7 @@ jobs:
 
   publish:
     name: Publish Module Definitions
-    runs-on: ubuntu-latest
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish/interruptible=false
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

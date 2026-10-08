@@ -22,7 +22,7 @@ permissions:
 jobs:
   test:
     name: Lint and Template Tests
-    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-helm-charts-test/idempotent=true
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-helm-charts-test/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
