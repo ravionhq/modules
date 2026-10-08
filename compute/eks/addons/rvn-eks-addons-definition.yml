@@ -4,13 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.15.0
-  description: >-
-    Default to Prometheus with Thanos history in S3 and to Tempo traces on S3, with EBS-backed working volumes.
-    An OTLP receiver at an in-cluster Service sends workload traces to Tempo, AWS X-Ray or a vendor, and
-    workload metrics to the metrics destinations. The in-cluster Grafana reads all three, can be served on a
-    shared ALB or through a Kubernetes Ingress such as Tailscale's, and signs people in with username and
-    password or any of Grafana's OAuth providers. Amazon Managed Prometheus stays available, no longer the default.
+  version: 0.16.0
+  description: Optionally maintain a minimum number of Karpenter Spot nodes with a static warm NodePool.
 module:
   inputs:
     - id: cluster
@@ -477,6 +472,15 @@ module:
       show_when:
         karpenter_enabled: true
       type: boolean
+    - default: 0
+      description: Minimum warm Spot instances in a static NodePool. Zero removes the pool; workloads must tolerate and select Spot capacity to use it.
+      id: karpenter_spot_warm_min_instances
+      label: Minimum warm Spot instances
+      min: 0
+      show_when:
+        karpenter_default_node_pool_creation_enabled: true
+        karpenter_enabled: true
+      type: number
     - add_button_label: Add capacity type
       default:
         - on-demand
@@ -1599,6 +1603,7 @@ module:
         karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.1" >>
         karpenter_helm_values: []
         karpenter_default_node_pool_creation_enabled: '<< module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true >>'
+        karpenter_spot_warm_min_instances: '<< module.input.karpenter_enabled == true && module.input.karpenter_default_node_pool_creation_enabled == true && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>'
         karpenter_default_node_pool:
           capacity_types: '<< module.input.karpenter_default_node_pool_capacity_types != nil ? module.input.karpenter_default_node_pool_capacity_types : ["on-demand", "spot"] >>'
           instance_categories: '<< module.input.karpenter_default_node_pool_instance_categories != nil ? module.input.karpenter_default_node_pool_instance_categories : ["c", "m", "r"] >>'
@@ -2061,6 +2066,7 @@ module:
     | Karpenter              | No       | `true`               | Autoscaling end to end (IAM, queue, controller, NodePool) |
     | Chart version          | No       | `1.14.1`             | Karpenter and karpenter-crd Helm chart version         |
     | Default NodePool       | No       | `true`               | General-purpose NodePool and EC2NodeClass              |
+    | Minimum warm Spot instances | No    | `0`                | Optional static Spot NodePool floor; zero removes it   |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |
@@ -2100,7 +2106,18 @@ module:
 
     The default NodePool provisions Linux nodes from the selected instance categories and CPU architectures. Capacity types default to both On-demand and Spot, allowing Karpenter to use lower-cost Spot capacity while retaining On-demand as an availability fallback. Restrict the list when workloads require one capacity type. The pool defaults to 100 vCPUs and a 30-day node lifetime. Disable it and bring your own NodePool manifests for full control.
 
-    *Default NodePool fields are required only when Karpenter and the default NodePool are enabled.
+    *Default NodePool fields are required only when Karpenter and the default NodePool are enabled.*
+
+    ## Static Spot warm nodes
+
+    Set **Minimum warm Spot instances** above zero to add a `spot-warm` static NodePool with that desired floor.
+    This alpha Karpenter capacity feature requires version 1.8 or newer. It creates whole Spot nodes, not a CPU
+    or memory reservation, and the count is a desired floor rather than a guarantee that nodes are available.
+    Static nodes are outside the default NodePool CPU limit and may add EC2 and Spot interruption costs.
+    Workloads must tolerate and select Spot capacity to use this pool. Warm-capacity placeholders pinned to the
+    `default` NodePool do not consume `spot-warm`; the reservations are independent. Setting the count to zero
+    removes the static NodePool through the normal owner-reference lifecycle, draining and deleting those nodes,
+    which can disrupt workloads; validate that transition on a live cluster first.
 
     ## Learn more
 

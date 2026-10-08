@@ -32,3 +32,38 @@ spec:
   disruption:
     consolidationPolicy: {{ .Values.nodePool.consolidationPolicy }}
     consolidateAfter: {{ .Values.nodePool.consolidateAfter }}
+
+{{- if gt (int .Values.spotWarm.minInstances) 0 }}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: spot-warm
+spec:
+  replicas: {{ .Values.spotWarm.minInstances }}
+  template:
+    spec:
+      requirements:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: {{ .Values.nodePool.architectures | toJson }}
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: {{ .Values.nodePool.instanceCategories | toJson }}
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ .Values.ec2NodeClass.name }}
+      expireAfter: {{ .Values.nodePool.expireAfter }}
+  limits:
+    nodes: {{ add (int .Values.spotWarm.minInstances) 1 }}
+{{- end }}

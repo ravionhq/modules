@@ -566,13 +566,41 @@ test_secrets_contract() {
 
 test_karpenter_resources() {
   local chart="karpenter-resources"
-  local default with_key ebs
+  local default positive with_key ebs static
   default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  positive="$(render "${chart}" positive --values "$(chart_path "${chart}")/ci/default-values.yaml" --set spotWarm.minInstances=3)"
   with_key="$(render "${chart}" customer-key --values "$(chart_path "${chart}")/ci/customer-key-values.yaml")"
   ebs='.[] | select(.kind == "EC2NodeClass") | .spec.blockDeviceMappings[0]'
+  static='.[] | select(.kind == "NodePool") | select(.metadata.name == "spot-warm")'
 
   assert_eq "${chart}: renders one EC2NodeClass and one NodePool" \
     "1 1" "$(count "${default}" EC2NodeClass) $(count "${default}" NodePool)"
+  assert_eq "${chart}: zero warm instances omits the static NodePool" \
+    "1" "$(count "${default}" NodePool)"
+  assert_eq "${chart}: positive warm instances render a second NodePool" \
+    "2" "$(count "${positive}" NodePool)"
+  assert_eq "${chart}: static pool uses the requested replicas and replacement headroom" \
+    "3 4" "$(q "${positive}" "${static} | [.spec.replicas, .spec.limits.nodes] | join(\" \")")"
+  assert_eq "${chart}: static pool is Spot-only and inherits scheduling constraints" \
+    "linux amd64 spot c,m,r Gt 2" \
+    "$(q "${positive}" "${static} | [.spec.template.spec.requirements[0].values[0], .spec.template.spec.requirements[1].values[0], .spec.template.spec.requirements[2].values[0], (.spec.template.spec.requirements[3].values | join(\",\")), (.spec.template.spec.requirements[4].operator + \" \" + .spec.template.spec.requirements[4].values[0])] | join(\" \")")"
+  assert_eq "${chart}: static pool reuses the default class and expiration" \
+    "default 720h" "$(q "${positive}" "${static} | [.spec.template.spec.nodeClassRef.name, .spec.template.spec.expireAfter] | join(\" \")")"
+  assert_eq "${chart}: static pool has no dynamic-only controls" \
+    "limits replicas template" "$(q "${positive}" "${static} | .spec | keys | sort | join(\" \")")"
+  assert_eq "${chart}: static pool template has only permitted fields" \
+    "expireAfter nodeClassRef requirements" "$(q "${positive}" "${static} | .spec.template.spec | keys | sort | join(\" \")")"
+
+  if helm template test-release "$(chart_path "${chart}")" --set spotWarm.minInstances=-1 >/dev/null 2>&1; then
+    fail "${chart}: negative warm instance count is rejected" "helm template failure" "helm template succeeded"
+  else
+    pass "${chart}: negative warm instance count is rejected"
+  fi
+  if helm template test-release "$(chart_path "${chart}")" --set spotWarm.minInstances=1.5 >/dev/null 2>&1; then
+    fail "${chart}: fractional warm instance count is rejected" "helm template failure" "helm template succeeded"
+  else
+    pass "${chart}: fractional warm instance count is rejected"
+  fi
 
   # The Terraform module hands the chart kmsKeyId "" when no customer key is
   # set; the manifest must then carry no kmsKeyID at all, or Karpenter would

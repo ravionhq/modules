@@ -362,6 +362,18 @@ describe("compiler", () => {
     );
 
     const addonsInputs = getModuleInputs(addons.module);
+    const spotWarm = findInput(addonsInputs, "karpenter_spot_warm_min_instances");
+    assert.equal(spotWarm.label, "Minimum warm Spot instances");
+    assert.equal(spotWarm.default, 0);
+    assert.equal(spotWarm.min, 0);
+    assert.deepEqual(spotWarm.show_when, {
+      karpenter_default_node_pool_creation_enabled: true,
+      karpenter_enabled: true,
+    });
+    assert.equal(
+      getTerraformVariable(addons.module, "karpenter_spot_warm_min_instances"),
+      "<< module.input.karpenter_enabled == true && module.input.karpenter_default_node_pool_creation_enabled == true && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>",
+    );
     const addonsCluster = findInput(addonsInputs, "cluster");
     const addonsClusterMappedInputs = (addonsCluster.mapped_inputs as unknown[]).map((input) =>
       assertRecord(input, "addons.cluster.mapped_inputs[]"),
