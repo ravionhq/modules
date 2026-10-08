@@ -4,8 +4,8 @@ definition:
   name: EKS Helm Chart
   description: Install any third-party Helm chart from an HTTP Helm repository or an OCI registry onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.2.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 0.2.1
+  description: Document reading chart values from Parameter Store or Secrets Manager.
 module:
   inputs:
     - id: section_cluster
@@ -102,7 +102,7 @@ module:
     - id: values
       label: Values
       type: object
-      description: JSON merged over the chart's defaults. The top-level ravion key is reserved; do not include secrets because Helm stores values in the release.
+      description: JSON merged over the chart's defaults. A from_parameter_store or from_secrets_manager reference in place of a value reads it on the deploy runner. The top-level ravion key is reserved; do not include secrets because Helm stores values in the release.
       required: false
       default: {}
       placeholder: |-
@@ -307,7 +307,29 @@ module:
     }
     ```
 
-    The top-level key `ravion` is reserved, and a deploy whose values set it fails. Values are stored in the Helm release, so don't put secrets in them. Reference a Kubernetes Secret that the chart can read instead, for example one created by the External Secrets Operator.
+    The top-level key `ravion` is reserved, and a deploy whose values set it fails.
+
+    ### Values from Parameter Store or Secrets Manager
+
+    To keep a value out of your configuration, put a reference in its place, written as in a stack's environment variables. A reference is an object with a single key, `from_parameter_store` or `from_secrets_manager`, holding the parameter or secret's ARN or name. To read one key of a JSON secret, give `from_secrets_manager` an object with `key` and `json_key`, and optionally `version`.
+
+    ```json
+    {
+      "oauth": {
+        "clientId": {
+          "from_secrets_manager": {
+            "key": "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/app-AbCdEf",
+            "json_key": "CLIENT_ID"
+          }
+        },
+        "audience": { "from_parameter_store": "/tailscale/audience" }
+      }
+    }
+    ```
+
+    The deploy runner reads each reference and passes the value to Helm as a string with `--set-string`. A name resolves in the cluster's account and region. References work in objects at any depth, and a list holding a reference fails the deploy. A deploy with references always runs on the deploy runner.
+
+    Helm stores every value in the release, including the values read this way, and `helm get values` shows them. Use references for settings kept out of your repository, such as an OAuth client ID. For a credential the workload uses, reference a Kubernetes Secret that the chart can read, for example one created by the External Secrets Operator.
 
     ## AWS permissions
 

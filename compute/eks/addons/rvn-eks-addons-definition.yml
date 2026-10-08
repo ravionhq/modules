@@ -4,13 +4,12 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.15.0
+  version: 0.16.0
   description: >-
-    Default to Prometheus with Thanos history in S3 and to Tempo traces on S3, with EBS-backed working volumes.
-    An OTLP receiver at an in-cluster Service sends workload traces to Tempo, AWS X-Ray or a vendor, and
-    workload metrics to the metrics destinations. The in-cluster Grafana reads all three, can be served on a
-    shared ALB or through a Kubernetes Ingress such as Tailscale's, and signs people in with username and
-    password or any of Grafana's OAuth providers. Amazon Managed Prometheus stays available, no longer the default.
+    Grafana sign-in providers take client_id and client_secret as a stack's env_variables do, a string or a
+    from_secrets_manager or from_parameter_store reference, in place of client_secret_arn; {key, json_key,
+    version} reads one key of a JSON secret. Grafana takes environment variables the same way, for $__env{NAME}
+    in any setting.
 module:
   inputs:
     - id: cluster
@@ -928,7 +927,6 @@ module:
           value: Admin
     - description: Grafana's OAuth providers people can sign in with, each a button on Grafana's sign-in page. Google, GitHub and gitlab.com need allowed domains, organizations, teams or groups, since anyone with an account there could otherwise sign in.
       id: grafana_auth_providers
-      item_description: Client ID {client_id}
       item_inputs:
         - description: Which of Grafana's OAuth providers this is.
           id: provider
@@ -956,17 +954,18 @@ module:
           show_when:
             provider: generic_oauth
           type: string
-        - description: Client ID of the OAuth application. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.
+        - description: 'Client ID of the OAuth application, as a string or a from_parameter_store or from_secrets_manager reference, as in a stack''s environment variables. Read one key of a JSON secret with {"from_secrets_manager": {"key": "<ARN>", "json_key": "<key>"}}. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.'
           id: client_id
           label: Client ID
+          placeholder: '{"from_secrets_manager": {"key": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf", "json_key": "GRAFANA_CLIENT_ID"}}'
           required: true
-          type: string
-        - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
-          id: client_secret_arn
-          label: Client secret ARN
-          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-oauth-client-secret
+          type: object
+        - description: 'The client secret, as a from_parameter_store or from_secrets_manager reference, as in a stack''s environment variables. Read one key of a JSON secret with {"from_secrets_manager": {"key": "<ARN>", "json_key": "<key>"}}. External Secrets reads it into the cluster; it is never a Helm value.'
+          id: client_secret
+          label: Client secret
+          placeholder: '{"from_secrets_manager": {"key": "arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf", "json_key": "GRAFANA_CLIENT_SECRET"}}'
           required: true
-          type: string
+          type: object
         - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
           id: tenant_id
           label: Tenant ID
@@ -1060,7 +1059,7 @@ module:
           type: string
         - collapsible: true
           default: {}
-          description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+          description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in Client secret, never here.'
           id: settings
           label: Other Grafana settings
           type: object
@@ -1071,6 +1070,15 @@ module:
       show_when:
         grafana_enabled: true
       type: object_array
+    - collapsible: true
+      default: {}
+      description: 'Environment variables for Grafana. A reference is read through External Secrets, never a Helm value. Use one in any setting as $__env{NAME}, such as a group email in a role mapping, or name it GF_<SECTION>_<KEY> to set that setting directly.'
+      id: grafana_env_variables
+      label: Environment variables
+      placeholder: key/value format with support for from_parameter_store and from_secrets_manager
+      show_when:
+        grafana_enabled: true
+      type: object
     - id: section_metrics
       label: Metrics
       type: section
@@ -1695,6 +1703,7 @@ module:
           login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
           default_role: << module.input.grafana_default_role || "Viewer" >>
         grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_env_variables: '<< module.input.grafana_env_variables != nil ? module.input.grafana_env_variables : {} >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>

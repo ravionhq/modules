@@ -1389,27 +1389,12 @@ variable "grafana_auth" {
 }
 
 variable "grafana_auth_providers" {
-  type = list(object({
-    provider              = string
-    name                  = optional(string)
-    client_id             = optional(string)
-    client_secret_arn     = optional(string)
-    tenant_id             = optional(string)
-    url                   = optional(string)
-    auth_url              = optional(string)
-    token_url             = optional(string)
-    api_url               = optional(string)
-    scopes                = optional(string)
-    allowed_domains       = optional(list(string), [])
-    allowed_groups        = optional(list(string), [])
-    allowed_organizations = optional(list(string), [])
-    team_ids              = optional(list(string), [])
-    role_attribute_path   = optional(string)
-    settings              = optional(map(string), {})
-  }))
+  # A client ID is a string in one entry and a reference in another, which a
+  # typed list cannot hold, so the shape is checked below.
+  type        = any
   description = <<-EOT
     OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
-    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) are required.
+    - client_id and client_secret are required. client_id is a string or a reference, and client_secret is a reference. A reference is {from_secrets_manager = "<ARN or name>"} or {from_parameter_store = "<ARN or name>"}, as in a stack's env_variables, read through External Secrets and never a Helm value. To read one key of a JSON secret, write {from_secrets_manager = {key = "<ARN or name>", json_key = "<key>", version = "<stage or version id>"}}.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
@@ -1419,13 +1404,83 @@ variable "grafana_auth_providers" {
   nullable    = false
 
   validation {
-    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
+    condition     = can(concat(var.grafana_auth_providers, [])) && try(alltrue([for entry in var.grafana_auth_providers : can(keys(entry)) && can(tostring(entry.provider))]), false)
+    error_message = "grafana_auth_providers must be a list of objects, each naming its provider."
+  }
+
+  validation {
+    condition = try(alltrue(flatten([
+      for entry in var.grafana_auth_providers : [
+        for key in keys(entry) : contains([
+          "provider", "name", "client_id", "client_secret", "tenant_id", "url", "auth_url", "token_url", "api_url", "scopes",
+          "allowed_domains", "allowed_groups", "allowed_organizations", "team_ids", "role_attribute_path", "settings",
+        ], key)
+      ]
+    ])), false)
+    error_message = "A grafana_auth_providers entry sets a key the module does not know. The keys are provider, name, client_id, client_secret, tenant_id, url, auth_url, token_url, api_url, scopes, allowed_domains, allowed_groups, allowed_organizations, team_ids, role_attribute_path and settings."
+  }
+
+  validation {
+    condition     = try(alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)]), false)
     error_message = "Each grafana_auth_providers entry's provider must be one of: google, github, gitlab, azuread, okta, generic_oauth."
   }
 
   validation {
-    condition     = length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers)
+    condition     = try(length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers), false)
     error_message = "Each provider can appear in grafana_auth_providers once: Grafana has one [auth.<provider>] section per provider."
+  }
+
+  validation {
+    condition = try(alltrue([
+      for entry in var.grafana_auth_providers :
+      (try(entry.client_id, null) == null || can(tostring(entry.client_id)) || (can(keys(entry.client_id)) && try(length(keys(entry.client_id)) == 1, false) && (
+        can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_id.from_secrets_manager))) ||
+        (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_id.from_secrets_manager.key))) && try(length(setsubtract(keys(entry.client_id.from_secrets_manager), ["key", "json_key", "version"])) == 0, false)) ||
+        can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_id.from_parameter_store))) ||
+        (can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_id.from_parameter_store.key))) && try(length(setsubtract(keys(entry.client_id.from_parameter_store), ["key", "version"])) == 0, false))
+      ))) &&
+      (try(entry.client_secret, null) == null || (can(keys(entry.client_secret)) && try(length(keys(entry.client_secret)) == 1, false) && (
+        can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_secret.from_secrets_manager))) ||
+        (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(entry.client_secret.from_secrets_manager.key))) && try(length(setsubtract(keys(entry.client_secret.from_secrets_manager), ["key", "json_key", "version"])) == 0, false)) ||
+        can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_secret.from_parameter_store))) ||
+        (can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(entry.client_secret.from_parameter_store.key))) && try(length(setsubtract(keys(entry.client_secret.from_parameter_store), ["key", "version"])) == 0, false))
+      )))
+    ]), false)
+    error_message = "A Grafana sign-in provider's client_id must be a string or a reference, and its client_secret a reference, as in a stack's env_variables: {from_secrets_manager = \"<ARN or name>\"} or {from_secrets_manager = {key, json_key, version}}, or {from_parameter_store = \"<ARN or name>\"} or {from_parameter_store = {key, version}}."
+  }
+
+  validation {
+    condition = try(alltrue(flatten([
+      for entry in var.grafana_auth_providers : concat(
+        [for key in ["allowed_domains", "allowed_groups", "allowed_organizations", "team_ids"] : try(entry[key], null) == null || can([for value in entry[key] : tostring(value)])],
+        [try(entry.settings, null) == null || can({ for key, value in entry.settings : key => tostring(value) })],
+      )
+    ])), false)
+    error_message = "A Grafana sign-in provider's allowed_domains, allowed_groups, allowed_organizations and team_ids must be lists of strings, and its settings a map of strings."
+  }
+}
+
+variable "grafana_env_variables" {
+  # A value is a string in one entry and a reference in another, which a typed
+  # map cannot hold, so the shape is checked below.
+  type        = any
+  description = "Environment variables for the in-cluster Grafana, as a stack's env_variables: a map from name to a string, or to a reference, {from_secrets_manager = \"<ARN or name>\"} or {from_parameter_store = \"<ARN or name>\"}. A reference is read through External Secrets and never a Helm value. To read one key of a JSON secret, write {from_secrets_manager = {key = \"<ARN or name>\", json_key = \"<key>\"}}. Use one in any Grafana setting as $__env{NAME}, or name it GF_<SECTION>_<KEY> to set that setting directly."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = can(keys(var.grafana_env_variables)) && alltrue([for name in try(keys(var.grafana_env_variables), []) : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", name))])
+    error_message = "grafana_env_variables must map environment variable names, letters, digits and underscores not starting with a digit, to values."
+  }
+
+  validation {
+    condition = try(alltrue([for value in values(var.grafana_env_variables) : (value != null && can(tostring(value))) || (can(keys(value)) && try(length(keys(value)) == 1, false) && (
+      can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(value.from_secrets_manager))) ||
+      (can(regex("^(arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+|[A-Za-z0-9/_+=.@-]+)$", trimspace(value.from_secrets_manager.key))) && try(length(setsubtract(keys(value.from_secrets_manager), ["key", "json_key", "version"])) == 0, false)) ||
+      can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(value.from_parameter_store))) ||
+      (can(regex("^(arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+|[A-Za-z0-9/_.-]+)$", trimspace(value.from_parameter_store.key))) && try(length(setsubtract(keys(value.from_parameter_store), ["key", "version"])) == 0, false))
+    ))]), false)
+    error_message = "Each grafana_env_variables value must be a string or a reference, as in a stack's env_variables: {from_secrets_manager = \"<ARN or name>\"} or {from_secrets_manager = {key, json_key, version}}, or {from_parameter_store = \"<ARN or name>\"} or {from_parameter_store = {key, version}}."
   }
 }
 

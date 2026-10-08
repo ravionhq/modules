@@ -180,6 +180,7 @@ resource "helm_release" "grafana" {
         # Sign-in and load balancer access settings come from grafana_auth.tf.
         "grafana.ini" = local.grafana_ini
         envValueFrom  = local.grafana_env_value_from
+        env           = local.grafana_env_plain
 
         datasources = {
           "datasources.yaml" = {
@@ -220,7 +221,12 @@ resource "helm_release" "grafana" {
 
     precondition {
       condition     = length(local.grafana_auth_without_client) == 0
-      error_message = "Each Grafana sign-in provider needs a client ID and the Secrets Manager ARN of its client secret: ${join(", ", local.grafana_auth_without_client)}."
+      error_message = "Each Grafana sign-in provider needs a client_id and a client_secret reference: ${join(", ", local.grafana_auth_without_client)}."
+    }
+
+    precondition {
+      condition     = length(local.grafana_env_overlapping) == 0
+      error_message = "grafana_env_variables sets env vars the module sets for the sign-in providers' clients: ${join(", ", local.grafana_env_overlapping)}. Set those through client_id and client_secret."
     }
 
     precondition {
@@ -240,7 +246,7 @@ resource "helm_release" "grafana" {
 
     precondition {
       condition     = length(local.grafana_auth_settings_overlapping) == 0
-      error_message = "A Grafana sign-in provider's settings set a key the module manages: ${join(", ", local.grafana_auth_settings_overlapping)}. settings is for the other keys of [auth.<provider>]. Set client_id, the restrictions, endpoints, scopes, name and role_attribute_path as their own fields, and the client secret as client_secret_arn."
+      error_message = "A Grafana sign-in provider's settings set a key the module manages: ${join(", ", local.grafana_auth_settings_overlapping)}. settings is for the other keys of [auth.<provider>]. Set client_id, client_secret, the restrictions, endpoints, scopes, name and role_attribute_path as their own fields."
     }
   }
 }
