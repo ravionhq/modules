@@ -1245,9 +1245,12 @@ describe("compiler", () => {
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
         builderType.description,
-        "EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted. Sandbox starts fastest by running a microVM on the execution environment's pool. Contact support to enable sandbox for your organization.",
+        "Sandbox starts fastest. Contact support to enable it for your organization. EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted.",
         `${definition.type} should include shared builder guidance`,
       );
+      assert.equal(builderType.default, "sandbox", `${definition.type} should default to sandbox builds`);
+      assert.equal(findInput(inputs, "build_cpu").default, 14, `${definition.type} should default to 14 builder vCPUs`);
+      assert.equal(findInput(inputs, "build_memory").default, 28, `${definition.type} should default to 28 GiB builder memory`);
       const builderOptions = builderType.values;
       assert.ok(Array.isArray(builderOptions), `${definition.type} builder type should have values`);
       assert.deepEqual(
@@ -1256,13 +1259,13 @@ describe("compiler", () => {
           return [value.value, value.label, value.description];
         }),
         [
-          ["ec2", "EC2", "Use on-demand capacity for predictable availability without Spot interruption."],
-          ["ec2-spot", "EC2 spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
           [
             "sandbox",
-            "Sandbox (preview)",
+            "Sandbox",
             "Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds. Contact support to enable it for your organization.",
           ],
+          ["ec2", "EC2", "Use on-demand capacity for predictable availability without Spot interruption."],
+          ["ec2-spot", "EC2 spot", "Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS."],
         ],
       );
       for (const removedInputId of [

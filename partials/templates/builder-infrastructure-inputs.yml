@@ -2,23 +2,23 @@
   label: Builder config
   show_when: $with.show_when
   type: section
-- default: ec2
-  description: EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted. Sandbox starts fastest by running a microVM on the execution environment's pool. Contact support to enable sandbox for your organization.
+- default: sandbox
+  description: Sandbox starts fastest. Contact support to enable it for your organization. EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted.
   id: build_capacity_type
   label: Builder capacity type
   required: true
   show_when: $with.show_when
   type: string
   values:
+    - label: Sandbox
+      description: Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds. Contact support to enable it for your organization.
+      value: sandbox
     - label: EC2
       description: Use on-demand capacity for predictable availability without Spot interruption.
       value: ec2
     - label: EC2 spot
       description: Use lower-cost Spot capacity that can wait for capacity or be interrupted by AWS.
       value: ec2-spot
-    - label: Sandbox (preview)
-      description: Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds. Contact support to enable it for your organization.
-      value: sandbox
 - default: c7a.4xlarge
   description: EC2 instance type for builds. Start with the default value, then increase or decrease it based on the resource usage report at the end of builds.
   id: build_instance_type
@@ -33,7 +33,7 @@
           - ec2-spot
   type: string
   values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&costUnit=minute
-- default: 4
+- default: 14
   id: build_cpu
   label: Builder vCPUs
   required: true
@@ -42,7 +42,7 @@
       - $with.show_when
       - build_capacity_type: sandbox
   type: number
-- default: 8
+- default: 28
   id: build_memory
   label: Builder memory (GiB)
   required: true

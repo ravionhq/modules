@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.3.3
-  description: Sandbox builds can run on spot hosts and start over if AWS reclaims the host. Turn off Interruptible build if your build commands change anything outside the build, such as running database migrations.
+  version: 1.4.0
+  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
 module:
   build:
     builder: >-
