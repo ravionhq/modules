@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.5.2
-  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
+  version: 1.5.3
+  description: Sandbox builds can run on spot hosts and start over if AWS reclaims the host. Turn off Interruptible build if your build commands change anything outside the build, such as running database migrations.
 module:
   inputs:
     - id: section_cluster

@@ -5,6 +5,7 @@ disk: '<< module.input.build_capacity_type == "sandbox" ? (module.input.build_di
 disk_cache: '<< module.input.build_capacity_type == "sandbox" ? "auto" : nil >>'
 execution_environment_id: << module.input.build_execution_environment_id || module.input.execution_environment_id >>
 instance_size: '<< module.input.build_capacity_type == "sandbox" ? nil : module.input.build_instance_type >>'
+interruptible: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_interruptible_enabled : nil >>'
 memory: '<< module.input.build_capacity_type == "sandbox" ? module.input.build_memory : nil >>'
 permissions: '<< module.input.build_iam_policy_arns ? (module.input.build_default_policies_enabled ? {"attach": module.input.build_iam_policy_arns} : {"replace": module.input.build_iam_policy_arns}) : nil >>'
 region: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.aws_region >>"

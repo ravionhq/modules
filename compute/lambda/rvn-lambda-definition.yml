@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.0.2
-  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
+  version: 2.0.3
+  description: Sandbox builds can run on spot hosts and start over if AWS reclaims the host. Turn off Interruptible build if your build commands change anything outside the build, such as running database migrations.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
