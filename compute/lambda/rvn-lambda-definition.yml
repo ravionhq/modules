@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 2.0.3
+  description: Sandbox builds can run on spot hosts and start over if AWS reclaims the host. Turn off Interruptible build if your build commands change anything outside the build, such as running database migrations.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1295,6 +1295,14 @@ module:
     The Lambda Function module creates an AWS Lambda function, execution role, CloudWatch log group, optional artifact bucket, and a live alias that Ravion updates during deployments. Terraform provisions the long-lived function infrastructure with either a bootstrap zip package or a bootstrap container image. Deployments publish a new function version and move the live alias.
 
     Terraform source: [ravionhq/modules/compute/lambda](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/lambda)
+
+    ## Deployment and rollback
+
+    Rollbacks move the live alias to an existing published version, restoring its code and function configuration without rebuilding. Function URLs and event source mappings invoke that alias. Terraform does not reset the live alias version after deployment or rollback; other aliases remain Terraform-managed. Only invocations through the deployment alias follow rollback; unqualified invocations use $LATEST.
+
+    AWS_IAM function URL callers need lambda:InvokeFunctionUrl and lambda:InvokeFunction on the live alias ARN. Public (NONE) URLs receive alias-qualified permissions restricted to URL invocations.
+
+    Image rollback targets must have a recorded digest that still exists in ECR. Keep rollback images outside destructive ECR lifecycle rules.
 
     ## Use cases
 

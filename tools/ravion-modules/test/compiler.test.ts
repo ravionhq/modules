@@ -1261,7 +1261,7 @@ describe("compiler", () => {
       const builderType = findInput(inputs, "build_capacity_type");
       assert.equal(
         builderType.description,
-        "Use on-demand EC2 for predictable availability, EC2 Spot for lower cost with possible capacity delays or interruption, or a sandbox microVM on the execution environment's pool for the fastest start. Sandbox is in preview. Contact support to enable it for your organization.",
+        "EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted. Sandbox starts fastest by running a microVM on the execution environment's pool. Contact support to enable sandbox for your organization.",
         `${definition.type} should include shared builder guidance`,
       );
       const builderOptions = builderType.values;
@@ -1277,7 +1277,7 @@ describe("compiler", () => {
           [
             "sandbox",
             "Sandbox (preview)",
-            "In preview, available on request. Contact support to enable it for your organization. Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds.",
+            "Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds. Contact support to enable it for your organization.",
           ],
         ],
       );

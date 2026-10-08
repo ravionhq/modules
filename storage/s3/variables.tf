@@ -56,6 +56,12 @@ variable "force_destroy_enabled" {
   default     = false
 }
 
+variable "requester_pays_enabled" {
+  type        = bool
+  description = "Whether the account making a request pays for the request and its data transfer instead of the bucket owner. S3 then refuses anonymous requests and requests that do not acknowledge the charge (the x-amz-request-payer header). The bucket owner still pays for storage."
+  default     = false
+}
+
 #-------------------------------------------------------------------------------
 # Tags
 #-------------------------------------------------------------------------------

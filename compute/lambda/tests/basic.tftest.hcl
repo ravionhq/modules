@@ -28,7 +28,7 @@ mock_provider "aws" {
   }
 
   override_resource {
-    target = aws_lambda_alias.this
+    target = aws_lambda_alias.live
     values = {
       arn = "arn:aws:lambda:us-east-1:123456789012:function:test-lambda:live"
     }
@@ -106,6 +106,53 @@ run "function_url_enabled" {
     condition     = aws_lambda_function_url.this[0].authorization_type == "AWS_IAM"
     error_message = "Function URL auth type should match input."
   }
+
+  assert {
+    condition     = aws_lambda_function_url.this[0].qualifier == "live" && aws_lambda_function.this.publish
+    error_message = "The URL must invoke the deployment alias with version publishing enabled."
+  }
+
+  assert {
+    condition     = length(aws_lambda_permission.function_url) == 0 && length(aws_lambda_permission.function_url_invoke) == 0
+    error_message = "IAM-authenticated URLs must not grant public invoke permissions."
+  }
+}
+
+run "public_function_url" {
+  command = plan
+
+  variables {
+    function_url_enabled   = true
+    function_url_auth_type = "NONE"
+  }
+
+  assert {
+    condition     = aws_lambda_permission.function_url[0].qualifier == "live" && aws_lambda_permission.function_url[0].action == "lambda:InvokeFunctionUrl"
+    error_message = "Public URL permission must be qualified to live."
+  }
+
+  assert {
+    condition     = aws_lambda_permission.function_url_invoke[0].qualifier == "live" && aws_lambda_permission.function_url_invoke[0].invoked_via_function_url
+    error_message = "Public invoke permission must be qualified and restricted to URL invocations."
+  }
+}
+
+run "custom_url_permissions_follow_alias" {
+  command = plan
+
+  variables {
+    function_url_enabled = true
+    permissions = [{
+      principal              = "123456789012"
+      action                 = "lambda:InvokeFunctionUrl"
+      function_url_auth_type = "AWS_IAM"
+    }]
+  }
+
+  assert {
+    condition     = aws_lambda_permission.this["0"].qualifier == "live"
+    error_message = "Custom URL permissions must follow the deployment alias unless explicitly qualified."
+  }
 }
 
 run "lambda_at_edge_valid_configuration" {
@@ -127,36 +174,6 @@ run "lambda_at_edge_valid_configuration" {
   assert {
     condition     = aws_lambda_function.this.publish == true
     error_message = "Edge mode configuration should publish versions."
-  }
-}
-
-run "permissions_and_event_source_mappings" {
-  command = plan
-
-  variables {
-    permissions = [
-      {
-        principal  = "events.amazonaws.com"
-        source_arn = "arn:aws:events:us-east-1:123456789012:rule/test-rule"
-      }
-    ]
-
-    event_source_mappings = [
-      {
-        event_source_arn = "arn:aws:sqs:us-east-1:123456789012:test-queue"
-        batch_size       = 10
-      }
-    ]
-  }
-
-  assert {
-    condition     = length(aws_lambda_permission.this) == 1
-    error_message = "One lambda permission should be created."
-  }
-
-  assert {
-    condition     = length(aws_lambda_event_source_mapping.this) == 1
-    error_message = "One event source mapping should be created."
   }
 }
 
@@ -194,6 +211,21 @@ run "image_registry_no_module_ecr" {
   }
 }
 
+run "user_alias_without_deployment_alias" {
+  command = plan
+
+  variables {
+    aliases = {
+      staging = { function_version = "1" }
+    }
+  }
+
+  assert {
+    condition     = length(aws_lambda_alias.this) == 1 && length(aws_lambda_alias.live) == 0 && length(output.alias_arns) == 1
+    error_message = "User aliases must work without a live alias and remain in alias outputs."
+  }
+}
+
 run "aliases_created" {
   command = plan
 
@@ -207,7 +239,78 @@ run "aliases_created" {
   }
 
   assert {
-    condition     = length(aws_lambda_alias.this) == 1
-    error_message = "One alias should be created."
+    condition     = length(aws_lambda_alias.live) == 1 && length(aws_lambda_alias.this) == 0
+    error_message = "Only the live deployment alias should be created."
+  }
+}
+
+# Keep mocked applies after plan-only runs so ignored function code does not
+# leak a ZIP bootstrap state into the image creation test.
+run "permissions_and_event_source_mappings" {
+  command = apply
+
+  variables {
+    aliases = {
+      staging = {
+        function_version = "1"
+      }
+    }
+    permissions = [
+      {
+        principal  = "events.amazonaws.com"
+        source_arn = "arn:aws:events:us-east-1:123456789012:rule/test-rule"
+      }
+    ]
+    event_source_mappings = [
+      {
+        event_source_arn = "arn:aws:sqs:us-east-1:123456789012:test-queue"
+        batch_size       = 10
+      }
+    ]
+  }
+
+  assert {
+    condition     = length(aws_lambda_permission.this) == 1
+    error_message = "One lambda permission should be created."
+  }
+
+  assert {
+    condition     = length(aws_lambda_event_source_mapping.this) == 1
+    error_message = "One event source mapping should be created."
+  }
+
+  assert {
+    condition     = aws_lambda_event_source_mapping.this["0"].function_name == aws_lambda_alias.live["live"].arn
+    error_message = "Event source traffic must follow the live alias."
+  }
+
+  assert {
+    condition     = output.alias_arns["live"] == aws_lambda_alias.live["live"].arn && output.alias_arns["staging"] == aws_lambda_alias.this["staging"].arn
+    error_message = "Alias outputs must include both Ravion-managed and user-defined aliases."
+  }
+}
+
+run "preserve_live_pointer_but_advance_user_aliases" {
+  command = plan
+
+  variables {
+    aliases = {
+      live = {
+        function_version = "2"
+      }
+      staging = {
+        function_version = "2"
+      }
+    }
+  }
+
+  assert {
+    condition     = aws_lambda_alias.live["live"].function_version == "1"
+    error_message = "Terraform must preserve the live pointer after creation, even when configured differently."
+  }
+
+  assert {
+    condition     = aws_lambda_alias.this["staging"].function_version == "2"
+    error_message = "User-defined aliases must still advance when their configured function_version changes."
   }
 }

@@ -3,6 +3,7 @@
 ################################################################################
 
 resource "aws_s3_bucket_public_access_block" "this" {
+  region = var.region
   bucket = aws_s3_bucket.this.id
 
   block_public_acls       = var.block_public_acls

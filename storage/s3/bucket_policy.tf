@@ -23,6 +23,7 @@ locals {
 resource "aws_s3_bucket_policy" "this" {
   count = local.create_bucket_policy ? 1 : 0
 
+  region = var.region
   bucket = aws_s3_bucket.this.id
 
   policy = jsonencode({

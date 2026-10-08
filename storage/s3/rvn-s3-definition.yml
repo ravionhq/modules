@@ -3,8 +3,8 @@ definition:
   name: S3 Bucket
   description: S3 bucket with public access blocking, encryption, versioning, CORS, lifecycle rules, and configurable bucket policies.
 release:
-  version: 1.1.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 2.0.0
+  description: Create the bucket in the selected region instead of the Terraform runner's. A bucket an earlier version created in another region is replaced there, and the apply fails while that bucket still holds objects.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -429,12 +429,25 @@ module:
 
     For private buckets served through rvn-cloudfront, apply the CloudFront module first, then add the CloudFront OAC read template here with the CloudFront distribution ARN. The bucket remains private because access is granted only to the CloudFront service principal for that distribution.
 
+    ## Requester pays
+
+    Requester pays is not in the form. Turn it on with Advanced Terraform variables:
+
+    ```yaml
+    advanced_terraform_variables:
+      requester_pays_enabled: true
+    ```
+
+    With Requester pays on, the AWS account that signs a request pays for the request and its data transfer, and you pay only for storage. S3 refuses anonymous requests and requests that do not send the `x-amz-request-payer: requester` header, so nobody downloads at your expense by accident. Requests you make with your own account's credentials are still billed to you.
+
+    Requester pays decides who pays, not who may read. To let other accounts read the bucket, grant them access with Custom policy JSON as well.
+
     ## Configuration
 
     | Setting | Required | Default | Notes |
     | --- | --- | --- | --- |
     | AWS account | Yes | None | AWS account where the bucket is created. |
-    | Region | Yes | None | AWS Region for the bucket. |
+    | Region | Yes | None | AWS Region the bucket is created in. |
     | Bucket name | Yes | Project, environment, and module given IDs | Must be globally unique and follow S3 naming rules. |
     | Force destroy | No | false | Deletes objects during bucket destroy. Use with caution. |
     | Public access block settings | No | true | Four independent controls for ACLs and public bucket policies. |

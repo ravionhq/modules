@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.1.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 2.1.3
+  description: Sandbox builds can run on spot hosts and start over if AWS reclaims the host. Turn off Interruptible build if your build commands change anything outside the build, such as running database migrations.
 module:
   inputs:
     - id: section_cluster
