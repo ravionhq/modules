@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.9.0
+  version: 0.10.0
   description: Default new builds to sandbox with 14 vCPU and 28 GiB.
 module:
   inputs:
@@ -21,9 +21,10 @@ module:
     - id: addons
       label: EKS add-ons
       type: $ref:rvn-eks-addons
-      description: Select the EKS Add-ons module attached to the cluster above to use its observability providers in the Metrics and Logs tabs.
+      description: Select this cluster's Add-ons module for observability or KEDA when using Spot burst.
       mapped_inputs:
         - $include: ../../partials/inputs/eks-workload-observability-mapped-inputs.yml
+        - $include: ../../partials/inputs/eks-workload-spot-burst-mapped-inputs.yml
       required: false
     - id: section_service
       label: Worker service
@@ -41,6 +42,9 @@ module:
       label: Autoscaling
       type: boolean
       description: Scale pods with a HorizontalPodAutoscaler. Requires the metrics server or an equivalent metrics API in the cluster.
+      show_when:
+        spot_burst_enabled:
+          not: true
       default: false
     - id: autoscaling_min_replicas
       label: Minimum pods
@@ -49,6 +53,8 @@ module:
       min: 1
       show_when:
         autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
       default: 1
     - id: autoscaling_max_replicas
       label: Maximum pods
@@ -57,6 +63,8 @@ module:
       min: 1
       show_when:
         autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
       default: 3
     - id: autoscaling_cpu_target
       label: CPU target (%)
@@ -66,6 +74,8 @@ module:
       min: 1
       show_when:
         autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
       default: 70
     - id: autoscaling_memory_target
       label: Memory target (%)
@@ -77,6 +87,8 @@ module:
       min: 1
       show_when:
         autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
     - id: replica_count
       label: Pods
       type: number
@@ -85,7 +97,10 @@ module:
       min: 0
       show_when:
         autoscaling_enabled: false
+        spot_burst_enabled:
+          not: true
       default: 1
+    - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
     - id: rollout_max_surge_percent
       label: Maximum rollout surge (%)
       type: number
@@ -164,15 +179,23 @@ module:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
                 replicaCount: >-
-                  << module.input.autoscaling_enabled ? (module.input.autoscaling_min_replicas != nil ?
+                  << module.input.autoscaling_enabled == true ? (module.input.autoscaling_min_replicas != nil ?
                   module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
                   module.input.replica_count : 1) >>
                 autoscaling:
-                  enabled: '<< module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : false >>'
+                  enabled: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? false : (module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : false) >>'
                   minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 1 >>'
                   maxReplicas: '<< module.input.autoscaling_max_replicas != nil ? module.input.autoscaling_max_replicas : 3 >>'
                   targetCPUUtilizationPercentage: '<< module.input.autoscaling_cpu_target != nil ? module.input.autoscaling_cpu_target : 70 >>'
                   targetMemoryUtilizationPercentage: << module.input.autoscaling_memory_target >>
+                spotBurst:
+                  enabled: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" >>'
+                  kedaEnabled: '<< module.input.keda_enabled == true >>'
+                  baselineReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_baseline_replicas != nil ? module.input.spot_burst_baseline_replicas : 2 >>'
+                  maxReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_max_replicas != nil ? module.input.spot_burst_max_replicas : 8 >>'
+                  pollingInterval: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_polling_interval != nil ? module.input.spot_burst_polling_interval : 30 >>'
+                  cooldownPeriod: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_cooldown_period != nil ? module.input.spot_burst_cooldown_period : 300 >>'
+                  triggers: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_triggers != nil ? module.input.spot_burst_triggers : [] >>'
   ui:
     metrics:
       - $include: ../../partials/ui/eks-workload-pod-metrics.yml
@@ -195,7 +218,7 @@ module:
           aws_account_id: << module.input.aws_account_id >>
           region: << module.input.amp_workspace_region >>
           workspace_id: << module.input.amp_workspace_id >>
-          query: 'sum(kube_deployment_status_replicas_available{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+          query: 'sum(kube_deployment_status_replicas_available{namespace="<< module.input.namespace >>",deployment=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>"})'
       - id: replicas_available
         name: Replicas available
         type: line
@@ -204,7 +227,7 @@ module:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>
           endpoint: << module.input.prometheus_endpoint >>
-          query: 'sum(kube_deployment_status_replicas_available{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+          query: 'sum(kube_deployment_status_replicas_available{namespace="<< module.input.namespace >>",deployment=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>"})'
       - id: replicas_desired
         name: Replicas desired
         type: line
@@ -214,7 +237,7 @@ module:
           aws_account_id: << module.input.aws_account_id >>
           region: << module.input.amp_workspace_region >>
           workspace_id: << module.input.amp_workspace_id >>
-          query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+          query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>"})'
       - id: replicas_desired
         name: Replicas desired
         type: line
@@ -223,7 +246,7 @@ module:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>
           endpoint: << module.input.prometheus_endpoint >>
-          query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment="<< module.input.name >>"})'
+          query: 'sum(kube_deployment_spec_replicas{namespace="<< module.input.namespace >>",deployment=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>"})'
     logs:
       - $include: ../../partials/ui/eks-workload-logs.yml
   readme: |
@@ -255,6 +278,7 @@ module:
     ## Prerequisites
 
     - An **EKS Cluster** module.
+    - An **EKS Add-ons** module attached to that cluster with KEDA enabled, if using Spot burst.
     - The **External Secrets Operator** add-on on that cluster, if the worker uses Runtime secrets.
 
     ## Build and image options
@@ -308,6 +332,14 @@ module:
 
     Autoscaling is **off** by default, unlike the web module. CPU utilization is a poor proxy for worker demand: a worker blocked on a queue poll uses almost no CPU no matter how deep the backlog. Enable it when the work is genuinely CPU-bound, and prefer a fixed pod count otherwise.
 
+    ### KEDA Spot burst
+
+    **Spot burst** is optional and off by default. Enable it only with **Compute target** set to **EC2 on-demand**; configure **Baseline pods** (default 2, minimum 1), **Maximum Spot pods** (default 8, minimum 1), **Polling interval (secs)** (default 30), **Cooldown period (secs)** (default 300), and the required **KEDA triggers** array. The On-Demand baseline remains fixed while a separate Spot Deployment scales from zero. CPU- or memory-only triggers cannot wake a zero-replica Deployment; choose a signal that exists while no Spot application pods are running, and set demand thresholds with baseline capacity in mind.
+
+    Select **KEDA** in the EKS add-ons module and apply the add-ons before enabling burst mode. Authentication resources and any referenced Kubernetes Secrets must be provisioned separately in the appropriate namespace or cluster scope. Put references, not credentials, in the trigger configuration; this module does not create trigger IAM permissions. KEDA 2.20.2's published Kubernetes test matrix covers versions 1.33–1.35; verify compatibility with newer clusters, including 1.36, in staging.
+
+    The Spot Deployment reuses the same image and pod configuration, so review duplicate job processing and idempotency before enabling it; no application code or configuration is migrated automatically. Each active Spot pod and the KEDA controllers add cost, and Spot capacity may be interrupted or unavailable. The first Spot Deployment render starts at zero, including on an existing release. Zero replicas do not exercise the new Spot image; verify activation and readiness separately in staging. Later Helm upgrades preserve its live replica count using Kubernetes `lookup`; offline renders show zero and the deployment identity needs permission to read Deployments in the namespace. Validate permissions, trigger behavior, and scaling in staging before production.
+
     **Shutdown grace period (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
 
     ### Zone placement
@@ -357,6 +389,7 @@ module:
     | Field | Required | Default | Description |
     | ----- | -------- | ------- | ----------- |
     | Cluster | Yes | - | Existing rvn-eks-cluster module instance |
+    | EKS add-ons | No | - | Optional rvn-eks-addons instance on this cluster; required with KEDA enabled for Spot burst |
     | Service name | Yes | {project}-{env}-{module} | Helm release name and name of the Kubernetes objects |
     | Namespace | Yes | {project}-{env} | Kubernetes namespace the release installs into |
     | Create namespace | No | true | Create the namespace if it does not exist |
@@ -377,6 +410,7 @@ module:
     | Start command arguments | No | [] | Overrides the image default arguments |
     | CPU request | Yes | 100m | CPU reserved per pod, in cores or millicores |
     | Compute target | Yes | Automatic | Automatic, EC2 on-demand, EC2 Spot, or on-demand EKS Fargate placement |
+    | Spot burst | No | false | Optional KEDA-scaled Spot pool; available with EC2 on-demand and KEDA enabled |
     | CPU limit | No | - | Optional CPU ceiling |
     | Memory request | Yes | 256Mi | Memory reserved per pod |
     | Memory limit | Yes | 512Mi | Memory ceiling per pod |
@@ -386,6 +420,11 @@ module:
     | CPU target (%) | No | 70 | Average CPU utilization target |
     | Memory target (%) | No | - | Optional average memory utilization target |
     | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
+    | Baseline pods | No | 2 | Fixed On-Demand replicas during Spot burst; minimum 1 |
+    | Maximum Spot pods | No | 8 | Maximum Spot replicas during burst; minimum 1 |
+    | KEDA triggers | Yes (when Spot burst is enabled) | - | Must work at zero Spot replicas |
+    | Polling interval (secs) | No | 30 | KEDA trigger polling interval |
+    | Cooldown period (secs) | No | 300 | Delay before KEDA scales Spot replicas down |
     | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
     | Shutdown grace period (secs) | No | 30 | Drain window after SIGTERM |
     | Runtime environment variables | No | - | Array of {name, value} objects |

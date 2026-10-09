@@ -23,7 +23,11 @@ metadata:
 spec:
   podSelector:
     matchLabels:
+      {{- if .Values.spotBurst.enabled }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- else }}
       {{- include "rvn-eks-web.selectorLabels" . | nindent 6 }}
+      {{- end }}
   policyTypes:
     - Ingress
   ingress:

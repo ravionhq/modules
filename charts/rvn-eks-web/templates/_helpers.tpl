@@ -107,9 +107,89 @@ Lowest replica count the chart can run at: the HPA floor when autoscaling,
 otherwise the fixed replica count.
 */}}
 {{- define "rvn-eks-web.replicaFloor" -}}
-{{- if .Values.autoscaling.enabled -}}
+{{- if .Values.spotBurst.enabled -}}
+{{- .Values.spotBurst.baselineReplicas -}}
+{{- else if .Values.autoscaling.enabled -}}
 {{- .Values.autoscaling.minReplicas -}}
 {{- else -}}
 {{- .Values.replicaCount -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rvn-eks-web.spotDeploymentName" -}}
+{{- $fullname := include "rvn-eks-web.fullname" . -}}
+{{- if le (len $fullname) 58 -}}
+{{- printf "%s-spot" $fullname -}}
+{{- else -}}
+{{- printf "%s-%s-spot" ($fullname | trunc 49 | trimSuffix "-") ($fullname | sha256sum | trunc 8) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rvn-eks-web.spotSelectorName" -}}
+{{- $name := include "rvn-eks-web.name" . -}}
+{{- if le (len $name) 58 -}}
+{{- printf "%s-spot" $name -}}
+{{- else -}}
+{{- printf "%s-%s-spot" ($name | trunc 49 | trimSuffix "-") ($name | sha256sum | trunc 8) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rvn-eks-web.spotSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "rvn-eks-web.spotSelectorName" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "rvn-eks-web.affinityForPool" -}}
+{{- $root := index . 0 -}}
+{{- $isSpot := index . 1 -}}
+{{- $affinity := deepCopy ($root.Values.affinity | default dict) -}}
+{{- if not $root.Values.spotBurst.enabled -}}
+{{- if $affinity -}}
+{{- toYaml $affinity -}}
+{{- end -}}
+{{- else -}}
+{{- $nodeAffinity := get $affinity "nodeAffinity" | default dict -}}
+{{- $required := get $nodeAffinity "requiredDuringSchedulingIgnoredDuringExecution" | default dict -}}
+{{- $terms := list (dict) -}}
+{{- if hasKey $required "nodeSelectorTerms" -}}
+{{- $terms = get $required "nodeSelectorTerms" -}}
+{{- end -}}
+{{- $capacityRequirements := list
+  (dict "key" "eks.amazonaws.com/capacityType" "operator" "In" "values" (list (ternary "SPOT" "ON_DEMAND" $isSpot)))
+  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list (ternary "spot" "on-demand" $isSpot)))
+-}}
+{{- $combinedTerms := list -}}
+{{- range $term := $terms -}}
+  {{- range $requirement := $capacityRequirements -}}
+    {{- $combined := deepCopy $term -}}
+    {{- $expressions := get $combined "matchExpressions" | default (list) -}}
+    {{- $_ := set $combined "matchExpressions" (append $expressions $requirement) -}}
+    {{- $combinedTerms = append $combinedTerms $combined -}}
+  {{- end -}}
+{{- end -}}
+{{- $_ := set $required "nodeSelectorTerms" $combinedTerms -}}
+{{- $_ := set $nodeAffinity "requiredDuringSchedulingIgnoredDuringExecution" $required -}}
+{{- $_ := set $affinity "nodeAffinity" $nodeAffinity -}}
+{{- toYaml $affinity -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rvn-eks-web.spotDeploymentReplicas" -}}
+{{- $root := . -}}
+{{- $name := include "rvn-eks-web.spotDeploymentName" $root -}}
+{{- $deployment := lookup "apps/v1" "Deployment" $root.Release.Namespace $name -}}
+{{- if $deployment -}}
+  {{- $labels := dig "metadata" "labels" (dict) $deployment -}}
+  {{- $annotations := dig "metadata" "annotations" (dict) $deployment -}}
+  {{- if or
+    (ne (get $labels "app.kubernetes.io/managed-by") "Helm")
+    (ne (get $annotations "meta.helm.sh/release-name") $root.Release.Name)
+    (ne (get $annotations "meta.helm.sh/release-namespace") $root.Release.Namespace)
+  -}}
+    {{- fail (printf "spot-burst Deployment %q already exists but is not owned by Helm release %s in namespace %s; refusing to adopt it" $name $root.Release.Name $root.Release.Namespace) -}}
+  {{- end -}}
+  {{- dig "spec" "replicas" 0 $deployment -}}
+{{- else -}}
+0
 {{- end -}}
 {{- end -}}
