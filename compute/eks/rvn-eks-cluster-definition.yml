@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.6.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 0.6.1
+  description: Look up Kubernetes versions with the module's AWS account so the version picker no longer fails with AWS access denied.
 module:
   inputs:
     - id: network
@@ -83,7 +83,7 @@ module:
       min_current_value: true
       required: true
       type: string
-      values: $values:aws/eks-versions?region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
+      values: $values:aws/eks-versions?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
     - default: true
       description: Destroy and replacement plans fail until this is turned off.
       id: deletion_protection_enabled
