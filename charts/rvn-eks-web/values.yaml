@@ -153,11 +153,13 @@ autoscaling:
   targetMemoryUtilizationPercentage: null
 
 # -- Keep a fixed baseline on On-Demand and use KEDA to scale a second,
-# Spot-only Deployment from zero. Requires KEDA installed by rvn-eks-addons.
+# Spot-only Deployment from its configured minimum. Requires KEDA installed by
+# rvn-eks-addons.
 spotBurst:
   enabled: false
   kedaEnabled: false
   baselineReplicas: 2
+  minReplicas: 0
   maxReplicas: 8
   pollingInterval: 30
   cooldownPeriod: 300

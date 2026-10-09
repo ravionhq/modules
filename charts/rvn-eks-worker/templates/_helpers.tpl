@@ -129,6 +129,10 @@ app.kubernetes.io/name: {{ include "rvn-eks-worker.spotSelectorName" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{- define "rvn-eks-worker.spotReplicasAtMinimum" -}}
+{{- max .minimum .replicas -}}
+{{- end -}}
+
 {{- define "rvn-eks-worker.affinityForPool" -}}
 {{- $root := index . 0 -}}
 {{- $isSpot := index . 1 -}}
@@ -178,8 +182,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   -}}
     {{- fail (printf "spot-burst Deployment %q already exists but is not owned by Helm release %s in namespace %s; refusing to adopt it" $name $root.Release.Name $root.Release.Namespace) -}}
   {{- end -}}
-  {{- dig "spec" "replicas" 0 $deployment -}}
+  {{- include "rvn-eks-worker.spotReplicasAtMinimum" (dict "minimum" $root.Values.spotBurst.minReplicas "replicas" (dig "spec" "replicas" 0 $deployment)) -}}
 {{- else -}}
-0
+{{- include "rvn-eks-worker.spotReplicasAtMinimum" (dict "minimum" $root.Values.spotBurst.minReplicas "replicas" 0) -}}
 {{- end -}}
 {{- end -}}
