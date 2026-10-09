@@ -61,6 +61,18 @@ resource "helm_release" "karpenter" {
       }),
     ],
     var.karpenter_helm_values,
+    # This setting owns the staticCapacity gate. Keep it last so an advanced
+    # Helm value cannot leave static capacity enabled after the count is zero,
+    # while all other caller settings and feature gates remain intact.
+    [
+      yamlencode({
+        settings = {
+          featureGates = {
+            staticCapacity = var.karpenter_spot_warm_min_instances > 0
+          }
+        }
+      }),
+    ],
   )
 
   # The controller pod needs the Pod Identity association and interruption
@@ -117,6 +129,9 @@ resource "helm_release" "karpenter_default_node_pool" {
         expireAfter         = var.karpenter_default_node_pool.expire_after
         consolidationPolicy = var.karpenter_default_node_pool.consolidation_policy
         consolidateAfter    = var.karpenter_default_node_pool.consolidate_after
+      }
+      spotWarm = {
+        minInstances = var.karpenter_spot_warm_min_instances
       }
     }),
   ]

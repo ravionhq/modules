@@ -1,0 +1,60 @@
+- id: spot_burst_enabled
+  label: Spot burst
+  type: boolean
+  description: Run a fixed On-Demand baseline with a separate KEDA-scaled Spot pool that starts at zero.
+  show_when:
+    compute_target: on_demand
+  default: false
+- id: spot_burst_baseline_replicas
+  label: Baseline pods
+  type: number
+  description: Fixed number of On-Demand pods kept available while the Spot pool scales independently.
+  max: 1000
+  min: 1
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 2
+- id: spot_burst_max_replicas
+  label: Maximum Spot pods
+  type: number
+  description: Upper limit for pods in the KEDA-scaled Spot pool.
+  max: 1000
+  min: 1
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 8
+- id: spot_burst_triggers
+  label: KEDA triggers
+  type: array
+  description: At least one trigger must report demand while Spot replicas are zero; CPU or memory alone cannot wake the pool. Reference pre-created authentication resources only.
+  placeholder: |-
+    - type: <KEDA scaler type>
+      metadata:
+        <key>: <string value>
+      authenticationRef:
+        name: <pre-created authentication resource>
+        kind: TriggerAuthentication
+  required: true
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+- id: spot_burst_polling_interval
+  label: Polling interval (secs)
+  type: number
+  description: Seconds between KEDA trigger checks.
+  min: 1
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 30
+- id: spot_burst_cooldown_period
+  label: Cooldown period (secs)
+  type: number
+  description: Seconds KEDA waits after the last active trigger before scaling the Spot pool down.
+  min: 0
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 300

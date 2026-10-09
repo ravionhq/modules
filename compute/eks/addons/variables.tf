@@ -354,6 +354,73 @@ variable "karpenter_default_node_pool_creation_enabled" {
   default     = true
 }
 
+variable "keda_enabled" {
+  type        = bool
+  description = "Install KEDA and its CRDs for event-driven workload autoscaling. Scaling triggers are configured separately on workloads."
+  default     = false
+  nullable    = false
+}
+
+variable "keda_namespace" {
+  type        = string
+  description = "Namespace for KEDA's operator, metrics API server and admission webhooks."
+  default     = "keda"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.keda_namespace))
+    error_message = "The keda_namespace must be a valid Kubernetes namespace name."
+  }
+}
+
+variable "keda_chart_version" {
+  type        = string
+  description = "Pinned KEDA Helm chart version. Verify Kubernetes compatibility before upgrading or enabling."
+  default     = "2.20.2"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.keda_chart_version))
+    error_message = "The keda_chart_version must be a pinned major.minor.patch version."
+  }
+}
+
+variable "keda_helm_values" {
+  type        = list(string)
+  description = "Additional KEDA Helm values documents. Overrides can change controller placement and installed components; do not put credentials in values."
+  default     = []
+  nullable    = false
+}
+
+variable "karpenter_spot_warm_min_instances" {
+  type        = number
+  description = "Minimum number of Spot instances in a static warm NodePool. A positive value enables alpha static Spot capacity; zero disables the feature. Workloads must tolerate and select Spot capacity to use it."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.karpenter_spot_warm_min_instances >= 0 && var.karpenter_spot_warm_min_instances == floor(var.karpenter_spot_warm_min_instances)
+    error_message = "The karpenter_spot_warm_min_instances must be a non-negative integer."
+  }
+
+  validation {
+    condition     = var.karpenter_spot_warm_min_instances == 0 || (var.karpenter_enabled && var.karpenter_default_node_pool_creation_enabled)
+    error_message = "The karpenter_spot_warm_min_instances requires both karpenter_enabled and karpenter_default_node_pool_creation_enabled to be true when nonzero."
+  }
+
+  validation {
+    condition = var.karpenter_spot_warm_min_instances == 0 || try(
+      tonumber(split(".", var.karpenter_chart_version)[0]) > 1 ||
+      (
+        tonumber(split(".", var.karpenter_chart_version)[0]) == 1 &&
+        tonumber(split(".", var.karpenter_chart_version)[1]) >= 8
+      ),
+      false,
+    )
+    error_message = "The karpenter_chart_version must be at least 1.8.0 when karpenter_spot_warm_min_instances is nonzero because static NodePools require Karpenter's staticCapacity feature gate."
+  }
+}
+
 variable "node_subnet_ids" {
   type        = list(string)
   description = "Private subnet IDs (node_subnet_ids output of the compute/eks stack). Used by the default Karpenter NodePool to launch nodes and by internal load balancers. Required when Karpenter's default NodePool, the private ALB, or the private NLB is enabled."

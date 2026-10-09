@@ -79,11 +79,11 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v2.1.3 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.1.3 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.15.0 | `compute/eks/addons/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.16.0 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v0.2.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.6.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.5.3 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.8.3 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.6.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.9.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.0 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.0.3 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
