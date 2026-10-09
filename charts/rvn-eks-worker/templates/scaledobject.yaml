@@ -1,0 +1,25 @@
+{{- if .Values.spotBurst.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "rvn-eks-worker.spotDeploymentName" . }}
+  labels:
+    {{- include "rvn-eks-worker.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "rvn-eks-worker.spotDeploymentName" . }}
+  minReplicaCount: 0
+  maxReplicaCount: {{ .Values.spotBurst.maxReplicas }}
+  pollingInterval: {{ .Values.spotBurst.pollingInterval }}
+  cooldownPeriod: {{ .Values.spotBurst.cooldownPeriod }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+    restoreToOriginalReplicaCount: false
+  triggers:
+    {{- toYaml .Values.spotBurst.triggers | nindent 4 }}
+{{- end }}

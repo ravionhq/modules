@@ -593,6 +593,22 @@ output "prometheus_s3_bucket_arn" {
   value       = local.thanos_bucket_arn
 }
 
+output "keda_enabled" {
+  description = "Whether this add-ons instance installs KEDA for workload ScaledObjects."
+  value       = var.keda_enabled
+  depends_on  = [helm_release.keda]
+}
+
+output "keda_namespace" {
+  description = "KEDA namespace, or null when KEDA is disabled."
+  value       = var.keda_enabled ? var.keda_namespace : null
+}
+
+output "keda_chart_version" {
+  description = "KEDA chart version, or null when KEDA is disabled."
+  value       = var.keda_enabled ? helm_release.keda[0].version : null
+}
+
 output "thanos_role_arns" {
   description = "Pod Identity roles keyed by sidecar, store, and compactor; empty when Thanos is disabled."
   value       = { for name, role in module.thanos_role : name => role.role_arn }

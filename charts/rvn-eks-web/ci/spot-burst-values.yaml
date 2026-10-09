@@ -1,0 +1,61 @@
+# Inert render-test trigger only; this is not a production metric.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-web
+  tag: v1.2.3
+env:
+  - name: LOG_LEVEL
+    value: info
+spotBurst:
+  enabled: true
+  kedaEnabled: true
+  baselineReplicas: 3
+  maxReplicas: 8
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: "http://example.invalid:9090"
+        query: "vector(0)"
+        threshold: "1"
+        activationThreshold: "0"
+        ignoreNullValues: "false"
+podLabels:
+  app.kubernetes.io/name: user-name
+  app.kubernetes.io/instance: user-instance
+  ravion.com/spot-burst-pool: user-pool
+  example.com/test-label: retained
+podAnnotations:
+  example.com/test-annotation: retained
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/instance-type
+              operator: In
+              values:
+                - c8a.xlarge
+        - matchFields:
+            - key: metadata.name
+              operator: In
+              values:
+                - test-node
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        preference:
+          matchExpressions:
+            - key: topology.kubernetes.io/zone
+              operator: In
+              values:
+                - us-east-1a
+  podAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        podAffinityTerm:
+          topologyKey: topology.kubernetes.io/zone
+          labelSelector:
+            matchLabels:
+              app: example
+targetGroupArns:
+  - arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/demo-web-tg/abc123
