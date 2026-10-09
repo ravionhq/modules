@@ -168,7 +168,7 @@ test_spot_burst_chart() {
 
   assert_eq "${chart}: burst mode renders a baseline and Spot Deployment" \
     "2" "$(count "${burst}" Deployment)"
-  assert_eq "${chart}: burst mode creates the Spot Deployment at zero, including an upgrade render" \
+  assert_eq "${chart}: the default minimum keeps initial and upgrade renders at zero" \
     "0" "$(q "$(render "${chart}" spot-upgrade --values "${values}" --is-upgrade)" \
       '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.replicas')"
   assert_eq "${chart}: baseline keeps its stable release name and fixed replica floor" \
@@ -186,6 +186,15 @@ test_spot_burst_chart() {
   assert_eq "${chart}: KEDA may scale the Spot Deployment from zero" \
     "0 8 30 300" \
     "$(q "${burst}" "${scaled} | [.spec.minReplicaCount, .spec.maxReplicaCount, .spec.pollingInterval, .spec.cooldownPeriod] | join(\" \")")"
+  local min_replicas min_burst
+  for min_replicas in 1 3; do
+    min_burst="$(render "${chart}" "min-spot-${min_replicas}" --values "${values}" \
+      --set "spotBurst.minReplicas=${min_replicas}")"
+    assert_eq "${chart}: configured minimum sets initial Spot Deployment replicas (${min_replicas})" \
+      "${min_replicas}" "$(q "${min_burst}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.replicas')"
+    assert_eq "${chart}: configured minimum sets the KEDA ScaledObject floor (${min_replicas})" \
+      "${min_replicas}" "$(q "${min_burst}" '.[] | select(.kind == "ScaledObject") | .spec.minReplicaCount')"
+  done
   assert_eq "${chart}: KEDA scale-down stabilization and restore policy are fixed" \
     "300 false" \
     "$(q "${burst}" "${scaled} | [.spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleDown.stabilizationWindowSeconds, .spec.advanced.restoreToOriginalReplicaCount] | join(\" \")")"
@@ -257,7 +266,8 @@ test_spot_burst_chart() {
 
   local disabled long_name long_first long_second override_case
   disabled="$(render "${chart}" disabled-stale-values --values "${values}" \
-    --set spotBurst.enabled=false --set spotBurst.baselineReplicas=7 --set autoscaling.enabled=true)"
+    --set spotBurst.enabled=false --set spotBurst.baselineReplicas=7 \
+    --set spotBurst.minReplicas=9 --set spotBurst.maxReplicas=8 --set autoscaling.enabled=true)"
   assert_eq "${chart}: disabled burst ignores stale settings and restores ordinary HPA" \
     "1 1 0" \
     "$(count "${disabled}" Deployment) $(count "${disabled}" HorizontalPodAutoscaler) $(count "${disabled}" ScaledObject)"
@@ -320,6 +330,39 @@ test_spot_burst_chart() {
     "api-spot-spot" "$(q "${override_case}" "${override_spot} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
   assert_eq "${chart}: fullname/name override Spot selector matches pod and spread selectors" \
     "api-spot-spot api-spot-spot" "$(q "${override_case}" "${override_spot} | .spec.template.metadata.labels.\"app.kubernetes.io/name\"") $(q "${override_case}" "${override_spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"app.kubernetes.io/name\"")"
+
+  expect_template_failure "${chart}" "${chart}: Spot minimum cannot exceed Spot maximum" \
+    --values "${values}" --set spotBurst.minReplicas=9 --set spotBurst.maxReplicas=8
+
+  local replica_floor_chart="${WORK_DIR}/${chart}-replica-floor"
+  local replica_floor_output="${WORK_DIR}/${chart}-replica-floor.yaml"
+  cp -R "$(chart_path "${chart}")" "${replica_floor_chart}"
+  cat >"${replica_floor_chart}/templates/replica-floor-test.yaml" <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spot-replica-floor-test
+data:
+  replicas: {{ include "${chart}.spotReplicasAtMinimum" (dict "minimum" .Values.spotBurst.minReplicas "replicas" .Values.replicaCount) | quote }}
+EOF
+  helm template test-release "${replica_floor_chart}" --values "${values}" \
+    --set spotBurst.minReplicas=3 --set replicaCount=10 |
+    yq ea '[.] | map(select(. != null))' >"${replica_floor_output}"
+  assert_eq "${chart}: owned live replicas above max are preserved for autoscaler reconciliation" \
+    "10" "$(q "${replica_floor_output}" '.[] | select(.kind == "ConfigMap") | .data.replicas')"
+  helm template test-release "${replica_floor_chart}" --values "${values}" \
+    --set spotBurst.minReplicas=3 --set replicaCount=1 |
+    yq ea '[.] | map(select(. != null))' >"${replica_floor_output}"
+  assert_eq "${chart}: owned live replicas below minimum are raised to the configured floor" \
+    "3" "$(q "${replica_floor_output}" '.[] | select(.kind == "ConfigMap") | .data.replicas')"
+
+  local cpu_with_minimum
+  cpu_with_minimum="$(render "${chart}" cpu-trigger-with-minimum --values "${values}" \
+    --set spotBurst.minReplicas=1 \
+    --set-json 'spotBurst.triggers=[{"type":"cpu","metadata":{"value":"80"}}]')"
+  assert_eq "${chart}: CPU trigger is allowed when the Spot minimum is nonzero" \
+    "1 1 cpu" \
+    "$(q "${cpu_with_minimum}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.replicas') $(q "${cpu_with_minimum}" '.[] | select(.kind == "ScaledObject") | .spec.minReplicaCount') $(q "${cpu_with_minimum}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].type')"
 
   expect_template_failure "${chart}" "${chart}: burst requires at least one external trigger" \
     --values "${values}" --set-json 'spotBurst.triggers=[]'
