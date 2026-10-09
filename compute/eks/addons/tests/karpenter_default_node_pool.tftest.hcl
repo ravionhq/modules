@@ -77,6 +77,10 @@ run "default_node_pool_renders_hardened_without_a_customer_key" {
     error_message = "Karpenter nodes must launch with an IMDS hop limit of 1."
   }
   assert {
+    condition     = helm_release.karpenter_default_node_pool[0].version == yamldecode(file("charts/karpenter-resources/Chart.yaml")).version
+    error_message = "The default NodePool release must pin the chart version so plans pick up chart version bumps."
+  }
+  assert {
     condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).ec2NodeClass.rootVolume == { deviceName = "/dev/xvda", size = "20Gi", type = "gp3", kmsKeyId = "" }
     error_message = "The default root volume must be a 20Gi gp3 on /dev/xvda with the AWS-managed key."
   }

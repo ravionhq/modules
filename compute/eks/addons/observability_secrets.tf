@@ -53,6 +53,8 @@ resource "helm_release" "observability_secrets" {
   name      = "ravion-observability-secrets"
   namespace = local.observability_namespace
   chart     = "${path.module}/charts/observability-secrets"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/observability-secrets/Chart.yaml")).version
 
   create_namespace = true
   upgrade_install  = true

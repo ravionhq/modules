@@ -67,6 +67,7 @@ jobs:
           tofu -chdir=compute/eks/addons validate
           tofu -chdir=compute/eks/addons test -filter=tests/lb_controller.tftest.hcl
           python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_helm_dependencies.py' -v
+          python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_local_chart_versions.py' -v
 
       - name: Test public ALB WAF association
         run: |

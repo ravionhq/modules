@@ -171,6 +171,8 @@ resource "helm_release" "ravion_operator_credential" {
   name      = "ravion-operator-credential"
   namespace = var.ravion_operator_namespace
   chart     = "${path.module}/charts/operator-credential"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/operator-credential/Chart.yaml")).version
 
   create_namespace = true
   upgrade_install  = true

@@ -34,9 +34,11 @@ locals {
 resource "helm_release" "ebs_storage" {
   count = local.ebs_default_storage_class_enabled || local.statefulset_volume_expansion_enabled ? 1 : 0
 
-  name            = "ebs-storage"
-  namespace       = "kube-system"
-  chart           = "${path.module}/charts/ebs-storage"
+  name      = "ebs-storage"
+  namespace = "kube-system"
+  chart     = "${path.module}/charts/ebs-storage"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version         = yamldecode(file("${path.module}/charts/ebs-storage/Chart.yaml")).version
   upgrade_install = true
 
   values = [yamlencode({

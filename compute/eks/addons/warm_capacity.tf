@@ -4,6 +4,8 @@ resource "helm_release" "ravion_operator_warm_capacity" {
   name      = "ravion-warm-capacity"
   namespace = var.ravion_operator_namespace
   chart     = "${path.module}/charts/warm-capacity"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/warm-capacity/Chart.yaml")).version
 
   upgrade_install = true
 
