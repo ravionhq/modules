@@ -291,7 +291,7 @@ describe("compiler", () => {
       );
       const kedaEnabled = findInput(addonInputs, "keda_enabled");
       assert.equal(kedaEnabled.type, "boolean");
-      assert.equal(kedaEnabled.required, false);
+      assert.equal(Object.hasOwn(kedaEnabled, "required"), false);
       assert.equal(addons.required, name === "rvn-eks-web");
       assert.equal(
         kedaEnabled.default,

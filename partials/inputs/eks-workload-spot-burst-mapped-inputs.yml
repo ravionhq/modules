@@ -2,5 +2,4 @@
   label: KEDA enabled
   type: boolean
   description: Read from the selected EKS Add-ons module's applied output; missing outputs default to false.
-  required: false
   default: '<< ref.output.keda_enabled == true >>'
