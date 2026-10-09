@@ -2,4 +2,4 @@ apiVersion: v2
 name: karpenter-resources
 description: Default Karpenter NodePool and EC2NodeClass for the compute/eks stack.
 type: application
-version: 0.1.0
+version: 0.2.0

@@ -152,6 +152,17 @@ autoscaling:
   # -- Set to a number to add a memory metric.
   targetMemoryUtilizationPercentage: null
 
+# -- Keep a fixed baseline on On-Demand and use KEDA to scale a second,
+# Spot-only Deployment from zero. Requires KEDA installed by rvn-eks-addons.
+spotBurst:
+  enabled: false
+  kedaEnabled: false
+  baselineReplicas: 2
+  maxReplicas: 8
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers: []
+
 # -- PodDisruptionBudget limiting voluntary disruptions (node drains,
 # consolidation, upgrades). Rendered only when the replica floor
 # (autoscaling.minReplicas, or replicaCount) is greater than minAvailable: a

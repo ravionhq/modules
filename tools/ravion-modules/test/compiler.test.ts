@@ -95,6 +95,7 @@ describe("compiler", () => {
     const values = assertRecord(definition.values, "module.deploy.definition.values");
 
     assert.equal(compiled.published, false);
+    assert.equal(inputs.some((input) => input.id === "spot_burst_enabled"), false);
     assert.equal(findInput(inputs, "scheduling_enabled").default, true);
     assert.equal(inputs.some((input) => input.id === "suspend"), false);
     assert.equal(
@@ -232,6 +233,127 @@ describe("compiler", () => {
     );
   });
 
+  it("compiles EKS web and worker Spot burst inputs with nil-safe KEDA wiring", async () => {
+    for (const [name, inputDefault] of [
+      ["rvn-eks-web", 2],
+      ["rvn-eks-worker", 1],
+    ] as const) {
+      const compiled = await compileDefinitionFile(
+        join(repoRoot, "compute", "eks_service", `${name}-definition.yml`),
+      );
+      const inputs = getModuleInputs(compiled.module);
+      const burstEnabled = findInput(inputs, "spot_burst_enabled");
+      assert.equal(burstEnabled.type, "boolean");
+      assert.equal(burstEnabled.default, false);
+      assert.deepEqual(burstEnabled.show_when, { compute_target: "on_demand" });
+
+      for (const [inputId, defaultValue] of [
+        ["spot_burst_baseline_replicas", 2],
+        ["spot_burst_max_replicas", 8],
+        ["spot_burst_polling_interval", 30],
+        ["spot_burst_cooldown_period", 300],
+      ] as const) {
+        const input = findInput(inputs, inputId);
+        assert.equal(input.type, "number");
+        assert.equal(input.default, defaultValue);
+        assert.deepEqual(input.show_when, {
+          compute_target: "on_demand",
+          spot_burst_enabled: true,
+        });
+      }
+      assert.equal(findInput(inputs, "spot_burst_baseline_replicas").min, 1);
+      assert.equal(findInput(inputs, "spot_burst_max_replicas").min, 1);
+      assert.equal(findInput(inputs, "spot_burst_polling_interval").min, 1);
+      assert.equal(findInput(inputs, "spot_burst_cooldown_period").min, 0);
+      const triggers = findInput(inputs, "spot_burst_triggers");
+      assert.equal(triggers.type, "array");
+      assert.equal(triggers.required, true);
+      assert.equal(triggers.default, undefined);
+      assert.match(String(triggers.description), /zero/);
+      assert.match(String(triggers.description), /CPU or memory alone/);
+      assert.deepEqual(triggers.show_when, {
+        compute_target: "on_demand",
+        spot_burst_enabled: true,
+      });
+
+      const autoscalingEnabled = findInput(inputs, "autoscaling_enabled");
+      assert.deepEqual(autoscalingEnabled.show_when, {
+        spot_burst_enabled: { not: true },
+      });
+      assert.deepEqual(findInput(inputs, "replica_count").show_when, {
+        autoscaling_enabled: false,
+        spot_burst_enabled: { not: true },
+      });
+
+      const addons = findInput(inputs, "addons");
+      const addonInputs = (addons.mapped_inputs as unknown[]).map((input) =>
+        assertRecord(input, `${name} addons.mapped_inputs[]`),
+      );
+      const kedaEnabled = findInput(addonInputs, "keda_enabled");
+      assert.equal(kedaEnabled.type, "boolean");
+      assert.equal(Object.hasOwn(kedaEnabled, "required"), false);
+      assert.equal(addons.required, name === "rvn-eks-web");
+      assert.equal(
+        kedaEnabled.default,
+        "<< ref.output.keda_enabled == true >>",
+      );
+
+      const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
+      const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
+      const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
+      const spotBurst = assertRecord(values.spotBurst, `${name}.spotBurst`);
+      const autoscaling = assertRecord(values.autoscaling, `${name}.autoscaling`);
+      assert.equal(
+        spotBurst.enabled,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" >>',
+      );
+      assert.equal(spotBurst.kedaEnabled, "<< module.input.keda_enabled == true >>");
+      assert.equal(
+        spotBurst.baselineReplicas,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_baseline_replicas != nil ? module.input.spot_burst_baseline_replicas : 2 >>',
+      );
+      assert.equal(
+        spotBurst.maxReplicas,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_max_replicas != nil ? module.input.spot_burst_max_replicas : 8 >>',
+      );
+      assert.equal(
+        spotBurst.pollingInterval,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_polling_interval != nil ? module.input.spot_burst_polling_interval : 30 >>',
+      );
+      assert.equal(
+        spotBurst.cooldownPeriod,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_cooldown_period != nil ? module.input.spot_burst_cooldown_period : 300 >>',
+      );
+      assert.equal(
+        spotBurst.triggers,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_triggers != nil ? module.input.spot_burst_triggers : [] >>',
+      );
+      assert.equal(
+        autoscaling.enabled,
+        name === "rvn-eks-web"
+          ? '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? false : (module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : true) >>'
+          : '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? false : (module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : false) >>',
+      );
+      const replicaCount = String(values.replicaCount);
+      assert.match(
+        replicaCount,
+        name === "rvn-eks-web"
+          ? /module\.input\.autoscaling_enabled != false \?/
+          : /module\.input\.autoscaling_enabled == true \?/,
+      );
+      assert.doesNotMatch(replicaCount, /module\.input\.autoscaling_enabled \?/);
+      assert.ok(
+        replicaCount.includes(
+          `module.input.replica_count != nil ? module.input.replica_count : ${inputDefault}) >>`,
+        ),
+      );
+      assert.match(
+        String(values.affinity),
+        /module\.input\.spot_burst_enabled == true && module\.input\.compute_target == "on_demand" \? \{\}/,
+      );
+    }
+  });
+
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
@@ -362,6 +484,38 @@ describe("compiler", () => {
     );
 
     const addonsInputs = getModuleInputs(addons.module);
+    const spotWarm = findInput(addonsInputs, "karpenter_spot_warm_min_instances");
+    assert.equal(spotWarm.label, "Minimum warm Spot instances");
+    assert.equal(spotWarm.default, 0);
+    assert.equal(spotWarm.min, 0);
+    assert.deepEqual(spotWarm.show_when, {
+      karpenter_default_node_pool_creation_enabled: true,
+      karpenter_enabled: true,
+    });
+    assert.equal(
+      getTerraformVariable(addons.module, "karpenter_spot_warm_min_instances"),
+      "<< module.input.karpenter_enabled == true && (module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true) && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>",
+    );
+    const kedaEnabled = findInput(addonsInputs, "keda_enabled");
+    assert.equal(kedaEnabled.default, false);
+    assert.equal(
+      getTerraformVariable(addons.module, "keda_enabled"),
+      "<< module.input.keda_enabled == true >>",
+    );
+    assert.deepEqual(findInput(addonsInputs, "keda_namespace").show_when, {
+      keda_enabled: true,
+    });
+    assert.deepEqual(findInput(addonsInputs, "keda_chart_version").show_when, {
+      keda_enabled: true,
+    });
+    assert.equal(
+      getTerraformVariable(addons.module, "keda_namespace"),
+      '<< module.input.keda_enabled == true && module.input.keda_namespace != nil ? module.input.keda_namespace : "keda" >>',
+    );
+    assert.equal(
+      getTerraformVariable(addons.module, "keda_chart_version"),
+      '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>',
+    );
     const addonsCluster = findInput(addonsInputs, "cluster");
     const addonsClusterMappedInputs = (addonsCluster.mapped_inputs as unknown[]).map((input) =>
       assertRecord(input, "addons.cluster.mapped_inputs[]"),
@@ -403,9 +557,13 @@ describe("compiler", () => {
     assert.deepEqual(clusterPrivateSubnetIds.show_when, { compute_target: "fargate" });
     const definition = assertRecord(deploy.definition, "module.deploy.definition");
     const values = assertRecord(definition.values, "module.deploy.definition.values");
-    assert.equal(
-      values.affinity,
-      '<< module.input.compute_target == "on_demand" || module.input.compute_target == "spot" ? {"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"eks.amazonaws.com/capacityType","operator":"In","values":[module.input.compute_target == "spot" ? "SPOT" : "ON_DEMAND"]}]},{"matchExpressions":[{"key":"karpenter.sh/capacity-type","operator":"In","values":[module.input.compute_target == "spot" ? "spot" : "on-demand"]}]}]}}} : {} >>',
+    assert.match(
+      String(values.affinity),
+      /module\.input\.spot_burst_enabled == true && module\.input\.compute_target == "on_demand" \? \{\}/,
+    );
+    assert.match(
+      String(values.affinity),
+      /"eks\.amazonaws\.com\/capacityType"/,
     );
     assert.equal(
       values.podLabels,

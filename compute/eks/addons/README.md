@@ -4,7 +4,8 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 
 | Add-on | Toggle | Default | What it creates |
 |---|---|---|---|
-| **Karpenter** | `karpenter_enabled` | `true` | Controller + node IAM roles, Pod Identity association, instance profile, EKS access entry, SQS interruption queue, EventBridge rules (via `modules/eks_karpenter`), plus the `karpenter-crd` and `karpenter` Helm charts and an optional default NodePool |
+| **KEDA** | `keda_enabled` | `false` | Operator, external metrics API server, admission webhooks and CRDs from the official KEDA Helm chart; workload triggers are separate |
+| **Karpenter** | `karpenter_enabled` | `true` | Controller + node IAM roles, Pod Identity association, instance profile, EKS access entry, SQS interruption queue, EventBridge rules (via `modules/eks_karpenter`), plus the `karpenter-crd` and `karpenter` Helm charts and optional default and static Spot warm NodePools |
 | **AWS Load Balancer Controller** | automatic with any load balancer, or `aws_load_balancer_controller_enabled` opt-in | `false` | `aws-load-balancer-controller` Helm chart wired to the Pod Identity role created by the `compute/eks` composite; registers workload pods into shared load balancer target groups (`TargetGroupBinding`); Ingress → ALB, LoadBalancer Service → NLB |
 | **External Secrets Operator** | `eso_enabled` | `true` | `external-secrets` Helm chart + Pod Identity role scoped to Secrets Manager / Parameter Store reads, plus the cluster-scoped `ravion-aws` and `ravion-aws-parameter-store` `ClusterSecretStore`s |
 | **EBS CSI driver** | `ebs_csi_driver_enabled` | `true` | `aws-ebs-csi-driver` EKS add-on + Pod Identity role, plus the local `charts/ebs-storage`: a default encrypted `gp3` StorageClass with volume expansion (`ebs_default_storage_class_enabled`) and online StatefulSet volume growth (`statefulset_volume_expansion_enabled`, Kubernetes 1.36+). See [EBS storage defaults](#ebs-storage-defaults) |
@@ -32,6 +33,23 @@ replacing nodes, unless explicitly included in
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
+
+## Event-driven autoscaling with KEDA
+
+Set `keda_enabled = true` to install KEDA through this add-ons module. KEDA scales application pods; Karpenter supplies nodes. Neither toggle enables the other, and neither creates application scaling triggers automatically. The controller components default to On-Demand EC2 placement to remain available during Spot interruptions.
+
+| Input | Type | Default | Purpose |
+|---|---|---|---|
+| `keda_enabled` | `bool` | `false` | Install KEDA |
+| `keda_namespace` | `string` | `"keda"` | Controller namespace |
+| `keda_chart_version` | `string` | `"2.20.2"` | Pinned official chart version |
+| `keda_helm_values` | `list(string)` | `[]` | Advanced values overrides, without credentials |
+
+Outputs are `keda_enabled`, `keda_namespace` and `keda_chart_version`; the last two are null when disabled. Install the add-ons before deploying a workload's `ScaledObject`. Configure scaler authentication separately with narrowly scoped access and Secret references; installation grants no AWS data-source permissions. Do not copy credentials into Helm values or trigger metadata.
+
+The chart templates its CRDs, so Helm manages them during upgrades. Remove dependent ScaledObjects and TriggerAuthentications before uninstalling KEDA, and check CRD retention and migration requirements for each version. Do not turn the add-on off while applications depend on it. Only one provider can serve the cluster's `external.metrics.k8s.io` API; check for an existing external-metrics adapter before installing. Control-plane access to KEDA's metrics API and admission webhook must be allowed.
+
+KEDA 2.20's [published test matrix](https://keda.sh/docs/2.20/operate/cluster/) covers Kubernetes 1.33–1.35. Compatibility with Kubernetes 1.36 must be verified in staging; this change does not downgrade a cluster or claim that newer Kubernetes versions have been tested. The configurable chart pin allows a separately verified upgrade.
 
 ## EBS storage defaults
 
@@ -65,6 +83,9 @@ module "eks_addons" {
   ravion_runner_role_arn    = module.eks.ravion_runner_role_arn
 
   ebs_csi_driver_enabled = true
+
+  # Optional alpha static Spot capacity; zero (the default) removes this pool.
+  karpenter_spot_warm_min_instances = 2
 
   # External Secrets Operator (default on) — narrow the read scope from
   # "everything in this account and region" to one prefix
@@ -684,6 +705,7 @@ failed during initialization have no provider resources to migrate.
 | node_subnet_ids | Private subnets for the default NodePool and internal load balancers. Required when Karpenter's default NodePool, the private ALB, or the private NLB is enabled. | `list(string)` | `null` | no |
 | cluster_security_group_id | Cluster security group for Karpenter nodes and load-balancer-to-pod ingress. Required when Karpenter's default NodePool or any shared load balancer is enabled. | `string` | `null` | no |
 | karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry, consolidation). | `object` | `{}` | no |
+| karpenter_spot_warm_min_instances | Minimum warm Spot instances in a static NodePool; zero removes it. | `number` | `0` | no |
 | eso_enabled | Install the External Secrets Operator, its Pod Identity role, and the Ravion ClusterSecretStores. | `bool` | `true` | no |
 | eso_chart_version | external-secrets chart version. | `string` | `"2.11.0"` | no |
 | eso_namespace | Namespace the operator is installed into (created if missing). | `string` | `"external-secrets"` | no |
@@ -876,6 +898,8 @@ All outputs are null when the corresponding add-on is disabled.
 - `kube-dns` zone-local routing is a local chart (`charts/coredns-traffic-distribution`) whose Helm hook Jobs run `kubectl patch` against the Service, for the same reason as the other local charts: the Helm provider is the only Kubernetes access this stack has, and Helm cannot adopt a Service the coredns add-on owns. The `post-install`/`post-upgrade` hook writes `spec.trafficDistribution`, the `pre-delete` hook clears it, so `topology_aware_routing_enabled = false` is a real rollback. The Job's Role can `get` and `patch` exactly one Service.
 - Karpenter CRDs are managed by the dedicated `karpenter-crd` chart because Helm does not upgrade CRDs bundled inside a chart's `crds/` directory. Both charts are pinned to the same version.
 - The default NodePool and EC2NodeClass are delivered as a local chart (`charts/karpenter-resources`) because the Helm provider is the only Kubernetes access this stack has.
+- Set `karpenter_spot_warm_min_instances` above zero to add the alpha `spot-warm` static NodePool (Karpenter 1.8+). It creates whole Spot nodes outside the default NodePool CPU limit; the count is a desired floor, not an availability guarantee, and can add EC2/interruption costs.
+- Workloads must tolerate and select Spot capacity to use `spot-warm`. Warm-capacity placeholders pinned to `karpenter.sh/nodepool=default` remain independent. Returning the count to zero drains and deletes the static pool through normal owner-reference lifecycle, which can disrupt workloads; validate the transition on a live cluster.
 - On destroy, the Helm releases are removed before the AWS-side resources, so Karpenter drains and terminates the nodes it launched while its IAM roles and queue still exist.
 - The cluster must have the Pod Identity Agent add-on (the `compute/eks` composite installs it by default); Karpenter's node access entry additionally requires `authentication_mode = API`.
 - The load balancer controller's IAM role and Pod Identity association come from the `compute/eks` composite (`aws_load_balancer_controller_pod_identity_creation_enabled`, on by default); this stack only installs the chart, with `region` and `vpcId` set explicitly so it works under restricted IMDS and on Fargate. Its CRDs are read from the selected upstream chart version and upgraded through a separate release using the local `charts/aws-load-balancer-controller-crds` wrapper, because Helm never upgrades a chart's `crds/` directory. Every CRD carries `helm.sh/resource-policy: keep`: disabling or destroying the add-on retains the CRDs and their TargetGroupBindings. After all consumers are removed, retained CRDs can be deleted manually; re-enabling the add-on adopts them again. TargetGroupBindings re-check target health every 2 seconds while a pod waits on its load balancer readiness gate, instead of the controller's 15-second default, so rolling deploys finish as soon as the load balancer reports new pods healthy (chart 3.2.0 or newer).

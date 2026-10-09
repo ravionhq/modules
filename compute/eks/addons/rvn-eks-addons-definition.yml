@@ -4,13 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.15.0
-  description: >-
-    Default to Prometheus with Thanos history in S3 and to Tempo traces on S3, with EBS-backed working volumes.
-    An OTLP receiver at an in-cluster Service sends workload traces to Tempo, AWS X-Ray or a vendor, and
-    workload metrics to the metrics destinations. The in-cluster Grafana reads all three, can be served on a
-    shared ALB or through a Kubernetes Ingress such as Tailscale's, and signs people in with username and
-    password or any of Grafana's OAuth providers. Amazon Managed Prometheus stays available, no longer the default.
+  version: 0.16.0
+  description: Optionally keep warm Spot nodes running and install KEDA for event-driven application scaling.
 module:
   inputs:
     - id: cluster
@@ -477,6 +472,15 @@ module:
       show_when:
         karpenter_enabled: true
       type: boolean
+    - default: 0
+      description: Enables alpha static Spot capacity when above zero. Zero removes the pool and disables the feature.
+      id: karpenter_spot_warm_min_instances
+      label: Minimum warm Spot instances
+      min: 0
+      show_when:
+        karpenter_default_node_pool_creation_enabled: true
+        karpenter_enabled: true
+      type: number
     - add_button_label: Add capacity type
       default:
         - on-demand
@@ -549,6 +553,27 @@ module:
         karpenter_default_node_pool_creation_enabled: true
         karpenter_enabled: true
       type: string
+    - id: section_keda
+      label: Event-driven autoscaling
+      type: section
+    - id: keda_enabled
+      label: KEDA
+      type: boolean
+      description: Install the event-driven autoscaler; each workload still needs a scaling trigger.
+      default: false
+    - id: keda_namespace
+      label: KEDA namespace
+      type: string
+      default: keda
+      show_when:
+        keda_enabled: true
+    - id: keda_chart_version
+      label: KEDA chart version
+      type: string
+      default: 2.20.2
+      description: Verify this version against your cluster's Kubernetes version before enabling.
+      show_when:
+        keda_enabled: true
     - id: section_ebs_csi
       label: EBS CSI driver
       type: section
@@ -1589,6 +1614,9 @@ module:
         ...overrides: << module.input.advanced_terraform_variables >>
         cluster_name: << module.input.cluster_name >>
         region: << module.input.aws_region >>
+        keda_enabled: << module.input.keda_enabled == true >>
+        keda_namespace: '<< module.input.keda_enabled == true && module.input.keda_namespace != nil ? module.input.keda_namespace : "keda" >>'
+        keda_chart_version: '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>'
         karpenter_enabled: << module.input.karpenter_enabled >>
         karpenter_interruption_queue_alarm_creation_enabled: '<< module.input.karpenter_interruption_queue_alarm_creation_enabled != nil ? module.input.karpenter_interruption_queue_alarm_creation_enabled : true >>'
         karpenter_interruption_queue_alarm_age_threshold_seconds: '<< module.input.karpenter_interruption_queue_alarm_age_threshold_seconds != nil ? module.input.karpenter_interruption_queue_alarm_age_threshold_seconds : 60 >>'
@@ -1599,6 +1627,7 @@ module:
         karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.1" >>
         karpenter_helm_values: []
         karpenter_default_node_pool_creation_enabled: '<< module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true >>'
+        karpenter_spot_warm_min_instances: '<< module.input.karpenter_enabled == true && (module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true) && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>'
         karpenter_default_node_pool:
           capacity_types: '<< module.input.karpenter_default_node_pool_capacity_types != nil ? module.input.karpenter_default_node_pool_capacity_types : ["on-demand", "spot"] >>'
           instance_categories: '<< module.input.karpenter_default_node_pool_instance_categories != nil ? module.input.karpenter_default_node_pool_instance_categories : ["c", "m", "r"] >>'
@@ -1916,6 +1945,16 @@ module:
 
     Karpenter's **Interruption queue age alarm** is enabled by default. It monitors the oldest unprocessed event with a 60-second threshold over one minute. Empty queues do not trigger it. Configure **Alert actions** and **Recovery actions** for direct notifications; both default to empty. Standard CloudWatch charges apply.
 
+    ## Event-driven autoscaling
+
+    **KEDA** is optional and off by default. Enabling it installs the operator, external metrics API server, admission webhooks and CRDs in **KEDA namespace**. Components default to On-Demand EC2 placement. It does not create workload scaling triggers or change Karpenter capacity settings.
+
+    Install the add-ons before configuring workload ScaledObjects. Scaling from zero requires a signal that exists with no Spot application pods, such as an external backlog or shared ingress metric. Configure metric-source permissions and authentication separately; installation grants no AWS query permissions. Reference Secrets through TriggerAuthentication rather than putting credentials in trigger metadata or Helm values.
+
+    KEDA owns the external metrics API, so check for an existing adapter before installing. Remove dependent ScaledObjects and TriggerAuthentications before disabling it. CRDs are managed by the Helm chart; follow the selected version's upgrade and removal guidance.
+
+    **KEDA chart version** defaults to `2.20.2`. Its published Kubernetes test matrix covers 1.33–1.35; verify newer cluster versions, including 1.36, in staging before production adoption. Advanced chart settings can be supplied through `keda_helm_values` in **Advanced Terraform variables**.
+
     ## Logs, metrics and traces destinations
 
     Each signal is a list of destinations. **Loki, Prometheus with Thanos, and Tempo, each storing in S3, are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in, and its traces are in the in-cluster Grafana. CloudWatch log and metrics collectors are not installed unless selected. The interruption queue uses native SQS metrics independently of these collectors.
@@ -2061,6 +2100,10 @@ module:
     | Karpenter              | No       | `true`               | Autoscaling end to end (IAM, queue, controller, NodePool) |
     | Chart version          | No       | `1.14.1`             | Karpenter and karpenter-crd Helm chart version         |
     | Default NodePool       | No       | `true`               | General-purpose NodePool and EC2NodeClass              |
+    | Minimum warm Spot instances | No    | `0`                | Optional static Spot NodePool floor; zero removes it   |
+    | KEDA                   | No       | `false`              | Event-driven workload autoscaler and its CRDs          |
+    | KEDA namespace         | No       | `keda`               | Namespace for the KEDA components                     |
+    | KEDA chart version     | No       | `2.20.2`             | Pinned official Helm chart                            |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |
@@ -2100,7 +2143,18 @@ module:
 
     The default NodePool provisions Linux nodes from the selected instance categories and CPU architectures. Capacity types default to both On-demand and Spot, allowing Karpenter to use lower-cost Spot capacity while retaining On-demand as an availability fallback. Restrict the list when workloads require one capacity type. The pool defaults to 100 vCPUs and a 30-day node lifetime. Disable it and bring your own NodePool manifests for full control.
 
-    *Default NodePool fields are required only when Karpenter and the default NodePool are enabled.
+    *Default NodePool fields are required only when Karpenter and the default NodePool are enabled.*
+
+    ## Static Spot warm nodes
+
+    Set **Minimum warm Spot instances** above zero to add a `spot-warm` static NodePool with that desired floor.
+    This alpha Karpenter capacity feature requires version 1.8 or newer. It creates whole Spot nodes, not a CPU
+    or memory reservation, and the count is a desired floor rather than a guarantee that nodes are available.
+    Static nodes are outside the default NodePool CPU limit and may add EC2 and Spot interruption costs.
+    Workloads must tolerate and select Spot capacity to use this pool. Warm-capacity placeholders pinned to the
+    `default` NodePool do not consume `spot-warm`; the reservations are independent. Setting the count to zero
+    removes the static NodePool through the normal owner-reference lifecycle, draining and deleting those nodes,
+    which can disrupt workloads; validate that transition on a live cluster first.
 
     ## Learn more
 

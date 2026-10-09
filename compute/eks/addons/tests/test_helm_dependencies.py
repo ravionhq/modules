@@ -87,7 +87,7 @@ class HelmDependenciesTest(unittest.TestCase):
             "external_secrets", "kube_state_metrics", "loki", "prometheus",
             "thanos", "tempo", "otlp_collector",
             "grafana", "alloy", "otel_collector", "otel_logs_collector",
-            "karpenter",
+            "karpenter", "keda",
         ):
             with self.subTest(release=release):
                 visited = self.dependencies(f"helm_release.{release}")

@@ -169,3 +169,130 @@ run "rejects_a_malformed_consolidation_window" {
   }
   expect_failures = [var.karpenter_default_node_pool]
 }
+
+run "static_spot_warm_capacity_is_disabled_by_default" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter[0].values[length(helm_release.karpenter[0].values) - 1]).settings.featureGates.staticCapacity == false
+    error_message = "The staticCapacity gate must be explicitly false when the warm Spot count is zero."
+  }
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).spotWarm.minInstances == 0
+    error_message = "The default chart values must disable the static Spot warm pool."
+  }
+}
+
+run "static_spot_warm_capacity_wires_count_and_gate" {
+  command = plan
+
+  variables {
+    karpenter_spot_warm_min_instances = 3
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter[0].values[length(helm_release.karpenter[0].values) - 1]).settings.featureGates.staticCapacity == true
+    error_message = "A positive warm Spot count must enable the staticCapacity gate."
+  }
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).spotWarm.minInstances == 3
+    error_message = "The warm Spot count must reach the resources chart."
+  }
+}
+
+run "static_spot_gate_wins_without_discarding_caller_settings" {
+  command = plan
+
+  variables {
+    karpenter_spot_warm_min_instances = 2
+    karpenter_helm_values = [
+      <<-YAML
+        settings:
+          featureGates:
+            staticCapacity: false
+            nodeRepair: true
+          logLevel: debug
+      YAML
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter[0].values[1]).settings.featureGates.staticCapacity == false && yamldecode(helm_release.karpenter[0].values[1]).settings.featureGates.nodeRepair == true && yamldecode(helm_release.karpenter[0].values[1]).settings.logLevel == "debug"
+    error_message = "Caller Karpenter settings must remain in their own Helm values document."
+  }
+  assert {
+    condition     = yamldecode(helm_release.karpenter[0].values[2]).settings.featureGates.staticCapacity == true
+    error_message = "The module-owned staticCapacity value must be the final Helm override."
+  }
+}
+
+run "zero_disables_static_capacity_despite_helm_override" {
+  command = plan
+
+  variables {
+    karpenter_spot_warm_min_instances = 0
+    karpenter_helm_values             = ["settings:\n  featureGates:\n    staticCapacity: true\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter[0].values[length(helm_release.karpenter[0].values) - 1]).settings.featureGates.staticCapacity == false
+    error_message = "Returning the warm Spot count to zero must disable staticCapacity even after a caller enabled it."
+  }
+}
+
+run "rejects_a_fractional_warm_spot_count" {
+  command = plan
+
+  variables {
+    karpenter_spot_warm_min_instances = 1.5
+  }
+
+  expect_failures = [var.karpenter_spot_warm_min_instances]
+}
+
+run "rejects_warm_spot_count_when_karpenter_is_disabled" {
+  command = plan
+
+  variables {
+    karpenter_enabled                 = false
+    karpenter_spot_warm_min_instances = 1
+  }
+
+  expect_failures = [var.karpenter_spot_warm_min_instances]
+}
+
+run "rejects_warm_spot_count_without_the_default_node_pool" {
+  command = plan
+
+  variables {
+    karpenter_default_node_pool_creation_enabled = false
+    karpenter_spot_warm_min_instances            = 1
+  }
+
+  expect_failures = [var.karpenter_spot_warm_min_instances]
+}
+
+run "rejects_warm_spot_count_on_old_karpenter" {
+  command = plan
+
+  variables {
+    karpenter_chart_version           = "1.7.9"
+    karpenter_spot_warm_min_instances = 1
+  }
+
+  expect_failures = [var.karpenter_spot_warm_min_instances]
+}
+
+run "accepts_two_digit_karpenter_minor_for_warm_spot_count" {
+  command = plan
+
+  variables {
+    karpenter_chart_version           = "1.10.0"
+    karpenter_spot_warm_min_instances = 1
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter[0].values[length(helm_release.karpenter[0].values) - 1]).settings.featureGates.staticCapacity == true
+    error_message = "Numeric chart version comparison must accept Karpenter 1.10.0."
+  }
+}
