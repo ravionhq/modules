@@ -249,6 +249,7 @@ describe("compiler", () => {
 
       for (const [inputId, defaultValue] of [
         ["spot_burst_baseline_replicas", 2],
+        ["spot_burst_min_replicas", 0],
         ["spot_burst_max_replicas", 8],
         ["spot_burst_polling_interval", 30],
         ["spot_burst_cooldown_period", 300],
@@ -262,6 +263,9 @@ describe("compiler", () => {
         });
       }
       assert.equal(findInput(inputs, "spot_burst_baseline_replicas").min, 1);
+      assert.equal(findInput(inputs, "spot_burst_min_replicas").label, "Minimum Spot pods");
+      assert.equal(findInput(inputs, "spot_burst_min_replicas").min, 0);
+      assert.equal(findInput(inputs, "spot_burst_min_replicas").max, 1000);
       assert.equal(findInput(inputs, "spot_burst_max_replicas").min, 1);
       assert.equal(findInput(inputs, "spot_burst_polling_interval").min, 1);
       assert.equal(findInput(inputs, "spot_burst_cooldown_period").min, 0);
@@ -269,7 +273,7 @@ describe("compiler", () => {
       assert.equal(triggers.type, "array");
       assert.equal(triggers.required, true);
       assert.equal(triggers.default, undefined);
-      assert.match(String(triggers.description), /zero/);
+      assert.match(String(triggers.description), /if the minimum is zero/i);
       assert.match(String(triggers.description), /CPU or memory alone/);
       assert.deepEqual(triggers.show_when, {
         compute_target: "on_demand",
@@ -311,6 +315,10 @@ describe("compiler", () => {
       assert.equal(
         spotBurst.baselineReplicas,
         '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_baseline_replicas != nil ? module.input.spot_burst_baseline_replicas : 2 >>',
+      );
+      assert.equal(
+        spotBurst.minReplicas,
+        '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_min_replicas != nil ? module.input.spot_burst_min_replicas : 0 >>',
       );
       assert.equal(
         spotBurst.maxReplicas,

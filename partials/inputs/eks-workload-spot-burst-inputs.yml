@@ -1,7 +1,7 @@
 - id: spot_burst_enabled
   label: Spot burst
   type: boolean
-  description: Run a fixed On-Demand baseline with a separate KEDA-scaled Spot pool that starts at zero.
+  description: Run a fixed On-Demand baseline with a separate KEDA-scaled Spot pool that starts at the configured minimum.
   show_when:
     compute_target: on_demand
   default: false
@@ -15,6 +15,16 @@
     compute_target: on_demand
     spot_burst_enabled: true
   default: 2
+- id: spot_burst_min_replicas
+  label: Minimum Spot pods
+  type: number
+  description: Lower bound for replicas in the KEDA-managed Spot pool.
+  max: 1000
+  min: 0
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 0
 - id: spot_burst_max_replicas
   label: Maximum Spot pods
   type: number
@@ -28,7 +38,7 @@
 - id: spot_burst_triggers
   label: KEDA triggers
   type: array
-  description: At least one trigger must report demand while Spot replicas are zero; CPU or memory alone cannot wake the pool. Reference pre-created authentication resources only.
+  description: At least one trigger must report demand at the configured minimum. If the minimum is zero, CPU or memory alone cannot wake the pool. Reference pre-created authentication resources only.
   placeholder: |-
     - type: <KEDA scaler type>
       metadata:

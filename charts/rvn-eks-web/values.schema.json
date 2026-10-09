@@ -306,6 +306,10 @@
           "type": "integer",
           "minimum": 1
         },
+        "minReplicas": {
+          "type": "integer",
+          "minimum": 0
+        },
         "maxReplicas": {
           "type": "integer",
           "minimum": 1
@@ -553,7 +557,40 @@
             ],
             "properties": {
               "triggers": {
-                "minItems": 1,
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "spotBurst": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "minReplicas": {
+                "const": 0
+              }
+            },
+            "required": [
+              "enabled",
+              "minReplicas"
+            ]
+          }
+        },
+        "required": [
+          "spotBurst"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spotBurst": {
+            "properties": {
+              "triggers": {
                 "contains": {
                   "type": "object",
                   "properties": {

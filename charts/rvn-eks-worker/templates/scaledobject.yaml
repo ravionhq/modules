@@ -10,7 +10,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "rvn-eks-worker.spotDeploymentName" . }}
-  minReplicaCount: 0
+  minReplicaCount: {{ .Values.spotBurst.minReplicas }}
   maxReplicaCount: {{ .Values.spotBurst.maxReplicas }}
   pollingInterval: {{ .Values.spotBurst.pollingInterval }}
   cooldownPeriod: {{ .Values.spotBurst.cooldownPeriod }}
