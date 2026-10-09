@@ -3,7 +3,7 @@
   show_when: $with.show_when
   type: section
 - default: sandbox
-  description: Sandbox starts fastest. Contact support to enable it for your organization. EC2 has predictable availability. EC2 spot costs less but can wait for capacity or be interrupted.
+  description: Sandbox starts fastest. EC2 spot costs less but may wait for capacity or be interrupted.
   id: build_capacity_type
   label: Builder capacity type
   required: true
@@ -11,7 +11,7 @@
   type: string
   values:
     - label: Sandbox
-      description: Runs the build as a microVM on the execution environment's sandbox host pool, which keeps warm hosts so a build starts in seconds. Contact support to enable it for your organization.
+      description: Runs builds in microVMs on warm hosts.
       value: sandbox
     - label: EC2
       description: Use on-demand capacity for predictable availability without Spot interruption.
