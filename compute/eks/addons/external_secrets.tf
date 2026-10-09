@@ -73,6 +73,8 @@ resource "helm_release" "external_secrets_stores" {
   name      = "external-secrets-stores"
   namespace = var.eso_namespace
   chart     = "${path.module}/charts/external-secrets-resources"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/external-secrets-resources/Chart.yaml")).version
 
   upgrade_install = true
 

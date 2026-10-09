@@ -5,7 +5,7 @@ definition:
   description: Selectable add-ons for an existing EKS cluster.
 release:
   version: 0.16.2
-  description: Reuse cached providers on Linux runners.
+  description: Reuse cached providers on Linux runners; prevent applies from failing with an inconsistent result when a bundled chart, such as the default Karpenter NodePool, is upgraded.
 module:
   inputs:
     - id: cluster

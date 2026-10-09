@@ -126,9 +126,11 @@ resource "aws_eks_pod_identity_association" "thanos" {
 resource "helm_release" "thanos" {
   count = local.thanos_enabled ? 1 : 0
 
-  name             = local.thanos_release_name
-  namespace        = local.observability_namespace
-  chart            = "${path.module}/charts/thanos"
+  name      = local.thanos_release_name
+  namespace = local.observability_namespace
+  chart     = "${path.module}/charts/thanos"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version          = yamldecode(file("${path.module}/charts/thanos/Chart.yaml")).version
   create_namespace = true
   upgrade_install  = true
 

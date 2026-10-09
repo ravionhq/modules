@@ -11,9 +11,11 @@ locals {
 resource "helm_release" "ravion_operator_namespaces" {
   count = var.ravion_operator_enabled && var.ravion_operator_namespaces_creation_enabled && length(local.ravion_operator_required_namespaces) > 0 ? 1 : 0
 
-  name            = "ravion-operator-namespaces"
-  namespace       = "kube-system"
-  chart           = "${path.module}/charts/ravion-operator-namespaces"
+  name      = "ravion-operator-namespaces"
+  namespace = "kube-system"
+  chart     = "${path.module}/charts/ravion-operator-namespaces"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version         = yamldecode(file("${path.module}/charts/ravion-operator-namespaces/Chart.yaml")).version
   upgrade_install = true
 
   values = [yamlencode({
