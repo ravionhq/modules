@@ -554,7 +554,8 @@ variable "load_balancer_attachment" {
       protocol             = optional(string, "HTTP") # HTTP, HTTPS for ALB; TCP, UDP, TLS for NLB
       target_type          = optional(string, "ip")
       deregistration_delay = optional(number, 300)
-      slow_start           = optional(number, 0) # Only applicable for ALB (HTTP/HTTPS)
+      slow_start           = optional(number, 0)  # Only applicable for ALB (HTTP/HTTPS)
+      preserve_client_ip   = optional(bool, null) # Only applicable for NLB TCP/TLS; UDP always preserves. null keeps the AWS default.
 
       health_check = optional(object({
         enabled             = optional(bool, true)
