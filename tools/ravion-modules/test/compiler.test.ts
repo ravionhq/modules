@@ -295,7 +295,7 @@ describe("compiler", () => {
       assert.equal(addons.required, name === "rvn-eks-web");
       assert.equal(
         kedaEnabled.default,
-        "<< ref.input.keda_enabled == true >>",
+        "<< ref.output.keda_enabled == true >>",
       );
 
       const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
