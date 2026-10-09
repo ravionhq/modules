@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.16.1
-  description: Associate the public ALB with the WAF web ACL when a web ACL ARN is set.
+  version: 0.16.2
+  description: Reuse cached providers on Linux runners.
 module:
   inputs:
     - id: cluster
