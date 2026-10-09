@@ -372,7 +372,7 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 
 The `load_balancer_attachment` object includes:
 - `enabled` - Enable load balancer attachment (default: true)
-- `target_group` - Target group configuration (port, protocol, health_check, stickiness)
+- `target_group` - Target group configuration (port, protocol, health_check, stickiness, preserve_client_ip). `preserve_client_ip` applies to NLB TCP and TLS target groups only; UDP target groups always preserve client IPs and ALB target groups ignore it.
 - `listener_rules` - ALB listener rules with conditions. Each rule accepts an optional `priority` (1-50000); when omitted, the next available priority after the current highest rule on the listener is assigned at apply time. When the green test rule is enabled (ALB traffic-shift deployments), the test rule and the first listener rule always occupy adjacent priority slots: an explicit `priority` puts the production rule there with the test rule one slot ahead, and an omitted `priority` lets the pair land on the next two free slots so multiple services can share a listener without colliding.
 - `nlb_listeners` - Rolling-only NLB listener configurations. Each item defines an NLB ARN, listener port and protocol, container port, target protocol, and optional TLS settings. Listener and container ports must be unique, and ECS supports at most five listeners per service. Configure the complete list when creating the service; changing it later requires replacing the ECS service because its load balancer attachments are deployment-managed.
 - `container_name` / `container_port` - Override container to attach

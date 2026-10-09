@@ -17,6 +17,7 @@ resource "aws_lb_target_group" "tg_1" {
 
   deregistration_delay = var.load_balancer_attachment.target_group.deregistration_delay
   slow_start           = contains(["HTTP", "HTTPS"], local.primary_target_group_protocol) ? var.load_balancer_attachment.target_group.slow_start : null
+  preserve_client_ip   = contains(["TCP", "TLS"], local.primary_target_group_protocol) ? var.load_balancer_attachment.target_group.preserve_client_ip : null
 
   health_check {
     enabled             = var.load_balancer_attachment.target_group.health_check.enabled
@@ -68,6 +69,7 @@ resource "aws_lb_target_group" "tg_2" {
 
   deregistration_delay = var.load_balancer_attachment.target_group.deregistration_delay
   slow_start           = contains(["HTTP", "HTTPS"], local.primary_target_group_protocol) ? var.load_balancer_attachment.target_group.slow_start : null
+  preserve_client_ip   = contains(["TCP", "TLS"], local.primary_target_group_protocol) ? var.load_balancer_attachment.target_group.preserve_client_ip : null
 
   health_check {
     enabled             = var.load_balancer_attachment.target_group.health_check.enabled
@@ -111,6 +113,7 @@ resource "aws_lb_target_group" "nlb_additional" {
   target_type = var.load_balancer_attachment.target_group.target_type
 
   deregistration_delay = var.load_balancer_attachment.target_group.deregistration_delay
+  preserve_client_ip   = contains(["TCP", "TLS"], each.value.target_protocol) ? var.load_balancer_attachment.target_group.preserve_client_ip : null
 
   health_check {
     enabled             = var.load_balancer_attachment.target_group.health_check.enabled
