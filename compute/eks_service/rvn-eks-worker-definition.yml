@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.9.0
-  description: Add an optional KEDA-scaled Spot burst pool beside the fixed On-Demand baseline.
+  version: 0.10.0
+  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
 module:
   inputs:
     - id: section_cluster

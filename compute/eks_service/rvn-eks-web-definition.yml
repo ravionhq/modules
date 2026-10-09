@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.6.0
-  description: Add an optional KEDA-scaled Spot burst pool beside the fixed On-Demand baseline.
+  version: 1.7.0
+  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
 module:
   inputs:
     - id: section_cluster

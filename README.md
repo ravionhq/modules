@@ -71,21 +71,21 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-kms` | AWS KMS Key | v0.2.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.2.0 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.0 | `security/secret/` |
-| `rvn-aws-static` | Static Hosting | v1.3.3 | `hosting/static_site/` |
+| `rvn-aws-static` | Static Hosting | v1.4.0 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.4.0 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v2.1.3 | `compute/ec2_service/` |
+| `rvn-ec2-service` | EC2 Service | v2.2.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.1.1 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v2.2.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.1.3 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v2.1.3 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v2.3.0 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.2.0 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v2.2.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
 | `rvn-eks-addons` | EKS Add-ons | v0.16.1 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v0.2.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.6.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.6.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.9.0 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.7.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.10.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.0 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v2.0.3 | `compute/lambda/` |
+| `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |
