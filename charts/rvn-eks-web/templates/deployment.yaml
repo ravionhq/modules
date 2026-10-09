@@ -2,6 +2,9 @@
 {{- if and .Values.spotBurst.enabled (not .Values.spotBurst.kedaEnabled) -}}
 {{- fail "spotBurst.enabled requires KEDA to be installed by rvn-eks-addons before this workload is deployed" -}}
 {{- end -}}
+{{- if and .Values.spotBurst.enabled (gt (int .Values.spotBurst.minReplicas) (int .Values.spotBurst.maxReplicas)) -}}
+{{- fail "spotBurst.minReplicas must not exceed spotBurst.maxReplicas" -}}
+{{- end -}}
 {{- $pools := list false -}}
 {{- if .Values.spotBurst.enabled -}}
 {{- $pools = append $pools true -}}

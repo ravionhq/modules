@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.10.0
-  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
+  version: 0.11.0
+  description: Add a configurable minimum to the KEDA Spot pool.
 module:
   inputs:
     - id: section_cluster
@@ -192,6 +192,7 @@ module:
                   enabled: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" >>'
                   kedaEnabled: '<< module.input.keda_enabled == true >>'
                   baselineReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_baseline_replicas != nil ? module.input.spot_burst_baseline_replicas : 2 >>'
+                  minReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_min_replicas != nil ? module.input.spot_burst_min_replicas : 0 >>'
                   maxReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_max_replicas != nil ? module.input.spot_burst_max_replicas : 8 >>'
                   pollingInterval: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_polling_interval != nil ? module.input.spot_burst_polling_interval : 30 >>'
                   cooldownPeriod: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_cooldown_period != nil ? module.input.spot_burst_cooldown_period : 300 >>'
@@ -334,11 +335,11 @@ module:
 
     ### KEDA Spot burst
 
-    **Spot burst** is optional and off by default. Enable it only with **Compute target** set to **EC2 on-demand**; configure **Baseline pods** (default 2, minimum 1), **Maximum Spot pods** (default 8, minimum 1), **Polling interval (secs)** (default 30), **Cooldown period (secs)** (default 300), and the required **KEDA triggers** array. The On-Demand baseline remains fixed while a separate Spot Deployment scales from zero. CPU- or memory-only triggers cannot wake a zero-replica Deployment; choose a signal that exists while no Spot application pods are running, and set demand thresholds with baseline capacity in mind.
+    **Spot burst** is optional and off by default. Enable it only with **Compute target** set to **EC2 on-demand**; configure **Baseline pods** (default 2, minimum 1), **Minimum Spot pods** (default 0), **Maximum Spot pods** (default 8, minimum 1), **Polling interval (secs)** (default 30), **Cooldown period (secs)** (default 300), and the required **KEDA triggers** array. The On-Demand baseline remains fixed while a separate Spot Deployment starts at the configured minimum. If that minimum is zero, CPU- or memory-only triggers cannot wake the pool; choose a signal that reports demand with no Spot application pods running, and set thresholds with baseline capacity in mind.
 
     Select **KEDA** in the EKS add-ons module and apply the add-ons before enabling burst mode. Authentication resources and any referenced Kubernetes Secrets must be provisioned separately in the appropriate namespace or cluster scope. Put references, not credentials, in the trigger configuration; this module does not create trigger IAM permissions. KEDA 2.20.2's published Kubernetes test matrix covers versions 1.33–1.35; verify compatibility with newer clusters, including 1.36, in staging.
 
-    The Spot Deployment reuses the same image and pod configuration, so review duplicate job processing and idempotency before enabling it; no application code or configuration is migrated automatically. Each active Spot pod and the KEDA controllers add cost, and Spot capacity may be interrupted or unavailable. The first Spot Deployment render starts at zero, including on an existing release. Zero replicas do not exercise the new Spot image; verify activation and readiness separately in staging. Later Helm upgrades preserve its live replica count using Kubernetes `lookup`; offline renders show zero and the deployment identity needs permission to read Deployments in the namespace. Validate permissions, trigger behavior, and scaling in staging before production.
+    The Spot Deployment reuses the same image and pod configuration, so review duplicate job processing and idempotency before enabling it; no application code or configuration is migrated automatically. Each active Spot pod and the KEDA controllers add cost, and Spot capacity may be interrupted or unavailable. A new Spot Deployment starts at the configured minimum. On Helm upgrades, its live replica count is preserved unless below that minimum; counts above the maximum are left for KEDA to reconcile. Offline renders show the configured minimum, and the deployment identity needs permission to read Deployments in the namespace. When the minimum is zero, no Spot image is exercised until KEDA activates it; verify readiness separately in staging. Validate permissions, trigger behavior, and scaling before production.
 
     **Shutdown grace period (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
 
@@ -421,8 +422,9 @@ module:
     | Memory target (%) | No | - | Optional average memory utilization target |
     | Pods | No | 1 | Fixed pod count when autoscaling is disabled |
     | Baseline pods | No | 2 | Fixed On-Demand replicas during Spot burst; minimum 1 |
+    | Minimum Spot pods | No | 0 | Lower bound for the KEDA-managed Spot pool |
     | Maximum Spot pods | No | 8 | Maximum Spot replicas during burst; minimum 1 |
-    | KEDA triggers | Yes (when Spot burst is enabled) | - | Must work at zero Spot replicas |
+    | KEDA triggers | Yes (when Spot burst is enabled) | - | If Minimum Spot pods is zero, a trigger must work with zero Spot replicas; CPU or memory alone cannot wake the pool |
     | Polling interval (secs) | No | 30 | KEDA trigger polling interval |
     | Cooldown period (secs) | No | 300 | Delay before KEDA scales Spot replicas down |
     | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
