@@ -55,7 +55,8 @@ module "public_alb" {
   access_logs_retention_days = var.load_balancer_access_logs_retention_days
 
   # WAF
-  web_acl_arn = var.public_alb_web_acl_arn
+  waf_association_enabled = var.public_alb_web_acl_arn != null
+  web_acl_arn             = var.public_alb_web_acl_arn
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cluster_from_public_alb" {

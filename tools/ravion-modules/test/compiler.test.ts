@@ -1086,6 +1086,22 @@ describe("compiler", () => {
     assert.doesNotMatch(builder, /cache_from: \{tag: "railpack"\}/);
   });
 
+  it("sends a cleared public ALB web ACL ARN as nil so the WAF association stays off", async () => {
+    const [alb, cluster, addons] = await Promise.all([
+      compileDefinitionFile(join(repoRoot, "networking", "alb", "rvn-aws-alb-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "compute", "ecs_cluster", "rvn-ecs-cluster-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml")),
+    ]);
+
+    assert.equal(getTerraformVariable(alb.module, "web_acl_arn"), "<< module.input.web_acl_arn || nil >>");
+    for (const compiled of [cluster, addons]) {
+      assert.equal(
+        getTerraformVariable(compiled.module, "public_alb_web_acl_arn"),
+        "<< module.input.public_alb_web_acl_arn || nil >>",
+      );
+    }
+  });
+
   it("compiles primary ALB certificate references, additional SNI certificates, and visibility-aware ingress defaults", async () => {
     const [alb, cluster] = await Promise.all([
       compileDefinitionFile(join(repoRoot, "networking", "alb", "rvn-aws-alb-definition.yml")),

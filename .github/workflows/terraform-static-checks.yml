@@ -68,6 +68,12 @@ jobs:
           tofu -chdir=compute/eks/addons test -filter=tests/lb_controller.tftest.hcl
           python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_helm_dependencies.py' -v
 
+      - name: Test public ALB WAF association
+        run: |
+          tofu -chdir=compute/ecs_cluster init -backend=false
+          tofu -chdir=compute/ecs_cluster test -filter=tests/public_alb_waf.tftest.hcl
+          tofu -chdir=compute/eks/addons test -filter=tests/resource_names.tftest.hcl
+
       - name: Test EC2 Auto Scaling Group naming
         run: |
           tofu -chdir=compute/autoscaling init -backend=false
