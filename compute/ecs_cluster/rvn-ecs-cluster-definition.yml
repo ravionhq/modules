@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 2.1.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 2.1.1
+  description: Associate the public ALB with the WAF web ACL when a web ACL ARN is set.
 module:
   inputs:
     - id: network
@@ -786,7 +786,7 @@ module:
         public_alb_https_enabled: << module.input.public_alb_https_enabled >>
         public_alb_idle_timeout: << module.input.public_alb_idle_timeout >>
         public_alb_ssl_policy: << module.input.public_alb_ssl_policy >>
-        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn >>
+        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn || nil >>
         public_nlb_access_logs_bucket_arn: << module.input.public_nlb_access_logs_bucket_arn >>
         public_nlb_elastic_ip_allocation_ids: << module.input.public_nlb_elastic_ip_allocation_ids >>
         public_nlb_access_logs_enabled: << module.input.public_nlb_access_logs_enabled >>

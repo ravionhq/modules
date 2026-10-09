@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.16.0
-  description: Optionally keep warm Spot nodes running and install KEDA for event-driven application scaling.
+  version: 0.16.1
+  description: Associate the public ALB with the WAF web ACL when a web ACL ARN is set.
 module:
   inputs:
     - id: cluster
@@ -1754,7 +1754,7 @@ module:
           concat(module.input.public_alb_additional_certificate_arns != nil ? module.input.public_alb_additional_certificate_arns : []) >>
         public_alb_ssl_policy: << module.input.public_alb_ssl_policy >>
         public_alb_idle_timeout: << module.input.public_alb_idle_timeout >>
-        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn >>
+        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn || nil >>
         public_alb_access_logs_enabled: << module.input.public_alb_access_logs_enabled >>
         public_alb_access_logs_bucket_arn: << module.input.public_alb_access_logs_bucket_arn >>
         private_alb_creation_enabled: << module.input.private_alb_creation_enabled >>
