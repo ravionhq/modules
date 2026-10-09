@@ -100,6 +100,8 @@ resource "helm_release" "karpenter_default_node_pool" {
   name      = "karpenter-default-node-pool"
   namespace = var.karpenter_controller_namespace
   chart     = "${path.module}/charts/karpenter-resources"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/karpenter-resources/Chart.yaml")).version
 
   upgrade_install = true
 

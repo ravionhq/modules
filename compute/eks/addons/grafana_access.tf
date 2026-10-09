@@ -112,6 +112,8 @@ resource "helm_release" "grafana_alb_binding" {
   name      = "ravion-grafana-alb-binding"
   namespace = local.grafana_namespace
   chart     = "${path.module}/charts/grafana-alb-binding"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/grafana-alb-binding/Chart.yaml")).version
 
   create_namespace = true
   upgrade_install  = true
