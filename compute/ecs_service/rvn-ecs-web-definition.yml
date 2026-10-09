@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.2.0
-  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
+  version: 2.2.1
+  description: Reuse cached providers on Linux runners.
 module:
   inputs:
     - id: section_cluster
