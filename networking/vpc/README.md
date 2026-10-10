@@ -9,6 +9,7 @@ This module creates a production-ready AWS VPC with public and private subnets, 
 - Automatic or custom subnet CIDR allocation using cidrsubnet function
 - Optional NAT Gateway (single or per-AZ for high availability)
 - Optional VPC endpoints: free S3/DynamoDB gateway endpoints and interface endpoints (PrivateLink) with a shared security group
+- Optional private subnet groups: extra private subnets with their own route tables that choose the gateway endpoints on their own
 - Optional IPv6 support with Amazon-provided CIDR and Egress-Only Internet Gateway
 - Optional VPC Flow Logs to CloudWatch or S3 with configurable retention
 - Optional VPC peering with one or more existing VPCs (same- or cross-account/region)
@@ -90,14 +91,15 @@ The list length must equal `1` when `nat_gateway_high_availability_enabled = fal
 
 ```hcl
 module "vpc" {
-  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=rvn-aws-network@2.0.0"
 
   name     = "my-vpc"
   vpc_cidr = "10.0.0.0/16"
 
-  # Free gateway endpoints — keep S3/DynamoDB traffic off the NAT gateway
-  vpc_endpoint_s3_gateway_enabled       = true
-  vpc_endpoint_dynamodb_gateway_enabled = true
+  # Free gateway endpoints — keep S3/DynamoDB traffic off the NAT gateway for
+  # the subnets listed: "public", "private", or a private subnet group's name
+  vpc_endpoint_s3_gateway_subnets       = ["public", "private"]
+  vpc_endpoint_dynamodb_gateway_subnets = ["public", "private"]
 
   # Interface endpoints (PrivateLink) — private access to AWS services,
   # billed per hour per AZ plus per GB processed
@@ -110,7 +112,31 @@ module "vpc" {
 }
 ```
 
-Gateway endpoints add routes to all of this VPC's route tables and are free. Interface endpoints are placed in every private subnet with private DNS enabled and share a module-managed security group allowing HTTPS (443) from the VPC CIDR. Pulling ECR images privately requires `ecr.api`, `ecr.dkr`, and the S3 gateway endpoint together.
+Gateway endpoints are free. Each one adds a route for its service to the route tables of the subnets it lists, and the subnets it leaves out keep their own default route to it: the internet gateway for the public subnets, and the NAT gateway, when there is one, for the private subnets and groups. Interface endpoints are placed in every private subnet with private DNS enabled and share a module-managed security group allowing HTTPS (443) from the VPC CIDR. Pulling ECR images privately requires `ecr.api`, `ecr.dkr`, and the S3 gateway endpoint together.
+
+### With a Private Subnet Group
+
+A private subnet group is an extra set of private subnets with its own route table, so a gateway endpoint that lists the group sends the group's traffic through the endpoint while the rest of the VPC keeps the NAT gateway. Requests through a gateway endpoint reach S3 from a private IP address and no longer match conditions on the NAT gateway's public IP (`aws:SourceIp`), so a group lets the workloads that move the most data use the endpoint without changing the path of workloads that depend on such a condition.
+
+```hcl
+module "vpc" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=rvn-aws-network@2.0.0"
+
+  name                = "my-vpc"
+  vpc_cidr            = "10.0.0.0/16"
+  nat_gateway_enabled = true
+
+  vpc_endpoint_s3_gateway_subnets = ["builds"]
+
+  private_subnet_groups = {
+    builds = {
+      cidrs = ["10.0.21.0/24", "10.0.22.0/24", "10.0.23.0/24"]
+    }
+  }
+}
+```
+
+Each group gets one subnet per availability zone, in the same zones as the private subnets, and the same NAT gateway and VPC peering routes. Its subnet and route table IDs are in the `private_subnet_group_subnet_ids` and `private_subnet_group_route_table_ids` outputs, keyed by group name. `public` and `private` name the VPC's own subnets in the endpoint lists, so no group can take them. Group subnets are IPv4-only.
 
 ### With IPv6 Support
 
@@ -345,9 +371,21 @@ module "vpc" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| vpc_endpoint_s3_gateway_enabled | Create a free S3 gateway VPC endpoint attached to all route tables | `bool` | `false` | no |
-| vpc_endpoint_dynamodb_gateway_enabled | Create a free DynamoDB gateway VPC endpoint attached to all route tables | `bool` | `false` | no |
+| vpc_endpoint_s3_gateway_subnets | Subnets whose S3 traffic goes through a free S3 gateway VPC endpoint: `public`, `private`, or a private subnet group's name. An empty list creates no endpoint | `list(string)` | `[]` | no |
+| vpc_endpoint_dynamodb_gateway_subnets | Subnets whose DynamoDB traffic goes through a free DynamoDB gateway VPC endpoint: `public`, `private`, or a private subnet group's name. An empty list creates no endpoint | `list(string)` | `[]` | no |
 | vpc_endpoint_interface_services | AWS service short names to create interface VPC endpoints for (e.g. `["ecr.api", "ecr.dkr", "logs"]`). Placed in every private subnet with private DNS enabled and a shared security group allowing HTTPS from the VPC CIDR | `list(string)` | `[]` | no |
+
+### Private Subnet Groups
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| private_subnet_groups | Map of extra private subnet groups keyed by group name, each with one subnet per AZ and its own route table(s). See below for the object schema | `map(object({...}))` | `{}` | no |
+
+Each entry in `private_subnet_groups` accepts the following attributes:
+
+| Attribute | Description | Type | Default | Required |
+|-----------|-------------|------|---------|----------|
+| cidrs | One IPv4 CIDR block per subnet pair, in availability zone order. Must not overlap the public, private, or other groups' subnets | `list(string)` | n/a | yes |
 
 ### IPv6
 
@@ -414,6 +452,8 @@ Each entry in `vpc_peering_connections` accepts the following attributes:
 | public_subnet_arns | List of ARNs of public subnets |
 | private_subnet_arns | List of ARNs of private subnets |
 | availability_zones | List of availability zones used for subnets |
+| private_subnet_group_subnet_ids | IDs of each private subnet group's subnets, keyed by group name, in availability zone order |
+| private_subnet_group_subnet_cidrs | IPv4 CIDR blocks of each private subnet group's subnets, keyed by group name, in availability zone order |
 
 ### Internet Gateway
 
@@ -436,13 +476,14 @@ Each entry in `vpc_peering_connections` accepts the following attributes:
 |------|-------------|
 | public_route_table_id | The ID of the public route table |
 | private_route_table_ids | List of IDs of private route tables |
+| private_subnet_group_route_table_ids | IDs of each private subnet group's route tables, keyed by group name: one per AZ when NAT gateways are highly available, otherwise one |
 
 ### VPC Endpoints
 
 | Name | Description |
 |------|-------------|
-| vpc_endpoint_s3_id | The ID of the S3 gateway VPC endpoint (if enabled) |
-| vpc_endpoint_dynamodb_id | The ID of the DynamoDB gateway VPC endpoint (if enabled) |
+| vpc_endpoint_s3_id | The ID of the S3 gateway VPC endpoint (when vpc_endpoint_s3_gateway_subnets is not empty) |
+| vpc_endpoint_dynamodb_id | The ID of the DynamoDB gateway VPC endpoint (when vpc_endpoint_dynamodb_gateway_subnets is not empty) |
 | vpc_endpoint_interface_ids | Map of interface VPC endpoint service short names to their endpoint IDs |
 | vpc_endpoints_security_group_id | The ID of the shared security group for interface VPC endpoints (if any interface endpoints are created) |
 
@@ -980,6 +1021,20 @@ module "vpc" {
   flow_logs_retention_days     = 90
 }
 ```
+
+## Migrating from the gateway endpoint toggles (2.0.0)
+
+2.0.0 replaces `vpc_endpoint_s3_gateway_enabled` and `vpc_endpoint_dynamodb_gateway_enabled` with lists of the subnets each endpoint serves. To keep an endpoint where it was, list the public and private subnets:
+
+```hcl
+# 1.x
+vpc_endpoint_s3_gateway_enabled = true
+
+# 2.0.0
+vpc_endpoint_s3_gateway_subnets = ["public", "private"]
+```
+
+A toggle that was `false` becomes an empty list, which is the default. The endpoint keeps its address (`aws_vpc_endpoint.s3[0]`, `aws_vpc_endpoint.dynamodb[0]`) and its route tables, so the plan changes nothing.
 
 ## Migrating between NAT topologies
 

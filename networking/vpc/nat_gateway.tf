@@ -37,3 +37,11 @@ resource "aws_route" "private_nat" {
 
 
 
+
+resource "aws_route" "private_group_nat" {
+  for_each = var.nat_gateway_enabled ? local.private_subnet_group_route_tables : {}
+
+  route_table_id         = aws_route_table.private_group[each.key].id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.this[each.value.index].id
+}

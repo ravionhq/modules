@@ -51,3 +51,29 @@ resource "aws_subnet" "private" {
     }
   }
 }
+
+################################################################################
+# Private Subnet Groups
+################################################################################
+
+resource "aws_subnet" "private_group" {
+  for_each = local.private_subnet_group_subnets
+
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = try(var.private_subnet_groups[each.value.group].cidrs[each.value.index], null)
+  availability_zone       = local.azs[each.value.index]
+  map_public_ip_on_launch = false
+
+  tags = merge(local.tags, {
+    Name        = "${var.name}-${each.value.group}-${local.azs[each.value.index]}"
+    Tier        = "private"
+    SubnetGroup = each.value.group
+  })
+
+  lifecycle {
+    precondition {
+      condition     = length(var.private_subnet_groups[each.value.group].cidrs) == local.subnet_count
+      error_message = "Private subnet group ${each.value.group} has ${length(var.private_subnet_groups[each.value.group].cidrs)} cidrs; it needs one per subnet pair (${local.subnet_count})."
+    }
+  }
+}

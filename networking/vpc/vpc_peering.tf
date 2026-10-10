@@ -65,6 +65,22 @@ locals {
   ]...)
 }
 
+# Private subnet groups take the same peering routes as the private route tables.
+locals {
+  vpc_peering_private_group_routes = merge([
+    for k, v in var.vpc_peering_connections : merge([
+      for table_key, table in local.private_subnet_group_route_tables : {
+        for cidr in v.peer_cidr_blocks : "${k}-${table_key}-${cidr}" => {
+          peering_key      = k
+          destination_cidr = cidr
+          route_table_key  = table_key
+        }
+      }
+    ]...)
+    if v.private_route_table_routes_enabled
+  ]...)
+}
+
 resource "aws_route" "public_vpc_peering" {
   for_each = local.vpc_peering_public_routes
 
@@ -77,6 +93,14 @@ resource "aws_route" "private_vpc_peering" {
   for_each = local.vpc_peering_private_routes
 
   route_table_id            = each.value.route_table_id
+  destination_cidr_block    = each.value.destination_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.this[each.value.peering_key].id
+}
+
+resource "aws_route" "private_group_vpc_peering" {
+  for_each = local.vpc_peering_private_group_routes
+
+  route_table_id            = aws_route_table.private_group[each.value.route_table_key].id
   destination_cidr_block    = each.value.destination_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.this[each.value.peering_key].id
 }

@@ -66,6 +66,24 @@ output "private_subnet_arns" {
   value       = aws_subnet.private[*].arn
 }
 
+output "private_subnet_group_subnet_ids" {
+  description = "IDs of each private subnet group's subnets, keyed by group name, in availability zone order."
+  value = {
+    for name in keys(var.private_subnet_groups) : name => [
+      for index in range(local.subnet_count) : aws_subnet.private_group["${name}-${index}"].id
+    ]
+  }
+}
+
+output "private_subnet_group_subnet_cidrs" {
+  description = "IPv4 CIDR blocks of each private subnet group's subnets, keyed by group name, in availability zone order."
+  value = {
+    for name in keys(var.private_subnet_groups) : name => [
+      for index in range(local.subnet_count) : aws_subnet.private_group["${name}-${index}"].cidr_block
+    ]
+  }
+}
+
 output "availability_zones" {
   description = "List of availability zones used for subnets."
   value       = local.azs
@@ -118,18 +136,27 @@ output "private_route_table_ids" {
   value       = aws_route_table.private[*].id
 }
 
+output "private_subnet_group_route_table_ids" {
+  description = "IDs of each private subnet group's route tables, keyed by group name: one per availability zone when NAT gateways are highly available, otherwise one."
+  value = {
+    for name in keys(var.private_subnet_groups) : name => [
+      for index in range(local.nat_gateway_high_availability_enabled ? local.subnet_count : 1) : aws_route_table.private_group["${name}-${index}"].id
+    ]
+  }
+}
+
 ################################################################################
 # VPC Endpoints
 ################################################################################
 
 output "vpc_endpoint_s3_id" {
-  description = "The ID of the S3 gateway VPC endpoint (if enabled)."
-  value       = var.vpc_endpoint_s3_gateway_enabled ? aws_vpc_endpoint.s3[0].id : null
+  description = "The ID of the S3 gateway VPC endpoint (when vpc_endpoint_s3_gateway_subnets is not empty)."
+  value       = length(aws_vpc_endpoint.s3) > 0 ? aws_vpc_endpoint.s3[0].id : null
 }
 
 output "vpc_endpoint_dynamodb_id" {
-  description = "The ID of the DynamoDB gateway VPC endpoint (if enabled)."
-  value       = var.vpc_endpoint_dynamodb_gateway_enabled ? aws_vpc_endpoint.dynamodb[0].id : null
+  description = "The ID of the DynamoDB gateway VPC endpoint (when vpc_endpoint_dynamodb_gateway_subnets is not empty)."
+  value       = length(aws_vpc_endpoint.dynamodb) > 0 ? aws_vpc_endpoint.dynamodb[0].id : null
 }
 
 output "vpc_endpoint_interface_ids" {
