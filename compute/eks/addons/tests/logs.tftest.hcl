@@ -373,6 +373,23 @@ run "alloy_attaches_the_agreed_label_set" {
   }
 }
 
+# A node Alloy cannot schedule onto is a node whose logs silently never reach
+# Loki. The system node group may be tainted CriticalAddonsOnly to keep it for
+# Karpenter, CoreDNS and Operator coordinators, and those are exactly the logs
+# needed when the cluster misbehaves.
+run "alloy_runs_on_tainted_nodes" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.alloy[0].values[0]).controller.tolerations == [{ operator = "Exists" }]
+    error_message = "Alloy must tolerate every taint so it collects logs from every node"
+  }
+}
+
 run "alloy_collects_operator_executor_logs_and_nothing_else_from_its_namespace" {
   command = plan
 
