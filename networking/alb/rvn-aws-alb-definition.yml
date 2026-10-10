@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.2.2
-  description: Reuse cached providers on Linux runners.
+  version: 1.3.0
+  description: "Expose the HTTPS listener default certificate and the SNI certificate list as outputs, and move the HTTPS certificate requirement onto the listener itself."
 module:
   inputs:
     - id: network

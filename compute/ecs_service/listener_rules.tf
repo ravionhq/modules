@@ -8,7 +8,10 @@
 ################################################################################
 
 resource "aws_lb_listener_rule" "alb" {
-  for_each = local.enable_load_balancer ? {
+  # In Ravion-managed mode, Ravion owns the listener rule (ravion_domains.tf);
+  # caller-supplied rules are skipped to avoid priority collisions on the
+  # shared listener.
+  for_each = local.enable_load_balancer && !local.ravion_managed ? {
     for idx, rule in var.load_balancer_attachment.listener_rules : idx => rule
   } : {}
 

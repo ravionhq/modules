@@ -191,6 +191,7 @@ module "api_service" {
 |------|---------|
 | opentofu/terraform | >= 1.10.0 |
 | aws | >= 6.0 |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1 — exercised only when `use_ravion_managed_domains = true`; configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
 
 ## Inputs
 
@@ -227,6 +228,16 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 | cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
 | cloudwatch_ok_actions | ARNs notified on OK | `list(string)` | `[]` | no |
 | capacity_provider_default | Family for the cluster default strategy: `ec2`, `fargate` (includes Fargate Spot when enabled), or `fargate_spot`. AWS forbids mixing Fargate and EC2 providers in one strategy. Defaults to `ec2` if EC2 is enabled, then `fargate`, then `fargate_spot` | `string` | `null` | no |
+
+### Ravion-managed domains
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| use_ravion_managed_domains | Issue a Ravion-managed wildcard certificate for the cluster and serve it as the default certificate on the selected ALB's existing HTTPS listener; every `*_alb_certificate_arns` entry stays attached via SNI. Requires exactly one HTTPS-enabled ALB | `bool` | `false` | no |
+| ravion_cluster_name | Leaf for the cluster wildcard domain (`<leaf>-<hash>.<apex>`). Defaults to the module instance given id, then `name` | `string` | `null` | no |
+| ravion_aws_account_id | Ravion AWS account record id (`aws_*`) the wildcard certificate is issued in. Required with managed domains | `string` | `null` | no |
+| ravion_aws_region | Region the wildcard certificate lives in. Defaults to the module region | `string` | `null` | no |
+| module_instance_id / module_instance_given_id | Ravion module instance id and given id (injected by the runner as `TF_VAR_*`). The id is required with managed domains | `string` | `null` | no |
 
 ### Fargate Capacity Provider
 
@@ -406,6 +417,15 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 | log_retention_days | Default CloudWatch Logs retention (days) for services in this cluster to inherit |
 | public_alb_cloudwatch_alarm_arns | Map of public ALB alarm ARNs (empty if disabled) |
 | private_alb_cloudwatch_alarm_arns | Map of private ALB alarm ARNs (empty if disabled) |
+
+### Ravion-managed domains
+
+| Name | Description |
+|------|-------------|
+| ravion_managed_domains_enabled | True when the cluster owns a Ravion wildcard certificate for its HTTPS-enabled ALB |
+| ravion_cluster_domain_fqdn | Cluster wildcard apex FQDN; pass to ecs_service as `cluster_parent_fqdn` (null when disabled) |
+| ravion_cluster_cert_arn / ravion_cluster_certificate_id | ACM ARN and Ravion id of the wildcard certificate (null when disabled) |
+| ravion_aws_account_id / ravion_aws_region | Account record id and region the certificate lives in, for ecs_service pass-through |
 
 ## Architecture
 
