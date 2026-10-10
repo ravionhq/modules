@@ -11,10 +11,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate Terraform Modules
-    runs-on: ubuntu-latest
+    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
