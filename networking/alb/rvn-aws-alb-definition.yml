@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.2.1
-  description: Add a web_acl_arn output for the associated WAF web ACL.
+  version: 1.2.2
+  description: Reuse cached providers on Linux runners.
 module:
   inputs:
     - id: network
