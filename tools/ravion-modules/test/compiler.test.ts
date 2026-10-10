@@ -741,10 +741,7 @@ describe("compiler", () => {
       "0.5.11",
     );
     assert.equal(inputs.some((input) => input.id === "system_node_labels"), false, "system_node_labels is managed automatically");
-    assert.equal(
-      getTerraformVariable(compiled.module, "system_node_labels"),
-      '<< module.input.system_node_count != nil && module.input.system_node_count > 0 ? {"role": "system"} : {} >>',
-    );
+    assert.deepEqual(getTerraformVariable(compiled.module, "system_node_labels"), {role: "system"});
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);
     }

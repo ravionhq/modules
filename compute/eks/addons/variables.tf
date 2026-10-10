@@ -1043,7 +1043,7 @@ variable "system_node_count" {
 
 variable "system_node_labels" {
   type        = map(string)
-  description = "Node labels that identify the system node group (the compute/eks composite labels it role=system). Add-ons prefer these nodes, and HA coordinators placed on distinct nodes are pinned to them. Empty sets no preference."
+  description = "Node labels that identify the system node group (the compute/eks composite labels it role=system). Add-ons prefer these nodes, and HA coordinators placed on distinct nodes are pinned to them. Ignored when system_node_count is 0. Empty sets no preference."
   default     = {}
   nullable    = false
 }

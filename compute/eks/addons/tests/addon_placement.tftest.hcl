@@ -51,9 +51,6 @@ override_resource {
   }
 }
 
-# Karpenter's controller and the HA coordinators run one per system node and
-# never on a Karpenter-provisioned node, and nothing can provision a node for
-# them. A replica count above the system node count leaves a pod Pending
 # Add-ons must never all sit on one Spot node: they require On-Demand
 # capacity, prefer the system node group, and tolerate CriticalAddonsOnly.
 # HA coordinators on distinct nodes are pinned to the system node group,
@@ -124,6 +121,47 @@ run "distinct_coordinators_are_pinned_to_the_system_group" {
   }
 }
 
+run "every_release_carries_the_placement" {
+  command = plan
+
+  variables {
+    logs_providers                       = ["loki"]
+    metrics_providers                    = ["prometheus", "amp"]
+    traces_destinations                  = [{ destination = "xray" }, { destination = "tempo" }]
+    grafana_enabled                      = true
+    aws_load_balancer_controller_enabled = true
+  }
+
+  # Each release must carry a document with the placement at the path its
+  # chart reads it from.
+  assert {
+    condition = alltrue([
+      for values in [
+        helm_release.lb_controller[0].values,
+        helm_release.kube_state_metrics[0].values,
+        helm_release.otel_collector[0].values,
+        helm_release.otlp_collector[0].values,
+        helm_release.thanos[0].values,
+        helm_release.tempo[0].values,
+        helm_release.grafana[0].values,
+      ] : contains(values, yamlencode(local.addon_pod_placement))
+    ])
+    error_message = "Root-level charts must get the add-on placement at the top level."
+  }
+  assert {
+    condition     = contains(helm_release.loki[0].values, yamlencode({ singleBinary = local.addon_pod_placement }))
+    error_message = "Loki must get the add-on placement under singleBinary."
+  }
+  assert {
+    condition     = contains(helm_release.prometheus[0].values, yamlencode({ server = local.addon_pod_placement }))
+    error_message = "Prometheus must get the add-on placement under server."
+  }
+  assert {
+    condition     = local.addon_pod_placement.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms == local.addon_on_demand_terms && local.addon_pod_placement.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].preference.matchExpressions == [{ key = "role", operator = "In", values = ["system"] }] && local.addon_pod_placement.tolerations == [{ key = "CriticalAddonsOnly", operator = "Exists" }]
+    error_message = "The shared placement must require On-Demand, prefer the system group and tolerate CriticalAddonsOnly."
+  }
+}
+
 run "a_single_capped_coordinator_takes_the_shared_placement" {
   command = plan
 
@@ -154,6 +192,23 @@ run "no_system_labels_sets_no_preference" {
   }
 }
 
+run "no_system_nodes_ignores_the_labels" {
+  command = plan
+
+  variables {
+    system_node_count = 0
+  }
+
+  assert {
+    condition     = !can(yamldecode(helm_release.keda[0].values[0]).affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution)
+    error_message = "A cluster without system nodes has no group to prefer."
+  }
+  assert {
+    condition     = !anytrue([for values in helm_release.ravion_operator[0].values : can(yamldecode(values).nodeSelector)])
+    error_message = "A cluster without system nodes has no group to pin coordinators to."
+  }
+}
+
 run "disabled_placement_leaves_the_charts_alone" {
   command = plan
 
@@ -168,5 +223,9 @@ run "disabled_placement_leaves_the_charts_alone" {
   assert {
     condition     = yamldecode(helm_release.keda[0].values[0]).affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms == local.addon_on_demand_terms
     error_message = "KEDA keeps its On-Demand requirement even with placement off."
+  }
+  assert {
+    condition     = !anytrue([for values in helm_release.ravion_operator[0].values : can(yamldecode(values).nodeSelector) || can(yamldecode(values).tolerations)])
+    error_message = "With placement off, coordinators are neither pinned nor given tolerations."
   }
 }

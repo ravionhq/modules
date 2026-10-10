@@ -10,7 +10,7 @@
 #   1. REQUIRED: On-Demand capacity. A managed node group reports its capacity
 #      type in eks.amazonaws.com/capacityType, a Karpenter node in
 #      karpenter.sh/capacity-type; the two terms are ORed.
-#   2. PREFERRED: the system node group (var.system_node_labels). When it is
+#   2. PREFERRED: the system node group (local.system_node_labels). When it is
 #      full the scheduler falls back to On-Demand Karpenter capacity instead
 #      of leaving the pod Pending, so a small default group never blocks an
 #      install.
@@ -22,6 +22,10 @@
 ################################################################################
 
 locals {
+  # A cluster declared to have no system nodes has no group to prefer or pin
+  # to, whatever labels it was handed.
+  system_node_labels = var.system_node_count == 0 ? {} : var.system_node_labels
+
   addon_on_demand_terms = [
     { matchExpressions = [{ key = "eks.amazonaws.com/capacityType", operator = "In", values = ["ON_DEMAND"] }] },
     { matchExpressions = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }] },
@@ -40,11 +44,11 @@ locals {
             weight = 100
             preference = {
               matchExpressions = [
-                for key, value in var.system_node_labels : { key = key, operator = "In", values = [value] }
+                for key, value in local.system_node_labels : { key = key, operator = "In", values = [value] }
               ]
             }
           }]
-        } : key => value if length(var.system_node_labels) > 0
+        } : key => value if length(local.system_node_labels) > 0
       },
     )
   }

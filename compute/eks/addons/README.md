@@ -693,7 +693,7 @@ failed during initialization have no provider resources to migrate.
 | tags | Tags applied to created resources and Karpenter-launched instances. | `map(string)` | `{}` | no |
 | topology_aware_routing_enabled | Patch `kube-dns` with `trafficDistribution: PreferClose` so DNS stays zone-local (CoreDNS pods are spread by `compute/eks`). | `bool` | `true` | no |
 | system_node_count | Minimum size of the system node group. Caps Karpenter's controller replicas (at 2) and the HA coordinators to the nodes they can run on. Null applies no cap. | `number` | `null` | no |
-| system_node_labels | Labels identifying the system node group. Add-ons prefer it; HA coordinators on distinct nodes are pinned to it. Empty sets no preference. | `map(string)` | `{}` | no |
+| system_node_labels | Labels identifying the system node group. Add-ons prefer it; HA coordinators on distinct nodes are pinned to it. Ignored when system_node_count is 0. Empty sets no preference. | `map(string)` | `{}` | no |
 | addon_placement_enabled | Require On-Demand capacity for add-on controllers and stores, prefer the system node group, and tolerate `CriticalAddonsOnly`. | `bool` | `true` | no |
 | kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs and the volume resizer. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
