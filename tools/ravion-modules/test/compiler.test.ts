@@ -394,11 +394,11 @@ describe("compiler", () => {
     assert.deepEqual(systemNodeMinNodes.moved_from, ["system_node_min_size"]);
     assert.deepEqual(systemNodeMaxNodes.moved_from, ["system_node_max_size"]);
     assert.equal(systemNodeMinNodes.default, 2);
-    assert.equal(systemNodeMaxNodes.default, 4);
+    assert.equal(systemNodeMaxNodes.default, 2);
     assert.match(String(systemNodeMinNodes.description), /EC2 nodes/);
     assert.match(String(systemNodeMaxNodes.description), /EC2 nodes/);
-    assert.match(String(systemNodeMinNodes.description), /spare capacity/);
-    assert.match(String(systemNodeMaxNodes.description), /pods can remain pending/);
+    assert.match(String(systemNodeMinNodes.description), /cluster add-ons/);
+    assert.match(String(systemNodeMaxNodes.description), /Karpenter/);
     assert.equal(
       getTerraformVariableAt(cluster.module, "system_node_group", "min_size"),
       "<< module.input.system_node_min_nodes >>",
@@ -739,6 +739,11 @@ describe("compiler", () => {
     assert.equal(
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
       "0.5.11",
+    );
+    assert.equal(inputs.some((input) => input.id === "system_node_labels"), false, "system_node_labels is managed automatically");
+    assert.equal(
+      getTerraformVariable(compiled.module, "system_node_labels"),
+      '<< module.input.system_node_count != nil && module.input.system_node_count > 0 ? {"role": "system"} : {} >>',
     );
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);
