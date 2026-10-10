@@ -37,7 +37,11 @@ module "public_alb" {
   http_to_https_redirect_enabled = var.public_alb_https_enabled
 
   # SSL/TLS
-  certificate_arns = var.public_alb_certificate_arns
+  # Managed mode makes the Ravion wildcard the DEFAULT certificate and keeps
+  # every BYO certificate attached via SNI (the submodule attaches arns[1..]
+  # as aws_lb_listener_certificate), so toggling managed domains on never
+  # drops TLS for hostnames served off existing BYO certificates.
+  certificate_arns = local.enable_ravion_domain ? concat([ravion_aws_acm_certificate.cluster[0].arn], var.public_alb_certificate_arns) : var.public_alb_certificate_arns
   ssl_policy       = var.public_alb_ssl_policy
 
   # ALB settings
@@ -94,7 +98,11 @@ module "private_alb" {
   http_to_https_redirect_enabled = var.private_alb_https_enabled
 
   # SSL/TLS
-  certificate_arns = var.private_alb_certificate_arns
+  # Managed mode makes the Ravion wildcard the DEFAULT certificate and keeps
+  # every BYO certificate attached via SNI (the submodule attaches arns[1..]
+  # as aws_lb_listener_certificate), so toggling managed domains on never
+  # drops TLS for hostnames served off existing BYO certificates.
+  certificate_arns = local.enable_ravion_domain ? concat([ravion_aws_acm_certificate.cluster[0].arn], var.private_alb_certificate_arns) : var.private_alb_certificate_arns
   ssl_policy       = var.private_alb_ssl_policy
 
   # ALB settings
