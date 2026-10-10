@@ -51,6 +51,18 @@ locals {
   ravion_operator_coordinator_capped         = local.ravion_operator_coordinator_replicas < var.ravion_operator_coordinator_replicas
   ravion_operator_coordinator_distinct_nodes = var.ravion_operator_coordinator_distinct_nodes_enabled && !(local.ravion_operator_coordinator_capped && local.ravion_operator_coordinator_replicas < 2)
 
+  # The chart's distinct-node mode renders only per-node anti-affinity and drops
+  # .Values.affinity, so coordinators placed that way are pinned to the system
+  # node group by selector: a fixed count on nodes Karpenter does not manage.
+  # Otherwise Operator takes the shared add-on placement (addon_placement.tf).
+  ravion_operator_pinned_to_system_nodes = var.ravion_operator_coordinator_enabled && local.ravion_operator_coordinator_distinct_nodes && length(var.system_node_labels) > 0
+  ravion_operator_placement_values = (
+    local.ravion_operator_pinned_to_system_nodes ? [yamlencode({
+      nodeSelector = var.system_node_labels
+      tolerations  = local.addon_tolerations
+    })] : local.addon_placement_values
+  )
+
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
   ravion_operator_k8s_secret_name   = "ravion-operator-credential"
@@ -283,6 +295,7 @@ resource "helm_release" "ravion_operator" {
     # may present doing it. Built in observability_ravion_operator.tf, because what may
     # be reached is a property of the thing being reached.
     local.ravion_operator_observability_proxy_values,
+    local.ravion_operator_placement_values,
     var.ravion_operator_helm_values,
   )
 

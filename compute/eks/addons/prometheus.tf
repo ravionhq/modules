@@ -110,6 +110,7 @@ resource "helm_release" "prometheus" {
         "kube-state-metrics"       = { enabled = false }
       }),
     ],
+    var.addon_placement_enabled ? [yamlencode({ server = local.addon_pod_placement })] : [],
     var.prometheus_helm_values,
   )
 

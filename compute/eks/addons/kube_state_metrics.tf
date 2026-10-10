@@ -58,6 +58,7 @@ resource "helm_release" "kube_state_metrics" {
         }
       }),
     ],
+    local.addon_placement_values,
     var.kube_state_metrics_helm_values,
   )
 

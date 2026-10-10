@@ -41,6 +41,11 @@ resource "helm_release" "external_secrets" {
         }
       }),
     ],
+    # The controller, its webhook and its cert controller are three Deployments.
+    var.addon_placement_enabled ? [yamlencode(merge(local.addon_pod_placement, {
+      webhook        = local.addon_pod_placement
+      certController = local.addon_pod_placement
+    }))] : [],
     var.eso_helm_values,
   )
 
