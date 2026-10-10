@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.6.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 0.7.0
+  description: Add taints for the default node group, so it can be reserved for cluster-critical add-ons while Karpenter runs everything else.
 module:
   inputs:
     - id: network
@@ -153,6 +153,35 @@ module:
       min: 20
       placeholder: "20"
       type: number
+    - collapsible: true
+      default: []
+      description: Keep pods without a matching toleration off this group. CriticalAddonsOnly with No schedule reserves it for Karpenter, CoreDNS, and Ravion Operator coordinators, so other pods run on Karpenter capacity.
+      id: system_node_taints
+      item_inputs:
+        - id: key
+          label: Key
+          required: true
+          type: string
+        - id: value
+          label: Value
+          type: string
+        - id: effect
+          label: Effect
+          required: true
+          type: string
+          values:
+            - label: No schedule
+              value: NO_SCHEDULE
+            - label: Prefer no schedule
+              value: PREFER_NO_SCHEDULE
+            - label: No execute
+              value: NO_EXECUTE
+      item_label: Taint
+      item_title:
+        fallback: Taint
+        template: "{key}"
+      label: Taints
+      type: object_array
     - default: {}
       description: Add independently sized On-demand or Spot managed node groups when workloads need more or separate capacity. Create one of each to make both capacity types available.
       id: node_groups
@@ -496,6 +525,7 @@ module:
           min_size: << module.input.system_node_min_nodes >>
           max_size: << module.input.system_node_max_nodes >>
           disk_size: << module.input.system_node_disk_size >>
+          taints: << module.input.system_node_taints || [] >>
         node_groups: << module.input.node_groups || {} >>
         fargate_profiles: << module.input.fargate_profiles || {} >>
         access_entries: << module.input.access_entries || {} >>

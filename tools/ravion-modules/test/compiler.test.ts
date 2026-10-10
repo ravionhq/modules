@@ -407,12 +407,26 @@ describe("compiler", () => {
       getTerraformVariableAt(cluster.module, "system_node_group", "max_size"),
       "<< module.input.system_node_max_nodes >>",
     );
+    // Taints keep the system group for pods that tolerate them (Karpenter,
+    // CoreDNS, Operator coordinators), so everything else lands on
+    // Karpenter-managed capacity. Same shape as an additional group's taints.
+    const systemNodeTaints = findInput(clusterInputs, "system_node_taints");
+    assert.equal(systemNodeTaints.type, "object_array");
+    assert.deepEqual(systemNodeTaints.default, []);
+    assert.deepEqual(systemNodeTaints.item_inputs, findInput(additionalNodeGroupFields, "taints").item_inputs);
+    assert.equal(
+      getTerraformVariableAt(cluster.module, "system_node_group", "taints"),
+      "<< module.input.system_node_taints || [] >>",
+    );
+    assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_disk_size") < clusterInputs.findIndex((input) => input.id === "system_node_taints"));
+    assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_taints") < clusterInputs.findIndex((input) => input.id === "node_groups"));
     for (const inputId of [
       "system_node_capacity_type",
       "system_node_instance_types",
       "system_node_min_nodes",
       "system_node_max_nodes",
       "system_node_disk_size",
+      "system_node_taints",
     ]) {
       assert.equal(findInput(clusterInputs, inputId).collapsible, true, `${inputId} should be collapsible`);
     }

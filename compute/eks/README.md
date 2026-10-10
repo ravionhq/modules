@@ -28,6 +28,25 @@ the External Secrets Operator, the EBS CSI driver, and Container Insights — li
 in the separate [`compute/eks/addons`](addons/) stack as selectable add-ons, so
 clusters only carry what they use.
 
+With Karpenter, the default node group can be reserved for the components that
+must not run on Karpenter capacity: Karpenter itself, CoreDNS, and Ravion
+Operator coordinators all tolerate `CriticalAddonsOnly`. Set
+`system_node_group.taints` (in Ravion, **Taints** under Default capacity) to
+`[{ key = "CriticalAddonsOnly", value = "true", effect = "NO_SCHEDULE" }]` and
+give the group a fixed size (minimum equal to maximum). Every other pod then
+schedules onto Karpenter nodes, which scale and consolidate with demand. A
+managed node group never scales on its own, and lowering only its minimum does
+not shrink it: the live node count is kept and clamped to the new bounds.
+
+On an existing cluster, `NO_SCHEDULE` only keeps new pods off the group; pods
+already running there stay until they are rescheduled. They move when the group
+is replaced (changing instance types, capacity type or AMI type replaces it
+blue/green and drains the old nodes), when a node is removed by the size change,
+or when their workload rolls out (`kubectl rollout restart`). Otherwise, cordon
+and drain the group's nodes one at a time, after Karpenter is running, so the
+evicted pods land on Karpenter capacity. Pod disruption budgets are respected
+by a drain, so check that every workload has room to move first.
+
 System and additional managed node groups do not grant Systems Manager access
 by default. EKS and Ravion Operator do not require it. Upgrading removes the
 previously default `AmazonSSMManagedInstanceCore` attachment without replacing

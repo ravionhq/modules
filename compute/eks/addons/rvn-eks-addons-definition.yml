@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.16.3
-  description: Reuse cached providers on Linux runners.
+  version: 0.16.4
+  description: Collect logs from tainted nodes, such as a default node group reserved for cluster-critical add-ons.
 module:
   inputs:
     - id: cluster

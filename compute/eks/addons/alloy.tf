@@ -102,6 +102,12 @@ resource "helm_release" "alloy" {
       yamlencode({
         controller = {
           type = "daemonset"
+
+          # Every node, tainted or not. A node Alloy skips is a node whose logs
+          # never reach Loki, and the tainted ones (a system node group kept
+          # for CriticalAddonsOnly) run Karpenter, CoreDNS and the Operator
+          # coordinators. The EKS node agents tolerate everything the same way.
+          tolerations = [{ operator = "Exists" }]
         }
 
         alloy = {
