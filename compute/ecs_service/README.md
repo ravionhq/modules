@@ -259,6 +259,7 @@ module "worker_service" {
 |------|---------|
 | opentofu/terraform | >= 1.10.0 |
 | aws | >= 6.21 |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1 — exercised only when `cluster_parent_fqdn` is set; configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
 
 ## Inputs
 
@@ -377,6 +378,20 @@ The `load_balancer_attachment` object includes:
 - `nlb_listeners` - Rolling-only NLB listener configurations. Each item defines an NLB ARN, listener port and protocol, container port, target protocol, and optional TLS settings. Listener and container ports must be unique, and ECS supports at most five listeners per service. Configure the complete list when creating the service; changing it later requires replacing the ECS service because its load balancer attachments are deployment-managed.
 - `container_name` / `container_port` - Override container to attach
 
+### Ravion-managed domains
+
+Set when the cluster was created with `use_ravion_managed_domains` (pipe the cluster outputs). In this mode the module creates the listener rules itself from `domains`, and caller `listener_rules` are ignored.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| cluster_parent_fqdn | Cluster wildcard apex (`ecs_cluster.ravion_cluster_domain_fqdn`). Setting it enables managed domains for the service | `string` | `null` | no |
+| cluster_https_listener_arn | Cluster ALB HTTPS listener the host-header rules attach to (`public_alb_https_listener_arn` or `private_alb_https_listener_arn`) | `string` | `null` | no |
+| domains | Service FQDNs. One label under the apex rides the cluster wildcard certificate; any other name gets a per-service certificate (max 10). Empty = `<given-id>.<apex>` | `list(string)` | `[]` | no |
+| cluster_alb_dns_name / cluster_alb_zone_id | ALB the custom-domain routing records point at | `string` | `null` | no |
+| ravion_listener_rule_priority | Listener rule priority (1-50000); 0 derives one from the service name | `number` | `0` | no |
+| ravion_aws_account_id / ravion_aws_region | Account record id and region for the per-service certificate | `string` | `null` | no |
+| module_instance_id / module_instance_given_id | Ravion module instance id and given id (injected by the runner as `TF_VAR_*`) | `string` | `null` | no |
+
 ### Auto Scaling
 
 | Name | Description | Type | Default | Required |
@@ -467,6 +482,13 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 | load_balancer_arn | ARN of the load balancer the service is attached to (null if no LB attachment) |
 | load_balancer_dns_name | DNS name of the attached load balancer, usable as a CloudFront or DNS origin |
 | load_balancer_zone_id | Canonical hosted zone ID of the attached load balancer, for Route53 alias records |
+
+### Ravion-managed domains
+
+| Name | Description |
+|------|-------------|
+| ravion_domain_fqdn / ravion_domain_url | Primary FQDN (first `domains` entry or the auto-FQDN) and its https URL; null without managed domains |
+| ravion_custom_cert_arn | ACM ARN of the per-service certificate covering custom domains; null when there are none |
 
 ### Auto Scaling
 

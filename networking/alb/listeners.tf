@@ -51,7 +51,7 @@ resource "aws_lb_listener" "https" {
   port              = var.https_listener_port
   protocol          = "HTTPS"
   ssl_policy        = var.ssl_policy
-  certificate_arn   = var.certificate_arns[0]
+  certificate_arn   = try(var.certificate_arns[0], null)
 
   default_action {
     type = "fixed-response"
@@ -65,6 +65,13 @@ resource "aws_lb_listener" "https" {
   tags = merge(local.tags, {
     Name = "${var.name}-https"
   })
+
+  lifecycle {
+    precondition {
+      condition     = length(var.certificate_arns) > 0
+      error_message = "At least one entry in certificate_arns is required when https_listener_enabled is true."
+    }
+  }
 }
 
 ################################################################################
@@ -77,6 +84,3 @@ resource "aws_lb_listener_certificate" "additional" {
   listener_arn    = aws_lb_listener.https[0].arn
   certificate_arn = each.value
 }
-
-
-

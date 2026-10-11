@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.17.0
-  description: Keep add-ons on On-Demand capacity, preferring the system node group, so a Spot interruption cannot take down the cluster's controllers, logs and metrics.
+  version: 0.18.0
+  description: "Add opt-in Ravion-managed domains for the shared ALB: a wildcard certificate and DNS for the cluster, served as the default certificate on the selected ALB HTTPS listener while every BYO certificate stays attached via SNI."
 module:
   inputs:
     - id: cluster
@@ -113,6 +113,22 @@ module:
       label: Name slug
       placeholder: my-cluster-eks
       type: string
+    - default: false
+      description: Have Ravion issue and manage a shared wildcard TLS certificate and DNS for this cluster. The selected ALB HTTPS listener serves the wildcard certificate, and workloads get automatic domains under the cluster apex. Requires exactly one HTTPS-enabled ALB.
+      id: use_ravion_managed_domains
+      label: Ravion-managed domains
+      type: boolean
+    - description: Subdomain for the cluster's wildcard domain. Defaults to the module given ID when empty.
+      id: ravion_cluster_name
+      label: Cluster subdomain
+      patterns:
+        - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+      required: false
+      show_when:
+        use_ravion_managed_domains: true
+      suffix: ".<< platform.apex >>"
+      type: string
     - default: true
       description: Create an internet-facing Application Load Balancer for traffic from the public internet.
       id: public_alb_creation_enabled
@@ -136,6 +152,7 @@ module:
         show_when:
           public_alb_creation_enabled: true
           public_alb_https_enabled: true
+          use_ravion_managed_domains: false
     - collapsible: true
       description: AWS ELB security policy name for the public HTTPS listener.
       id: public_alb_ssl_policy
@@ -202,6 +219,7 @@ module:
         show_when:
           private_alb_creation_enabled: true
           private_alb_https_enabled: true
+          use_ravion_managed_domains: false
     - collapsible: true
       description: AWS ELB security policy name for the private HTTPS listener.
       id: private_alb_ssl_policy
@@ -1750,6 +1768,10 @@ module:
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
         name: << module.input.name >>
+        use_ravion_managed_domains: << module.input.use_ravion_managed_domains >>
+        ravion_cluster_name: << module.input.ravion_cluster_name >>
+        ravion_aws_account_id: << module.input.aws_account_id >>
+        ravion_aws_region: << module.input.aws_region >>
         public_alb_creation_enabled: << module.input.public_alb_creation_enabled >>
         public_alb_https_enabled: << module.input.public_alb_https_enabled >>
         public_alb_certificate_arns: >-
