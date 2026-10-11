@@ -459,13 +459,13 @@ module:
                 cluster_parent_fqdn: << module.input.cluster_parent_fqdn >>
                 domains: << module.input.domains || [] >>
                 cluster_https_listener_arn: >-
-                  << module.input.public_web_service_enabled ? module.input.public_alb_https_listener_arn :
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_https_listener_arn :
                   module.input.private_alb_https_listener_arn >>
                 cluster_alb_dns_name: >-
-                  << module.input.public_web_service_enabled ? module.input.public_alb_dns_name :
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_dns_name :
                   module.input.private_alb_dns_name >>
                 cluster_alb_zone_id: >-
-                  << module.input.public_web_service_enabled ? module.input.public_alb_zone_id :
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_zone_id :
                   module.input.private_alb_zone_id >>
                 ravion_aws_account_id: << module.input.aws_account_id >>
                 ravion_aws_region: << module.input.aws_region >>
