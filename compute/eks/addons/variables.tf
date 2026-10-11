@@ -1041,6 +1041,20 @@ variable "system_node_count" {
   }
 }
 
+variable "system_node_labels" {
+  type        = map(string)
+  description = "Node labels that identify the system node group (the compute/eks composite labels it role=system). Add-ons prefer these nodes, and HA coordinators placed on distinct nodes are pinned to them. Ignored when system_node_count is 0. Empty sets no preference."
+  default     = {}
+  nullable    = false
+}
+
+variable "addon_placement_enabled" {
+  type        = bool
+  description = "Require On-Demand capacity for the add-on controllers and stores, prefer the system node group, and tolerate CriticalAddonsOnly, so a Spot reclaim cannot take them down. Disable before supplying your own affinity through the add-on Helm values."
+  default     = true
+  nullable    = false
+}
+
 variable "ravion_operator_coordinator_enabled" {
   type        = bool
   description = "Enable elected HA coordinators. Requires executor Jobs and a replica-aware Ravion gateway."

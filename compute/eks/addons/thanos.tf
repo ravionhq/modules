@@ -142,7 +142,7 @@ resource "helm_release" "thanos" {
     compactor = {
       storageClass = local.prometheus_config.storage_class
     }
-  })], var.thanos_helm_values)
+  })], local.addon_placement_values, var.thanos_helm_values)
 
   lifecycle {
     precondition {

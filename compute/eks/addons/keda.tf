@@ -14,18 +14,11 @@ resource "helm_release" "keda" {
   values = concat(
     [yamlencode({
       crds = { install = true }
-      # Keep the scaler available when the Spot application pool is empty or interrupted.
-      affinity = {
-        nodeAffinity = {
-          requiredDuringSchedulingIgnoredDuringExecution = {
-            nodeSelectorTerms = [
-              { matchExpressions = [{ key = "eks.amazonaws.com/capacityType", operator = "In", values = ["ON_DEMAND"] }] },
-              { matchExpressions = [{ key = "karpenter.sh/capacity-type", operator = "In", values = ["on-demand"] }] },
-            ]
-          }
-        }
-      }
+      # Keep the scaler available when the Spot application pool is empty or
+      # interrupted: On-Demand even with add-on placement off.
+      affinity = local.addon_affinity
     })],
+    var.addon_placement_enabled ? [yamlencode({ tolerations = local.addon_tolerations })] : [],
     var.keda_helm_values,
   )
 

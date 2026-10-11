@@ -92,6 +92,7 @@ resource "helm_release" "lb_controller" {
         targetgroupbindingRequeueDuration = "2s"
       }),
     ],
+    local.addon_placement_values,
     var.aws_load_balancer_controller_helm_values,
   )
 

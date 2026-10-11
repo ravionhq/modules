@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.16.4
-  description: Collect logs from tainted nodes, such as a default node group reserved for cluster-critical add-ons.
+  version: 0.17.0
+  description: Keep add-ons on On-Demand capacity, preferring the system node group, so a Spot interruption cannot take down the cluster's controllers, logs and metrics.
 module:
   inputs:
     - id: cluster
@@ -1636,6 +1636,9 @@ module:
           expire_after: '<< module.input.karpenter_default_node_pool_expire_after || "720h" >>'
         node_subnet_ids: << module.input.node_subnet_ids >>
         system_node_count: << module.input.system_node_count >>
+        # The compute/eks composite always labels its system node group role=system.
+        system_node_labels:
+          role: system
         cluster_security_group_id: << module.input.cluster_security_group_id >>
         ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
         aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.5.0" >>

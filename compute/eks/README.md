@@ -28,9 +28,16 @@ the External Secrets Operator, the EBS CSI driver, and Container Insights — li
 in the separate [`compute/eks/addons`](addons/) stack as selectable add-ons, so
 clusters only carry what they use.
 
-With Karpenter, the default node group can be reserved for the components that
-must not run on Karpenter capacity: Karpenter itself, CoreDNS, and Ravion
-Operator coordinators all tolerate `CriticalAddonsOnly`. Set
+The default node group is a fixed two On-Demand nodes (in Ravion, minimum and
+maximum both default to 2), labelled `role=system`, for the cluster add-ons:
+the EKS Add-ons stack prefers it for its controllers and stores and pins Ravion
+Operator coordinators to it, while application workloads run on Karpenter
+capacity. Size the instance type for the add-ons you enable; when the group is
+full, add-ons fall back to On-Demand Karpenter nodes rather than Spot.
+
+With Karpenter, the default node group can also be reserved for the add-ons:
+Karpenter itself, CoreDNS, and every EKS Add-ons controller and store tolerate
+`CriticalAddonsOnly`. Set
 `system_node_group.taints` (in Ravion, **Taints** under Default capacity) to
 `[{ key = "CriticalAddonsOnly", value = "true", effect = "NO_SCHEDULE" }]` and
 give the group a fixed size (minimum equal to maximum). Every other pod then
