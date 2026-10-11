@@ -462,7 +462,7 @@ run "tempo_uses_a_size_limited_scratch_volume_by_default" {
   }
 
   assert {
-    condition     = !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo), "metricsGenerator") && length(helm_release.tempo[0].values) == 1
+    condition     = !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo), "metricsGenerator") && length(helm_release.tempo[0].values) == 2
     error_message = "The metrics generator and extra values must be off by default"
   }
 }
@@ -546,7 +546,7 @@ run "tempo_takes_any_chart_values" {
   }
 
   assert {
-    condition     = length(helm_release.tempo[0].values) == 2 && yamldecode(helm_release.tempo[0].values[1]).replicas == 2 && yamldecode(helm_release.tempo[0].values[1]).tempo.overrides.defaults.global.max_bytes_per_trace == 10000000
+    condition     = length(helm_release.tempo[0].values) == 3 && yamldecode(helm_release.tempo[0].values[2]).replicas == 2 && yamldecode(helm_release.tempo[0].values[2]).tempo.overrides.defaults.global.max_bytes_per_trace == 10000000
     error_message = "A tempo destination's helm_values must reach the chart after the module's own values"
   }
 }
@@ -580,7 +580,7 @@ run "tempo_chart_values_beside_other_destinations" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.tempo[0].values[1]).replicas == 2 && yamldecode(helm_release.tempo[0].values[1]).tolerations[0].key == "dedicated" && yamldecode(helm_release.tempo[0].values[1]).resources.limits.memory == "2Gi"
+    condition     = yamldecode(helm_release.tempo[0].values[2]).replicas == 2 && yamldecode(helm_release.tempo[0].values[2]).tolerations[0].key == "dedicated" && yamldecode(helm_release.tempo[0].values[2]).resources.limits.memory == "2Gi"
     error_message = "A Tempo card's chart values must reach the chart whatever the other cards carry"
   }
 
@@ -601,7 +601,7 @@ run "tempo_card_with_empty_chart_values_beside_a_null_one" {
   }
 
   assert {
-    condition     = length(helm_release.tempo[0].values) == 1 && length(helm_release.otlp_collector) == 1
+    condition     = length(helm_release.tempo[0].values) == 2 && length(helm_release.otlp_collector) == 1
     error_message = "An empty Tempo card beside a null one must plan, as the form sends them"
   }
 }

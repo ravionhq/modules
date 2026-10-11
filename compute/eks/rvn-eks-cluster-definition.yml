@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.7.0
-  description: Add taints for the default node group, so it can be reserved for cluster-critical add-ons while Karpenter runs everything else.
+  version: 0.8.0
+  description: Size the default node group at a fixed two nodes for cluster add-ons, with Karpenter running application workloads.
 module:
   inputs:
     - id: network
@@ -130,7 +130,7 @@ module:
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
     - collapsible: true
       default: 2
-      description: Minimum EC2 nodes in the default managed node group. Set it high enough to run cluster components and leave spare capacity for workloads and rolling node updates.
+      description: Minimum EC2 nodes in the default managed node group, which runs the cluster add-ons. Two keeps them highly available.
       id: system_node_min_nodes
       moved_from:
         - system_node_min_size
@@ -138,8 +138,8 @@ module:
       min: 1
       type: number
     - collapsible: true
-      default: 4
-      description: Maximum EC2 nodes in the default managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
+      default: 2
+      description: Maximum EC2 nodes in the default managed node group. Defaults to the minimum, a fixed group; application workloads scale on Karpenter capacity.
       id: system_node_max_nodes
       moved_from:
         - system_node_max_size
@@ -155,7 +155,7 @@ module:
       type: number
     - collapsible: true
       default: []
-      description: Keep pods without a matching toleration off this group. CriticalAddonsOnly with No schedule reserves it for Karpenter, CoreDNS, and Ravion Operator coordinators, so other pods run on Karpenter capacity.
+      description: Keep pods without a matching toleration off this group. EKS Add-ons tolerate CriticalAddonsOnly, so that taint with No schedule reserves the group for them.
       id: system_node_taints
       item_inputs:
         - id: key

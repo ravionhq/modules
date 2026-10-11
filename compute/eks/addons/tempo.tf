@@ -345,6 +345,7 @@ resource "helm_release" "tempo" {
         }
       }),
     ],
+    local.addon_placement_values,
     length(keys(local.tempo_config.helm_values)) > 0 ? [yamlencode(local.tempo_config.helm_values)] : [],
     var.tempo_helm_values,
   )
