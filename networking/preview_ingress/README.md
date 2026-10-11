@@ -1,0 +1,158 @@
+# Preview Ingress Module
+
+This module creates the entry point for sandbox previews: an internet-facing Network Load Balancer with a Ravion-managed wildcard domain and certificate, in front of one preview router instance. The router forwards each preview hostname to the sandbox that serves it and wakes a paused sandbox when a request arrives for it.
+
+Requests travel from the browser to the load balancer, to the router, to the sandbox host, all inside your AWS account. Ravion tells the router which hostname belongs to which sandbox over a connection the router opens outbound.
+
+## What Terraform creates
+
+| Resource | Purpose |
+| --- | --- |
+| Network Load Balancer | Internet-facing, cross-zone, with its own security group |
+| TLS listener on 443 | Terminates TLS with the wildcard certificate and forwards to the router on TCP 8080 |
+| TCP listener on 80 | Forwards to the router on TCP 8081, where plain HTTP is redirected to HTTPS |
+| Two target groups | Instance targets with the client address preserved, health checked over HTTP on `/healthz`, port 8082 |
+| Wildcard certificate and DNS record | `*.<domain_name>.<apex>` on Ravion's managed apex, issued through the `ravion_aws_acm_certificate` resource and pointed at the load balancer |
+| Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes |
+| Two security groups | One for the load balancer, one for the router |
+| IAM role and instance profile | Session Manager access for operators. Created only with `ssm_enabled` |
+
+## Usage
+
+Inside Ravion, create a module instance of `rvn-preview-ingress`. The stack run supplies `module_instance_id` and the provider credentials.
+
+```hcl
+module "preview_ingress" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/preview_ingress?ref=rvn-preview-ingress@0.1.0"
+
+  name               = "previews"
+  module_instance_id = "minst_..."
+  domain_name        = "previews"
+
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = module.vpc.public_subnet_ids
+  router_subnet_ids = module.vpc.private_subnet_ids
+
+  tags = {
+    Environment = "staging"
+  }
+}
+```
+
+Run the router in public subnets:
+
+```hcl
+module "preview_ingress" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/preview_ingress?ref=rvn-preview-ingress@0.1.0"
+
+  name               = "previews"
+  module_instance_id = "minst_..."
+  domain_name        = "previews"
+
+  vpc_id                   = module.vpc.vpc_id
+  public_subnet_ids        = module.vpc.public_subnet_ids
+  router_subnet_ids        = module.vpc.public_subnet_ids
+  router_public_ip_enabled = true
+}
+```
+
+Outside a Ravion pipeline, export `RAVION_BASE_URL` and `RAVION_API_KEY` for the `ravion` provider before applying.
+
+## The router instance
+
+The instance boots an image that carries systemd, curl and sha256sum. By default that is the newest image the `image_owner` account publishes under `image_name_pattern` for the instance type's architecture. Set `image_id` to pin an image.
+
+The boot script does four things, in order, and stops at the first one that fails:
+
+1. Writes `/etc/ravion/preview-router.env` with the Ravion API origin and the module instance id.
+2. Downloads the current runner release for the image's architecture from `<ravion_api_url>/sandbox-host/v1/releases/current`, over HTTPS only.
+3. Verifies the download against the release's SHA-256 checksum and installs it at `/usr/local/bin/runner`.
+4. Writes and starts `ravion-preview-router.service`, which runs `runner preview-router`.
+
+The script holds no credential and logs none. The router obtains its credential from Ravion at start: it presents the instance's signed identity document, and Ravion checks that the instance runs in the module instance's AWS account and carries the tag `ravion:preview-router = <module_instance_id>`. The module sets that tag on the instance. The credential stays in the router's memory.
+
+An instance whose boot script fails never starts the router. It stays unhealthy behind the load balancer, the Auto Scaling group replaces it after the health check grace period, and the apply that launched it fails after ten minutes without a healthy router. The reason is in the instance's console output and in `/var/log/cloud-init-output.log`, on the line that starts with `preview router setup: FAILED`.
+
+The router keeps itself on the current runner release after boot. A change to the launch template (image, instance type, API origin, tags) replaces the instance: the old router is terminated before the new one serves, and previews are unreachable for the few minutes in between. A newer image found by the lookup is such a change, so pin `image_id` to decide when it happens.
+
+## Security groups
+
+| Group | Inbound | Outbound |
+| --- | --- | --- |
+| Load balancer | TCP 443 and 80 from `ingress_cidr_blocks` | TCP 8080, 8081 and 8082 to the router's group |
+| Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 to the VPC's IPv4 ranges |
+
+No CIDR reaches the router. Its outbound HTTPS serves the Ravion API, the release download and AWS APIs. Ports 20000-20998 are where sandbox hosts publish previews, and the router can open no other connection inside the VPC. A Ravion API on a port other than 443 adds that port to the router's outbound rules.
+
+Ravion adds one inbound rule to the sandbox hosts' security group the first time a preview is exposed through the router: TCP 20000-20999 from the router's group. Remove that rule before destroying this module. AWS refuses to delete a security group that another group's rule still names.
+
+## Session Manager
+
+`ssm_enabled` gives the instance a role with the `AmazonSSMManagedInstanceCore` policy and no other permission. Session Manager also needs the SSM Agent in the image. Turn `ssm_enabled` off to launch the instance with no IAM role.
+
+## Requirements
+
+| Name | Version |
+|------|---------|
+| opentofu/terraform | >= 1.10.0 |
+| aws | >= 6.0 |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1, configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| name | Name of the load balancer and the prefix of every other resource (1-32 characters) | `string` | n/a | yes |
+| module_instance_id | Ravion module instance id (`minst_*`) this preview ingress belongs to; the router's identity. Injected as `TF_VAR_module_instance_id` inside a stack run | `string` | n/a | yes |
+| domain_name | Leaf of the wildcard domain: Ravion issues `*.<domain_name>.<apex>` | `string` | n/a | yes |
+| vpc_id | VPC of the load balancer, the router and the sandboxes it serves | `string` | n/a | yes |
+| public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
+| router_subnet_ids | Subnets the router instance launches in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
+| router_public_ip_enabled | Give the router instance a public IPv4 address, for public `router_subnet_ids` | `bool` | `false` | no |
+| ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
+| ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
+| instance_type | EC2 instance type of the router | `string` | `"t3.small"` | no |
+| image_id | AMI the router boots. Null looks up the newest image of `image_owner` | `string` | `null` | no |
+| image_owner | AWS account that publishes the looked-up image: a 12-digit ID, or `self`, `amazon`, `aws-marketplace` | `string` | `"600013814144"` | no |
+| image_name_pattern | AMI name pattern of the looked-up image | `string` | `"ravion-sandbox-host-*"` | no |
+| ssm_enabled | Give the instance a role that allows Session Manager and nothing else | `bool` | `true` | no |
+| ravion_api_url | Origin of the Ravion API the router downloads its release from and connects to | `string` | `"https://api.ravion.com"` | no |
+| ravion_aws_account_id | Ravion AWS account record id (`aws_*`) the certificate is issued in. Null detects it from the run's AWS credentials | `string` | `null` | no |
+| region | AWS region. Null uses the provider's region | `string` | `null` | no |
+| tags | Tags to assign to all resources | `map(string)` | `{}` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| sandbox_router_id | The router's identity: the module instance id it enrolls with |
+| sandbox_router_dns_name | DNS name of the load balancer in front of the router |
+| sandbox_router_zone_id | Canonical hosted zone ID of the load balancer |
+| sandbox_router_load_balancer_arn | ARN of the load balancer in front of the router |
+| sandbox_router_security_group_id | ID of the router instance's security group |
+| wildcard_domain_name | The apex previews are served under |
+| certificate_arn | ARN of the wildcard certificate on the TLS listener |
+| load_balancer_security_group_id | ID of the load balancer's security group |
+| autoscaling_group_name | Name of the Auto Scaling group that keeps the router running |
+| image_id | The AMI new router instances boot |
+| aws_account_id | AWS account ID where the resources are deployed |
+| region | AWS region where the resources are deployed |
+
+Ravion reads the `sandbox_router_*` outputs to route the previews of this module instance's wildcard domain through the router.
+
+## Limits
+
+- One router instance. A replaced instance means a few minutes without previews.
+- IPv4 only, and an internet-facing load balancer only.
+- HTTP/1.1 between the load balancer and the router. WebSocket upgrades pass through.
+- The load balancer writes no access logs.
+
+## Testing
+
+```bash
+tofu init -backend=false
+tofu test
+tests/user_data_test.sh
+```
+
+`tofu test` plans the module against mocked providers. `tests/user_data_test.sh` renders the boot script and runs it in a throwaway Debian container with stand-ins for curl and systemctl: a release that verifies, a checksum mismatch, a release the API does not offer, a checksum that is not a digest, and a runner that cannot run. It needs Docker.

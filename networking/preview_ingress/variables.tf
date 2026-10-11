@@ -1,0 +1,186 @@
+################################################################################
+# General
+################################################################################
+
+variable "name" {
+  type        = string
+  description = "Name of the load balancer and the prefix of every other resource."
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$", var.name))
+    error_message = "The name must be 1-32 lowercase letters, numbers, and hyphens, starting and ending with a letter or number."
+  }
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "A map of tags to assign to all resources."
+  default     = {}
+}
+
+variable "region" {
+  type        = string
+  description = "AWS region. When null, the provider's configured region is used."
+  default     = null
+}
+
+################################################################################
+# Ravion
+################################################################################
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) this preview ingress belongs to. It is the router's identity: the instance is tagged with it, enrolls with it, and receives the previews of this module instance's wildcard domain. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external runs."
+
+  validation {
+    condition     = can(regex("^minst_[0-9A-Za-z]+$", var.module_instance_id))
+    error_message = "The module_instance_id must be a Ravion module instance id: minst_ followed by letters and numbers."
+  }
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AWS account record id (aws_*) the wildcard certificate is issued in. When null, it is detected from the AWS credentials of the run."
+  default     = null
+}
+
+variable "ravion_api_url" {
+  type        = string
+  description = "Origin of the Ravion API the router downloads its release from and connects to. Change it only for a staging or self-hosted control plane."
+  default     = "https://api.ravion.com"
+
+  validation {
+    condition     = can(regex("^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$", var.ravion_api_url))
+    error_message = "The ravion_api_url must be an HTTPS origin with no path or trailing slash, such as https://api.ravion.com."
+  }
+}
+
+################################################################################
+# Domain
+################################################################################
+
+variable "domain_name" {
+  type        = string
+  description = "Leaf of the wildcard domain previews are served under. Ravion issues *.<domain_name>.<apex> on its managed apex and points it at the load balancer."
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.domain_name))
+    error_message = "The domain_name must be one DNS label: 1-63 lowercase letters, numbers, and hyphens, starting and ending with a letter or number."
+  }
+}
+
+################################################################################
+# Network
+################################################################################
+
+variable "vpc_id" {
+  type        = string
+  description = "The VPC the load balancer and the router run in. It must be the VPC of the sandboxes whose previews the router serves."
+
+  validation {
+    condition     = can(regex("^vpc-", var.vpc_id))
+    error_message = "The vpc_id must be a valid VPC ID starting with 'vpc-'."
+  }
+}
+
+variable "public_subnet_ids" {
+  type        = list(string)
+  description = "Public subnets for the internet-facing load balancer."
+
+  validation {
+    condition     = length(var.public_subnet_ids) >= 1 && alltrue([for subnet in var.public_subnet_ids : can(regex("^subnet-", subnet))])
+    error_message = "The public_subnet_ids must hold at least one subnet ID starting with 'subnet-'."
+  }
+}
+
+variable "router_subnet_ids" {
+  type        = list(string)
+  description = "Subnets the router instance launches in. Use private subnets with a NAT gateway, or public subnets together with router_public_ip_enabled: the router needs outbound HTTPS. Each must be in an Availability Zone that one of public_subnet_ids covers, because the load balancer reaches targets only in its own zones."
+
+  validation {
+    condition     = length(var.router_subnet_ids) >= 1 && alltrue([for subnet in var.router_subnet_ids : can(regex("^subnet-", subnet))])
+    error_message = "The router_subnet_ids must hold at least one subnet ID starting with 'subnet-'."
+  }
+}
+
+variable "router_public_ip_enabled" {
+  type        = bool
+  description = "Give the router instance a public IPv4 address. Needed only when router_subnet_ids are public subnets. The instance still accepts traffic from the load balancer alone."
+  default     = false
+}
+
+variable "ingress_cidr_blocks" {
+  type        = list(string)
+  description = "IPv4 CIDR blocks allowed to reach the load balancer on ports 443 and 80. An empty list allows none."
+  default     = ["0.0.0.0/0"]
+
+  validation {
+    condition     = alltrue([for cidr in var.ingress_cidr_blocks : can(cidrhost(cidr, 0))])
+    error_message = "All ingress_cidr_blocks must be valid IPv4 CIDR blocks."
+  }
+}
+
+variable "ssl_policy" {
+  type        = string
+  description = "Security policy of the TLS listener."
+  default     = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+
+  validation {
+    condition     = can(regex("^ELBSecurityPolicy-", var.ssl_policy))
+    error_message = "The ssl_policy must be an Elastic Load Balancing security policy name starting with 'ELBSecurityPolicy-'."
+  }
+}
+
+################################################################################
+# Router instance
+################################################################################
+
+variable "instance_type" {
+  type        = string
+  description = "EC2 instance type of the router. Its architecture must match the image's."
+  default     = "t3.small"
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+\\.[a-z0-9]+$", var.instance_type))
+    error_message = "The instance_type must be an EC2 instance type such as t3.small."
+  }
+}
+
+variable "image_id" {
+  type        = string
+  description = "AMI the router instance boots. When null, the newest image of image_owner matching image_name_pattern and the instance type's architecture is used. The image needs systemd, curl and sha256sum; the boot script installs the router itself."
+  default     = null
+
+  validation {
+    condition     = var.image_id == null || can(regex("^ami-[0-9a-f]+$", var.image_id))
+    error_message = "The image_id must be an AMI ID starting with 'ami-'."
+  }
+}
+
+variable "image_owner" {
+  type        = string
+  description = "AWS account that publishes the router image looked up when image_id is null: a 12-digit account ID, or the alias self, amazon or aws-marketplace. Defaults to the account Ravion publishes its images from."
+  default     = "600013814144"
+
+  validation {
+    condition     = can(regex("^([0-9]{12}|self|amazon|aws-marketplace)$", var.image_owner))
+    error_message = "The image_owner must be a 12-digit AWS account ID, or one of self, amazon, aws-marketplace."
+  }
+}
+
+variable "image_name_pattern" {
+  type        = string
+  description = "AMI name pattern of the router image looked up when image_id is null. Use * as a wildcard."
+  default     = "ravion-sandbox-host-*"
+
+  validation {
+    condition     = length(var.image_name_pattern) > 0
+    error_message = "The image_name_pattern must not be empty."
+  }
+}
+
+variable "ssm_enabled" {
+  type        = bool
+  description = "Give the router instance an IAM role that allows AWS Systems Manager Session Manager and nothing else, for operator shell access. When false the instance has no IAM role. The image must carry the SSM Agent."
+  default     = true
+}

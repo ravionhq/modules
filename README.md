@@ -37,6 +37,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `networking/` | `alb`             | Standalone AWS Application Load Balancer with shared HTTP/HTTPS listeners and alarms enabled by default | v1.0.0  |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
+| `networking/` | `preview_ingress` | Entry point for sandbox previews: a Network Load Balancer with a Ravion-managed wildcard domain and certificate in front of one preview router instance that forwards each preview hostname to its sandbox and wakes paused sandboxes on request (includes the `rvn-preview-ingress` module definition) | Unreleased |
 | `networking/` | `route53`         | AWS Route53 hosted zones and records                                   | v1.0.0  |
 | `networking/` | `security-groups` | AWS Security Groups                                                    | v1.0.0  |
 | `networking/` | `vpc`             | AWS VPC with adaptive public and private subnets                       | v1.0.0  |
@@ -86,6 +87,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-worker` | EKS Worker | v0.11.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
+| `rvn-preview-ingress` | Preview Ingress | v0.1.0 | `networking/preview_ingress/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |
