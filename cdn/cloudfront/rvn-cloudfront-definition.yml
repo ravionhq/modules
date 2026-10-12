@@ -3,7 +3,7 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 2.0.0
+  version: 1.5.0
   description: Forward viewer country and other CloudFront headers by default for new distributions. Existing instances keep their saved origin request policy.
 module:
   inputs:
@@ -914,7 +914,7 @@ module:
 
     Forwarding CloudFront-Viewer-Country does not add it to the cache key. If your app returns country-specific content, such as geo pricing, choose CachingDisabled or a custom cache policy that includes CloudFront-Viewer-Country to avoid serving one country's response to another.
 
-    New instances use AllViewerAndCloudFrontHeaders-2022-06 starting with version 2.0.0. Existing instances keep their saved origin request policy; select this policy explicitly to forward viewer country. For private S3 origins with OAC, continue to use None instead.
+    New instances use AllViewerAndCloudFrontHeaders-2022-06 starting with version 1.5.0. Existing instances keep their saved origin request policy; select this policy explicitly to forward viewer country. For private S3 origins with OAC, continue to use None instead.
 
     Response headers policy is optional and adds headers such as the SecurityHeadersPolicy set or CORS headers to every response.
 
