@@ -1520,6 +1520,11 @@ variable "grafana_environment_variables" {
   nullable    = false
 
   validation {
+    condition     = alltrue([for variable in var.grafana_environment_variables : trimspace(variable.name) != ""])
+    error_message = "Each grafana_environment_variables entry needs a name."
+  }
+
+  validation {
     condition     = length(distinct([for variable in var.grafana_environment_variables : variable.name])) == length(var.grafana_environment_variables)
     error_message = "Each grafana_environment_variables entry must name a distinct environment variable."
   }
@@ -1533,6 +1538,13 @@ variable "grafana_secrets" {
   description = "Secret environment variables for the in-cluster Grafana, as an EKS workload's secrets: {name, value_from} objects. value_from is a full Secrets Manager or SSM Parameter Store ARN, and a Secrets Manager ARN may end in ECS's :<json key>:<version stage>:<version id> to read one key of a JSON secret. External Secrets reads each one inside the cluster, so none is ever a Helm value. GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET give a sign-in provider its client."
   default     = []
   nullable    = false
+
+  # The name is the environment variable and the key in the Kubernetes Secret,
+  # under the rule the EKS workload charts hold a secret's name to.
+  validation {
+    condition     = alltrue([for secret in var.grafana_secrets : can(regex("^[A-Za-z_][A-Za-z0-9_.-]*$", secret.name))])
+    error_message = "Each grafana_secrets name must be an environment variable name: letters, digits, underscores, dots and dashes, starting with a letter or an underscore."
+  }
 
   validation {
     condition     = length(distinct([for secret in var.grafana_secrets : secret.name])) == length(var.grafana_secrets)

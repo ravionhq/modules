@@ -671,6 +671,42 @@ run "rejects_a_secret_that_is_not_an_arn" {
   expect_failures = [var.grafana_secrets]
 }
 
+run "rejects_a_secret_name_that_is_not_an_environment_variable_name" {
+  command = plan
+
+  variables {
+    grafana_secrets = [
+      { name = "GRAFANA TOKEN", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN::" },
+    ]
+  }
+
+  expect_failures = [var.grafana_secrets]
+}
+
+run "rejects_a_secret_without_a_name" {
+  command = plan
+
+  variables {
+    grafana_secrets = [
+      { name = "", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN::" },
+    ]
+  }
+
+  expect_failures = [var.grafana_secrets]
+}
+
+run "rejects_an_environment_variable_without_a_name" {
+  command = plan
+
+  variables {
+    grafana_environment_variables = [
+      { name = " ", value = "debug" },
+    ]
+  }
+
+  expect_failures = [var.grafana_environment_variables]
+}
+
 run "rejects_a_json_key_on_a_parameter" {
   command = plan
 
