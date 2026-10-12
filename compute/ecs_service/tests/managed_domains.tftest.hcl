@@ -134,13 +134,23 @@ run "custom_domain_creates_certificate_domain_and_rule" {
   }
 
   assert {
-    condition     = length(ravion_domain.wildcard) == 0
-    error_message = "A custom external domain must not be nested under the cluster wildcard"
+    condition     = length(ravion_domain.wildcard) == 1 && contains(keys(ravion_domain.wildcard), "test-service.cluster.ravion.app")
+    error_message = "Adding a custom domain must keep the default Ravion domain"
   }
 
   assert {
     condition     = length(aws_lb_listener_rule.ravion) == 1
     error_message = "The custom hostname must be routed to the service target group"
+  }
+
+  assert {
+    condition     = toset(local.ravion_host_headers) == toset(["test-service.cluster.ravion.app", "www.example.com"])
+    error_message = "Both the default Ravion address and custom domain must be routed"
+  }
+
+  assert {
+    condition     = output.ravion_domain_fqdn == "test-service.cluster.ravion.app"
+    error_message = "The default Ravion address must remain the primary output"
   }
 }
 
@@ -149,6 +159,7 @@ run "mixed_domains_share_one_custom_certificate" {
 
   variables {
     domains = [
+      "test-service.cluster.ravion.app",
       "api.cluster.ravion.app",
       "www.example.com",
       "api.example.com",
@@ -157,8 +168,8 @@ run "mixed_domains_share_one_custom_certificate" {
   }
 
   assert {
-    condition     = length(ravion_domain.wildcard) == 1
-    error_message = "The single-label child must ride the cluster wildcard"
+    condition     = length(ravion_domain.wildcard) == 2 && length(local.effective_domains) == 4
+    error_message = "The default and extra Ravion addresses must use the wildcard, without duplicates"
   }
 
   assert {
@@ -169,6 +180,36 @@ run "mixed_domains_share_one_custom_certificate" {
   assert {
     condition     = length(ravion_aws_acm_certificate.svc) == 1
     error_message = "All custom domains for a service must share one certificate"
+  }
+}
+
+run "separate_ravion_domain_name" {
+  command = plan
+
+  variables {
+    ravion_domain_name    = "api"
+    domains               = ["api.example.com"]
+    ravion_aws_account_id = "aws_testaccount"
+  }
+
+  assert {
+    condition     = output.ravion_domain_fqdn == "api.cluster.ravion.app" && contains(keys(ravion_domain.custom), "api.example.com")
+    error_message = "The separate Ravion domain input must work alongside custom domains"
+  }
+}
+
+run "manual_mode_has_no_managed_domains" {
+  command = plan
+
+  variables {
+    cluster_parent_fqdn      = null
+    load_balancer_attachment = null
+    domains                  = ["api.example.com"]
+  }
+
+  assert {
+    condition     = length(ravion_domain.wildcard) == 0 && length(ravion_domain.custom) == 0 && length(aws_lb_listener_rule.ravion) == 0 && output.ravion_domain_fqdn == null
+    error_message = "Manual mode must not allocate managed domains or rules"
   }
 }
 

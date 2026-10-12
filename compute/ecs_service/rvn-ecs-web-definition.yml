@@ -4,7 +4,7 @@ definition:
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
   version: 2.3.0
-  description: "Add Ravion-managed domains: service domains ride the cluster wildcard certificate automatically, and custom domains get a dedicated certificate with DNS validation, when the selected cluster has managed domains enabled. The Domains section sits right after the service basics."
+  description: "Add Ravion-managed domains with a default Ravion address, optional custom domains, and automatic certificates and listener rules."
 module:
   inputs:
     - id: section_cluster
@@ -18,15 +18,15 @@ module:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
         - $include: ../../partials/inputs/ecs-service-cluster-alb-mapped-inputs.yml
         - id: ravion_managed_domains_enabled
-          label: Cluster-managed domains
+          label: Ravion-managed domains
           type: boolean
-          description: Whether the selected cluster has Ravion-managed domains enabled (its ALB HTTPS listener serves the cluster wildcard certificate).
+          description: "On: Ravion manages service certificates and listener rules. Off: attach certificates on the cluster and configure listener rules here."
           collapsible: true
           default: << ref.stack.output.ravion_managed_domains_enabled || false >>
         - id: cluster_parent_fqdn
-          label: Cluster domain apex
+          label: Cluster domain
           type: string
-          description: Wildcard apex of the selected cluster. Service domains one label under it ride the cluster wildcard certificate automatically.
+          description: Base for the service's Ravion address.
           collapsible: true
           required: false
           default: <<ref.stack.output.ravion_cluster_domain_fqdn>>
@@ -93,11 +93,23 @@ module:
       show_when:
         ravion_managed_domains_enabled: true
       type: section
-    - add_button_label: Add domain
-      description: Fully-qualified domains for this service. A name one label under the cluster apex rides the cluster wildcard certificate automatically; any other name gets a dedicated certificate with DNS validation records you add at your DNS host. Empty = an automatic <service>.<cluster apex> domain.
+    - id: ravion_domain_name
+      label: Ravion domain
+      description: Stays available when you add custom domains; uses the module ID when empty.
+      type: string
+      default: << module.given_id >>
+      suffix: ".<< module.input.cluster_parent_fqdn >>"
+      required: false
+      patterns:
+        - message: Use 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+      show_when:
+        ravion_managed_domains_enabled: true
+    - add_button_label: Add custom domain
+      description: Ravion manages certificates and listener rules; add the provided DNS records at your DNS provider.
       id: domains
-      label: Domains
-      max_length: 10
+      label: Custom domains
+      max_length: 4
       placeholder: app.example.com
       show_when:
         ravion_managed_domains_enabled: true
@@ -360,7 +372,7 @@ module:
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
         # Managed mode discards caller listener rules (the module creates
-        # host-header rules from `domains`), so hide the manual routing inputs.
+        # host-header rules for the Ravion and custom domains).
         field_overrides:
           show_when:
             ravion_managed_domains_enabled: false
@@ -457,6 +469,7 @@ module:
                   << module.input.public_alb_routing_enabled ? module.input.public_alb_security_group_id :
                   module.input.private_alb_security_group_id >>
                 cluster_parent_fqdn: << module.input.cluster_parent_fqdn >>
+                ravion_domain_name: << module.input.ravion_domain_name >>
                 domains: << module.input.domains || [] >>
                 cluster_https_listener_arn: >-
                   << module.input.public_alb_routing_enabled ? module.input.public_alb_https_listener_arn :

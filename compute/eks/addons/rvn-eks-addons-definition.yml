@@ -114,13 +114,13 @@ module:
       placeholder: my-cluster-eks
       type: string
     - default: false
-      description: Have Ravion issue and manage a shared wildcard TLS certificate and DNS for this cluster. The selected ALB HTTPS listener serves the wildcard certificate, and workloads get automatic domains under the cluster apex. Requires exactly one HTTPS-enabled ALB.
+      description: "On: Ravion manages the cluster certificate and DNS. Off: attach certificates here. Requires one HTTPS-enabled ALB when on."
       id: use_ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
-    - description: Subdomain for the cluster's wildcard domain. Defaults to the module given ID when empty.
+    - description: Base for service addresses; uses the module ID when empty.
       id: ravion_cluster_name
-      label: Cluster subdomain
+      label: Cluster domain
       patterns:
         - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$

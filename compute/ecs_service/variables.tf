@@ -989,9 +989,20 @@ variable "ravion_listener_rule_priority" {
   default     = 0
 }
 
+variable "ravion_domain_name" {
+  type        = string
+  description = "Subdomain for the default Ravion address. Defaults to the module given ID or service name. Remains available alongside custom domains."
+  default     = null
+
+  validation {
+    condition     = var.ravion_domain_name == null || var.ravion_domain_name == "" || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.ravion_domain_name))
+    error_message = "The Ravion subdomain must be 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number."
+  }
+}
+
 variable "domains" {
   type        = list(string)
-  description = "Service FQDNs. Each entry that is one label under the cluster apex (<leaf>.<apex>) rides the cluster wildcard cert; any other (custom/external) entry is covered by a per-service instance cert (max 10 custom). Empty = an auto-FQDN <given-id>.<apex> under the cluster wildcard."
+  description = "Additional domains alongside the default Ravion address. Names one label under the cluster apex use its wildcard certificate; other domains share a service certificate (max 10 custom). Native traffic-shift deployments allow at most 5 total hostnames, including the default Ravion address."
   default     = []
 }
 

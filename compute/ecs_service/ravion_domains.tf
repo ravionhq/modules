@@ -2,7 +2,7 @@
 # Ravion-managed service domains
 ################################################################################
 # Wired when cluster_parent_fqdn is set (piped from ecs_cluster). The `domains`
-# list is the single source of truth — each entry is classified by whether the
+# list adds to the default Ravion domain — each entry is classified by whether the
 # cluster wildcard cert covers it:
 #
 #   - wildcard-covered (<leaf>.<apex>, exactly one label under the cluster apex):
@@ -13,25 +13,22 @@
 #     instance ACM cert (<=10 SANs) attached to the cluster listener, plus a
 #     routing record the customer adds.
 #
-# When `domains` is empty the service still gets an auto-FQDN
-# `<given-id>.<apex>` (a wildcard-covered entry), so a service with no custom
-# domains is reachable out of the box.
+# The default Ravion domain stays available when custom domains are added.
 
 locals {
   ravion_managed = var.cluster_parent_fqdn != null && var.cluster_parent_fqdn != ""
   apex           = local.ravion_managed ? lower(var.cluster_parent_fqdn) : ""
 
-  # Auto-FQDN used when the domains list is empty (matches the frontend default).
-  auto_fqdn = local.ravion_managed ? "${coalesce(var.module_instance_given_id, var.name)}.${local.apex}" : ""
+  auto_fqdn = local.ravion_managed ? "${coalesce(var.ravion_domain_name, var.module_instance_given_id, var.name)}.${local.apex}" : ""
 
-  # The effective list: the user's domains (or the auto-FQDN when empty),
+  # The effective list: the default Ravion domain plus the user's domains,
   # normalized — lowercased, trailing dot + surrounding whitespace stripped,
   # empties dropped. Keeps classification consistent with DNS case-insensitivity
   # and the backend's lowercase sanitizeLabel.
-  effective_domains = local.ravion_managed ? [
-    for d in(length(var.domains) > 0 ? var.domains : [local.auto_fqdn]) :
+  effective_domains = local.ravion_managed ? distinct([
+    for d in concat([local.auto_fqdn], var.domains) :
     lower(trimsuffix(trimspace(d), ".")) if trimspace(d) != ""
-  ] : []
+  ]) : []
 
   # Per-entry classification. wildcard-covered = "<leaf>.<apex>" with a non-empty
   # single label below the apex (the only shape the `*.<apex>` cert + ALIAS
