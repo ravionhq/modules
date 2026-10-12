@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
 release:
-  version: 0.3.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 0.3.1
+  description: Prevent component updates from failing when earlier AMI builds still reference them.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1049,6 +1049,8 @@ module:
     Declare the values that change between releases, such as a release version, under Parameters. A step reads one as `{{ ParameterName }}`. A parameter's value is passed by each deploy's image recipe rather than written into the document, so a deploy can override it without creating a new component.
 
     Image Builder components are immutable. This module names each by a hash of its content, so a changed document is a new component beside the old one, and the next deploy builds with it. There is no version to bump.
+
+    Components created by this module remain in AWS when replaced, removed, or the module is destroyed, because earlier build recipes can still reference them. They leave Terraform state but are not deleted. Image retention settings do not clean up components; unused components need separate manual cleanup after their recipe dependencies are gone.
 
     ## Deploying
 

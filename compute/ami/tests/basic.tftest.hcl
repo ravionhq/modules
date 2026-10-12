@@ -72,6 +72,11 @@ run "defaults" {
   command = plan
 
   assert {
+    condition     = aws_imagebuilder_component.this["provision"].skip_destroy
+    error_message = "Document components must be retained for historical build recipes"
+  }
+
+  assert {
     condition     = aws_imagebuilder_infrastructure_configuration.this.name == "test-image"
     error_message = "The infrastructure configuration must be named after the module"
   }
@@ -339,6 +344,11 @@ run "changed_document_is_a_new_component" {
     condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-26a95f58"
     error_message = "A changed document must produce a differently named component"
   }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].skip_destroy
+    error_message = "Replacement components must also retain versions referenced by build recipes"
+  }
 }
 
 run "changed_parameter_value_keeps_the_same_component" {
@@ -407,6 +417,11 @@ run "changed_component_version_is_a_new_component" {
 
 run "steps_become_a_component_document" {
   command = plan
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].skip_destroy
+    error_message = "Steps components must be retained for historical build recipes"
+  }
 
   variables {
     components = [

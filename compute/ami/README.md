@@ -200,6 +200,22 @@ each by a hash of its content instead: a changed document is a new component
 beside the old one, and the next deploy builds with it. `component_version`
 never has to change for an apply to succeed.
 
+Components created by this module are retained in AWS when replaced, removed,
+or the module is destroyed, because successful build recipes can still reference
+them. `skip_destroy = true` removes them from Terraform state without deleting
+them. `create_before_destroy` only orders replacement; it does not remove those
+recipe dependencies. Image retention settings do not clean up components, so
+unused components need separate manual cleanup after their recipe dependencies
+are gone. Components referenced by ARN are never managed by this module.
+
+When upgrading an existing stack, apply the retention setting with component
+content unchanged before making a change that replaces a component. The provider
+reads `skip_destroy` from the old resource's state during deletion. An already
+failed replacement can leave a deposed component with the old setting; upgrading
+the configuration alone does not repair that state. Inspect and back up the state
+before any separately approved recovery, without deleting successful build
+recipes or images.
+
 ## Parent image
 
 `parent_image` pins one image: an AMI id, an Image Builder image ARN, or
