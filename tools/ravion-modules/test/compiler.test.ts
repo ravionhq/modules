@@ -21,6 +21,19 @@ describe("compiler", () => {
     assert.equal(behavior.cached_methods, undefined);
     assert.equal(findInput(inputs, "cache_policy").default, "4cc15a8a-d715-48a4-82b8-cc0b614638fe");
 
+    const readme = compiled.module.readme;
+    assert.ok(typeof readme === "string");
+    assert.ok(
+      readme.includes(
+        "| Allowed methods | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |",
+      ),
+    );
+    assert.ok(
+      readme.includes(
+        "| Allowed methods | Yes | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |",
+      ),
+    );
+
     const pathInputs = findInput(inputs, "cache_behaviors").item_inputs;
     assert.ok(Array.isArray(pathInputs));
     assert.equal(findInput(pathInputs, "allowed_methods").default, "read");
