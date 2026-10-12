@@ -11,7 +11,9 @@ refreshInterval: 1h
 
 # One entry per credential. `data` maps a Secrets Manager ARN onto a key in the
 # rendered Kubernetes Secret; `template` adds literal keys (a Grafana Cloud user
-# id, say) and may reference the fetched keys as {{ .key }}.
+# id, say) and may reference the fetched keys as {{ .key }}. A data entry can
+# also name `property` (one key of a JSON secret), `version`, and `storeName`
+# (the Parameter Store store, for a parameter's ARN).
 #
 # - name: ravion-observability-datadog
 #   namespace: ravion-operator
