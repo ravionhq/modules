@@ -1052,6 +1052,8 @@ module:
 
     Components created by this module remain in AWS when replaced, removed, or the module is destroyed, because earlier build recipes can still reference them. They leave Terraform state but are not deleted. Image retention settings do not clean up components; unused components need separate manual cleanup after their recipe dependencies are gone.
 
+    When upgrading an existing stack, apply the retention setting with component content unchanged before making a change that replaces a component. The provider reads `skip_destroy` from the old resource's state during deletion. An already failed replacement can leave a deposed component with the old setting; upgrading the configuration alone does not repair that state. Inspect and back up the state before any separately approved recovery, without deleting successful build recipes or images.
+
     ## Deploying
 
     Start a deploy from a pipeline with a `deploy` step, from the dashboard, or with `ravion deploy create`. A build commonly takes 20-60 minutes, and the deploy finishes once every copy is available.
