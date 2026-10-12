@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.4.1
+  description: Allow all HTTP methods by default so form submissions and API writes reach your app without changing caching.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -341,9 +341,9 @@ module:
     - id: allowed_methods
       label: Allowed methods
       type: string
-      description: HTTP methods CloudFront forwards to the origin. Use all methods for apps that accept form posts or API writes.
+      description: Methods forwarded to the origin; only GET and HEAD responses are cached.
       required: true
-      default: read
+      default: all
       values:
         - label: All methods
           description: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE

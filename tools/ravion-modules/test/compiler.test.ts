@@ -7,6 +7,25 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("compiles CloudFront with all methods allowed without changing caching", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "cdn", "cloudfront", "rvn-cloudfront-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+
+    assert.equal(findInput(inputs, "allowed_methods").default, "all");
+    assert.deepEqual(getValueOptions(findInput(inputs, "allowed_methods")), ["all", "read_options", "read"]);
+    const behavior = assertRecord(getTerraformVariable(compiled.module, "default_cache_behavior"), "default_cache_behavior");
+    assert.equal(
+      behavior.allowed_methods,
+      '<< module.input.allowed_methods == "all" ? ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"] : module.input.allowed_methods == "read_options" ? ["GET", "HEAD", "OPTIONS"] : ["GET", "HEAD"] >>',
+    );
+    assert.equal(behavior.cached_methods, undefined);
+    assert.equal(findInput(inputs, "cache_policy").default, "4cc15a8a-d715-48a4-82b8-cc0b614638fe");
+
+    const pathInputs = findInput(inputs, "cache_behaviors").item_inputs;
+    assert.ok(Array.isArray(pathInputs));
+    assert.equal(findInput(pathInputs, "allowed_methods").default, "read");
+  });
+
   it("compiles one definition file to canonical module config", async () => {
     const compiled = await compileDefinitionFile(join(fixturesDir, "modules", "networking", "vpc", "ravion-aws-vpc-definition.yml"));
 
