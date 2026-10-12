@@ -1490,7 +1490,7 @@ variable "grafana_auth_providers" {
   }))
   description = <<-EOT
     OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
-    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) are required.
+    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) give the provider its client. Leave either out when grafana_secrets gives it as GF_AUTH_<PROVIDER>_CLIENT_ID or GF_AUTH_<PROVIDER>_CLIENT_SECRET.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
@@ -1507,6 +1507,45 @@ variable "grafana_auth_providers" {
   validation {
     condition     = length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers)
     error_message = "Each provider can appear in grafana_auth_providers once: Grafana has one [auth.<provider>] section per provider."
+  }
+}
+
+variable "grafana_environment_variables" {
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  description = "Plain environment variables for the in-cluster Grafana, as an EKS workload's environment_variables: {name, value} objects. Grafana reads any setting from GF_<SECTION>_<KEY>, and expands $__env{NAME} in every setting."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(distinct([for variable in var.grafana_environment_variables : variable.name])) == length(var.grafana_environment_variables)
+    error_message = "Each grafana_environment_variables entry must name a distinct environment variable."
+  }
+}
+
+variable "grafana_secrets" {
+  type = list(object({
+    name       = string
+    value_from = string
+  }))
+  description = "Secret environment variables for the in-cluster Grafana, as an EKS workload's secrets: {name, value_from} objects. value_from is a full Secrets Manager or SSM Parameter Store ARN, and a Secrets Manager ARN may end in ECS's :<json key>:<version stage>:<version id> to read one key of a JSON secret. External Secrets reads each one inside the cluster, so none is ever a Helm value. GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET give a sign-in provider its client."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(distinct([for secret in var.grafana_secrets : secret.name])) == length(var.grafana_secrets)
+    error_message = "Each grafana_secrets entry must name a distinct environment variable."
+  }
+
+  validation {
+    condition = alltrue([
+      for secret in var.grafana_secrets :
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}$", trimspace(secret.value_from))) ||
+      can(regex("^arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+$", trimspace(secret.value_from)))
+    ])
+    error_message = "Each grafana_secrets value_from must be a full Secrets Manager or SSM Parameter Store ARN. A Secrets Manager ARN may end in :<json key>:<version stage>:<version id> to read one key of a JSON secret, as in arn:aws:secretsmanager:us-east-1:123456789012:secret:app-AbCdEf:password::."
   }
 }
 
