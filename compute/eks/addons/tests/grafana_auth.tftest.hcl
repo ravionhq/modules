@@ -560,6 +560,51 @@ run "environment_variables_and_secrets_as_a_workload_writes_them" {
   }
 }
 
+run "client_id_as_a_plain_environment_variable" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        allowed_domains = ["example.com"]
+      },
+    ]
+    grafana_environment_variables = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_ID", value = "1234.apps.googleusercontent.com" },
+    ]
+    grafana_secrets = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).env == { GF_AUTH_GOOGLE_CLIENT_ID = "1234.apps.googleusercontent.com" }
+    error_message = "A client ID is not a secret, so a plain environment variable can give it"
+  }
+}
+
+run "rejects_a_client_id_environment_variable_left_blank" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        allowed_domains = ["example.com"]
+      },
+    ]
+    grafana_environment_variables = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_ID", value = " " },
+    ]
+    grafana_secrets = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
 run "rejects_a_client_given_on_the_provider_and_in_secrets" {
   command = plan
 

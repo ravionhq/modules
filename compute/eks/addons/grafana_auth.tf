@@ -167,11 +167,11 @@ locals {
   ]
 
   # A client is written on its provider, or given as Grafana's own environment
-  # variables for it: the client ID in either environment input, and the client
-  # secret in grafana_secrets.
+  # variables for it: the client ID in either environment input, a plain one
+  # only when it has a value, and the client secret in grafana_secrets.
   grafana_auth_without_client = [
     for provider, value in local.grafana_auth_values : provider if(
-      (value.client_id == "" && !contains(local.grafana_env_names, "GF_AUTH_${upper(provider)}_CLIENT_ID")) ||
+      (value.client_id == "" && !contains(local.grafana_env_names_with_a_value, "GF_AUTH_${upper(provider)}_CLIENT_ID")) ||
       (value.client_secret_arn == "" && !contains(local.grafana_secret_names, "GF_AUTH_${upper(provider)}_CLIENT_SECRET"))
     )
   ]

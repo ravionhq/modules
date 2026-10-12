@@ -67,6 +67,13 @@ locals {
   grafana_secret_names = [for secret in local.grafana_secrets : secret.name]
   grafana_env_names    = concat([for variable in local.grafana_environment_variables : variable.name], local.grafana_secret_names)
 
+  # The environment variables that give Grafana a value: every secret, and a
+  # plain variable unless it is left blank.
+  grafana_env_names_with_a_value = concat(
+    [for variable in local.grafana_environment_variables : variable.name if trimspace(variable.value) != ""],
+    local.grafana_secret_names,
+  )
+
   # Each environment variable is set in one place. A sign-in provider's client
   # written on the provider reaches Grafana under its GF_AUTH_ names too.
   grafana_env_set_twice = distinct([
