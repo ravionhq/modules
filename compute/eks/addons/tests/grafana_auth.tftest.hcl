@@ -475,6 +475,263 @@ run "rejects_google_roles_from_groups_without_the_groups_scope" {
   expect_failures = [helm_release.grafana]
 }
 
+run "client_from_keys_of_one_json_secret" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        allowed_domains = ["example.com"]
+      },
+    ]
+    grafana_secrets = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_ID", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_ID::" },
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" },
+    ]
+  }
+
+  assert {
+    condition = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets == [{
+      name      = "ravion-grafana-env"
+      namespace = "ravion-operator"
+      template  = {}
+      data = [
+        { secretKey = "GF_AUTH_GOOGLE_CLIENT_ID", remoteRef = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_ID", version = "", storeName = "" },
+        { secretKey = "GF_AUTH_GOOGLE_CLIENT_SECRET", remoteRef = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "GRAFANA_GOOGLE_CLIENT_SECRET", version = "", storeName = "" },
+      ]
+    }]
+    error_message = "External Secrets must read each key of the one JSON secret into Grafana's Secret, and nothing else"
+  }
+
+  assert {
+    condition = yamldecode(helm_release.grafana[0].values[0]).envValueFrom == {
+      GF_AUTH_GOOGLE_CLIENT_ID     = { secretKeyRef = { name = "ravion-grafana-env", key = "GF_AUTH_GOOGLE_CLIENT_ID" } }
+      GF_AUTH_GOOGLE_CLIENT_SECRET = { secretKeyRef = { name = "ravion-grafana-env", key = "GF_AUTH_GOOGLE_CLIENT_SECRET" } }
+    }
+    error_message = "Grafana must read the client ID and the client secret from its Secret"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].enabled == true && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"]), "client_id") && !strcontains(helm_release.grafana[0].values[0], "client_secret")
+    error_message = "Google sign-in must be on with neither the client ID nor the client secret as a Helm value"
+  }
+
+  assert {
+    condition     = contains(yamldecode(helm_release.external_secrets_stores[0].values[0]).allowedNamespaces, "ravion-operator")
+    error_message = "The secret stores must admit Grafana's namespace"
+  }
+}
+
+run "environment_variables_and_secrets_as_a_workload_writes_them" {
+  command = plan
+
+  variables {
+    grafana_environment_variables = [
+      { name = "GF_LOG_LEVEL", value = "debug" },
+      { name = "ADMINS_GROUP", value = "grafana-admins@example.com" },
+    ]
+    grafana_secrets = [
+      { name = "WHOLE_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana/smtp-AbCdEf" },
+      { name = "PARAMETER", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/grafana/license" },
+      { name = "PINNED_STAGE", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN:AWSPREVIOUS:" },
+      { name = "PINNED_VERSION", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN::11111111-2222-3333-4444-555555555555" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).env == { GF_LOG_LEVEL = "debug", ADMINS_GROUP = "grafana-admins@example.com" }
+    error_message = "Plain environment variables must reach Grafana as they are written"
+  }
+
+  assert {
+    condition = yamldecode(helm_release.observability_secrets[0].values[0]).externalSecrets[0].data == [
+      { secretKey = "WHOLE_SECRET", remoteRef = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana/smtp-AbCdEf", property = "", version = "", storeName = "" },
+      { secretKey = "PARAMETER", remoteRef = "arn:aws:ssm:us-east-2:123456789012:parameter/grafana/license", property = "", version = "", storeName = "ravion-aws-parameter-store" },
+      { secretKey = "PINNED_STAGE", remoteRef = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "TOKEN", version = "AWSPREVIOUS", storeName = "" },
+      { secretKey = "PINNED_VERSION", remoteRef = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf", property = "TOKEN", version = "uuid/11111111-2222-3333-4444-555555555555", storeName = "" },
+    ]
+    error_message = "Each reference must reach External Secrets as its ARN, JSON key, version and store"
+  }
+
+  assert {
+    condition     = join(",", sort(keys(yamldecode(helm_release.grafana[0].values[0]).envValueFrom))) == "PARAMETER,PINNED_STAGE,PINNED_VERSION,WHOLE_SECRET"
+    error_message = "Grafana must read every secret as an environment variable"
+  }
+}
+
+run "client_id_as_a_plain_environment_variable" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        allowed_domains = ["example.com"]
+      },
+    ]
+    grafana_environment_variables = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_ID", value = "1234.apps.googleusercontent.com" },
+    ]
+    grafana_secrets = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).env == { GF_AUTH_GOOGLE_CLIENT_ID = "1234.apps.googleusercontent.com" }
+    error_message = "A client ID is not a secret, so a plain environment variable can give it"
+  }
+}
+
+run "rejects_a_client_id_environment_variable_left_blank" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        allowed_domains = ["example.com"]
+      },
+    ]
+    grafana_environment_variables = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_ID", value = " " },
+    ]
+    grafana_secrets = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_a_client_given_on_the_provider_and_in_secrets" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains   = ["example.com"]
+      },
+    ]
+    grafana_secrets = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:GRAFANA_GOOGLE_CLIENT_SECRET::" },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_an_environment_variable_that_is_also_a_secret" {
+  command = plan
+
+  variables {
+    grafana_environment_variables = [
+      { name = "ADMINS_GROUP", value = "grafana-admins@example.com" },
+    ]
+    grafana_secrets = [
+      { name = "ADMINS_GROUP", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:ADMINS_GROUP::" },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_a_client_secret_written_in_plain_text" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      {
+        provider        = "google"
+        client_id       = "1234.apps.googleusercontent.com"
+        allowed_domains = ["example.com"]
+      },
+    ]
+    grafana_environment_variables = [
+      { name = "GF_AUTH_GOOGLE_CLIENT_SECRET", value = "written-in-plain-text" },
+    ]
+  }
+
+  expect_failures = [helm_release.grafana]
+}
+
+run "rejects_a_secret_that_is_not_an_arn" {
+  command = plan
+
+  variables {
+    grafana_secrets = [
+      { name = "TOKEN", value_from = "prod/app" },
+    ]
+  }
+
+  expect_failures = [var.grafana_secrets]
+}
+
+run "rejects_a_secret_name_that_is_not_an_environment_variable_name" {
+  command = plan
+
+  variables {
+    grafana_secrets = [
+      { name = "GRAFANA TOKEN", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN::" },
+    ]
+  }
+
+  expect_failures = [var.grafana_secrets]
+}
+
+run "rejects_a_secret_without_a_name" {
+  command = plan
+
+  variables {
+    grafana_secrets = [
+      { name = "", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN::" },
+    ]
+  }
+
+  expect_failures = [var.grafana_secrets]
+}
+
+run "rejects_an_environment_variable_without_a_name" {
+  command = plan
+
+  variables {
+    grafana_environment_variables = [
+      { name = " ", value = "debug" },
+    ]
+  }
+
+  expect_failures = [var.grafana_environment_variables]
+}
+
+run "rejects_a_json_key_on_a_parameter" {
+  command = plan
+
+  variables {
+    grafana_secrets = [
+      { name = "TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/grafana/license:TOKEN::" },
+    ]
+  }
+
+  expect_failures = [var.grafana_secrets]
+}
+
+run "rejects_grafana_secrets_without_external_secrets" {
+  command = plan
+
+  variables {
+    eso_enabled = false
+    grafana_secrets = [
+      { name = "TOKEN", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:prod/app-AbCdEf:TOKEN::" },
+    ]
+  }
+
+  expect_failures = [helm_release.observability_secrets]
+}
+
 run "rejects_a_restriction_google_does_not_apply" {
   command = plan
 
