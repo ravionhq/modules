@@ -1,9 +1,10 @@
 ################################################################################
 # Ravion-managed service domains
 ################################################################################
-# Wired when cluster_parent_fqdn is set (piped from ecs_cluster). The `domains`
-# list adds to the default Ravion domain — each entry is classified by whether the
-# cluster wildcard cert covers it:
+# Wired when cluster_parent_fqdn is set (piped from ecs_cluster). The normalized
+# `domains` list is authoritative; the default Ravion domain is used only when no
+# entries remain. Each effective domain is classified by whether the cluster
+# wildcard cert covers it:
 #
 #   - wildcard-covered (<leaf>.<apex>, exactly one label under the cluster apex):
 #     nests under the cluster wildcard cert via SNI. No per-service cert, and no
@@ -12,23 +13,22 @@
 #     under the apex the wildcard can't cover): covered by ONE per-service
 #     instance ACM cert (<=10 SANs) attached to the cluster listener, plus a
 #     routing record the customer adds.
-#
-# The default Ravion domain stays available when custom domains are added.
 
 locals {
   ravion_managed = var.cluster_parent_fqdn != null && var.cluster_parent_fqdn != ""
   apex           = local.ravion_managed ? lower(var.cluster_parent_fqdn) : ""
 
-  auto_fqdn = local.ravion_managed ? "${coalesce(var.ravion_domain_name, var.module_instance_given_id, var.name)}.${local.apex}" : ""
+  auto_fqdn = local.ravion_managed ? lower(trimsuffix(trimspace("${coalesce(var.ravion_domain_name, var.module_instance_given_id, var.name)}.${local.apex}"), ".")) : ""
 
-  # The effective list: the default Ravion domain plus the user's domains,
-  # normalized — lowercased, trailing dot + surrounding whitespace stripped,
-  # empties dropped. Keeps classification consistent with DNS case-insensitivity
-  # and the backend's lowercase sanitizeLabel.
-  effective_domains = local.ravion_managed ? distinct([
-    for d in concat([local.auto_fqdn], var.domains) :
-    lower(trimsuffix(trimspace(d), ".")) if trimspace(d) != ""
+  # Normalize explicit domains before choosing the fallback so blank-only input
+  # still uses the default Ravion domain. distinct preserves first-entry order.
+  normalized_domains = local.ravion_managed ? distinct([
+    for d in var.domains :
+    lower(trimsuffix(trimspace(d), ".")) if trimsuffix(trimspace(d), ".") != ""
   ]) : []
+  effective_domains = local.ravion_managed ? (
+    length(local.normalized_domains) > 0 ? local.normalized_domains : [local.auto_fqdn]
+  ) : []
 
   # Per-entry classification. wildcard-covered = "<leaf>.<apex>" with a non-empty
   # single label below the apex (the only shape the `*.<apex>` cert + ALIAS
@@ -75,8 +75,8 @@ locals {
   ravion_target_group_arn = length(aws_lb_target_group.tg_1) > 0 ? aws_lb_target_group.tg_1[0].arn : null
 }
 
-# Wildcard-covered domains (incl. the auto-FQDN): nest under the cluster
-# wildcard. No per-service cert; the cluster `*.<apex>` ALIAS routes them.
+# Wildcard-covered domains, including the fallback when used: nest under the
+# cluster wildcard. No per-service cert; the cluster `*.<apex>` ALIAS routes them.
 # Parent-apex authorization (may this service nest under that apex?) runs
 # automatically in the provider's ModifyPlan; the control plane enforces the
 # same rule at apply against a signed token claim (Dns:PARENT_APEX_UNAUTHORIZED).

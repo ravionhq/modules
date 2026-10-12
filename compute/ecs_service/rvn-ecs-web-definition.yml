@@ -4,7 +4,7 @@ definition:
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
   version: 2.3.0
-  description: "Add Ravion-managed domains with a default Ravion address, optional custom domains, and automatic certificates and listener rules."
+  description: "Use custom domains instead of the default Ravion address, with the default as a fallback."
 module:
   inputs:
     - id: section_cluster
@@ -94,8 +94,8 @@ module:
         ravion_managed_domains_enabled: true
       type: section
     - id: ravion_domain_name
-      label: Ravion domain
-      description: Stays available when you add custom domains; uses the module ID when empty.
+      label: Default Ravion domain
+      description: Used only when no custom domains are set.
       type: string
       default: << module.given_id >>
       suffix: ".<< module.input.cluster_parent_fqdn >>"
@@ -106,10 +106,10 @@ module:
       show_when:
         ravion_managed_domains_enabled: true
     - add_button_label: Add custom domain
-      description: Ravion manages certificates and listener rules; add the provided DNS records at your DNS provider.
+      description: Replaces the default Ravion domain; Ravion manages certificates and listener rules. Add the provided DNS records at your DNS provider.
       id: domains
       label: Custom domains
-      max_length: 4
+      max_length: 5
       placeholder: app.example.com
       show_when:
         ravion_managed_domains_enabled: true

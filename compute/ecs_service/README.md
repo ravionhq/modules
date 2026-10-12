@@ -380,14 +380,14 @@ The `load_balancer_attachment` object includes:
 
 ### Ravion-managed domains
 
-Set when the cluster was created with `use_ravion_managed_domains` (pipe the cluster outputs). The default Ravion address stays available alongside custom domains. Ravion manages certificates and listener rules; add the provided custom-domain DNS records at your DNS provider. Caller `listener_rules` are ignored in this mode. Without managed domains, attach certificates on the cluster and configure listener rules on the service.
+Set when the cluster was created with `use_ravion_managed_domains` (pipe the cluster outputs). The configured `domains` list is normalized and deduplicated in order, and replaces the default Ravion address whenever any entries remain. If it is empty after normalization, Ravion uses the fallback `ravion_domain_name` (or the module given ID/service name). Ravion manages certificates and listener rules; add the provided custom-domain DNS records at your DNS provider. Caller `listener_rules` are ignored in this mode. Without managed domains, attach certificates on the cluster and configure listener rules on the service.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | cluster_parent_fqdn | Cluster wildcard apex (`ecs_cluster.ravion_cluster_domain_fqdn`). Setting it enables managed domains for the service | `string` | `null` | no |
 | cluster_https_listener_arn | Cluster ALB HTTPS listener the host-header rules attach to (`public_alb_https_listener_arn` or `private_alb_https_listener_arn`) | `string` | `null` | no |
-| ravion_domain_name | Subdomain for the default Ravion address; falls back to the module given ID or service name | `string` | `null` | no |
-| domains | Additional domains; never replaces the default Ravion address. Up to 10 custom domains, or 4 with native traffic-shift deployments (5 total hostnames) | `list(string)` | `[]` | no |
+| ravion_domain_name | Subdomain for the fallback Ravion address, used only when no domains remain after normalization; falls back to the module given ID or service name | `string` | `null` | no |
+| domains | Configured domains replace the default address. Up to 10 custom domains, or 5 total hostnames with native traffic-shift deployments | `list(string)` | `[]` | no |
 | cluster_alb_dns_name / cluster_alb_zone_id | ALB the custom-domain routing records point at | `string` | `null` | no |
 | ravion_listener_rule_priority | Listener rule priority (1-50000); 0 derives one from the service name | `number` | `0` | no |
 | ravion_aws_account_id / ravion_aws_region | Account record id and region for the per-service certificate | `string` | `null` | no |
@@ -488,7 +488,7 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 
 | Name | Description |
 |------|-------------|
-| ravion_domain_fqdn / ravion_domain_url | Default Ravion FQDN and its https URL, available alongside custom domains; null without managed domains |
+| ravion_domain_fqdn / ravion_domain_url | Primary managed FQDN (first configured domain, or the fallback Ravion address) and its HTTPS URL; null without managed domains |
 | ravion_custom_cert_arn | ACM ARN of the per-service certificate covering custom domains; null when there are none |
 
 ### Auto Scaling
