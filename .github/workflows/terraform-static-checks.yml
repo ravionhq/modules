@@ -28,6 +28,23 @@ jobs:
         with:
           tofu_version: 1.12.3
 
+      # Every `tofu init` below would otherwise download its providers again,
+      # though most modules pin the same AWS provider versions. The plugin
+      # cache downloads each version once per run, and actions/cache carries
+      # it across runs until a lock file changes.
+      - name: Configure provider plugin cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Cache providers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: tofu-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            tofu-providers-${{ runner.os }}-
+
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4
 
