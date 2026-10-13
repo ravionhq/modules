@@ -110,7 +110,7 @@ module:
       label: Failover
       type: section
     - default: existing
-      description: Where traffic goes while a alterNAT instance is unhealthy.
+      description: Where traffic goes while an alterNAT instance is unhealthy.
       id: fallback_nat_gateway_mode
       label: Fallback NAT gateway
       required: true
@@ -138,7 +138,7 @@ module:
         fallback_nat_gateway_mode: create
       type: keyvalue
     - default: true
-      description: Moves traffic back to a alterNAT instance as soon as it recovers, instead of when it is replaced. Requires Systems Manager access.
+      description: Moves traffic back to an alterNAT instance as soon as it recovers, instead of when it is replaced. Requires Systems Manager access.
       id: nat_restore_enabled
       label: Restore to alterNAT instance
       type: boolean
@@ -235,13 +235,13 @@ module:
 
     ## Overview
 
-    A NAT gateway charges $0.045 for every GB it processes, on top of its hourly charge. For workloads that pull images, sync artifacts, or call external APIs heavily, that per-GB charge becomes the largest networking line item. A alterNAT instance has no per-GB charge, but a single instance is a single point of failure.
+    A NAT gateway charges $0.045 for every GB it processes, on top of its hourly charge. For workloads that pull images, sync artifacts, or call external APIs heavily, that per-GB charge becomes the largest networking line item. An alterNAT instance has no per-GB charge, but a single instance is a single point of failure.
 
     This module runs [alterNAT](https://github.com/chime/terraform-aws-alternat), Chime's open-source high-availability alterNAT instance design:
 
     - **alterNAT instances** in Auto Scaling groups carry your private subnets' internet traffic
     - **A connectivity tester** in each availability zone checks internet access through its alterNAT instance every minute
-    - **Automatic failover** moves the route to a NAT gateway when a alterNAT instance fails a check or terminates, so egress is never lost
+    - **Automatic failover** moves the route to a NAT gateway when an alterNAT instance fails a check or terminates, so egress is never lost
     - **Automatic restore** moves the route back to the alterNAT instance once it is healthy again
 
     It works with any VPC: pick a Ravion VPC network, or choose **Enter values manually** and enter the VPC and subnet IDs of a VPC created elsewhere.
@@ -272,7 +272,7 @@ module:
     You list public and private subnets; the module works out the rest:
 
     1. It finds the route table of every private subnet (the VPC's main route table for subnets without an explicit association).
-    2. With **high availability** on, every availability zone that has its own private route table gets a alterNAT instance in its first public subnet, serving only that zone. Traffic never crosses zones.
+    2. With **high availability** on, every availability zone that has its own private route table gets an alterNAT instance in its first public subnet, serving only that zone. Traffic never crosses zones.
     3. Private route tables shared across zones (for example a Ravion VPC network without NAT gateway high availability) are served by one alterNAT instance.
     4. With high availability off, one alterNAT instance serves every private route table.
 
