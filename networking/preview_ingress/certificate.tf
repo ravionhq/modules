@@ -2,14 +2,15 @@
 # Wildcard Certificate and Domain
 ################################################################################
 
-# Ravion issues one wildcard certificate, *.<domain_name>.<apex> on its managed
+# Ravion issues one wildcard certificate, *.<name>.<ravion-apex> on its managed
 # apex, and publishes the *.<apex> record that points at the load balancer.
+# The name leaf defaults to the module instance given id, as a cluster's does.
 # Every preview is a hostname under that wildcard. Plan-time guards (an apex
 # another module instance already holds, hostnames still allocated on
 # teardown) run inside the provider.
 resource "ravion_aws_acm_certificate" "this" {
   wildcard           = true
-  name               = var.domain_name
+  name               = coalesce(var.ravion_domain_name, var.module_instance_given_id, var.name)
   module_instance_id = var.module_instance_id
   aws_account_id     = var.ravion_aws_account_id
   aws_region         = local.region

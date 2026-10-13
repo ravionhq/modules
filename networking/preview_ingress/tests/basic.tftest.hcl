@@ -120,7 +120,8 @@ variables {
   name                  = "previews"
   module_instance_id    = "minst_test"
   ravion_aws_account_id = "aws_testaccount"
-  domain_name           = "previews"
+  ravion_domain_name    = "previews"
+  ravion_api_url        = "https://api.example.test"
   region                = "us-east-2"
   vpc_id                = "vpc-12345678"
   public_subnet_ids     = ["subnet-0a", "subnet-0b"]
@@ -227,6 +228,20 @@ run "wildcard_certificate_points_at_the_load_balancer" {
   assert {
     condition     = ravion_aws_acm_certificate.this.target_dns_name == aws_lb.this.dns_name && ravion_aws_acm_certificate.this.target_zone_id == aws_lb.this.zone_id
     error_message = "The wildcard record must point at the load balancer"
+  }
+}
+
+run "wildcard_domain_defaults_to_the_module_given_id" {
+  command = plan
+
+  variables {
+    ravion_domain_name       = null
+    module_instance_given_id = "ingress"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.this.name == "ingress"
+    error_message = "With no ravion_domain_name the wildcard's name leaf must be the module instance given id"
   }
 }
 
@@ -411,12 +426,12 @@ run "user_data_installs_and_starts_the_router" {
   }
 
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_API_URL=https://api.ravion.com\n") && strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_PREVIEW_ROUTER_MODULE_INSTANCE_ID=minst_test\n")
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_API_URL=https://api.example.test\n") && strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_PREVIEW_ROUTER_MODULE_INSTANCE_ID=minst_test\n")
     error_message = "The boot script must hand the router its control plane and its module instance id"
   }
 
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "https://api.ravion.com/sandbox-host/v1/releases/current?platform=linux-amd64")
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "https://api.example.test/sandbox-host/v1/releases/current?platform=linux-amd64")
     error_message = "The boot script must download the current runner release for the image's platform from the control plane"
   }
 

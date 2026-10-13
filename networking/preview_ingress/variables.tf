@@ -46,8 +46,7 @@ variable "ravion_aws_account_id" {
 
 variable "ravion_api_url" {
   type        = string
-  description = "Origin of the Ravion API the router downloads its release from and connects to. Change it only for a staging or self-hosted control plane."
-  default     = "https://api.ravion.com"
+  description = "Origin of the Ravion API the router downloads its release from and connects to. Injected by the runner as TF_VAR_ravion_api_url inside a stack run; set it explicitly for external runs."
 
   validation {
     condition     = can(regex("^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$", var.ravion_api_url))
@@ -59,14 +58,21 @@ variable "ravion_api_url" {
 # Domain
 ################################################################################
 
-variable "domain_name" {
+variable "ravion_domain_name" {
   type        = string
-  description = "Leaf of the wildcard domain previews are served under. Ravion issues *.<domain_name>.<apex> on its managed apex and points it at the load balancer."
+  description = "Free-form name leaf for the wildcard domain previews are served under (becomes *.<name>.<ravion-apex>). Defaults to the module instance given id."
+  default     = null
 
   validation {
-    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.domain_name))
-    error_message = "The domain_name must be one DNS label: 1-63 lowercase letters, numbers, and hyphens, starting and ending with a letter or number."
+    condition     = var.ravion_domain_name == null || var.ravion_domain_name == "" || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.ravion_domain_name))
+    error_message = "The ravion_domain_name must be one DNS label: 1-63 lowercase letters, numbers, and hyphens, starting and ending with a letter or number."
   }
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the default leaf for the Ravion wildcard domain."
+  default     = null
 }
 
 ################################################################################

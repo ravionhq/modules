@@ -77,16 +77,6 @@ module:
       patterns:
         - message: 1-32 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$
-    - id: domain_name
-      label: Subdomain
-      type: string
-      description: Each preview gets a hostname one label below this domain.
-      required: true
-      default: <<module.given_id>>
-      patterns:
-        - message: 1-63 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
-          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
-      suffix: ".<< platform.apex >>"
     - id: ingress_cidr_blocks
       label: Ingress IPv4 CIDRs
       type: string_array
@@ -94,6 +84,18 @@ module:
       add_button_label: Add CIDR block
       collapsible: true
       placeholder: 0.0.0.0/0
+    - id: section_managed_domains
+      label: Managed domains
+      type: section
+    - description: Base for preview addresses; uses the ingress module ID when empty.
+      id: ravion_domain_name
+      label: Preview domain
+      patterns:
+        - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+      required: false
+      suffix: ".<< platform.apex >>"
+      type: string
     - id: section_router
       label: Router
       type: section
@@ -133,16 +135,6 @@ module:
       patterns:
         - message: A 12-digit AWS account ID, or one of self, amazon, aws-marketplace.
           pattern: ^([0-9]{12}|self|amazon|aws-marketplace)$
-    - id: ravion_api_url
-      label: Ravion API URL
-      type: string
-      description: Change only for a staging or self-hosted control plane.
-      collapsible: true
-      required: true
-      default: https://api.ravion.com
-      patterns:
-        - message: An HTTPS origin with no path or trailing slash, such as https://api.ravion.com.
-          pattern: ^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -152,7 +144,6 @@ module:
       base_path: networking/preview_ingress
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
-        domain_name: << module.input.domain_name >>
         image_id: << module.input.image_id || nil >>
         image_owner: << module.input.image_owner || nil >>
         ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
@@ -160,8 +151,8 @@ module:
         module_instance_id: << module.id >>
         name: << module.input.name >>
         public_subnet_ids: << module.input.public_subnet_ids >>
-        ravion_api_url: << module.input.ravion_api_url >>
         ravion_aws_account_id: << module.input.aws_account_id >>
+        ravion_domain_name: << module.input.ravion_domain_name >>
         region: << module.input.aws_region >>
         router_public_ip_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
         router_subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
@@ -222,7 +213,7 @@ module:
 
     The instance boots the newest image Ravion publishes for the instance type's architecture. Its boot script downloads the current router release from the Ravion API, verifies the release's SHA-256 checksum, and starts the router. The script holds no credential. The router obtains its credential from Ravion at start with the instance's signed identity document, and keeps it in memory.
 
-    The router updates itself to new releases. A change to the instance type, image, or Ravion API URL replaces the instance, and previews are unreachable for a few minutes while the new instance starts. Set Image ID to decide when a newer image is adopted.
+    The router updates itself to new releases. A change to the instance type or image replaces the instance, and previews are unreachable for a few minutes while the new instance starts. Set Image ID to decide when a newer image is adopted.
 
     A stack run succeeds once the router answers its health check behind the load balancer. A router that never turns healthy fails the run after ten minutes; the cause is in the instance's console output.
 
@@ -234,14 +225,13 @@ module:
     | --- | --- | --- | --- |
     | VPC network | Yes | - | Existing rvn-aws-network module instance, the network of the sandboxes |
     | Name slug | Yes | {project}-{env}-{module} | Name for the load balancer, 32 characters max |
-    | Subdomain | Yes | {module} | Leaf of the wildcard domain on Ravion's managed apex |
     | Ingress IPv4 CIDRs | No | 0.0.0.0/0 | Sources allowed to open previews |
+    | Preview domain | No | {module} | Base for preview addresses on Ravion's managed apex |
     | Instance type | Yes | t3.small | Router instance type |
     | Run in private subnets | No | true | Router placement |
     | Session Manager access | No | true | Instance role for AWS Systems Manager Session Manager |
     | Image ID | No | Newest published image | AMI the router boots |
     | Image owner | No | Ravion | AWS account that publishes the router image |
-    | Ravion API URL | Yes | https://api.ravion.com | Control plane the router connects to |
     | Tags | No | Standard Ravion tags | Additional tags applied to resources |
     | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
     | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |

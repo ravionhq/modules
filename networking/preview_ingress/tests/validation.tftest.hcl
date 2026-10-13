@@ -85,7 +85,8 @@ mock_provider "ravion" {
 variables {
   name               = "previews"
   module_instance_id = "minst_test"
-  domain_name        = "previews"
+  ravion_domain_name = "previews"
+  ravion_api_url     = "https://api.example.test"
   vpc_id             = "vpc-12345678"
   public_subnet_ids  = ["subnet-0a", "subnet-0b"]
   router_subnet_ids  = ["subnet-1a", "subnet-1b"]
@@ -131,14 +132,14 @@ run "module_instance_id_must_be_an_id" {
   expect_failures = [var.module_instance_id]
 }
 
-run "domain_name_must_be_one_dns_label" {
+run "ravion_domain_name_must_be_one_dns_label" {
   command = plan
 
   variables {
-    domain_name = "previews.example.com"
+    ravion_domain_name = "previews.example.com"
   }
 
-  expect_failures = [var.domain_name]
+  expect_failures = [var.ravion_domain_name]
 }
 
 run "name_must_fit_a_load_balancer_name" {

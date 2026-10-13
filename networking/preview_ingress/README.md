@@ -12,7 +12,7 @@ Requests travel from the browser to the load balancer, to the router, to the san
 | TLS listener on 443 | Terminates TLS with the wildcard certificate and forwards to the router on TCP 8080 |
 | TCP listener on 80 | Forwards to the router on TCP 8081, where plain HTTP is redirected to HTTPS |
 | Two target groups | Instance targets with the client address preserved, health checked over HTTP on `/healthz`, port 8082 |
-| Wildcard certificate and DNS record | `*.<domain_name>.<apex>` on Ravion's managed apex, issued through the `ravion_aws_acm_certificate` resource and pointed at the load balancer |
+| Wildcard certificate and DNS record | `*.<name>.<apex>` on Ravion's managed apex, where the name is `ravion_domain_name` or, when that is unset, the module instance given id, issued through the `ravion_aws_acm_certificate` resource and pointed at the load balancer |
 | Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes |
 | Two security groups | One for the load balancer, one for the router |
 | IAM role and instance profile | Session Manager access for operators. Created only with `ssm_enabled` |
@@ -27,7 +27,8 @@ module "preview_ingress" {
 
   name               = "previews"
   module_instance_id = "minst_..."
-  domain_name        = "previews"
+  ravion_domain_name = "previews"
+  ravion_api_url     = "https://api.ravion.com"
 
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
@@ -47,7 +48,8 @@ module "preview_ingress" {
 
   name               = "previews"
   module_instance_id = "minst_..."
-  domain_name        = "previews"
+  ravion_domain_name = "previews"
+  ravion_api_url     = "https://api.ravion.com"
 
   vpc_id                   = module.vpc.vpc_id
   public_subnet_ids        = module.vpc.public_subnet_ids
@@ -56,7 +58,7 @@ module "preview_ingress" {
 }
 ```
 
-Outside a Ravion pipeline, export `RAVION_BASE_URL` and `RAVION_API_KEY` for the `ravion` provider before applying.
+Inside a Ravion stack run the runner injects `module_instance_id`, `module_instance_given_id` and `ravion_api_url`. Outside a Ravion pipeline, set them as above and export `RAVION_BASE_URL` and `RAVION_API_KEY` for the `ravion` provider before applying.
 
 ## The router instance
 
@@ -104,7 +106,7 @@ Ravion adds one inbound rule to the sandbox hosts' security group the first time
 |------|-------------|------|---------|:--------:|
 | name | Name of the load balancer and the prefix of every other resource (1-32 characters) | `string` | n/a | yes |
 | module_instance_id | Ravion module instance id (`minst_*`) this preview ingress belongs to; the router's identity. Injected as `TF_VAR_module_instance_id` inside a stack run | `string` | n/a | yes |
-| domain_name | Leaf of the wildcard domain: Ravion issues `*.<domain_name>.<apex>` | `string` | n/a | yes |
+| ravion_api_url | Origin of the Ravion API the router downloads its release from and connects to. Injected as `TF_VAR_ravion_api_url` inside a stack run | `string` | n/a | yes |
 | vpc_id | VPC of the load balancer, the router and the sandboxes it serves | `string` | n/a | yes |
 | public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
 | router_subnet_ids | Subnets the router instance launches in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
@@ -116,7 +118,8 @@ Ravion adds one inbound rule to the sandbox hosts' security group the first time
 | image_owner | AWS account that publishes the looked-up image: a 12-digit ID, or `self`, `amazon`, `aws-marketplace` | `string` | `"600013814144"` | no |
 | image_name_pattern | AMI name pattern of the looked-up image | `string` | `"ravion-sandbox-host-*"` | no |
 | ssm_enabled | Give the instance a role that allows Session Manager and nothing else | `bool` | `true` | no |
-| ravion_api_url | Origin of the Ravion API the router downloads its release from and connects to | `string` | `"https://api.ravion.com"` | no |
+| ravion_domain_name | Name leaf of the wildcard domain: Ravion issues `*.<name>.<apex>`. Null uses the module instance given id | `string` | `null` | no |
+| module_instance_given_id | The module instance's given id, the default leaf of the wildcard domain. Injected as `TF_VAR_module_instance_given_id` inside a stack run | `string` | `null` | no |
 | ravion_aws_account_id | Ravion AWS account record id (`aws_*`) the certificate is issued in. Null detects it from the run's AWS credentials | `string` | `null` | no |
 | region | AWS region. Null uses the provider's region | `string` | `null` | no |
 | tags | Tags to assign to all resources | `map(string)` | `{}` | no |
