@@ -2,4 +2,4 @@ apiVersion: v2
 name: observability-secrets
 description: ExternalSecrets that materialize observability vendor credentials from AWS Secrets Manager, installed by the compute/eks/addons stack.
 type: application
-version: 0.1.0
+version: 0.1.1

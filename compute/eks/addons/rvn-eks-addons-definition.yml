@@ -4,7 +4,7 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.18.0
+  version: 0.19.0
   description: "Add opt-in Ravion-managed domains for the shared ALB: a wildcard certificate and DNS for the cluster, served as the default certificate on the selected ALB HTTPS listener while every BYO certificate stays attached via SNI."
 module:
   inputs:
@@ -999,16 +999,14 @@ module:
           show_when:
             provider: generic_oauth
           type: string
-        - description: Client ID of the OAuth application. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.
+        - description: Client ID of the OAuth application. Leave blank when Secrets below gives it as GF_AUTH_<PROVIDER>_CLIENT_ID. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.
           id: client_id
           label: Client ID
-          required: true
           type: string
-        - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value.
+        - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value. Leave blank when Secrets below gives it as GF_AUTH_<PROVIDER>_CLIENT_SECRET.
           id: client_secret_arn
           label: Client secret ARN
           placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-oauth-client-secret
-          required: true
           type: string
         - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
           id: tenant_id
@@ -1114,6 +1112,24 @@ module:
       show_when:
         grafana_enabled: true
       type: object_array
+    - description: Plain environment variables passed to Grafana, as an array of {name, value} objects. Grafana reads any setting from GF_<SECTION>_<KEY>, and expands $__env{NAME} in every setting.
+      id: grafana_environment_variables
+      label: Environment variables
+      placeholder: |-
+        - name: GF_LOG_LEVEL
+          value: info
+      show_when:
+        grafana_enabled: true
+      type: array
+    - description: Secret references Grafana reads as environment variables, as an array of {name, value_from} objects. value_from must be a full Secrets Manager or SSM Parameter Store ARN. Ravion never reads these values; the External Secrets Operator resolves them inside the cluster. GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET give a sign-in provider its client.
+      id: grafana_secrets
+      label: Secrets
+      placeholder: |-
+        - name: GF_AUTH_GOOGLE_CLIENT_SECRET
+          value_from: arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana-AbCdEf:client_secret::
+      show_when:
+        grafana_enabled: true
+      type: array
     - id: section_metrics
       label: Metrics
       type: section
@@ -1745,6 +1761,8 @@ module:
           login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
           default_role: << module.input.grafana_default_role || "Viewer" >>
         grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_environment_variables: '<< module.input.grafana_environment_variables != nil ? module.input.grafana_environment_variables : [] >>'
+        grafana_secrets: '<< module.input.grafana_secrets != nil ? module.input.grafana_secrets : [] >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>

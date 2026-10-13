@@ -9,7 +9,8 @@
 # Every client secret is a Secrets Manager ARN. The External Secrets Operator
 # materializes it into a Kubernetes Secret, and Grafana reads it from
 # GF_AUTH_<PROVIDER>_CLIENT_SECRET: it is never a Helm value, a grafana.ini
-# line or a Terraform output.
+# line or a Terraform output. A client can come from grafana_secrets in its
+# place (grafana_env.tf), under those same GF_AUTH_ names.
 ################################################################################
 
 locals {
@@ -74,12 +75,13 @@ locals {
   grafana_auth_ini = {
     for provider, entry in local.grafana_auth_by_provider : "auth.${provider}" => merge(
       {
-        enabled   = true
-        client_id = local.grafana_auth_values[provider].client_id
+        enabled = true
       },
       {
         for key, value in merge(
           {
+            # Absent when it comes from GF_AUTH_<PROVIDER>_CLIENT_ID.
+            client_id           = local.grafana_auth_values[provider].client_id
             name                = try(trimspace(entry.name), "")
             scopes              = try(trimspace(entry.scopes), "")
             role_attribute_path = try(trimspace(entry.role_attribute_path), "")
@@ -97,26 +99,32 @@ locals {
   }
 
   grafana_auth_secrets = [
-    for provider in keys(local.grafana_auth_by_provider) : {
+    for provider, value in local.grafana_auth_values : {
       name      = local.grafana_auth_secret_names[provider]
       namespace = local.grafana_namespace
       template  = {}
       data = [{
         secretKey = "clientSecret"
-        remoteRef = local.grafana_auth_values[provider].client_secret_arn
+        remoteRef = value.client_secret_arn
       }]
-    }
+    } if value.client_secret_arn != ""
   ]
 
   # Grafana reads any setting from GF_<SECTION>_<KEY>.
-  grafana_env_value_from = {
-    for provider in keys(local.grafana_auth_by_provider) : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" => {
+  grafana_auth_env_value_from = {
+    for provider, value in local.grafana_auth_values : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" => {
       secretKeyRef = {
         name = local.grafana_auth_secret_names[provider]
         key  = "clientSecret"
       }
-    }
+    } if value.client_secret_arn != ""
   }
+
+  # The environment variables a client written on its provider takes up.
+  grafana_auth_client_env_names = concat(
+    [for provider, value in local.grafana_auth_values : "GF_AUTH_${upper(provider)}_CLIENT_ID" if value.client_id != ""],
+    [for provider, value in local.grafana_auth_values : "GF_AUTH_${upper(provider)}_CLIENT_SECRET" if value.client_secret_arn != ""],
+  )
 
   # grafana.ini: SigV4 for the AMP data source always; the role new accounts
   # get; the external URL OAuth providers redirect back to while grafana_access
@@ -158,9 +166,14 @@ locals {
     if contains(keys(local.grafana_auth_restrictions), provider) && !(provider == "gitlab" && local.grafana_auth_values[provider].base_url != "") && alltrue([for key in local.grafana_auth_restrictions[provider] : length(lists[key]) == 0])
   ]
 
+  # A client is written on its provider, or given as Grafana's own environment
+  # variables for it: the client ID in either environment input, a plain one
+  # only when it has a value, and the client secret in grafana_secrets.
   grafana_auth_without_client = [
-    for provider, value in local.grafana_auth_values : provider
-    if value.client_id == "" || value.client_secret_arn == ""
+    for provider, value in local.grafana_auth_values : provider if(
+      (value.client_id == "" && !contains(local.grafana_env_names_with_a_value, "GF_AUTH_${upper(provider)}_CLIENT_ID")) ||
+      (value.client_secret_arn == "" && !contains(local.grafana_secret_names, "GF_AUTH_${upper(provider)}_CLIENT_SECRET"))
+    )
   ]
 
   grafana_auth_without_endpoint = [

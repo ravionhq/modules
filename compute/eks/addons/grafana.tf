@@ -180,6 +180,7 @@ resource "helm_release" "grafana" {
         # Sign-in and load balancer access settings come from grafana_auth.tf.
         "grafana.ini" = local.grafana_ini
         envValueFrom  = local.grafana_env_value_from
+        env           = local.grafana_env
 
         datasources = {
           "datasources.yaml" = {
@@ -199,7 +200,8 @@ resource "helm_release" "grafana" {
     helm_release.loki,
     helm_release.thanos,
     helm_release.tempo,
-    # The sign-in providers' client secrets must exist before its pod starts.
+    # The sign-in providers' client secrets and grafana_secrets must exist
+    # before its pod starts.
     helm_release.observability_secrets,
   ]
 
@@ -221,7 +223,12 @@ resource "helm_release" "grafana" {
 
     precondition {
       condition     = length(local.grafana_auth_without_client) == 0
-      error_message = "Each Grafana sign-in provider needs a client ID and the Secrets Manager ARN of its client secret: ${join(", ", local.grafana_auth_without_client)}."
+      error_message = "Each Grafana sign-in provider needs a client ID and a client secret: ${join(", ", local.grafana_auth_without_client)}. Set client_id and client_secret_arn on the provider, or give GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET in grafana_secrets."
+    }
+
+    precondition {
+      condition     = length(local.grafana_env_set_twice) == 0
+      error_message = "These Grafana environment variables are set more than once: ${join(", ", local.grafana_env_set_twice)}. Each is set in one place: grafana_environment_variables, grafana_secrets, or a sign-in provider's client_id and client_secret_arn."
     }
 
     precondition {
