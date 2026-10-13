@@ -35,6 +35,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `messaging/`  | `sqs`             | AWS SQS queues                                                         | Planned |
 | `monitoring/` | `cloudwatch`      | AWS CloudWatch alarms and dashboards                                   | Planned |
 | `networking/` | `alb`             | Standalone AWS Application Load Balancer with shared HTTP/HTTPS listeners and alarms enabled by default | v1.0.0  |
+| `networking/` | `alternat`        | Highly available alterNAT NAT instances for any VPC, with route table discovery, automatic per-AZ placement, and failover to an existing or standby NAT gateway (includes `rvn-aws-alternat` module definition) | Unreleased |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
 | `networking/` | `route53`         | AWS Route53 hosted zones and records                                   | v1.0.0  |
@@ -64,6 +65,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.1.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.4.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.3.0 | `networking/alb/` |
+| `rvn-aws-alternat` | alterNAT | v0.1.0 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.3.1 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.2.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.1 | `security/iam_policy/` |
