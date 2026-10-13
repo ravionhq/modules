@@ -39,6 +39,29 @@ describe("compiler", () => {
     assert.equal(findInput(pathInputs, "allowed_methods").default, "read");
   });
 
+  it("uses the default Ravion domain only as a fallback to custom domains", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+    const domain = findInput(inputs, "ravion_domain_name");
+    assert.equal(domain.label, "Default Ravion domain");
+    assert.equal(domain.description, "Used only when no custom domains are set.");
+    assert.equal(domain.default, "<< module.given_id >>");
+    assert.equal(domain.suffix, ".<< module.input.cluster_parent_fqdn >>");
+    assert.deepEqual(domain.show_when, { ravion_managed_domains_enabled: true });
+    assert.equal(getTerraformVariable(compiled.module, "ravion_domain_name"), "<< module.input.ravion_domain_name >>");
+    const customDomains = findInput(inputs, "domains");
+    assert.equal(customDomains.label, "Custom domains");
+    assert.equal(
+      customDomains.description,
+      "Replaces the default Ravion domain; Ravion manages certificates and listener rules. Add the provided DNS records at your DNS provider.",
+    );
+    assert.equal(customDomains.max_length, 5);
+    assert.deepEqual(customDomains.show_when, domain.show_when);
+    assert.deepEqual(findInput(inputs, "host_header_values").show_when, { ravion_managed_domains_enabled: false });
+  });
+
   it("compiles one definition file to canonical module config", async () => {
     const compiled = await compileDefinitionFile(join(fixturesDir, "modules", "networking", "vpc", "ravion-aws-vpc-definition.yml"));
 

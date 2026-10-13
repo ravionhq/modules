@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.3.1
-  description: Reuse cached providers on Linux runners.
+  version: 2.3.2
+  description: "Pick up the shared ecs_service module source updates from the managed-domains work (no NLB-facing input changes)."
 module:
   inputs:
     - id: section_cluster
