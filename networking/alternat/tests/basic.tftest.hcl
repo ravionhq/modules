@@ -192,7 +192,7 @@ run "create_fallback_nat_gateways" {
   }
 
   assert {
-    condition     = local.fallback_nat_gateway_id == "" && length(local.existing_nat_gateway_ids) == 0
+    condition     = local.fallback_nat_gateway_id == "" && length(module.fallback.public_nat_gateway_ids) == 0
     error_message = "Expected create mode to ignore existing NAT gateways."
   }
 }

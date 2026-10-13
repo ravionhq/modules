@@ -48,8 +48,7 @@ locals {
   available_nat_gateway_ids = var.fallback_nat_gateway_mode == "existing" ? data.aws_nat_gateways.existing[0].ids : []
 
   # Selection among the existing NAT gateways lives in modules/fallback.
-  existing_nat_gateway_ids = module.fallback.public_nat_gateway_ids
-  fallback_nat_gateway_id  = var.fallback_nat_gateway_mode == "existing" ? module.fallback.fallback_nat_gateway_id : ""
+  fallback_nat_gateway_id = var.fallback_nat_gateway_mode == "existing" ? module.fallback.fallback_nat_gateway_id : ""
 
   ################################################################################
   # Resource names
