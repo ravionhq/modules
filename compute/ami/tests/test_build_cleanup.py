@@ -16,10 +16,10 @@ TOFU_BIN = os.environ.get("TOFU_BIN") or shutil.which("tofu")
 ACCOUNT_ID = "123456789012"
 INSTANCE_ID = "ami-instance-123"
 IMAGE_VERSION_1 = (
-    "arn:aws:imagebuilder:us-west-2:123456789012:image/base-image/1.0.0/1"
+    "arn:aws:imagebuilder:us-west-2:123456789012:image/base-image/1.0.0"
 )
 IMAGE_VERSION_2 = (
-    "arn:aws:imagebuilder:us-west-2:123456789012:image/base-image/1.1.0/1"
+    "arn:aws:imagebuilder:us-west-2:123456789012:image/base-image/1.1.0"
 )
 IMAGE_BUILD_1 = (
     "arn:aws:imagebuilder:us-west-2:123456789012:image/base-image/1.0.0/1"
@@ -40,12 +40,21 @@ RECIPE_EXTERNAL = (
     "arn:aws:imagebuilder:us-west-2:123456789012:image-recipe/other-recipe/1.0.0"
 )
 COMPONENT_VERSION_1 = (
-    "arn:aws:imagebuilder:us-west-2:123456789012:component/ami-component/1.0.0/1"
+    "arn:aws:imagebuilder:us-west-2:123456789012:component/ami-component/1.0.0"
 )
 COMPONENT_VERSION_2 = (
-    "arn:aws:imagebuilder:us-west-2:123456789012:component/ami-component/1.1.0/1"
+    "arn:aws:imagebuilder:us-west-2:123456789012:component/ami-component/1.1.0"
 )
 COMPONENT_VERSION_EXTERNAL = (
+    "arn:aws:imagebuilder:us-west-2:123456789012:component/external/1.0.0"
+)
+COMPONENT_BUILD_1 = (
+    "arn:aws:imagebuilder:us-west-2:123456789012:component/ami-component/1.0.0/1"
+)
+COMPONENT_BUILD_2 = (
+    "arn:aws:imagebuilder:us-west-2:123456789012:component/ami-component/1.1.0/1"
+)
+COMPONENT_BUILD_EXTERNAL = (
     "arn:aws:imagebuilder:us-west-2:123456789012:component/external/1.0.0/1"
 )
 
@@ -162,7 +171,7 @@ def cleanup_scenario(module_id=INSTANCE_ID, account_id=ACCOUNT_ID):
             COMPONENT_VERSION_1: {
                 "componentSummaryList": [
                     {
-                        "arn": COMPONENT_VERSION_1,
+                        "arn": COMPONENT_BUILD_1,
                         "tags": {
                             "ModuleId": module_id,
                             "Module": "compute/ami",
@@ -174,7 +183,7 @@ def cleanup_scenario(module_id=INSTANCE_ID, account_id=ACCOUNT_ID):
             COMPONENT_VERSION_2: {
                 "componentSummaryList": [
                     {
-                        "arn": COMPONENT_VERSION_2,
+                        "arn": COMPONENT_BUILD_2,
                         "tags": {
                             "ModuleId": module_id,
                             "Module": "compute/ami",
@@ -186,7 +195,7 @@ def cleanup_scenario(module_id=INSTANCE_ID, account_id=ACCOUNT_ID):
             COMPONENT_VERSION_EXTERNAL: {
                 "componentSummaryList": [
                     {
-                        "arn": COMPONENT_VERSION_EXTERNAL,
+                        "arn": COMPONENT_BUILD_EXTERNAL,
                         "tags": {
                             "ModuleId": module_id,
                             "Module": "compute/ami",
@@ -295,7 +304,7 @@ class CleanupScriptTests(FakeAwsTestCase):
                 call[call.index("--component-build-version-arn") + 1]
                 for call in delete_calls[4:]
             ],
-            [COMPONENT_VERSION_1, COMPONENT_VERSION_2],
+            [COMPONENT_BUILD_1, COMPONENT_BUILD_2],
         )
 
         first_delete = calls.index(delete_calls[0])
