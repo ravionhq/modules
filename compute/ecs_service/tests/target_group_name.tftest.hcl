@@ -74,6 +74,11 @@ mock_provider "aws" {
 }
 
 
+# The module declares the ravion provider, so Terraform configures it even when
+# no ravion resource is planned; an empty mock keeps its real Configure (which
+# requires RAVION_API_KEY) from failing the plan.
+mock_provider "ravion" {}
+
 variables {
   name        = "my_web_app"
   vpc_id      = "vpc-12345678"

@@ -35,10 +35,4 @@ resource "aws_lb" "this" {
     aws_s3_bucket_policy.access_logs
   ]
 
-  lifecycle {
-    precondition {
-      condition     = !var.https_listener_enabled || length(var.certificate_arns) > 0
-      error_message = "At least one entry in certificate_arns is required when https_listener_enabled is true."
-    }
-  }
 }
