@@ -97,14 +97,14 @@ module:
     - id: chart_git_path
       label: Chart path
       type: string
-      description: Directory holding Chart.yaml, from the repository root.
+      description: Directory holding Chart.yaml, from the repository root. Enter . for a chart at the root.
       placeholder: charts/dashboards
       required: true
       show_when:
         chart_source_type: git
       patterns:
-        - message: A path inside the repository, with no leading slash and no .. segment.
-          pattern: ^\.*[A-Za-z0-9_-][A-Za-z0-9._-]*(/\.*[A-Za-z0-9_-][A-Za-z0-9._-]*)*$
+        - message: A path inside the repository, or . for its root, with no leading slash and no .. segment.
+          pattern: ^(\.|\.*[A-Za-z0-9_-][A-Za-z0-9._-]*(/\.*[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$
     - id: chart_git_ref
       label: Commit or tag
       type: string
