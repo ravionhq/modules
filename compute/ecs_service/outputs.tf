@@ -335,12 +335,12 @@ output "cloudwatch_alarm_arns" {
 ################################################################################
 
 output "ravion_domain_fqdn" {
-  description = "Primary FQDN for this service (first entry in the domains list; the auto-FQDN under the cluster wildcard when present). Null when the cluster has no Ravion-managed domains."
+  description = "Primary managed FQDN: the first configured domain, or the default Ravion domain when none remain after normalization. Null when the cluster has no Ravion-managed domains."
   value       = length(local.effective_domains) > 0 ? local.effective_domains[0] : null
 }
 
 output "ravion_domain_url" {
-  description = "https URL for the primary FQDN."
+  description = "HTTPS URL for the first effective domain."
   value       = length(local.effective_domains) > 0 ? "https://${local.effective_domains[0]}" : null
 }
 
