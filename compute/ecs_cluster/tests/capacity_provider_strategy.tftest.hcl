@@ -60,6 +60,8 @@ mock_provider "aws" {
   }
 }
 
+mock_provider "ravion" {}
+
 variables {
   name               = "test-cluster"
   vpc_id             = "vpc-12345678"

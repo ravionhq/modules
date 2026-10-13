@@ -634,8 +634,9 @@ variable "load_balancer_attachment" {
       !var.load_balancer_attachment.enabled
       || length(var.load_balancer_attachment.listener_rules) > 0
       || length(var.load_balancer_attachment.nlb_listeners) > 0
+      || (var.cluster_parent_fqdn != null && var.cluster_parent_fqdn != "")
     )
-    error_message = "An enabled load_balancer_attachment requires listener_rules for ALB or nlb_listeners for NLB."
+    error_message = "An enabled load_balancer_attachment requires listener_rules for ALB, nlb_listeners for NLB, or cluster_parent_fqdn for Ravion-managed routing."
   }
 
   validation {
@@ -964,4 +965,79 @@ variable "cloudwatch_ok_actions" {
   description = "A list of ARNs to notify when a CloudWatch alarm transitions to OK state."
   default     = []
   nullable    = false
+}
+
+################################################################################
+# Ravion-managed domains (optional)
+################################################################################
+
+variable "cluster_parent_fqdn" {
+  type        = string
+  description = "Cluster wildcard apex FQDN (pipe from ecs_cluster.ravion_cluster_domain_fqdn). Set to enable Ravion-managed domains for this service."
+  default     = null
+}
+
+variable "cluster_https_listener_arn" {
+  type        = string
+  description = "Cluster ALB HTTPS listener ARN this service attaches to. Pipe ecs_cluster.public_alb_https_listener_arn for a public service, or private_alb_https_listener_arn for a private one. Required when cluster_parent_fqdn is set."
+  default     = null
+}
+
+variable "ravion_listener_rule_priority" {
+  type        = number
+  description = "Listener rule priority (1-50000). 0 = auto-derive from sha256(name)."
+  default     = 0
+}
+
+variable "ravion_domain_name" {
+  type        = string
+  description = "Subdomain for the fallback Ravion address, used when domains is empty after normalization. Defaults to the module given ID or service name."
+  default     = null
+
+  validation {
+    condition     = var.ravion_domain_name == null || var.ravion_domain_name == "" || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.ravion_domain_name))
+    error_message = "The Ravion subdomain must be 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number."
+  }
+}
+
+variable "domains" {
+  type        = list(string)
+  description = "Configured domains replace the default Ravion address; an empty list after normalization uses ravion_domain_name. One-label cluster names use the wildcard certificate; other domains share a service certificate (max 10). Native traffic-shift deployments allow at most 5 hostnames."
+  default     = []
+}
+
+variable "cluster_alb_dns_name" {
+  type        = string
+  description = "Cluster ALB DNS name for Mode B routing records — public_alb_dns_name for a public service, private_alb_dns_name for a private one. Must match the ALB whose listener is in cluster_https_listener_arn."
+  default     = null
+}
+
+variable "cluster_alb_zone_id" {
+  type        = string
+  description = "Cluster ALB hosted zone id for Mode B routing records — public_alb_zone_id for a public service, private_alb_zone_id for a private one. Must match the ALB whose listener is in cluster_https_listener_arn."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*). Required for Mode B."
+  default     = null
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the auto-FQDN leaf under the cluster wildcard."
+  default     = null
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns this service's Ravion-managed domains/certificate. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external/API-key runs. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_region" {
+  type        = string
+  description = "AWS region the per-service cert lives in. Defaults to the module region."
+  default     = null
 }
