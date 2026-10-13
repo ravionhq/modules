@@ -55,13 +55,15 @@ module "alternat" {
 2. With `high_availability_enabled = true`, each route table is served by a NAT instance in an availability zone it serves, in that zone's first listed public subnet. A route table shared across zones gets one NAT instance.
 3. With `high_availability_enabled = false`, one NAT instance serves every route table.
 
+A route table that public subnets also use (including the main route table when neither has an explicit association) fails the plan: replacing its Internet Gateway route would cut the NAT instances off from the internet.
+
 The placement logic lives in `modules/placement` and is covered by `tests/placement.tftest.hcl`.
 
 ## Failover
 
 | `fallback_nat_gateway_mode` | Fallback |
 | --- | --- |
-| `existing` (default) | `fallback_nat_gateway_id`, else the VPC's only NAT gateway, else the NAT gateway in each NAT instance's public subnet |
+| `existing` (default) | `fallback_nat_gateway_id`, else the VPC's only public NAT gateway, else the public NAT gateway in each NAT instance's public subnet. Private NAT gateways are never used. |
 | `create` | A standby NAT gateway created in each NAT instance's public subnet |
 
 Failover keeps connectivity, but connections through a failed or replaced NAT instance are dropped. During failover, traffic leaves from the NAT gateway's public IP.
@@ -124,7 +126,7 @@ When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its 
 | route_table_ids | Private route tables whose `0.0.0.0/0` route alterNAT manages. |
 | route_table_nat_availability_zones | Availability zone of the NAT instance serving each route table. |
 | fallback_nat_gateway_id | NAT gateway every NAT instance fails over to; empty when each uses the one in its own subnet. |
-| fallback_nat_gateway_ids | Existing NAT gateways the NAT instances fail over to. |
+| fallback_nat_gateway_ids | NAT gateways the NAT instances fail over to: existing ones, or the standby ones in `create` mode. |
 | fallback_nat_gateway_public_ips | Public IPs of standby NAT gateways created in `create` mode. |
 | connectivity_tester_function_names | Connectivity tester Lambda functions. |
 | connectivity_tester_log_group_names | Log groups of the connectivity tester Lambda functions. |

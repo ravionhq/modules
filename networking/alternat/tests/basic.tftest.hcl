@@ -35,6 +35,21 @@ mock_provider "aws" {
   }
 
   override_data {
+    target = data.aws_route_tables.public_subnet
+    values = { ids = ["rtb-public"] }
+  }
+
+  override_data {
+    target = data.aws_nat_gateway.fallback
+    values = { connectivity_type = "public" }
+  }
+
+  override_data {
+    target = data.aws_nat_gateways.standby
+    values = { ids = ["nat-0standby00000000a"] }
+  }
+
+  override_data {
     target = data.aws_route_table.main
     values = { id = "rtb-main" }
   }
@@ -182,6 +197,19 @@ run "create_fallback_nat_gateways" {
   }
 }
 
+run "create_mode_outputs_standby_nat_gateways" {
+  command = apply
+
+  variables {
+    fallback_nat_gateway_mode = "create"
+  }
+
+  assert {
+    condition     = output.fallback_nat_gateway_ids == tolist(["nat-0standby00000000a"])
+    error_message = "Expected the standby NAT gateways as fallback gateways in create mode, for the fallback traffic charts."
+  }
+}
+
 run "explicit_fallback_nat_gateway" {
   command = plan
 
@@ -308,4 +336,48 @@ run "invalid_lifetime" {
   }
 
   expect_failures = [var.max_instance_lifetime_days]
+}
+
+run "explicit_private_fallback_nat_gateway" {
+  command = plan
+
+  variables {
+    fallback_nat_gateway_id = "nat-0fedcba9876543210"
+  }
+
+  override_data {
+    target = data.aws_nat_gateway.fallback
+    values = { connectivity_type = "private" }
+  }
+
+  expect_failures = [terraform_data.preconditions]
+}
+
+# A route table used by both public and private subnets carries the Internet
+# Gateway route the NAT instances need; alterNAT must not take it over.
+run "public_and_private_subnets_share_route_table" {
+  command = plan
+
+  override_data {
+    target = data.aws_route_tables.public_subnet
+    values = { ids = ["rtb-private"] }
+  }
+
+  expect_failures = [terraform_data.preconditions]
+}
+
+run "public_and_private_subnets_both_on_main_route_table" {
+  command = plan
+
+  override_data {
+    target = data.aws_route_tables.public_subnet
+    values = { ids = [] }
+  }
+
+  override_data {
+    target = data.aws_route_tables.private_subnet
+    values = { ids = [] }
+  }
+
+  expect_failures = [terraform_data.preconditions]
 }

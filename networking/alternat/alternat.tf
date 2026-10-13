@@ -8,6 +8,16 @@ resource "terraform_data" "preconditions" {
     }
 
     precondition {
+      condition     = length(local.shared_route_table_ids) == 0
+      error_message = "Route table(s) ${join(", ", sort(tolist(local.shared_route_table_ids)))} serve both public and private subnets. alterNAT would replace their Internet Gateway route and cut the NAT instances off from the internet. Give the private subnets their own route tables."
+    }
+
+    precondition {
+      condition     = var.fallback_nat_gateway_id == null || try(data.aws_nat_gateway.fallback[0].connectivity_type, "public") == "public"
+      error_message = "The fallback NAT gateway ${coalesce(var.fallback_nat_gateway_id, "-")} is private and cannot reach the internet. Choose a public NAT gateway."
+    }
+
+    precondition {
       condition     = contains(data.aws_ec2_instance_type.nat.supported_architectures, "arm64") || contains(data.aws_ec2_instance_type.nat.supported_architectures, "x86_64")
       error_message = "The NAT instance type ${var.nat_instance_type} must support the arm64 or x86_64 architecture."
     }
@@ -31,7 +41,7 @@ resource "terraform_data" "preconditions" {
       )
       error_message = (
         length(local.existing_nat_gateway_ids) == 0
-        ? "${var.vpc_id} has no available NAT gateway to fail over to. Set fallback_nat_gateway_mode to create, or create a NAT gateway first."
+        ? "${var.vpc_id} has no available public NAT gateway to fail over to. Set fallback_nat_gateway_mode to create, or create a NAT gateway first."
         : "${var.vpc_id} has several NAT gateways, and none is in the public subnet of the NAT instance(s) in ${join(", ", local.nat_azs_without_existing_gateways)}. Set fallback_nat_gateway_id to choose one."
       )
     }

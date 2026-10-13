@@ -24,6 +24,18 @@ locals {
     )
   }
 
+  public_subnet_route_table_ids = distinct([
+    for id in var.public_subnet_ids : (
+      length(data.aws_route_tables.public_subnet[id].ids) > 0
+      ? data.aws_route_tables.public_subnet[id].ids[0]
+      : data.aws_route_table.main.id
+    )
+  ])
+
+  # Route tables both public and private subnets use. alterNAT replacing their
+  # 0.0.0.0/0 route would cut the NAT instances off from the internet.
+  shared_route_table_ids = setintersection(toset(local.public_subnet_route_table_ids), toset(values(local.private_subnet_route_table_ids)))
+
   route_table_ids    = module.placement.route_table_ids
   route_table_nat_az = module.placement.route_table_nat_az
   nat_azs            = module.placement.nat_azs
