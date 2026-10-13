@@ -34,6 +34,13 @@ mock_provider "aws" {
   }
 
   override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
+  override_data {
     target = data.aws_partition.current
     values = {
       partition  = "aws"
@@ -70,6 +77,16 @@ variables {
 
 run "defaults" {
   command = plan
+
+  assert {
+    condition     = terraform_data.build_cleanup.input.module_instance_id == "minst_test" && terraform_data.build_cleanup.input.account_id == "123456789012"
+    error_message = "Destroy cleanup must capture the module and AWS account identity"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].tags.ModuleId == "minst_test"
+    error_message = "Managed components must carry the cleanup ownership tag"
+  }
 
   assert {
     condition     = aws_imagebuilder_component.this["provision"].skip_destroy

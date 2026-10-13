@@ -200,13 +200,12 @@ each by a hash of its content instead: a changed document is a new component
 beside the old one, and the next deploy builds with it. `component_version`
 never has to change for an apply to succeed.
 
-Components created by this module are retained in AWS when replaced, removed,
-or the module is destroyed, because successful build recipes can still reference
-them. `skip_destroy = true` removes them from Terraform state without deleting
-them. `create_before_destroy` only orders replacement; it does not remove those
-recipe dependencies. Image retention settings do not clean up components, so
-unused components need separate manual cleanup after their recipe dependencies
-are gone. Components referenced by ARN are never managed by this module.
+Components created by this module are retained in AWS when replaced or removed,
+because successful build recipes can still reference them. `skip_destroy = true`
+removes them from Terraform state without deleting them. `create_before_destroy`
+only orders replacement; it does not remove those recipe dependencies. Image
+retention settings do not clean up components. Components supplied by ARN are
+not tagged or managed by this module.
 
 When upgrading an existing stack, apply the retention setting with component
 content unchanged before making a change that replaces a component. The provider
@@ -215,6 +214,41 @@ failed replacement can leave a deposed component with the old setting; upgrading
 the configuration alone does not repair that state. Inspect and back up the state
 before any separately approved recovery, without deleting successful build
 recipes or images.
+
+### Stack destruction
+
+On stack destruction, a destroy-time script deletes this module instance's
+Image Builder build records, then recipes, then retained components in the build
+region. It does not deregister EC2 AMIs, delete snapshots, or terminate instances.
+Build records and recipes must have the matching `ModuleId` tag; components must
+also have `Module=compute/ami` and `ManagedBy=terraform`. These three component
+ownership tags are reserved. Untagged resources and resources owned by other
+modules are left alone. Do not copy ownership tags onto external components.
+
+Cleanup requires `module_instance_id` (automatically set in Ravion). Without it,
+resources remain for manual cleanup. Resources left in a previous build region,
+or historical components whose ownership tags were overridden, also need manual
+cleanup. Apply this version once before destroying an existing stack to record
+the cleanup resource in state. Destroy while the module configuration is still
+present; simply removing its configuration also removes its destroy provisioner.
+
+The script has no replacement triggers, so ordinary component or input updates
+do not run it. Do not force-replace or taint `terraform_data.build_cleanup`, or
+add `create_before_destroy` to it. Stop deployments before destroying the stack.
+Active builds, dependency errors, and permission errors fail destruction; resolve
+the error and retry. Already-deleted resources are safe to retry.
+
+The destroy runner needs Bash, jq, and AWS CLI v2 with `list-images
+--include-deprecated` support. CLI credentials must access the same account as
+the AWS provider; the script verifies the account before deleting anything.
+Ravion's default apply/destroy role uses AdministratorAccess. Custom roles need
+`sts:GetCallerIdentity` and these Image Builder actions in addition to their
+normal Terraform permissions:
+
+- `imagebuilder:ListImages`, `imagebuilder:ListImageBuildVersions`
+- `imagebuilder:ListImageRecipes`
+- `imagebuilder:ListComponents`, `imagebuilder:ListComponentBuildVersions`
+- `imagebuilder:DeleteImage`, `imagebuilder:DeleteImageRecipe`, `imagebuilder:DeleteComponent`
 
 ## Parent image
 

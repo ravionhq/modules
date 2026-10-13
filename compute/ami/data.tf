@@ -2,6 +2,8 @@ data "aws_region" "current" {}
 
 data "aws_partition" "current" {}
 
+data "aws_caller_identity" "current" {}
+
 # The newest image matching the lookup at apply time. Only the parent_image
 # output reads it: a deploy looks the parent image up again when it starts, so
 # a newer image reaches the next deploy without an apply.

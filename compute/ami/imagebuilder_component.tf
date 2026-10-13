@@ -18,7 +18,11 @@ resource "aws_imagebuilder_component" "this" {
   # Successful build recipes retain references to historical components.
   skip_destroy = true
 
-  tags = local.tags
+  tags = merge(local.tags, var.module_instance_id == null ? {} : {
+    ModuleId  = var.module_instance_id
+    Module    = "compute/ami"
+    ManagedBy = "terraform"
+  })
 
   # Create the replacement before retiring the old component from state.
   lifecycle {

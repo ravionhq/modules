@@ -61,6 +61,7 @@ jobs:
 
       - name: Test AMI module
         run: |
+          python3 -B -m unittest discover -s compute/ami/tests -p 'test_*.py' -v
           tofu -chdir=compute/ami init -backend=false
           tofu -chdir=compute/ami test -filter=tests/basic.tftest.hcl
 
