@@ -5,7 +5,7 @@ definition:
   description: Entry point for sandbox previews. A Network Load Balancer with a managed wildcard domain and certificate, in front of a router that sends each preview hostname to its sandbox and wakes a paused sandbox on request.
 release:
   version: 0.1.0
-  description: "Serve sandbox previews under a managed wildcard domain through a Network Load Balancer and a preview router that wakes paused sandboxes on request."
+  description: "Serve sandbox previews under a managed wildcard domain, or under your own wildcard domains, through a Network Load Balancer and a preview router that wakes paused sandboxes on request."
 module:
   outputs:
     - id: sandbox_router_id
@@ -25,6 +25,10 @@ module:
       type: string
       label: Router security group ID
       description: Sandbox hosts allow preview traffic from this group.
+    - id: sandbox_host_security_group_ids
+      type: string_array
+      label: Sandbox host security group IDs
+      description: The router reaches sandbox hosts in these groups only.
     - id: wildcard_domain_name
       type: string
       label: Wildcard domain
@@ -32,6 +36,13 @@ module:
     - id: certificate_arn
       type: string
       label: Certificate ARN
+    - id: custom_domain_names
+      type: string_array
+      label: Custom domains
+      description: Wildcard domains previews can be served under, beside the wildcard domain.
+    - id: custom_certificate_arn
+      type: string
+      label: Custom domains certificate ARN
     - id: load_balancer_security_group_id
       type: string
       label: Load balancer security group ID
@@ -77,6 +88,15 @@ module:
       patterns:
         - message: 1-32 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$
+    - id: sandbox_host_security_group_ids
+      label: Sandbox host security groups
+      type: string_array
+      description: Security group of each execution environment whose sandbox pool runs the previews. Each group gets an inbound rule for the router on the preview ports.
+      required: true
+      add_button_label: Add security group
+      placeholder: Select a security group
+      no_options_message: Select a VPC Network, or enter an AWS account, region, and VPC ID, to load security groups.
+      values: $values:aws/security-groups?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&vpcId=<<module.input.vpc_id>>
     - id: ingress_cidr_blocks
       label: Ingress IPv4 CIDRs
       type: string_array
@@ -96,6 +116,16 @@ module:
       required: false
       suffix: ".<< platform.apex >>"
       type: string
+    - add_button_label: Add custom domain
+      description: Wildcard domains that previews can use in addition to the preview domain; Ravion manages the certificate. Add the provided DNS records at your DNS provider.
+      id: domains
+      label: Custom domains
+      max_length: 10
+      patterns:
+        - message: Use a lowercase wildcard domain, such as *.preview.example.com.
+          pattern: ^\*\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+      placeholder: "*.preview.example.com"
+      type: string_array
     - id: section_router
       label: Router
       type: section
@@ -144,6 +174,7 @@ module:
       base_path: networking/preview_ingress
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        domains: << module.input.domains || [] >>
         image_id: << module.input.image_id || nil >>
         image_owner: << module.input.image_owner || nil >>
         ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
@@ -156,6 +187,7 @@ module:
         region: << module.input.aws_region >>
         router_public_ip_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
         router_subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
+        sandbox_host_security_group_ids: << module.input.sandbox_host_security_group_ids >>
         ssm_enabled: << module.input.ssm_enabled >>
         tags:
           $include: ../../partials/stack/ravion-tags.yml
@@ -170,7 +202,7 @@ module:
     - A **wildcard domain and certificate** on Ravion's managed apex. Every preview is a hostname one label below it.
     - An internet-facing **Network Load Balancer** that terminates TLS with that certificate.
     - One **router instance** behind the load balancer, kept running by an Auto Scaling group.
-    - **Security groups** that admit the load balancer's traffic to the router and nothing else.
+    - **Security groups** that admit the load balancer's traffic to the router and nothing else, and one rule on each sandbox host security group that admits the router.
 
     Preview requests go from the browser to the load balancer, to the router, to the sandbox. They stay inside your AWS account.
 
@@ -186,7 +218,24 @@ module:
     | Paused | Asks Ravion to resume the sandbox, holds the request, and forwards it once the sandbox runs. A request that outlasts the hold is told to retry |
     | Unknown hostname | Answers 404 |
 
-    Exposing a port of a sandbox on a hostname under this module's wildcard domain routes it through the router. Pausing, resuming and deleting the sandbox update the route.
+    Exposing a port of a sandbox on a hostname under one of this module's wildcard domains routes it through the router. Pausing, resuming and deleting the sandbox update the route.
+
+    ## Domains
+
+    Preview domain names the wildcard domain on Ravion's managed apex. Ravion issues and renews its certificate and publishes its DNS record. Every preview can use a hostname one label below it.
+
+    Custom domains adds wildcard domains from DNS zones you control, such as `*.preview.example.com`. A preview served under one takes a hostname below the wildcard, such as `feature-x.preview.example.com`. Ravion issues one certificate for all custom domains and attaches it to the load balancer beside the managed one.
+
+    Add the DNS records Ravion provides for each custom domain at your DNS provider. The module's Domains tab lists them after the stack run:
+
+    | Record | Purpose |
+    | --- | --- |
+    | Certificate validation | Proves you control the domain. Ravion issues the certificate once this record resolves |
+    | Routing | Points the wildcard at the load balancer |
+
+    Add the records once. Every preview under the wildcard then works without further DNS changes. The stack run finishes without waiting for the records. Previews under a custom domain answer after the certificate is issued and the routing record resolves.
+
+    Custom domains belong to DNS zones you control. Entries under Ravion's managed apex are refused.
 
     ## Use cases
 
@@ -207,7 +256,9 @@ module:
     | Load balancer | TCP 443 and 80 from the ingress CIDRs | The router's three ports |
     | Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 inside the VPC |
 
-    No CIDR reaches the router. Ports 20000-20998 are where sandbox hosts publish previews. Ravion adds one inbound rule for the router's group to the sandbox hosts' security group the first time a preview is exposed. Remove that rule before destroying this module: AWS keeps a security group that another group's rule still names.
+    No CIDR reaches the router. Ports 20000-20998 are where sandbox hosts publish previews.
+
+    Sandbox host security groups lists the security group of each execution environment whose sandbox pool runs the previews. The module adds one inbound rule to each: TCP 20000-20998 from the router's group. The router reaches sandbox hosts in the listed groups only. Destroying the module removes the rules.
 
     ## Router instance
 
@@ -225,8 +276,10 @@ module:
     | --- | --- | --- | --- |
     | VPC network | Yes | - | Existing rvn-aws-network module instance, the network of the sandboxes |
     | Name slug | Yes | {project}-{env}-{module} | Name for the load balancer, 32 characters max |
+    | Sandbox host security groups | Yes | - | Security groups of the sandbox hosts that run the previews |
     | Ingress IPv4 CIDRs | No | 0.0.0.0/0 | Sources allowed to open previews |
     | Preview domain | No | {module} | Base for preview addresses on Ravion's managed apex |
+    | Custom domains | No | [] | Wildcard domains in your own DNS zones, 10 max |
     | Instance type | Yes | t3.small | Router instance type |
     | Run in private subnets | No | true | Router placement |
     | Session Manager access | No | true | Instance role for AWS Systems Manager Session Manager |

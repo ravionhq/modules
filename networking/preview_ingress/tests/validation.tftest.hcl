@@ -1,7 +1,9 @@
 # Preview ingress variable validation tests. Run from the module root: tofu test
 #
 # The control plane URL and the module instance id are written into the boot
-# script, so anything that is not exactly an origin or an id is refused.
+# script, so anything that is not exactly an origin or an id is refused. A
+# custom domain is a wildcard, because every preview gets its own hostname
+# under it.
 
 mock_provider "aws" {
   override_data {
@@ -140,6 +142,66 @@ run "ravion_domain_name_must_be_one_dns_label" {
   }
 
   expect_failures = [var.ravion_domain_name]
+}
+
+run "custom_domain_must_be_a_wildcard" {
+  command = plan
+
+  variables {
+    domains = ["preview.example.com"]
+  }
+
+  expect_failures = [var.domains]
+}
+
+run "custom_domain_wildcard_must_be_the_first_label_alone" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.*.example.com"]
+  }
+
+  expect_failures = [var.domains]
+}
+
+run "custom_domain_wildcard_needs_a_domain_below_it" {
+  command = plan
+
+  variables {
+    domains = ["*.com"]
+  }
+
+  expect_failures = [var.domains]
+}
+
+run "custom_domain_must_be_a_dns_name" {
+  command = plan
+
+  variables {
+    domains = ["*.preview_env.example.com"]
+  }
+
+  expect_failures = [var.domains]
+}
+
+run "at_most_ten_custom_domains" {
+  command = plan
+
+  variables {
+    domains = [for index in range(11) : "*.preview-${index}.example.com"]
+  }
+
+  expect_failures = [var.domains]
+}
+
+run "sandbox_host_security_groups_must_be_ids" {
+  command = plan
+
+  variables {
+    sandbox_host_security_group_ids = ["default"]
+  }
+
+  expect_failures = [var.sandbox_host_security_group_ids]
 }
 
 run "name_must_fit_a_load_balancer_name" {

@@ -30,6 +30,11 @@ output "sandbox_router_security_group_id" {
   value       = aws_security_group.router.id
 }
 
+output "sandbox_host_security_group_ids" {
+  description = "The IDs of the sandbox host security groups that admit the router on the preview port range. The router reaches sandbox hosts in these groups only."
+  value       = sort([for rule in aws_vpc_security_group_ingress_rule.sandbox_hosts : rule.security_group_id])
+}
+
 ################################################################################
 # Domain
 ################################################################################
@@ -42,6 +47,16 @@ output "wildcard_domain_name" {
 output "certificate_arn" {
   description = "The ARN of the wildcard certificate on the TLS listener."
   value       = ravion_aws_acm_certificate.this.arn
+}
+
+output "custom_domain_names" {
+  description = "The custom wildcard domains previews can be served under, beside wildcard_domain_name."
+  value       = local.custom_domains
+}
+
+output "custom_certificate_arn" {
+  description = "The ARN of the certificate that covers the custom domains on the TLS listener. Null when there are none."
+  value       = length(local.custom_domains) > 0 ? ravion_aws_acm_certificate.custom[0].arn : null
 }
 
 ################################################################################

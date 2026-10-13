@@ -63,9 +63,6 @@ resource "aws_vpc_security_group_egress_rule" "load_balancer" {
 # no CIDR does. Out, the router reaches HTTPS (the Ravion API, its release
 # download, AWS APIs) and the preview port range inside the VPC, so a router
 # cannot be turned against anything else in the network.
-#
-# Ravion adds the matching ingress rule on the sandbox hosts' security group
-# when a preview is first exposed, naming this group as the source.
 ################################################################################
 
 resource "aws_security_group" "router" {
@@ -127,5 +124,30 @@ resource "aws_vpc_security_group_egress_rule" "router_previews" {
 
   tags = merge(local.tags, {
     Name = "${local.router_name}-egress-previews"
+  })
+}
+
+################################################################################
+# Sandbox Hosts
+#
+# The other end of the router's preview egress: each sandbox host security
+# group admits the router's group on the preview port range. The rule belongs
+# to this module, so a destroy removes it before the router's group, which AWS
+# keeps for as long as another group's rule names it.
+################################################################################
+
+resource "aws_vpc_security_group_ingress_rule" "sandbox_hosts" {
+  for_each = toset(var.sandbox_host_security_group_ids)
+
+  security_group_id = each.value
+  description       = "Allow sandbox previews from the ${var.name} preview router"
+
+  ip_protocol                  = "tcp"
+  from_port                    = local.preview_port_range.from
+  to_port                      = local.preview_port_range.to
+  referenced_security_group_id = aws_security_group.router.id
+
+  tags = merge(local.tags, {
+    Name = "${local.router_name}-previews"
   })
 }

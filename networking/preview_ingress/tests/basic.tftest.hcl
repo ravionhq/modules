@@ -245,6 +245,107 @@ run "wildcard_domain_defaults_to_the_module_given_id" {
   }
 }
 
+run "no_custom_domains_adds_nothing_to_the_listener" {
+  command = plan
+
+  assert {
+    condition     = length(ravion_aws_acm_certificate.custom) == 0 && length(ravion_domain.custom) == 0
+    error_message = "With no custom domains the module must issue no second certificate and allocate no domain"
+  }
+
+  assert {
+    condition     = length(output.custom_domain_names) == 0 && output.custom_certificate_arn == null
+    error_message = "With no custom domains the custom domain outputs must be empty"
+  }
+}
+
+run "custom_domains_share_one_certificate_on_the_tls_listener" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.example.com", "*.pr.example.org"]
+  }
+
+  assert {
+    condition     = length(ravion_aws_acm_certificate.custom) == 1 && ravion_aws_acm_certificate.custom[0].domains == toset(["*.preview.example.com", "*.pr.example.org"])
+    error_message = "Every custom domain must be a name on one certificate"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.custom[0].target_arn == aws_lb_listener.tls.arn
+    error_message = "The custom domains' certificate must be attached to the TLS listener"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.custom[0].module_instance_id == "minst_test" && ravion_aws_acm_certificate.custom[0].aws_account_id == "aws_testaccount" && ravion_aws_acm_certificate.custom[0].aws_region == "us-east-2"
+    error_message = "The custom domains' certificate must carry the module instance, account and region"
+  }
+
+  assert {
+    condition     = aws_lb_listener.tls.certificate_arn == ravion_aws_acm_certificate.this.arn
+    error_message = "The managed wildcard certificate must stay the TLS listener's default certificate"
+  }
+
+  assert {
+    condition     = output.custom_domain_names == tolist(["*.preview.example.com", "*.pr.example.org"])
+    error_message = "custom_domain_names must list the custom domains as given"
+  }
+}
+
+run "each_custom_domain_points_at_the_load_balancer" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.example.com", "*.pr.example.org"]
+  }
+
+  assert {
+    condition     = toset(keys(ravion_domain.custom)) == toset(["*.preview.example.com", "*.pr.example.org"])
+    error_message = "Each custom domain must get exactly one domain allocation"
+  }
+
+  assert {
+    condition = alltrue([
+      for domain, allocation in ravion_domain.custom :
+      allocation.name == domain && allocation.module_instance_id == "minst_test" && allocation.target_dns_name == aws_lb.this.dns_name && allocation.target_zone_id == aws_lb.this.zone_id && allocation.parent_domain_name == null
+    ])
+    error_message = "Each custom domain must be allocated to this module instance and routed to the load balancer"
+  }
+}
+
+run "custom_domains_are_normalized" {
+  command = plan
+
+  variables {
+    domains = [" *.Preview.Example.com. ", "*.preview.example.com", ""]
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.custom[0].domains == toset(["*.preview.example.com"]) && toset(keys(ravion_domain.custom)) == toset(["*.preview.example.com"])
+    error_message = "Custom domains must be lowercased, trimmed of whitespace and a trailing dot, and listed once; blank entries must be dropped"
+  }
+}
+
+run "custom_domain_under_the_ravion_apex_is_refused" {
+  command = plan
+
+  variables {
+    domains = ["*.team.example-apex.test"]
+  }
+
+  expect_failures = [ravion_aws_acm_certificate.custom]
+}
+
+run "custom_domain_on_the_managed_wildcard_itself_is_refused" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.example.com", "*.previews.example-apex.test"]
+  }
+
+  expect_failures = [ravion_aws_acm_certificate.custom]
+}
+
 run "load_balancer_security_group_admits_the_listeners_only" {
   command = plan
 
@@ -351,6 +452,54 @@ run "control_plane_on_another_port_gets_its_own_egress_rule" {
   assert {
     condition     = aws_vpc_security_group_egress_rule.router_https["8443"].from_port == 8443 && aws_vpc_security_group_egress_rule.router_https["8443"].to_port == 8443
     error_message = "The extra rule must open the control plane's port only"
+  }
+}
+
+run "no_sandbox_host_groups_adds_no_rule" {
+  command = plan
+
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.sandbox_hosts) == 0
+    error_message = "With no sandbox host security groups the module must add no rule to any other group"
+  }
+
+  assert {
+    condition     = length(output.sandbox_host_security_group_ids) == 0
+    error_message = "sandbox_host_security_group_ids must be empty when no group is given"
+  }
+}
+
+run "sandbox_hosts_admit_the_router_on_the_preview_port_range" {
+  command = plan
+
+  variables {
+    sandbox_host_security_group_ids = ["sg-0dddddddddddddddd", "sg-0cccccccccccccccc", "sg-0dddddddddddddddd"]
+  }
+
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_ingress_rule.sandbox_hosts)) == toset(["sg-0cccccccccccccccc", "sg-0dddddddddddddddd"])
+    error_message = "Each sandbox host security group must get exactly one rule"
+  }
+
+  assert {
+    condition = alltrue([
+      for group, rule in aws_vpc_security_group_ingress_rule.sandbox_hosts :
+      rule.security_group_id == group && rule.referenced_security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == null && rule.cidr_ipv6 == null && rule.prefix_list_id == null
+    ])
+    error_message = "Each rule must sit on the sandbox hosts' group and name the router's security group as its only source"
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_vpc_security_group_ingress_rule.sandbox_hosts :
+      rule.ip_protocol == "tcp" && rule.from_port == 20000 && rule.to_port == 20998
+    ])
+    error_message = "Sandbox hosts must admit the router on TCP 20000-20998, the range the router may reach, and nothing else"
+  }
+
+  assert {
+    condition     = output.sandbox_host_security_group_ids == tolist(["sg-0cccccccccccccccc", "sg-0dddddddddddddddd"])
+    error_message = "sandbox_host_security_group_ids must list each group that admits the router once, in a stable order"
   }
 }
 

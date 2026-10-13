@@ -13,8 +13,10 @@ Requests travel from the browser to the load balancer, to the router, to the san
 | TCP listener on 80 | Forwards to the router on TCP 8081, where plain HTTP is redirected to HTTPS |
 | Two target groups | Instance targets with the client address preserved, health checked over HTTP on `/healthz`, port 8082 |
 | Wildcard certificate and DNS record | `*.<name>.<apex>` on Ravion's managed apex, where the name is `ravion_domain_name` or, when that is unset, the module instance given id, issued through the `ravion_aws_acm_certificate` resource and pointed at the load balancer |
+| Custom domain certificate and domains | One certificate for every entry of `domains`, attached to the TLS listener beside the wildcard certificate, and one `ravion_domain` per entry pointed at the load balancer. Created only with `domains` |
 | Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes |
 | Two security groups | One for the load balancer, one for the router |
+| Sandbox host rules | One inbound rule on each of `sandbox_host_security_group_ids`: the preview port range from the router's group |
 | IAM role and instance profile | Session Manager access for operators. Created only with `ssm_enabled` |
 
 ## Usage
@@ -34,9 +36,31 @@ module "preview_ingress" {
   public_subnet_ids = module.vpc.public_subnet_ids
   router_subnet_ids = module.vpc.private_subnet_ids
 
+  sandbox_host_security_group_ids = ["sg-0123456789abcdef0"]
+
   tags = {
     Environment = "staging"
   }
+}
+```
+
+Serve previews under your own wildcard domain as well:
+
+```hcl
+module "preview_ingress" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/preview_ingress?ref=rvn-preview-ingress@0.1.0"
+
+  name               = "previews"
+  module_instance_id = "minst_..."
+  ravion_domain_name = "previews"
+  ravion_api_url     = "https://api.ravion.com"
+  domains            = ["*.preview.example.com"]
+
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = module.vpc.public_subnet_ids
+  router_subnet_ids = module.vpc.private_subnet_ids
+
+  sandbox_host_security_group_ids = ["sg-0123456789abcdef0"]
 }
 ```
 
@@ -55,10 +79,22 @@ module "preview_ingress" {
   public_subnet_ids        = module.vpc.public_subnet_ids
   router_subnet_ids        = module.vpc.public_subnet_ids
   router_public_ip_enabled = true
+
+  sandbox_host_security_group_ids = ["sg-0123456789abcdef0"]
 }
 ```
 
 Inside a Ravion stack run the runner injects `module_instance_id`, `module_instance_given_id` and `ravion_api_url`. Outside a Ravion pipeline, set them as above and export `RAVION_BASE_URL` and `RAVION_API_KEY` for the `ravion` provider before applying.
+
+## Custom domains
+
+`domains` lists wildcard domains previews can be served under, beside the Ravion wildcard domain. Each entry is `*.<domain>` in a DNS zone you control, such as `*.preview.example.com`, and a preview takes one hostname below it, such as `feature-x.preview.example.com`. The list holds at most 10 entries.
+
+The module creates one `ravion_aws_acm_certificate` with every entry as a name and the TLS listener as its target, and one `ravion_domain` per entry that points at the load balancer. Ravion attaches the certificate to the listener once it is issued. The wildcard certificate on Ravion's managed apex stays the listener's default certificate, and the load balancer picks the certificate by the hostname a client asks for.
+
+Add two DNS records for each entry at your DNS provider: the certificate's validation record and the routing record that points the wildcard at the load balancer. Ravion provides both. An apply finishes without waiting for them. Previews under a custom domain answer after the certificate is issued and the routing record resolves.
+
+Entries are lowercased and trimmed of whitespace and a trailing dot. An entry under Ravion's managed apex is refused: its records would belong to Ravion's DNS zone, which only Ravion can edit.
 
 ## The router instance
 
@@ -86,7 +122,7 @@ The router keeps itself on the current runner release after boot. A change to th
 
 No CIDR reaches the router. Its outbound HTTPS serves the Ravion API, the release download and AWS APIs. Ports 20000-20998 are where sandbox hosts publish previews, and the router can open no other connection inside the VPC. A Ravion API on a port other than 443 adds that port to the router's outbound rules.
 
-Ravion adds one inbound rule to the sandbox hosts' security group the first time a preview is exposed through the router: TCP 20000-20999 from the router's group. Remove that rule before destroying this module. AWS refuses to delete a security group that another group's rule still names.
+The module adds one inbound rule to each security group in `sandbox_host_security_group_ids`: TCP 20000-20998 from the router's group. These are the groups of the sandbox hosts whose previews the router serves, and the router reaches no sandbox host outside them. The rules belong to this module, so a destroy removes them before the router's group. AWS refuses to delete a security group that another group's rule still names.
 
 ## Session Manager
 
@@ -111,6 +147,7 @@ Ravion adds one inbound rule to the sandbox hosts' security group the first time
 | public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
 | router_subnet_ids | Subnets the router instance launches in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
 | router_public_ip_enabled | Give the router instance a public IPv4 address, for public `router_subnet_ids` | `bool` | `false` | no |
+| sandbox_host_security_group_ids | Security groups of the sandbox hosts whose previews the router serves. Each gets one inbound rule for the router's group on the preview port range | `list(string)` | `[]` | no |
 | ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
 | ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
 | instance_type | EC2 instance type of the router | `string` | `"t3.small"` | no |
@@ -120,6 +157,7 @@ Ravion adds one inbound rule to the sandbox hosts' security group the first time
 | ssm_enabled | Give the instance a role that allows Session Manager and nothing else | `bool` | `true` | no |
 | ravion_domain_name | Name leaf of the wildcard domain: Ravion issues `*.<name>.<apex>`. Null uses the module instance given id | `string` | `null` | no |
 | module_instance_given_id | The module instance's given id, the default leaf of the wildcard domain. Injected as `TF_VAR_module_instance_given_id` inside a stack run | `string` | `null` | no |
+| domains | Custom wildcard domains previews can be served under, each `*.<domain>` in a DNS zone you control. At most 10 | `list(string)` | `[]` | no |
 | ravion_aws_account_id | Ravion AWS account record id (`aws_*`) the certificate is issued in. Null detects it from the run's AWS credentials | `string` | `null` | no |
 | region | AWS region. Null uses the provider's region | `string` | `null` | no |
 | tags | Tags to assign to all resources | `map(string)` | `{}` | no |
@@ -133,8 +171,11 @@ Ravion adds one inbound rule to the sandbox hosts' security group the first time
 | sandbox_router_zone_id | Canonical hosted zone ID of the load balancer |
 | sandbox_router_load_balancer_arn | ARN of the load balancer in front of the router |
 | sandbox_router_security_group_id | ID of the router instance's security group |
+| sandbox_host_security_group_ids | IDs of the sandbox host security groups that admit the router on the preview port range |
 | wildcard_domain_name | The apex previews are served under |
 | certificate_arn | ARN of the wildcard certificate on the TLS listener |
+| custom_domain_names | The custom wildcard domains previews can be served under |
+| custom_certificate_arn | ARN of the certificate that covers the custom domains. Null when there are none |
 | load_balancer_security_group_id | ID of the load balancer's security group |
 | autoscaling_group_name | Name of the Auto Scaling group that keeps the router running |
 | image_id | The AMI new router instances boot |

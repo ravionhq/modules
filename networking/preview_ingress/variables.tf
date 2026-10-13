@@ -75,6 +75,26 @@ variable "module_instance_given_id" {
   default     = null
 }
 
+variable "domains" {
+  type        = list(string)
+  description = "Custom wildcard domains previews can be served under, beside the Ravion wildcard domain. Each entry is *.<domain> in a DNS zone you control, and a preview takes one hostname below it. Ravion issues one certificate for all entries and attaches it to the TLS listener; add the DNS records it provides at your DNS provider."
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for domain in var.domains :
+      can(regex("^\\*\\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", lower(trimsuffix(trimspace(domain), "."))))
+      if trimsuffix(trimspace(domain), ".") != ""
+    ])
+    error_message = "Each entry of domains must be a wildcard domain: *. followed by a domain name of two or more labels, such as *.preview.example.com."
+  }
+
+  validation {
+    condition     = length(var.domains) <= 10
+    error_message = "The domains list holds at most 10 entries: they share one certificate."
+  }
+}
+
 ################################################################################
 # Network
 ################################################################################
@@ -123,6 +143,17 @@ variable "ingress_cidr_blocks" {
   validation {
     condition     = alltrue([for cidr in var.ingress_cidr_blocks : can(cidrhost(cidr, 0))])
     error_message = "All ingress_cidr_blocks must be valid IPv4 CIDR blocks."
+  }
+}
+
+variable "sandbox_host_security_group_ids" {
+  type        = list(string)
+  description = "Security groups of the sandbox hosts whose previews the router serves. Each gets one inbound rule that admits the router's security group on the preview port range. The router cannot reach a sandbox host outside these groups."
+  default     = []
+
+  validation {
+    condition     = alltrue([for id in var.sandbox_host_security_group_ids : can(regex("^sg-[0-9a-f]+$", id))])
+    error_message = "All sandbox_host_security_group_ids must be security group IDs starting with 'sg-'."
   }
 }
 
