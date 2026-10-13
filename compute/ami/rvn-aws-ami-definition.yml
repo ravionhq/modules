@@ -1,10 +1,10 @@
 definition:
   type: rvn-aws-ami
   name: AMI
-  description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
+  description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.3.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 0.3.1
+  description: Retain components during updates and clean up retained build resources when the stack is destroyed.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1049,6 +1049,14 @@ module:
     Declare the values that change between releases, such as a release version, under Parameters. A step reads one as `{{ ParameterName }}`. A parameter's value is passed by each deploy's image recipe rather than written into the document, so a deploy can override it without creating a new component.
 
     Image Builder components are immutable. This module names each by a hash of its content, so a changed document is a new component beside the old one, and the next deploy builds with it. There is no version to bump.
+
+    Components created by this module remain in AWS when replaced or removed, because earlier build recipes can still reference them. They leave Terraform state but are not deleted. Image retention settings do not clean up components.
+
+    Stack destruction cleans up this module's tagged Image Builder build records, recipes, and retained components in the build region. It does not delete EC2 AMIs, snapshots, or running instances. Stop deployments first; active builds, remaining dependencies, or missing permissions fail the destroy so you can resolve the error and retry. Resources in previous build regions or without the module's ownership tags need manual cleanup. Apply this version once before destroying an existing stack to install the cleanup hook, and keep the module configuration present through destruction.
+
+    The destroy runner needs Bash, jq, and AWS CLI v2 with support for listing deprecated images. The default apply/destroy permissions cover cleanup. Custom policies must also allow Image Builder's `ListImages`, `ListImageBuildVersions`, `ListImageRecipes`, `ListComponents`, `ListComponentBuildVersions`, `DeleteImage`, `DeleteImageRecipe`, and `DeleteComponent` actions. CLI credentials must use the same AWS account as Terraform. The component ownership tags `ModuleId`, `Module`, and `ManagedBy` are reserved; do not copy them to external components.
+
+    When upgrading an existing stack, apply the retention setting with component content unchanged before making a change that replaces a component. The provider reads `skip_destroy` from the old resource's state during deletion. An already failed replacement can leave a deposed component with the old setting; upgrading the configuration alone does not repair that state. Inspect and back up the state before any separately approved recovery, without deleting successful build recipes or images.
 
     ## Deploying
 
