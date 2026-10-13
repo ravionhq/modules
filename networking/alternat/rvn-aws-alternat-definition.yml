@@ -10,7 +10,7 @@ module:
     - id: network
       immutable: true
       label: VPC network
-      description: Ravion network to take over egress for. Leave empty to enter the VPC and subnet IDs of any VPC.
+      description: Ravion network to take over egress for, or Enter values manually for any other VPC.
       mapped_inputs:
         - id: section_aws
           label: AWS account & region
@@ -176,14 +176,15 @@ module:
       collapsible: true
       description: The VPC's own CIDR blocks are always allowed. Add peered VPC ranges that egress through this VPC.
       id: allowed_cidr_blocks
-      label: Additional allowed CIDR blocks
+      label: Allowed CIDR blocks
       placeholder: 10.1.0.0/16
       required: false
       type: string_array
     - add_button_label: Add security group ID
       collapsible: true
+      description: Members may route through the NAT instances, in addition to the VPC's CIDR blocks.
       id: allowed_security_group_ids
-      label: Additional allowed security groups
+      label: Allowed security groups
       placeholder: sg-...
       required: false
       type: string_array
@@ -243,7 +244,7 @@ module:
     - **Automatic failover** moves the route to a NAT gateway when a NAT instance fails a check or terminates, so egress is never lost
     - **Automatic restore** moves the route back to the NAT instance once it is healthy again
 
-    It works with any VPC: pick a Ravion VPC network, or leave the network empty and enter VPC and subnet IDs for a VPC created elsewhere.
+    It works with any VPC: pick a Ravion VPC network, or choose **Enter values manually** and enter the VPC and subnet IDs of a VPC created elsewhere.
 
      Terraform source: [ravionhq/modules/networking/alternat](https://github.com/ravionhq/modules/tree/$local.module_tag/networking/alternat)
 
@@ -296,7 +297,7 @@ module:
 
     | Field | Required | Default | Description |
     | --- | --- | --- | --- |
-    | VPC network | No | - | Ravion network to take over egress for; leave empty to enter IDs |
+    | VPC network | No | - | Ravion network to take over egress for, or Enter values manually |
     | AWS account / Region | Yes | From network | Where the VPC is |
     | VPC ID | Yes | From network | VPC whose egress moves to NAT instances |
     | Public / private subnet IDs | Yes | From network | Where NAT instances run / whose egress they carry |
