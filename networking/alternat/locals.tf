@@ -46,20 +46,10 @@ locals {
   ################################################################################
 
   available_nat_gateway_ids = var.fallback_nat_gateway_mode == "existing" ? data.aws_nat_gateways.existing[0].ids : []
-  # Only public NAT gateways can be a fallback: a private one has no route to
-  # the internet.
-  existing_nat_gateway_ids          = sort([for gateway in data.aws_nat_gateway.existing : gateway.id if gateway.connectivity_type == "public"])
-  existing_nat_gateway_subnet_ids   = [for gateway in data.aws_nat_gateway.existing : gateway.subnet_id if gateway.connectivity_type == "public"]
-  nat_azs_without_existing_gateways = [for az_map in local.vpc_az_maps : az_map.az if !contains(local.existing_nat_gateway_subnet_ids, az_map.public_subnet_id)]
 
-  # An empty ID makes alterNAT fail over to the NAT gateway in the NAT
-  # instance's own public subnet.
-  fallback_nat_gateway_id = (
-    var.fallback_nat_gateway_mode != "existing" ? "" :
-    var.fallback_nat_gateway_id != null ? var.fallback_nat_gateway_id :
-    length(local.existing_nat_gateway_ids) == 1 ? local.existing_nat_gateway_ids[0] :
-    ""
-  )
+  # Selection among the existing NAT gateways lives in modules/fallback.
+  existing_nat_gateway_ids = module.fallback.public_nat_gateway_ids
+  fallback_nat_gateway_id  = var.fallback_nat_gateway_mode == "existing" ? module.fallback.fallback_nat_gateway_id : ""
 
   ################################################################################
   # Resource names

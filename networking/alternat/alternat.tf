@@ -33,17 +33,8 @@ resource "terraform_data" "preconditions" {
     }
 
     precondition {
-      condition = (
-        var.fallback_nat_gateway_mode != "existing" ||
-        var.fallback_nat_gateway_id != null ||
-        length(local.existing_nat_gateway_ids) == 1 ||
-        (length(local.existing_nat_gateway_ids) > 1 && length(local.nat_azs_without_existing_gateways) == 0)
-      )
-      error_message = (
-        length(local.existing_nat_gateway_ids) == 0
-        ? "${var.vpc_id} has no available public NAT gateway to fail over to. Set fallback_nat_gateway_mode to create, or create a NAT gateway first."
-        : "${var.vpc_id} has several NAT gateways, and none is in the public subnet of the NAT instance(s) in ${join(", ", local.nat_azs_without_existing_gateways)}. Set fallback_nat_gateway_id to choose one."
-      )
+      condition     = var.fallback_nat_gateway_mode != "existing" || module.fallback.valid
+      error_message = "${var.vpc_id} has ${module.fallback.error_message}"
     }
   }
 }
