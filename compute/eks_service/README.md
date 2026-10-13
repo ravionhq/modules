@@ -10,9 +10,9 @@ Each part is independently optional, which is what lets one root module serve al
 | `rvn-eks-web`, registry image | `false` | set | Target group, listener rule |
 | `rvn-eks-worker`, `rvn-eks-cron`, Dockerfile or Railpack build | `true` | `null` | ECR repository |
 | `rvn-eks-worker`, `rvn-eks-cron`, registry image | `false` | `null` | Nothing |
-| `rvn-eks-chart` (third-party chart) | `false` | `null` | Nothing |
+| `rvn-eks-chart` (any Helm chart) | `false` | `null` | Nothing |
 
-`rvn-eks-chart` deploys a third-party chart from an HTTP Helm repository or an OCI registry. It uses this module only for the optional Pod Identity role and for the destroy-time `helm uninstall` of its release.
+`rvn-eks-chart` deploys a chart from an HTTP Helm repository, an OCI registry or a Git repository. It uses this module only for the optional Pod Identity role and for the destroy-time `helm uninstall` of its release.
 
 This mirrors `compute/ecs_service`, where one root module serves web, worker, and NLB services, gating ECR on `ecr_repository_creation_enabled` and the load balancer on a nullable `load_balancer_attachment`.
 
