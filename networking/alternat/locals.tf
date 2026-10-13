@@ -45,8 +45,11 @@ locals {
   # Fallback NAT gateway
   ################################################################################
 
-  existing_nat_gateway_ids          = var.fallback_nat_gateway_mode == "existing" ? data.aws_nat_gateways.existing[0].ids : []
-  existing_nat_gateway_subnet_ids   = [for gateway in data.aws_nat_gateway.existing : gateway.subnet_id]
+  available_nat_gateway_ids = var.fallback_nat_gateway_mode == "existing" ? data.aws_nat_gateways.existing[0].ids : []
+  # Only public NAT gateways can be a fallback: a private one has no route to
+  # the internet.
+  existing_nat_gateway_ids          = sort([for gateway in data.aws_nat_gateway.existing : gateway.id if gateway.connectivity_type == "public"])
+  existing_nat_gateway_subnet_ids   = [for gateway in data.aws_nat_gateway.existing : gateway.subnet_id if gateway.connectivity_type == "public"]
   nat_azs_without_existing_gateways = [for az_map in local.vpc_az_maps : az_map.az if !contains(local.existing_nat_gateway_subnet_ids, az_map.public_subnet_id)]
 
   # An empty ID makes alterNAT fail over to the NAT gateway in the NAT
