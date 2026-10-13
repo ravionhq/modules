@@ -64,16 +64,12 @@ data "aws_nat_gateways" "existing" {
     name   = "state"
     values = ["available"]
   }
-
-  # A private NAT gateway has no route to the internet.
-  filter {
-    name   = "connectivity-type"
-    values = ["public"]
-  }
 }
 
+# Looked up one by one for their subnet and connectivity type:
+# DescribeNatGateways cannot filter on connectivity type.
 data "aws_nat_gateway" "existing" {
-  for_each = toset(local.existing_nat_gateway_ids)
+  for_each = toset(local.available_nat_gateway_ids)
 
   id = each.key
 }

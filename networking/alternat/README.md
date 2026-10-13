@@ -66,6 +66,8 @@ The placement logic lives in `modules/placement` and is covered by `tests/placem
 | `existing` (default) | `fallback_nat_gateway_id`, else the VPC's only public NAT gateway, else the public NAT gateway in each NAT instance's public subnet. Private NAT gateways are never used. |
 | `create` | A standby NAT gateway created in each NAT instance's public subnet |
 
+The selection logic lives in `modules/fallback` and is covered by `tests/fallback.tftest.hcl`, including VPCs with both public and private NAT gateways.
+
 Failover keeps connectivity, but connections through a failed or replaced NAT instance are dropped. During failover, traffic leaves from the NAT gateway's public IP.
 
 When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its next apply points the route back at the NAT gateway; with `nat_restore_enabled` (default), alterNAT moves it back to the NAT instance within a minute.
