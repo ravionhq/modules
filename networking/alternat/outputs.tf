@@ -87,8 +87,7 @@ output "fallback_nat_gateway_ids" {
   description = "NAT gateways the NAT instances fail over to: the existing ones in existing mode, the standby ones in create mode."
   value = (
     var.fallback_nat_gateway_mode == "create" ? data.aws_nat_gateways.standby[0].ids :
-    local.fallback_nat_gateway_id != "" ? [local.fallback_nat_gateway_id] :
-    distinct([for gateway in data.aws_nat_gateway.existing : gateway.id if contains([for az_map in local.vpc_az_maps : az_map.public_subnet_id], gateway.subnet_id)])
+    module.fallback.fallback_nat_gateway_ids
   )
 }
 
