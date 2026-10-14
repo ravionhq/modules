@@ -92,9 +92,15 @@ module "alternat" {
   # Zip packaging builds the Lambdas from the module source, so no container
   # image has to be built and pushed. The functions only need boto3, which the
   # Python runtime provides.
+  #
+  # alterNAT writes the zip only when its archive_file resource is created, so
+  # a saved plan applied on another machine finds no zip at a scratch path.
+  # The zip is committed here instead: archive_file output is reproducible, so
+  # it rewrites the same bytes, and tests/lambda_zip.tftest.hcl fails when an
+  # alterNAT upgrade changes the functions.
   lambda_package_type           = "Zip"
   lambda_function_architectures = ["arm64"]
-  lambda_zip_path               = "/tmp/${var.name}-alternat-lambda.zip"
+  lambda_zip_path               = "${path.module}/lambda/alternat-lambda.zip"
   lambda_has_ipv6               = length(local.vpc_ipv6_cidr_blocks) > 0
 
   # Names derived from var.name, so several instances of this module can share
