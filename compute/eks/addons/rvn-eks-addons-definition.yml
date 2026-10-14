@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.19.0
-  description: "Add opt-in Ravion-managed domains for the shared ALB: a wildcard certificate and DNS for the cluster, served as the default certificate on the selected ALB HTTPS listener while every BYO certificate stays attached via SNI."
+  version: 0.19.1
+  description: "Let a Grafana dashboard variable over a Tempo attribute list values from the dashboard's time range, up to 24 hours, instead of failing when nothing sent that attribute in the last few minutes."
 module:
   inputs:
     - id: cluster

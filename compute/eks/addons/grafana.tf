@@ -69,16 +69,24 @@ locals {
           url       = local.tempo_endpoint
           isDefault = !local.amp_enabled && !local.prometheus_enabled && !local.loki_enabled
         },
-        # The metrics generator's service graphs, drawn from the Prometheus it
-        # writes to.
         {
-          for key, value in {
-            jsonData = {
-              serviceMap = {
-                datasourceUid = local.tempo_generator_to_amp ? "ravion-amp" : "ravion-prometheus"
-              }
-            }
-          } : key => value if local.tempo_generator_enabled
+          jsonData = merge(
+            # Tag and tag-value lookups (dashboard variables, the query editor)
+            # search the dashboard's time range, its last 24 hours at most.
+            # Unset, Grafana sends no range and Tempo answers from its most
+            # recent data alone, so an attribute nothing sent in the last few
+            # minutes is not found and a variable over it fails.
+            { timeRangeForTags = 86400 },
+            # The metrics generator's service graphs, drawn from the Prometheus
+            # it writes to.
+            {
+              for key, value in {
+                serviceMap = {
+                  datasourceUid = local.tempo_generator_to_amp ? "ravion-amp" : "ravion-prometheus"
+                }
+              } : key => value if local.tempo_generator_enabled
+            },
+          )
         },
       ),
     ] : [],
