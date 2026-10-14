@@ -28,6 +28,23 @@ jobs:
         with:
           tofu_version: 1.12.3
 
+      # Every `tofu init` below would otherwise download its providers again,
+      # though most modules pin the same AWS provider versions. The plugin
+      # cache downloads each version once per run, and actions/cache carries
+      # it across runs until a lock file changes.
+      - name: Configure provider plugin cache
+        run: |
+          mkdir -p "$HOME/.terraform.d/plugin-cache"
+          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
+
+      - name: Cache providers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: tofu-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            tofu-providers-${{ runner.os }}-
+
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4
 
@@ -119,3 +136,22 @@ jobs:
           format: table
           exit-code: '1'
           severity: HIGH,CRITICAL
+
+      # restore-keys carries every version a previous run cached. Drop the
+      # ones no module linked to in this run, so a provider upgrade does not
+      # leave the old version in the cache for good. Runs before the cache is
+      # saved, which happens after the last step.
+      - name: Prune unused providers from cache
+        run: |
+          set -euo pipefail
+
+          cache="$HOME/.terraform.d/plugin-cache"
+          used=$(find . -path '*/.terraform/providers/*' -type l -exec readlink {} \; | sort -u)
+
+          find "$cache" -mindepth 5 -maxdepth 5 -type d | while read -r dir; do
+            if ! grep -qxF "$dir" <<< "$used"; then
+              echo "Removing ${dir#"$cache"/}"
+              rm -rf "$dir"
+            fi
+          done
+          find "$cache" -mindepth 1 -type d -empty -delete
