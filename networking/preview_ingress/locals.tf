@@ -52,22 +52,14 @@ locals {
     if association.state == "associated"
   ]
 
-  # Release downloads and AWS APIs are always HTTPS on 443. A control plane on
-  # another port needs that port as well.
+  # AWS APIs are always HTTPS on 443. A control plane on another port needs
+  # that port as well.
   ravion_api_port    = try(tonumber(regex(":([0-9]+)$", var.ravion_api_url)[0]), 443)
   router_https_ports = toset([for port in [443, local.ravion_api_port] : tostring(port)])
-
-  # Runner release platforms by image architecture.
-  runner_platforms = {
-    x86_64 = "linux-amd64"
-    arm64  = "linux-arm64"
-  }
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     ravion_api_url     = var.ravion_api_url
     module_instance_id = var.module_instance_id
-    release_path       = "/sandbox-host/v1/releases/current"
-    platform           = lookup(local.runner_platforms, data.aws_ami.router.architecture, "")
     router_ports       = local.router_ports
   })
 }

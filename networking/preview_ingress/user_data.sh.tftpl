@@ -1,27 +1,27 @@
 #!/bin/bash
-# Boot script of the preview router instance. Runs once, as root: installs the
-# current runner release from the Ravion API and starts the router.
+# Boot script of the preview router instance. Runs once, as root: writes the
+# router's environment and starts the preview router the image carries.
 #
 # The router unit is written and enabled last, so an instance on which any
-# step failed never runs a half-installed router. It stays unhealthy behind
-# the load balancer, and its Auto Scaling group replaces it.
+# step failed never runs a router. It stays unhealthy behind the load
+# balancer, and its Auto Scaling group replaces it.
 #
-# Nothing here is a secret, and nothing here may log one: the release is
-# downloaded through short-lived signed URLs, so commands are not traced and
-# curl stays quiet.
+# Nothing here is a secret: the router obtains its credential from Ravion at
+# start and keeps it in memory.
 set -Eeuo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 trap 'echo "preview router setup: FAILED at line $LINENO" >&2' ERR
 
-release_url='${ravion_api_url}${release_path}?platform=${platform}'
+router=/usr/local/bin/preview-router
 
-fetch() {
-	curl --fail --silent --show-error --location \
-		--proto '=https' --proto-redir '=https' \
-		--retry 5 --retry-connrefused --retry-delay 2 --max-time 300 \
-		--output "$2" "$1"
-}
+echo "preview router setup: checking the image's router"
+if [[ ! -x "$router" ]]; then
+	echo "preview router setup: FAILED, the image carries no preview router at $router" >&2
+	exit 1
+fi
+release=$("$router" --version)
+echo "preview router setup: $release"
 
 echo "preview router setup: writing the router's environment"
 install -d -m 0755 /etc/ravion
@@ -32,25 +32,6 @@ RAVION_PREVIEW_ROUTER_MODULE_INSTANCE_ID=${module_instance_id}
 RAVION_PREVIEW_ROUTER_WORK_DIR=/var/lib/ravion/preview-router
 ENV
 
-echo "preview router setup: downloading the runner release"
-download=$(mktemp -d)
-fetch "$release_url&file=binary" "$download/runner"
-fetch "$release_url&file=checksum" "$download/runner.sha256"
-
-echo "preview router setup: verifying the download"
-expected=$(awk 'NR == 1 { print $1 }' "$download/runner.sha256")
-if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
-	echo "preview router setup: FAILED, the release checksum is not a sha256 digest" >&2
-	exit 1
-fi
-echo "$expected  $download/runner" | sha256sum --check --quiet -
-
-echo "preview router setup: installing the runner"
-install -m 0755 "$download/runner" /usr/local/bin/runner
-rm -rf "$download"
-release=$(/usr/local/bin/runner version --release)
-echo "preview router setup: runner release $release"
-
 echo "preview router setup: starting the router"
 cat > /etc/systemd/system/ravion-preview-router.service <<'UNIT'
 [Unit]
@@ -60,7 +41,7 @@ After=network-online.target
 
 [Service]
 EnvironmentFile=/etc/ravion/preview-router.env
-ExecStart=/usr/local/bin/runner preview-router --listen :${router_ports.traffic} --listen-redirect :${router_ports.redirect} --listen-health :${router_ports.health}
+ExecStart=/usr/local/bin/preview-router --listen :${router_ports.traffic} --listen-redirect :${router_ports.redirect} --listen-health :${router_ports.health}
 Restart=always
 RestartSec=5
 LimitNOFILE=1048576

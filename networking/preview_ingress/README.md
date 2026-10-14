@@ -98,20 +98,19 @@ Entries are lowercased and trimmed of whitespace and a trailing dot. An entry un
 
 ## The router instance
 
-The instance boots an image that carries systemd, curl and sha256sum. By default that is the newest image the `image_owner` account publishes under `image_name_pattern` for the instance type's architecture. Set `image_id` to pin an image.
+The instance boots an image that carries systemd and the preview router at `/usr/local/bin/preview-router`. Ravion releases the router with each sandbox host image, so by default that is the newest image the `image_owner` account publishes under `image_name_pattern` for the instance type's architecture. Set `image_id` to pin an image.
 
-The boot script does four things, in order, and stops at the first one that fails:
+The boot script does three things, in order, and stops at the first one that fails:
 
-1. Writes `/etc/ravion/preview-router.env` with the Ravion API origin and the module instance id.
-2. Downloads the current runner release for the image's architecture from `<ravion_api_url>/sandbox-host/v1/releases/current`, over HTTPS only.
-3. Verifies the download against the release's SHA-256 checksum and installs it at `/usr/local/bin/runner`.
-4. Writes and starts `ravion-preview-router.service`, which runs `runner preview-router`.
+1. Checks that the image's preview router runs, and logs its release.
+2. Writes `/etc/ravion/preview-router.env` with the Ravion API origin and the module instance id.
+3. Writes and starts `ravion-preview-router.service`, which runs `preview-router`.
 
 The script holds no credential and logs none. The router obtains its credential from Ravion at start: it presents the instance's signed identity document, and Ravion checks that the instance runs in the module instance's AWS account and carries the tag `ravion:preview-router = <module_instance_id>`. The module sets that tag on the instance. The credential stays in the router's memory.
 
 An instance whose boot script fails never starts the router. It stays unhealthy behind the load balancer, the Auto Scaling group replaces it after the health check grace period, and the apply that launched it fails after ten minutes without a healthy router. The reason is in the instance's console output and in `/var/log/cloud-init-output.log`, on the line that starts with `preview router setup: FAILED`.
 
-The router keeps itself on the current runner release after boot. A change to the launch template (image, instance type, API origin, tags) replaces the instance: the old router is terminated before the new one serves, and previews are unreachable for the few minutes in between. A newer image found by the lookup is such a change, so pin `image_id` to decide when it happens.
+The router runs the release its image carries. A change to the launch template (image, instance type, API origin, tags) replaces the instance: the old router is terminated before the new one serves, and previews are unreachable for the few minutes in between. A newer image found by the lookup is such a change, so pin `image_id` to decide when it happens.
 
 ## Security groups
 
@@ -120,7 +119,7 @@ The router keeps itself on the current runner release after boot. A change to th
 | Load balancer | TCP 443 and 80 from `ingress_cidr_blocks` | TCP 8080, 8081 and 8082 to the router's group |
 | Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 to the VPC's IPv4 ranges |
 
-No CIDR reaches the router. Its outbound HTTPS serves the Ravion API, the release download and AWS APIs. Ports 20000-20998 are where sandbox hosts publish previews, and the router can open no other connection inside the VPC. A Ravion API on a port other than 443 adds that port to the router's outbound rules.
+No CIDR reaches the router. Its outbound HTTPS serves the Ravion API and AWS APIs. Ports 20000-20998 are where sandbox hosts publish previews, and the router can open no other connection inside the VPC. A Ravion API on a port other than 443 adds that port to the router's outbound rules.
 
 The module adds one inbound rule to each security group in `sandbox_host_security_group_ids`: TCP 20000-20998 from the router's group. These are the groups of the sandbox hosts whose previews the router serves, and the router reaches no sandbox host outside them. The rules belong to this module, so a destroy removes them before the router's group. AWS refuses to delete a security group that another group's rule still names.
 
@@ -142,7 +141,7 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 |------|-------------|------|---------|:--------:|
 | name | Name of the load balancer and the prefix of every other resource (1-32 characters) | `string` | n/a | yes |
 | module_instance_id | Ravion module instance id (`minst_*`) this preview ingress belongs to; the router's identity. Injected as `TF_VAR_module_instance_id` inside a stack run | `string` | n/a | yes |
-| ravion_api_url | Origin of the Ravion API the router downloads its release from and connects to. Injected as `TF_VAR_ravion_api_url` inside a stack run | `string` | n/a | yes |
+| ravion_api_url | Origin of the Ravion API the router connects to. Injected as `TF_VAR_ravion_api_url` inside a stack run | `string` | n/a | yes |
 | vpc_id | VPC of the load balancer, the router and the sandboxes it serves | `string` | n/a | yes |
 | public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
 | router_subnet_ids | Subnets the router instance launches in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
@@ -199,4 +198,4 @@ tofu test
 tests/user_data_test.sh
 ```
 
-`tofu test` plans the module against mocked providers. `tests/user_data_test.sh` renders the boot script and runs it in a throwaway Debian container with stand-ins for curl and systemctl: a release that verifies, a checksum mismatch, a release the API does not offer, a checksum that is not a digest, and a runner that cannot run. It needs Docker.
+`tofu test` plans the module against mocked providers. `tests/user_data_test.sh` renders the boot script and runs it in a throwaway Debian container with a stand-in for systemctl: an image with its router, an image without one, and a router that cannot run. It needs Docker.

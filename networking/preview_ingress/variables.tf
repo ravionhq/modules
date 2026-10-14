@@ -46,7 +46,7 @@ variable "ravion_aws_account_id" {
 
 variable "ravion_api_url" {
   type        = string
-  description = "Origin of the Ravion API the router downloads its release from and connects to. Injected by the runner as TF_VAR_ravion_api_url inside a stack run; set it explicitly for external runs."
+  description = "Origin of the Ravion API the router connects to. Injected by the runner as TF_VAR_ravion_api_url inside a stack run; set it explicitly for external runs."
 
   validation {
     condition     = can(regex("^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?$", var.ravion_api_url))
@@ -185,7 +185,7 @@ variable "instance_type" {
 
 variable "image_id" {
   type        = string
-  description = "AMI the router instance boots. When null, the newest image of image_owner matching image_name_pattern and the instance type's architecture is used. The image needs systemd, curl and sha256sum; the boot script installs the router itself."
+  description = "AMI the router instance boots. When null, the newest image of image_owner matching image_name_pattern and the instance type's architecture is used. The image must carry systemd and the preview router at /usr/local/bin/preview-router, as the sandbox host images Ravion publishes do."
   default     = null
 
   validation {

@@ -60,9 +60,9 @@ resource "aws_vpc_security_group_egress_rule" "load_balancer" {
 # Router Security Group
 #
 # In, only the load balancer reaches the router, on the router's three ports;
-# no CIDR does. Out, the router reaches HTTPS (the Ravion API, its release
-# download, AWS APIs) and the preview port range inside the VPC, so a router
-# cannot be turned against anything else in the network.
+# no CIDR does. Out, the router reaches HTTPS (the Ravion API, AWS APIs) and
+# the preview port range inside the VPC, so a router cannot be turned against
+# anything else in the network.
 ################################################################################
 
 resource "aws_security_group" "router" {
@@ -99,7 +99,7 @@ resource "aws_vpc_security_group_egress_rule" "router_https" {
   for_each = local.router_https_ports
 
   security_group_id = aws_security_group.router.id
-  description       = "Allow HTTPS to the Ravion API, release downloads and AWS APIs"
+  description       = "Allow HTTPS to the Ravion API and AWS APIs"
 
   ip_protocol = "tcp"
   from_port   = tonumber(each.value)

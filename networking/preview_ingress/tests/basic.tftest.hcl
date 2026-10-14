@@ -446,7 +446,7 @@ run "control_plane_on_another_port_gets_its_own_egress_rule" {
 
   assert {
     condition     = toset(keys(aws_vpc_security_group_egress_rule.router_https)) == toset(["443", "8443"])
-    error_message = "A control plane on another port must be reachable, beside 443 for release downloads"
+    error_message = "A control plane on another port must be reachable, beside 443 for AWS APIs"
   }
 
   assert {
@@ -580,28 +580,18 @@ run "user_data_installs_and_starts_the_router" {
   }
 
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "https://api.example.test/sandbox-host/v1/releases/current?platform=linux-amd64")
-    error_message = "The boot script must download the current runner release for the image's platform from the control plane"
+    condition     = !strcontains(base64decode(aws_launch_template.router.user_data), "curl")
+    error_message = "The boot script must run the router the image carries and download nothing"
   }
 
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "file=binary") && strcontains(base64decode(aws_launch_template.router.user_data), "file=checksum") && strcontains(base64decode(aws_launch_template.router.user_data), "sha256sum --check")
-    error_message = "The boot script must verify the download against the release's checksum"
-  }
-
-  assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "ExecStart=/usr/local/bin/runner preview-router --listen :8080 --listen-redirect :8081 --listen-health :8082\n")
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "ExecStart=/usr/local/bin/preview-router --listen :8080 --listen-redirect :8081 --listen-health :8082\n")
     error_message = "The unit must start the router on the ports the load balancer targets"
   }
 
   assert {
     condition     = strcontains(base64decode(aws_launch_template.router.user_data), "systemctl enable --now ravion-preview-router.service")
     error_message = "The boot script must enable and start the router unit"
-  }
-
-  assert {
-    condition     = !strcontains(base64decode(aws_launch_template.router.user_data), "set -x") && !strcontains(base64decode(aws_launch_template.router.user_data), "curl -v")
-    error_message = "The boot script must not trace commands or log the signed download URLs"
   }
 }
 
@@ -625,8 +615,8 @@ run "overrides_reach_the_instance" {
   }
 
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_API_URL=https://api.staging.example.test\n") && strcontains(base64decode(aws_launch_template.router.user_data), "https://api.staging.example.test/sandbox-host/v1/releases/current?platform=linux-amd64")
-    error_message = "A control plane override must reach both the router's environment and the release download"
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_API_URL=https://api.staging.example.test\n")
+    error_message = "A control plane override must reach the router's environment"
   }
 
   assert {
@@ -637,35 +627,6 @@ run "overrides_reach_the_instance" {
   assert {
     condition     = aws_launch_template.router.network_interfaces[0].associate_public_ip_address == "true"
     error_message = "A router in public subnets must be given a public address"
-  }
-}
-
-run "arm_image_downloads_the_arm_release" {
-  command = plan
-
-  variables {
-    instance_type = "t4g.small"
-  }
-
-  override_data {
-    target = data.aws_ec2_instance_type.router
-    values = {
-      supported_architectures = ["arm64"]
-    }
-  }
-
-  override_data {
-    target = data.aws_ami.router
-    values = {
-      id               = "ami-0cccccccccccccccc"
-      architecture     = "arm64"
-      root_device_name = "/dev/xvda"
-    }
-  }
-
-  assert {
-    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "/sandbox-host/v1/releases/current?platform=linux-arm64")
-    error_message = "The release platform must follow the image's architecture"
   }
 }
 

@@ -262,9 +262,9 @@ module:
 
     ## Router instance
 
-    The instance boots the newest image Ravion publishes for the instance type's architecture. Its boot script downloads the current router release from the Ravion API, verifies the release's SHA-256 checksum, and starts the router. The script holds no credential. The router obtains its credential from Ravion at start with the instance's signed identity document, and keeps it in memory.
+    The instance boots the newest image Ravion publishes for the instance type's architecture, which carries the router. Its boot script starts the router. The script holds no credential. The router obtains its credential from Ravion at start with the instance's signed identity document, and keeps it in memory.
 
-    The router updates itself to new releases. A change to the instance type or image replaces the instance, and previews are unreachable for a few minutes while the new instance starts. Set Image ID to decide when a newer image is adopted.
+    The router runs the release its image carries. A change to the instance type or image replaces the instance, and previews are unreachable for a few minutes while the new instance starts. Set Image ID to decide when a newer image is adopted.
 
     A stack run succeeds once the router answers its health check behind the load balancer. A router that never turns healthy fails the run after ten minutes; the cause is in the instance's console output.
 

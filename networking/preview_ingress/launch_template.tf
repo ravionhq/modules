@@ -66,10 +66,5 @@ resource "aws_launch_template" "router" {
       condition     = contains(data.aws_ec2_instance_type.router.supported_architectures, data.aws_ami.router.architecture)
       error_message = "The instance type ${var.instance_type} does not run ${data.aws_ami.router.architecture} images. Choose an instance type and an image of the same architecture."
     }
-
-    precondition {
-      condition     = contains(keys(local.runner_platforms), data.aws_ami.router.architecture)
-      error_message = "The router is released for x86_64 and arm64 images only."
-    }
   }
 }
