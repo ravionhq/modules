@@ -36,6 +36,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `messaging/`  | `sqs`             | AWS SQS queues                                                         | Planned |
 | `monitoring/` | `cloudwatch`      | AWS CloudWatch alarms and dashboards                                   | Planned |
 | `networking/` | `alb`             | Standalone AWS Application Load Balancer with shared HTTP/HTTPS listeners and alarms enabled by default | v1.0.0  |
+| `networking/` | `alternat`        | Highly available alterNAT NAT instances for any VPC, with route table discovery, automatic per-AZ placement, and failover to an existing or standby NAT gateway (includes `rvn-aws-alternat` module definition) | Unreleased |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
 | `networking/` | `preview_ingress` | Entry point for sandbox previews: a Network Load Balancer with a Ravion-managed wildcard domain and certificate, optional custom wildcard domains, and a rule on each sandbox host security group, in front of one preview router instance that forwards each preview hostname to its sandbox and wakes paused sandboxes on request (includes the `rvn-preview-ingress` module definition) | Unreleased |
@@ -66,6 +67,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.1.1 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.4.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.3.0 | `networking/alb/` |
+| `rvn-aws-alternat` | alterNAT | v0.1.2 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.3.1 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.2.0 | `security/compliance/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.1 | `security/iam_policy/` |
@@ -74,7 +76,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-network` | VPC Network | v1.2.0 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.0 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.4.0 | `hosting/static_site/` |
-| `rvn-cloudfront` | CloudFront CDN | v1.5.0 | `cdn/cloudfront/` |
+| `rvn-cloudfront` | CloudFront CDN | v1.5.1 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.2.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.2.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v2.3.2 | `compute/ecs_service/` |

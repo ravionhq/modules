@@ -84,7 +84,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Network",
     description: "For private subnets, internet access, service connectivity, and shared load balancers.",
     sortOrder: 100,
-    definitionTypes: ["rvn-aws-alb", "rvn-aws-network", "rvn-preview-ingress"],
+    definitionTypes: ["rvn-aws-alb", "rvn-aws-alternat", "rvn-aws-network", "rvn-preview-ingress"],
   },
   {
     givenId: "domain",
