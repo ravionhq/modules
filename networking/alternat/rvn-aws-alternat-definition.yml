@@ -3,8 +3,8 @@ definition:
   name: alterNAT
   description: Highly available alterNAT instances that replace NAT gateway data processing charges and fail over to a NAT gateway automatically.
 release:
-  version: 0.1.1
-  description: Fix plans failing with "The filter 'connectivity-type' is invalid" when reusing the VPC's existing NAT gateway.
+  version: 0.1.2
+  description: Fix applies failing with "reading ZIP file ... no such file or directory" when the connectivity tester Lambdas are created.
 module:
   inputs:
     - id: network

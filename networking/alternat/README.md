@@ -7,7 +7,7 @@ The module wraps the official alterNAT module and adds:
 - **Route table discovery** from private subnet IDs, including subnets on the VPC's main route table
 - **Automatic placement**: one NAT instance per availability zone that has its own private route table, or a single NAT instance
 - **Fallback to an existing NAT gateway**, discovered in the VPC, or standby NAT gateways created per NAT instance
-- **Zip-packaged Lambda functions**, so no container image has to be built or pushed
+- **Zip-packaged Lambda functions**, so no container image has to be built or pushed. The zip is committed in `lambda/`, so a saved plan applies on any machine; `tests/lambda_zip.tftest.hcl` checks it against the pinned alterNAT release
 - **Architecture from the instance type**, Graviton by default
 - **Names derived from `name`**, so several VPCs in one account and region can each run alterNAT
 - **Optional EC2 interface endpoint and S3/DynamoDB gateway endpoints**
