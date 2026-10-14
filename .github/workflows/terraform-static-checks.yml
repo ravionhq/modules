@@ -131,3 +131,22 @@ jobs:
           format: table
           exit-code: '1'
           severity: HIGH,CRITICAL
+
+      # restore-keys carries every version a previous run cached. Drop the
+      # ones no module linked to in this run, so a provider upgrade does not
+      # leave the old version in the cache for good. Runs before the cache is
+      # saved, which happens after the last step.
+      - name: Prune unused providers from cache
+        run: |
+          set -euo pipefail
+
+          cache="$HOME/.terraform.d/plugin-cache"
+          used=$(find . -path '*/.terraform/providers/*' -type l -exec readlink {} \; | sort -u)
+
+          find "$cache" -mindepth 5 -maxdepth 5 -type d | while read -r dir; do
+            if ! grep -qxF "$dir" <<< "$used"; then
+              echo "Removing ${dir#"$cache"/}"
+              rm -rf "$dir"
+            fi
+          done
+          find "$cache" -mindepth 1 -type d -empty -delete
