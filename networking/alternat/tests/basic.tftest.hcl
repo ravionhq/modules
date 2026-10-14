@@ -66,7 +66,7 @@ mock_provider "aws" {
 
   override_data {
     target = data.aws_nat_gateway.existing
-    values = { subnet_id = "subnet-public-b" }
+    values = { subnet_id = "subnet-public-b", connectivity_type = "public" }
   }
 }
 
@@ -192,7 +192,7 @@ run "create_fallback_nat_gateways" {
   }
 
   assert {
-    condition     = local.fallback_nat_gateway_id == "" && length(local.existing_nat_gateway_ids) == 0
+    condition     = local.fallback_nat_gateway_id == "" && length(module.fallback.public_nat_gateway_ids) == 0
     error_message = "Expected create mode to ignore existing NAT gateways."
   }
 }
@@ -233,7 +233,7 @@ run "several_nat_gateways_one_per_public_subnet" {
 
   override_data {
     target = data.aws_nat_gateway.existing
-    values = { subnet_id = "subnet-public-a" }
+    values = { subnet_id = "subnet-public-a", connectivity_type = "public" }
   }
 
   assert {
@@ -377,6 +377,19 @@ run "public_and_private_subnets_both_on_main_route_table" {
   override_data {
     target = data.aws_route_tables.private_subnet
     values = { ids = [] }
+  }
+
+  expect_failures = [terraform_data.preconditions]
+}
+
+# The VPC's only available NAT gateway is private, so there is nothing to fail
+# over to.
+run "only_private_nat_gateway" {
+  command = plan
+
+  override_data {
+    target = data.aws_nat_gateway.existing
+    values = { subnet_id = "subnet-public-b", connectivity_type = "private" }
   }
 
   expect_failures = [terraform_data.preconditions]
