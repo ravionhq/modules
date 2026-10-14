@@ -27,3 +27,20 @@ misconfigurations:
     paths:
       - compute/eks/addons/charts/coredns-traffic-distribution/templates/rbac.yaml
     statement: Role scoped to get/patch on the single kube-dns Service, which is the chart's purpose.
+
+  # Findings inside the upstream chime/alternat/aws module (pinned in
+  # networking/alternat), which `tofu init` downloads into .terraform before
+  # this scan. Neither is configurable from the wrapper.
+  # alterNAT hardcodes its lifecycle SNS topic to the AWS-managed SNS key; the
+  # topic carries only Auto Scaling lifecycle events, no application data.
+  - id: AWS-0136
+    paths:
+      - networking/alternat/.terraform/modules/alternat/main.tf
+      - chime/alternat/aws/networking/alternat/.terraform/modules/alternat/main.tf
+    statement: Upstream alterNAT hardcodes the AWS-managed SNS key on a topic that carries only Auto Scaling lifecycle events.
+  # alterNAT's Lambda image Dockerfile is never built: the wrapper deploys the
+  # Lambda functions as zip packages.
+  - id: DS-0002
+    paths:
+      - networking/alternat/.terraform/modules/alternat/Dockerfile
+    statement: Upstream alterNAT Lambda image Dockerfile; unused because the wrapper deploys zip packages.

@@ -4,6 +4,7 @@ prometheusRelease: ravion-prometheus
 retentionDays: 365
 nodeSelector: {}
 tolerations: []
+affinity: {}
 query:
   resources:
     requests: {cpu: 100m, memory: 256Mi}

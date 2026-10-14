@@ -28,6 +28,32 @@ the External Secrets Operator, the EBS CSI driver, and Container Insights — li
 in the separate [`compute/eks/addons`](addons/) stack as selectable add-ons, so
 clusters only carry what they use.
 
+The default node group is a fixed two On-Demand nodes (in Ravion, minimum and
+maximum both default to 2), labelled `role=system`, for the cluster add-ons:
+the EKS Add-ons stack prefers it for its controllers and stores and pins Ravion
+Operator coordinators to it, while application workloads run on Karpenter
+capacity. Size the instance type for the add-ons you enable; when the group is
+full, add-ons fall back to On-Demand Karpenter nodes rather than Spot.
+
+With Karpenter, the default node group can also be reserved for the add-ons:
+Karpenter itself, CoreDNS, and every EKS Add-ons controller and store tolerate
+`CriticalAddonsOnly`. Set
+`system_node_group.taints` (in Ravion, **Taints** under Default capacity) to
+`[{ key = "CriticalAddonsOnly", value = "true", effect = "NO_SCHEDULE" }]` and
+give the group a fixed size (minimum equal to maximum). Every other pod then
+schedules onto Karpenter nodes, which scale and consolidate with demand. A
+managed node group never scales on its own, and lowering only its minimum does
+not shrink it: the live node count is kept and clamped to the new bounds.
+
+On an existing cluster, `NO_SCHEDULE` only keeps new pods off the group; pods
+already running there stay until they are rescheduled. They move when the group
+is replaced (changing instance types, capacity type or AMI type replaces it
+blue/green and drains the old nodes), when a node is removed by the size change,
+or when their workload rolls out (`kubectl rollout restart`). Otherwise, cordon
+and drain the group's nodes one at a time, after Karpenter is running, so the
+evicted pods land on Karpenter capacity. Pod disruption budgets are respected
+by a drain, so check that every workload has room to move first.
+
 System and additional managed node groups do not grant Systems Manager access
 by default. EKS and Ravion Operator do not require it. Upgrading removes the
 previously default `AmazonSSMManagedInstanceCore` attachment without replacing

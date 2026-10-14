@@ -7,6 +7,61 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("compiles CloudFront with all methods allowed without changing caching", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "cdn", "cloudfront", "rvn-cloudfront-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+
+    assert.equal(findInput(inputs, "allowed_methods").default, "all");
+    assert.deepEqual(getValueOptions(findInput(inputs, "allowed_methods")), ["all", "read_options", "read"]);
+    const behavior = assertRecord(getTerraformVariable(compiled.module, "default_cache_behavior"), "default_cache_behavior");
+    assert.equal(
+      behavior.allowed_methods,
+      '<< module.input.allowed_methods == "all" ? ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"] : module.input.allowed_methods == "read_options" ? ["GET", "HEAD", "OPTIONS"] : ["GET", "HEAD"] >>',
+    );
+    assert.equal(behavior.cached_methods, undefined);
+    assert.equal(findInput(inputs, "cache_policy").default, "4cc15a8a-d715-48a4-82b8-cc0b614638fe");
+
+    const readme = compiled.module.readme;
+    assert.ok(typeof readme === "string");
+    assert.ok(
+      readme.includes(
+        "| Allowed methods | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |",
+      ),
+    );
+    assert.ok(
+      readme.includes(
+        "| Allowed methods | Yes | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |",
+      ),
+    );
+
+    const pathInputs = findInput(inputs, "cache_behaviors").item_inputs;
+    assert.ok(Array.isArray(pathInputs));
+    assert.equal(findInput(pathInputs, "allowed_methods").default, "read");
+  });
+
+  it("uses the default Ravion domain only as a fallback to custom domains", async () => {
+    const compiled = await compileDefinitionFile(
+      join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"),
+    );
+    const inputs = getModuleInputs(compiled.module);
+    const domain = findInput(inputs, "ravion_domain_name");
+    assert.equal(domain.label, "Default Ravion domain");
+    assert.equal(domain.description, "Used only when no custom domains are set.");
+    assert.equal(domain.default, "<< module.given_id >>");
+    assert.equal(domain.suffix, ".<< module.input.cluster_parent_fqdn >>");
+    assert.deepEqual(domain.show_when, { ravion_managed_domains_enabled: true });
+    assert.equal(getTerraformVariable(compiled.module, "ravion_domain_name"), "<< module.input.ravion_domain_name >>");
+    const customDomains = findInput(inputs, "domains");
+    assert.equal(customDomains.label, "Custom domains");
+    assert.equal(
+      customDomains.description,
+      "Replaces the default Ravion domain; Ravion manages certificates and listener rules. Add the provided DNS records at your DNS provider.",
+    );
+    assert.equal(customDomains.max_length, 5);
+    assert.deepEqual(customDomains.show_when, domain.show_when);
+    assert.deepEqual(findInput(inputs, "host_header_values").show_when, { ravion_managed_domains_enabled: false });
+  });
+
   it("compiles one definition file to canonical module config", async () => {
     const compiled = await compileDefinitionFile(join(fixturesDir, "modules", "networking", "vpc", "ravion-aws-vpc-definition.yml"));
 
@@ -394,11 +449,11 @@ describe("compiler", () => {
     assert.deepEqual(systemNodeMinNodes.moved_from, ["system_node_min_size"]);
     assert.deepEqual(systemNodeMaxNodes.moved_from, ["system_node_max_size"]);
     assert.equal(systemNodeMinNodes.default, 2);
-    assert.equal(systemNodeMaxNodes.default, 4);
+    assert.equal(systemNodeMaxNodes.default, 2);
     assert.match(String(systemNodeMinNodes.description), /EC2 nodes/);
     assert.match(String(systemNodeMaxNodes.description), /EC2 nodes/);
-    assert.match(String(systemNodeMinNodes.description), /spare capacity/);
-    assert.match(String(systemNodeMaxNodes.description), /pods can remain pending/);
+    assert.match(String(systemNodeMinNodes.description), /cluster add-ons/);
+    assert.match(String(systemNodeMaxNodes.description), /Karpenter/);
     assert.equal(
       getTerraformVariableAt(cluster.module, "system_node_group", "min_size"),
       "<< module.input.system_node_min_nodes >>",
@@ -407,12 +462,26 @@ describe("compiler", () => {
       getTerraformVariableAt(cluster.module, "system_node_group", "max_size"),
       "<< module.input.system_node_max_nodes >>",
     );
+    // Taints keep the system group for pods that tolerate them (Karpenter,
+    // CoreDNS, Operator coordinators), so everything else lands on
+    // Karpenter-managed capacity. Same shape as an additional group's taints.
+    const systemNodeTaints = findInput(clusterInputs, "system_node_taints");
+    assert.equal(systemNodeTaints.type, "object_array");
+    assert.deepEqual(systemNodeTaints.default, []);
+    assert.deepEqual(systemNodeTaints.item_inputs, findInput(additionalNodeGroupFields, "taints").item_inputs);
+    assert.equal(
+      getTerraformVariableAt(cluster.module, "system_node_group", "taints"),
+      "<< module.input.system_node_taints || [] >>",
+    );
+    assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_disk_size") < clusterInputs.findIndex((input) => input.id === "system_node_taints"));
+    assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_taints") < clusterInputs.findIndex((input) => input.id === "node_groups"));
     for (const inputId of [
       "system_node_capacity_type",
       "system_node_instance_types",
       "system_node_min_nodes",
       "system_node_max_nodes",
       "system_node_disk_size",
+      "system_node_taints",
     ]) {
       assert.equal(findInput(clusterInputs, inputId).collapsible, true, `${inputId} should be collapsible`);
     }
@@ -726,6 +795,8 @@ describe("compiler", () => {
       getTerraformVariable(compiled.module, "ravion_operator_chart_version"),
       "0.5.11",
     );
+    assert.equal(inputs.some((input) => input.id === "system_node_labels"), false, "system_node_labels is managed automatically");
+    assert.deepEqual(getTerraformVariable(compiled.module, "system_node_labels"), {role: "system"});
     for (const id of ["ravion_operator_execution_jobs_enabled", "ravion_operator_full_management_enabled", "ravion_operator_coordinator_enabled"]) {
       assert.equal(getTerraformVariable(compiled.module, id), true);
     }

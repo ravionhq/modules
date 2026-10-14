@@ -96,7 +96,7 @@ run "advanced_helm_values_override_keda_defaults" {
   }
 
   assert {
-    condition     = length(helm_release.keda[0].values) == 2 && merge(yamldecode(helm_release.keda[0].values[0]), yamldecode(helm_release.keda[0].values[1])).crds.install == false
+    condition     = length(helm_release.keda[0].values) == 3 && yamldecode(helm_release.keda[0].values[2]).crds.install == false
     error_message = "Advanced KEDA values must be appended after defaults and take precedence."
   }
 }

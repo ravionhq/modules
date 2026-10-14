@@ -3,8 +3,8 @@ definition:
   name: ElastiCache
   description: Creates and manages Amazon ElastiCache for Redis, Valkey, Memcached, or serverless Redis-compatible caches.
 release:
-  version: 1.1.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.1.1
+  description: Reuse cached providers on Linux runners.
 module:
   inputs:
     - id: network

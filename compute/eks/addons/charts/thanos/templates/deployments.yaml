@@ -27,6 +27,7 @@ spec:
         fsGroup: 65534
       nodeSelector: {{ $.Values.nodeSelector | toJson }}
       tolerations: {{ $.Values.tolerations | toJson }}
+      affinity: {{ $.Values.affinity | toJson }}
       containers:
         - name: {{ $component }}
           image: {{ $.Values.image | quote }}

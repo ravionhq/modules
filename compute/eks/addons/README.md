@@ -30,6 +30,16 @@ detaches the previously default `AmazonSSMManagedInstanceCore` policy without
 replacing nodes, unless explicitly included in
 `karpenter_node_role_additional_managed_policy_arns`.
 
+## Add-on placement
+
+The controllers and stores this module installs (load balancer controller, External Secrets, KEDA, kube-state-metrics, the collectors, Loki, Prometheus, Thanos, Tempo, Grafana and Ravion Operator) are what a cluster needs to recover, so one Spot interruption must not take them all down. With `addon_placement_enabled` (the default) each one:
+
+- requires On-Demand capacity: a managed node group with `eks.amazonaws.com/capacityType=ON_DEMAND` or a Karpenter node with `karpenter.sh/capacity-type=on-demand`;
+- prefers the system node group identified by `system_node_labels` (the `rvn-eks-addons` definition sets `role=system`, the label the `compute/eks` composite gives that group), and falls back to On-Demand Karpenter capacity when it is full instead of staying Pending;
+- tolerates `CriticalAddonsOnly`, so a system group reserved with that taint still runs them.
+
+HA coordinators placed on distinct nodes are pinned to `system_node_labels` by node selector instead, because the Operator chart replaces affinity with its own per-node rule in that mode. The placement is its own values document ahead of each release's caller Helm values, so a caller document can replace it; set `addon_placement_enabled = false` before supplying your own affinity. DaemonSets (Alloy, the logs collector) are unaffected.
+
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
@@ -177,6 +187,12 @@ Placement and security wiring:
 - Public ALB/NLB launch into `public_subnet_ids` (required when either public load balancer is enabled).
 - Private ALB/NLB launch into `node_subnet_ids`.
 - Each load balancer's security group is granted ingress to `cluster_security_group_id` on all TCP ports, so registered pods are reachable on any container port.
+
+#### Ravion-managed domains
+
+`use_ravion_managed_domains = true` has Ravion issue one wildcard certificate (`*.<leaf>-<hash>.<apex>`) for the cluster and publish a `*.<apex>` ALIAS record to the selected ALB. The certificate becomes the default certificate on that ALB's existing HTTPS listener, and every certificate in `public_alb_certificate_arns` / `private_alb_certificate_arns` stays attached via SNI, so turning the feature on is an in-place certificate swap that never drops TLS for hostnames served off BYO certificates. Workloads then get FQDNs one label under `ravion_cluster_domain_fqdn` without their own certificate or DNS record.
+
+Requirements: exactly one ALB (public or private, not both) with its HTTPS listener enabled, `ravion_aws_account_id` (the Ravion AWS account record), and `module_instance_id` (injected by the runner as `TF_VAR_module_instance_id`). `ravion_cluster_name` overrides the wildcard leaf, which otherwise defaults to the module instance given id and then to `name`.
 
 ### Secrets (External Secrets Operator)
 
@@ -423,6 +439,9 @@ The chart generates an admin password into a Secret; `grafana_helm_values` is th
   - Typed fields cover what each provider needs: allowed domains, groups, organizations or team IDs, role mapping (`role_attribute_path`), and the tenant, org URL, self-managed URL or endpoints.
   - `settings` passes any other key of the section through verbatim.
 - Every client secret is a Secrets Manager ARN. The External Secrets Operator writes it into a Secret, and Grafana reads it as `GF_AUTH_<PROVIDER>_CLIENT_SECRET`, never as a Helm value.
+- Grafana takes environment variables as an EKS workload does. `grafana_environment_variables` is plain `{ name, value }` objects, and `grafana_secrets` is `{ name, value_from }` references, each a full Secrets Manager or SSM Parameter Store ARN. A Secrets Manager ARN may end in ECS's `:<json key>:<version stage>:<version id>` to read one key of a JSON secret, as in `arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/app-AbCdEf:GRAFANA_CLIENT_SECRET::`. The External Secrets Operator reads every reference inside the cluster, so none is a Helm value.
+  - Grafana reads any setting from `GF_<SECTION>_<KEY>`, so `GF_AUTH_<PROVIDER>_CLIENT_ID` and `GF_AUTH_<PROVIDER>_CLIENT_SECRET` in `grafana_secrets` give a provider its client, in place of `client_id` and `client_secret_arn`.
+  - Grafana expands `$__env{NAME}` in every setting, so a role mapping can name a group from an environment variable: `contains(groups[*], '$__env{ADMINS_GROUP}') && 'Admin' || 'Viewer'`.
 - `grafana_auth.default_role` (default `Viewer`) is the role an account gets on first sign-in, unless the provider's role mapping says otherwise.
 - Roles can follow groups at every sign-in through `role_attribute_path`. For Google Workspace groups, Grafana reads a user's direct group memberships, as group emails, only when `scopes` includes `https://www.googleapis.com/auth/cloud-identity.groups.readonly`, and the Cloud Identity API is enabled in the OAuth client's Google Cloud project. For example, `scopes = "openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly"` with `role_attribute_path = "contains(groups[*], 'grafana-admins@example.com') && 'Admin' || 'Viewer'"`.
 - Plan refuses these configurations:
@@ -584,7 +603,7 @@ ravion_operator_coordinator_enabled    = true
 
 Job mode keeps self-update on (chart 0.5.0+). Only the elected coordinator patches the Deployment when Ravion assigns a version, and it pins new executor Jobs to the image digest it is itself running, so coordinators and executors never skew; the chart's bundled execution image is the floor a fresh install starts from and live-image preservation applies on later applies. With `ravion_operator_self_update_enabled = false` the chart instead uses the execution image for **both coordinators and executors**, overriding live-image preservation. The stable enrollment ID is passed as `cluster.installationId` and exposed as `ravion_operator_installation_id`.
 
-HA requires a replica-aware gateway and runs a fixed number of coordinators, two by default, placed the way Karpenter places itself: one per node, spread across zones, tolerating a `CriticalAddonsOnly` system node group, at `system-cluster-critical` priority, and never on a node Karpenter provisioned. A coordinator therefore can never hold an autoscaled node hostage, and a replica with no eligible node stays Pending until one appears; nothing sizes the count to the cluster or adds a node. The install needs a node group Karpenter does not manage, which the `compute/eks` system node group provides with two nodes by default. Set `system_node_count` (the `rvn-eks-addons` definition maps it from the cluster's system node minimum) and the coordinator count is capped to it. When the cap leaves one coordinator, distinct-node placement is dropped too, so a self-update can surge onto the same node. The Karpenter controller is capped the same way (at most 2). Without the cap, a cluster with a single eligible node needs `ravion_operator_coordinator_replicas = 1`, and with self-update on also `ravion_operator_coordinator_distinct_nodes_enabled = false` so the rollout can surge. With two replicas there, the second pod is permanently Pending, the Deployment never settles, and a rollout cannot complete. Disabling distinct nodes drops the placement rules and permits custom affinity through `ravion_operator_helm_values`.
+HA requires a replica-aware gateway and runs a fixed number of coordinators, two by default, placed the way Karpenter places itself: one per node, spread across zones, tolerating a `CriticalAddonsOnly` system node group, at `system-cluster-critical` priority, and never on a node Karpenter provisioned. A coordinator therefore can never hold an autoscaled node hostage, and a replica with no eligible node stays Pending until one appears; nothing sizes the count to the cluster or adds a node. The install needs a node group Karpenter does not manage, which the `compute/eks` system node group provides with two nodes by default; with `system_node_labels` set the coordinators are pinned to it by node selector. Set `system_node_count` (the `rvn-eks-addons` definition maps it from the cluster's system node minimum) and the coordinator count is capped to it. When the cap leaves one coordinator, distinct-node placement is dropped too, so a self-update can surge onto the same node. The Karpenter controller is capped the same way (at most 2). Without the cap, a cluster with a single eligible node needs `ravion_operator_coordinator_replicas = 1`, and with self-update on also `ravion_operator_coordinator_distinct_nodes_enabled = false` so the rollout can surge. With two replicas there, the second pod is permanently Pending, the Deployment never settles, and a rollout cannot complete. Disabling distinct nodes drops the placement rules and permits custom affinity through `ravion_operator_helm_values`.
 
 Each coordinator requests 500m CPU/1Gi memory and limits at 2 CPU/2Gi. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU/128Mi memory/1Gi ephemeral storage and limit at 2 CPU/2Gi/20Gi. Nodes still need enough free resources to schedule the pods. The module never emits executor resources into Helm configuration, so Ravion can retune them without a chart or module release. Existing Jobs remain immutable.
 
@@ -655,7 +674,7 @@ Unlike the previous curl-based enrollment, turning the flag off **does** revoke 
 | opentofu/terraform | >= 1.10.0 |
 | aws                | >= 6.0    |
 | helm               | >= 3.0    |
-| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1 — used only by `ravion_operator_enabled`; configured entirely from `RAVION_BASE_URL` / `RAVION_API_KEY` |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1 — used by `ravion_operator_enabled` and `use_ravion_managed_domains`; configured entirely from `RAVION_BASE_URL` / `RAVION_API_KEY` |
 
 The Ravion provider is downloaded from the production registry, including when
 `RAVION_BASE_URL` points to a development API. No local provider registry is needed.
@@ -683,6 +702,8 @@ failed during initialization have no provider resources to migrate.
 | tags | Tags applied to created resources and Karpenter-launched instances. | `map(string)` | `{}` | no |
 | topology_aware_routing_enabled | Patch `kube-dns` with `trafficDistribution: PreferClose` so DNS stays zone-local (CoreDNS pods are spread by `compute/eks`). | `bool` | `true` | no |
 | system_node_count | Minimum size of the system node group. Caps Karpenter's controller replicas (at 2) and the HA coordinators to the nodes they can run on. Null applies no cap. | `number` | `null` | no |
+| system_node_labels | Labels identifying the system node group. Add-ons prefer it; HA coordinators on distinct nodes are pinned to it. Ignored when system_node_count is 0. Empty sets no preference. | `map(string)` | `{}` | no |
+| addon_placement_enabled | Require On-Demand capacity for add-on controllers and stores, prefer the system node group, and tolerate `CriticalAddonsOnly`. | `bool` | `true` | no |
 | kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs and the volume resizer. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
@@ -764,7 +785,9 @@ failed during initialization have no provider resources to migrate.
 | grafana_source_account_id | Account whose Grafana workspaces may assume that role (`aws:SourceAccount`). Null uses this account. | `string` | `null` | no |
 | grafana_access | `{ enabled, method, hostname, load_balancer, listener_rule_priority, ingress_class_name, ingress_annotations, ingress_tls_secret_name }` — serve the in-cluster Grafana over HTTPS at `hostname`. `method = "load_balancer"` (default) routes it on the `private` (default) or `public` ALB's HTTPS listener, a null priority letting AWS assign one; `"ingress"` gives it an Ingress of `ingress_class_name` (the cluster default when null), such as `tailscale`. | `object` | `{}` | no |
 | grafana_auth | `{ login_form_enabled, default_role }` — username and password sign-in (default `true`) and the role for new accounts (`Viewer`, `Editor` or `Admin`; default `Viewer`). | `object` | `{}` | no |
-| grafana_auth_providers | One entry per Grafana OAuth provider: `provider` (`google`, `github`, `gitlab`, `azuread`, `okta`, `generic_oauth`), `client_id`, `client_secret_arn`, and Grafana's own settings for it: `tenant_id` (Entra ID), `url` (Okta org, self-managed GitLab), `name`, `auth_url`, `token_url`, `api_url`, `scopes` (generic), `allowed_domains`, `allowed_groups`, `allowed_organizations`, `team_ids`, `role_attribute_path`, and a verbatim `settings` map. | `list(object)` | `[]` | no |
+| grafana_auth_providers | One entry per Grafana OAuth provider: `provider` (`google`, `github`, `gitlab`, `azuread`, `okta`, `generic_oauth`), `client_id` and `client_secret_arn` (or `GF_AUTH_<PROVIDER>_CLIENT_ID` and `GF_AUTH_<PROVIDER>_CLIENT_SECRET` in `grafana_secrets`), and Grafana's own settings for it: `tenant_id` (Entra ID), `url` (Okta org, self-managed GitLab), `name`, `auth_url`, `token_url`, `api_url`, `scopes` (generic), `allowed_domains`, `allowed_groups`, `allowed_organizations`, `team_ids`, `role_attribute_path`, and a verbatim `settings` map. | `list(object)` | `[]` | no |
+| grafana_environment_variables | Plain environment variables for Grafana, `{ name, value }` objects as an EKS workload's `environment_variables`. | `list(object)` | `[]` | no |
+| grafana_secrets | Secret environment variables for Grafana, `{ name, value_from }` objects as an EKS workload's `secrets`: a full Secrets Manager or SSM Parameter Store ARN, read through External Secrets. A Secrets Manager ARN may end in `:<json key>:<version stage>:<version id>`. | `list(object)` | `[]` | no |
 | logs_enabled | Collect container logs with Alloy into an in-cluster Loki storing to S3 in this account. | `bool` | `false` | no |
 | loki_s3_bucket_name | Existing bucket for log chunks and index. Null creates `ravion-loki-<cluster>-<account>`. | `string` | `null` | no |
 | log_retention_days | How long logs stay queryable. Enforced by Loki's compactor; the bucket expires a week later as a backstop. | `number` | `365` | no |
@@ -812,6 +835,10 @@ failed during initialization have no provider resources to migrate.
 | public_alb_creation_enabled / private_alb_creation_enabled | Create a shared public / private ALB. | `bool` | `false` | no |
 | public_alb_https_enabled / private_alb_https_enabled | HTTPS listener (with HTTP→HTTPS redirect). | `bool` | `false` | no |
 | public_alb_certificate_arns / private_alb_certificate_arns | ACM certificates for the HTTPS listener (first is default, rest SNI). | `list(string)` | `[]` | no |
+| use_ravion_managed_domains | Issue a Ravion-managed wildcard certificate for the cluster and serve it as the default certificate on the selected ALB's HTTPS listener (BYO certificates stay attached via SNI). Requires exactly one HTTPS-enabled ALB. | `bool` | `false` | no |
+| ravion_cluster_name | Leaf for the cluster wildcard domain (`<leaf>-<hash>.<apex>`). Defaults to the module instance given id, then `name`. | `string` | `null` | no |
+| ravion_aws_account_id / ravion_aws_region | Ravion AWS account record id and region the wildcard certificate is issued in. The region defaults to the module region. | `string` | `null` | no |
+| module_instance_id / module_instance_given_id | Ravion module instance id and given id (injected by the runner as `TF_VAR_*`). Required for managed domains. | `string` | `null` | no |
 | public_alb_ssl_policy / private_alb_ssl_policy | HTTPS listener SSL policy. | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
 | public_alb_idle_timeout / private_alb_idle_timeout | ALB idle timeout in seconds. | `number` | `60` | no |
 | public_alb_ingress_cidr_blocks | IPv4 CIDRs allowed to reach the public ALB. | `list(string)` | `["0.0.0.0/0"]` | no |
@@ -890,6 +917,7 @@ All outputs are null when the corresponding add-on is disabled.
 | ravion_operator_credential_secret_arn | Secrets Manager secret mirroring the credential — an operator recovery copy of what Terraform state holds. |
 | public_alb_arn / dns_name / zone_id / arn_suffix / security_group_id / http_listener_arn / https_listener_arn | Shared public ALB attributes for workload target groups, DNS records, and metrics. |
 | private_alb_arn / dns_name / zone_id / arn_suffix / security_group_id / http_listener_arn / https_listener_arn | Shared private ALB attributes. |
+| ravion_managed_domains_enabled / ravion_cluster_domain_fqdn / ravion_cluster_cert_arn / ravion_cluster_certificate_id / ravion_aws_account_id / ravion_aws_region | Ravion-managed domain state: whether it is on, the cluster wildcard apex, the wildcard certificate's ACM ARN and Ravion id, and the account/region it lives in. |
 | public_nlb_arn / dns_name / zone_id / arn_suffix / security_group_id | Shared public NLB attributes. |
 | private_nlb_arn / dns_name / zone_id / arn_suffix / security_group_id | Shared private NLB attributes. |
 

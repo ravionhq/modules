@@ -6,6 +6,7 @@ provider "providers.ravion.com/ravion/ravion" {
   constraints = "0.0.3-rc.1"
   hashes = [
     "h1:4+1CkdonevNan0g1iwBfwsLHQziGleNFlASZgKUkbdM=",
+    "h1:J+ipX06t7S+DDGMIcCy0+/VjnCVbeJ25/pd9Ics8qdE=",
     "h1:h3+F3rNnBsoNRy5fZYXYD52WLnn64nmYwlUNTI6EDAM=",
     "zh:50c9a567cef2ec688656d5b6373928a61b965927a1a1c976bf736f347e6eb7ef",
     "zh:57ac2e09ce9a437a12157f169c0cdf17f257d1cfd27a384b8bc1485162e1f9d7",

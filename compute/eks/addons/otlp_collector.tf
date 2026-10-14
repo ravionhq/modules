@@ -283,6 +283,7 @@ resource "helm_release" "otlp_collector" {
         }
       }),
     ],
+    local.addon_placement_values,
     var.otlp_collector_helm_values,
   )
 

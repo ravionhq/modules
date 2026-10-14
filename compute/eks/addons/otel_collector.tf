@@ -191,7 +191,7 @@ resource "helm_release" "otel_collector" {
   create_namespace = true
   upgrade_install  = true
 
-  values = concat([local.otel_collector_values], var.otel_collector_helm_values)
+  values = concat([local.otel_collector_values], local.addon_placement_values, var.otel_collector_helm_values)
 
   depends_on = [
     # Service creation must wait for the load balancer admission webhook.

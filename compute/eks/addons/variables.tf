@@ -1041,6 +1041,20 @@ variable "system_node_count" {
   }
 }
 
+variable "system_node_labels" {
+  type        = map(string)
+  description = "Node labels that identify the system node group (the compute/eks composite labels it role=system). Add-ons prefer these nodes, and HA coordinators placed on distinct nodes are pinned to them. Ignored when system_node_count is 0. Empty sets no preference."
+  default     = {}
+  nullable    = false
+}
+
+variable "addon_placement_enabled" {
+  type        = bool
+  description = "Require On-Demand capacity for the add-on controllers and stores, prefer the system node group, and tolerate CriticalAddonsOnly, so a Spot reclaim cannot take them down. Disable before supplying your own affinity through the add-on Helm values."
+  default     = true
+  nullable    = false
+}
+
 variable "ravion_operator_coordinator_enabled" {
   type        = bool
   description = "Enable elected HA coordinators. Requires executor Jobs and a replica-aware Ravion gateway."
@@ -1476,7 +1490,7 @@ variable "grafana_auth_providers" {
   }))
   description = <<-EOT
     OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
-    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) are required.
+    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) give the provider its client. Leave either out when grafana_secrets gives it as GF_AUTH_<PROVIDER>_CLIENT_ID or GF_AUTH_<PROVIDER>_CLIENT_SECRET.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
@@ -1493,6 +1507,57 @@ variable "grafana_auth_providers" {
   validation {
     condition     = length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers)
     error_message = "Each provider can appear in grafana_auth_providers once: Grafana has one [auth.<provider>] section per provider."
+  }
+}
+
+variable "grafana_environment_variables" {
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  description = "Plain environment variables for the in-cluster Grafana, as an EKS workload's environment_variables: {name, value} objects. Grafana reads any setting from GF_<SECTION>_<KEY>, and expands $__env{NAME} in every setting."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for variable in var.grafana_environment_variables : trimspace(variable.name) != ""])
+    error_message = "Each grafana_environment_variables entry needs a name."
+  }
+
+  validation {
+    condition     = length(distinct([for variable in var.grafana_environment_variables : variable.name])) == length(var.grafana_environment_variables)
+    error_message = "Each grafana_environment_variables entry must name a distinct environment variable."
+  }
+}
+
+variable "grafana_secrets" {
+  type = list(object({
+    name       = string
+    value_from = string
+  }))
+  description = "Secret environment variables for the in-cluster Grafana, as an EKS workload's secrets: {name, value_from} objects. value_from is a full Secrets Manager or SSM Parameter Store ARN, and a Secrets Manager ARN may end in ECS's :<json key>:<version stage>:<version id> to read one key of a JSON secret. External Secrets reads each one inside the cluster, so none is ever a Helm value. GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET give a sign-in provider its client."
+  default     = []
+  nullable    = false
+
+  # The name is the environment variable and the key in the Kubernetes Secret,
+  # under the rule the EKS workload charts hold a secret's name to.
+  validation {
+    condition     = alltrue([for secret in var.grafana_secrets : can(regex("^[A-Za-z_][A-Za-z0-9_.-]*$", secret.name))])
+    error_message = "Each grafana_secrets name must be an environment variable name: letters, digits, underscores, dots and dashes, starting with a letter or an underscore."
+  }
+
+  validation {
+    condition     = length(distinct([for secret in var.grafana_secrets : secret.name])) == length(var.grafana_secrets)
+    error_message = "Each grafana_secrets entry must name a distinct environment variable."
+  }
+
+  validation {
+    condition = alltrue([
+      for secret in var.grafana_secrets :
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}$", trimspace(secret.value_from))) ||
+      can(regex("^arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+$", trimspace(secret.value_from)))
+    ])
+    error_message = "Each grafana_secrets value_from must be a full Secrets Manager or SSM Parameter Store ARN. A Secrets Manager ARN may end in :<json key>:<version stage>:<version id> to read one key of a JSON secret, as in arn:aws:secretsmanager:us-east-1:123456789012:secret:app-AbCdEf:password::."
   }
 }
 
@@ -2000,4 +2065,44 @@ variable "karpenter_interruption_queue_alarm_ok_actions" {
     condition     = length(var.karpenter_interruption_queue_alarm_ok_actions) <= 5 && alltrue([for arn in var.karpenter_interruption_queue_alarm_ok_actions : can(regex("^arn:", arn))])
     error_message = "Specify at most five action ARNs."
   }
+}
+
+################################################################################
+# Ravion-managed domains (optional)
+################################################################################
+
+variable "use_ravion_managed_domains" {
+  type        = bool
+  description = "Allocate a Ravion-managed wildcard domain for the cluster and serve its certificate from the selected shared ALB's existing HTTPS listener. Requires exactly one HTTPS-enabled ALB."
+  default     = false
+}
+
+variable "ravion_cluster_name" {
+  type        = string
+  description = "Free-form name leaf for the cluster's Ravion wildcard domain (becomes <name>-<hash>.<ravion-apex>). Defaults to the module instance given id, then to name."
+  default     = null
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the default leaf for the Ravion wildcard domain."
+  default     = null
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns this cluster's Ravion-managed certificate. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external/API-key runs. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*) the wildcard ACM cert is issued in. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_region" {
+  type        = string
+  description = "AWS region the cluster wildcard cert lives in. Defaults to the module region."
+  default     = null
 }
