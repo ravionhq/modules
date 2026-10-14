@@ -121,8 +121,10 @@ class LifecycleTest(unittest.TestCase):
         self.thread = threading.Thread(target=self.api.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop_server)
+        # setup-opentofu's wrapper finds the real binary through TOFU_CLI_PATH.
         self.env = {k: v for k, v in os.environ.items()
-                    if not k.startswith(("TF_", "TOFU_", "PLANETSCALE_"))}
+                    if k == "TOFU_CLI_PATH"
+                    or not k.startswith(("TF_", "TOFU_", "PLANETSCALE_"))}
         self.env.update({
             "PLANETSCALE_SERVICE_TOKEN_ID": "test-token-id",
             "PLANETSCALE_SERVICE_TOKEN": "test-token",
