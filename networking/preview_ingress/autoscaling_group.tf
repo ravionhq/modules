@@ -2,7 +2,9 @@
 # Auto Scaling Group
 #
 # One router instance, kept alive. An instance the load balancer reports
-# unhealthy is replaced, which is also what retries a boot that failed.
+# unhealthy is replaced, which is also what retries a boot that failed. A
+# replacement is launched before the instance it replaces is drained, so the
+# load balancer always has a router that can route.
 ################################################################################
 
 resource "aws_autoscaling_group" "router" {
@@ -32,15 +34,23 @@ resource "aws_autoscaling_group" "router" {
     version = aws_launch_template.router.latest_version
   }
 
+  # Replacements are launched first: the group may run a second router until
+  # the new one is healthy, then drains and terminates the old. A router turns
+  # healthy only once it holds its routes, so traffic never reaches one that
+  # cannot route.
+  instance_maintenance_policy {
+    min_healthy_percentage = 100
+    max_healthy_percentage = 200
+  }
+
   # The boot script runs once per instance, so a changed launch template takes
-  # effect only on a new one. With a single instance the old router is
-  # terminated before its replacement serves: previews are unreachable for the
-  # few minutes in between.
+  # effect only on a new one, launched before the old one goes.
   instance_refresh {
     strategy = "Rolling"
 
     preferences {
-      min_healthy_percentage = 0
+      min_healthy_percentage = 100
+      max_healthy_percentage = 200
     }
   }
 

@@ -185,7 +185,7 @@ variable "instance_type" {
 
 variable "image_id" {
   type        = string
-  description = "AMI the router instance boots. When null, the newest image of image_owner matching image_name_pattern and the instance type's architecture is used. The image must carry systemd and the preview router at /usr/local/bin/preview-router, as the sandbox host images Ravion publishes do."
+  description = "AMI the router instance boots. When null, the newest image of image_owner matching image_name_pattern and the instance type's architecture is used. The image must carry systemd and the preview router at /usr/local/bin/preview-router, as the preview router images Ravion publishes do."
   default     = null
 
   validation {
@@ -208,7 +208,7 @@ variable "image_owner" {
 variable "image_name_pattern" {
   type        = string
   description = "AMI name pattern of the router image looked up when image_id is null. Use * as a wildcard."
-  default     = "ravion-sandbox-host-*"
+  default     = "ravion-preview-router-*"
 
   validation {
     condition     = length(var.image_name_pattern) > 0

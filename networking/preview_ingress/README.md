@@ -14,7 +14,7 @@ Requests travel from the browser to the load balancer, to the router, to the san
 | Two target groups | Instance targets with the client address preserved, health checked over HTTP on `/healthz`, port 8082 |
 | Wildcard certificate and DNS record | `*.<name>.<apex>` on Ravion's managed apex, where the name is `ravion_domain_name` or, when that is unset, the module instance given id, issued through the `ravion_aws_acm_certificate` resource and pointed at the load balancer |
 | Custom domain certificate and domains | One certificate for every entry of `domains`, attached to the TLS listener beside the wildcard certificate, and one `ravion_domain` per entry pointed at the load balancer. Created only with `domains` |
-| Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes |
+| Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes; the replacement is launched and healthy before the old instance is drained |
 | Two security groups | One for the load balancer, one for the router |
 | Sandbox host rules | One inbound rule on each of `sandbox_host_security_group_ids`: the preview port range from the router's group |
 | IAM role and instance profile | Session Manager access for operators. Created only with `ssm_enabled` |
@@ -98,7 +98,7 @@ Entries are lowercased and trimmed of whitespace and a trailing dot. An entry un
 
 ## The router instance
 
-The instance boots an image that carries systemd and the preview router at `/usr/local/bin/preview-router`. Ravion releases the router with each sandbox host image, so by default that is the newest image the `image_owner` account publishes under `image_name_pattern` for the instance type's architecture. Set `image_id` to pin an image.
+The instance boots an image that carries systemd and the preview router at `/usr/local/bin/preview-router`. Ravion publishes a preview router image with each router release, so by default that is the newest image the `image_owner` account publishes under `image_name_pattern` for the instance type's architecture. Set `image_id` to pin an image.
 
 The boot script does three things, in order, and stops at the first one that fails:
 
@@ -110,7 +110,9 @@ The script holds no credential and logs none. The router obtains its credential 
 
 An instance whose boot script fails never starts the router. It stays unhealthy behind the load balancer, the Auto Scaling group replaces it after the health check grace period, and the apply that launched it fails after ten minutes without a healthy router. The reason is in the instance's console output and in `/var/log/cloud-init-output.log`, on the line that starts with `preview router setup: FAILED`.
 
-The router runs the release its image carries. A change to the launch template (image, instance type, API origin, tags) replaces the instance: the old router is terminated before the new one serves, and previews are unreachable for the few minutes in between. A newer image found by the lookup is such a change, so pin `image_id` to decide when it happens.
+The router runs the release its image carries. A change to the launch template (image, instance type, API origin, tags) replaces the instance: the new router is launched first, receives its routes from Ravion and passes its health check, and only then is the old one drained and terminated. A newer image found by the lookup is such a change; pin `image_id` to decide when it happens.
+
+A router answers its health check only once it holds its routes, and keeps answering it if it later loses its connection to Ravion: it goes on forwarding every running preview, and only waking a paused one waits for the connection. A router instance that fails its health checks is replaced by the Auto Scaling group.
 
 ## Security groups
 
@@ -152,7 +154,7 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 | instance_type | EC2 instance type of the router | `string` | `"t3.small"` | no |
 | image_id | AMI the router boots. Null looks up the newest image of `image_owner` | `string` | `null` | no |
 | image_owner | AWS account that publishes the looked-up image: a 12-digit ID, or `self`, `amazon`, `aws-marketplace` | `string` | `"600013814144"` | no |
-| image_name_pattern | AMI name pattern of the looked-up image | `string` | `"ravion-sandbox-host-*"` | no |
+| image_name_pattern | AMI name pattern of the looked-up image | `string` | `"ravion-preview-router-*"` | no |
 | ssm_enabled | Give the instance a role that allows Session Manager and nothing else | `bool` | `true` | no |
 | ravion_domain_name | Name leaf of the wildcard domain: Ravion issues `*.<name>.<apex>`. Null uses the module instance given id | `string` | `null` | no |
 | module_instance_given_id | The module instance's given id, the default leaf of the wildcard domain. Injected as `TF_VAR_module_instance_given_id` inside a stack run | `string` | `null` | no |
@@ -185,7 +187,7 @@ Ravion reads the `sandbox_router_*` outputs to route the previews of this module
 
 ## Limits
 
-- One router instance. A replaced instance means a few minutes without previews.
+- One router instance. A change to it is rolled out by launching the replacement first; an instance that fails is replaced by the Auto Scaling group once its health checks fail.
 - IPv4 only, and an internet-facing load balancer only.
 - HTTP/1.1 between the load balancer and the router. WebSocket upgrades pass through.
 - The load balancer writes no access logs.

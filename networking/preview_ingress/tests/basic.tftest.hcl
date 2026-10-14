@@ -540,6 +540,16 @@ run "one_router_instance_is_tagged_for_enrollment" {
     condition     = aws_autoscaling_group.router.instance_refresh[0].strategy == "Rolling"
     error_message = "A changed launch template must replace the running router"
   }
+
+  assert {
+    condition     = aws_autoscaling_group.router.instance_refresh[0].preferences[0].min_healthy_percentage == 100 && aws_autoscaling_group.router.instance_refresh[0].preferences[0].max_healthy_percentage == 200
+    error_message = "A changed launch template must launch the new router before the old one is drained"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.instance_maintenance_policy[0].min_healthy_percentage == 100 && aws_autoscaling_group.router.instance_maintenance_policy[0].max_healthy_percentage == 200
+    error_message = "Any replacement of the router must launch the new one first"
+  }
 }
 
 run "launch_template_is_locked_down" {
