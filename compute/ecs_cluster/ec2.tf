@@ -169,9 +169,9 @@ module "ecs_autoscaling" {
   vpc_zone_identifier = var.private_subnet_ids
 
   # Capacity
-  min_size         = var.ec2_min_size
-  max_size         = var.ec2_max_size
-  desired_capacity = var.ec2_desired_capacity
+  min_size         = var.ec2_min_instances
+  max_size         = var.ec2_max_instances
+  desired_capacity = var.ec2_desired_instances
 
   # Use existing launch template (don't create new one)
   launch_template_creation_enabled = false

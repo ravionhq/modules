@@ -73,6 +73,14 @@ locals {
   # applied on a different machine without losing the artifact.
   bootstrap_package_zip_base64 = "UEsDBBQAAAAAAOmTrlzmIEd4EgAAABIAAAAJAAAAYm9vdHN0cmFwI1whL2Jpbi9zaApleGl0IDAKUEsDBBQAAAAAAOmTrlytngM7SgAAAEoAAAAIAAAAaW5kZXguanNleHBvcnRzLmhhbmRsZXIgPSBhc3luYyAoKSA9PiAoeyBzdGF0dXNDb2RlOiAyMDAsIGJvZHk6ICJwbGFjZWhvbGRlciIgfSk7ClBLAQIUAxQAAAAAAOmTrlzmIEd4EgAAABIAAAAJAAAAAAAAAAAAAACAAQAAAABib290c3RyYXBQSwECFAMUAAAAAADpk65crZ4DO0oAAABKAAAACAAAAAAAAAAAAAAAgAE5AAAAaW5kZXguanNQSwUGAAAAAAIAAgBtAAAAqQAAAAAA"
 
+  # URL and event-source traffic always follows Ravion's deployment alias.
+  aliases = merge(
+    var.function_url_enabled || length(var.event_source_mappings) > 0 || anytrue([
+      for permission in var.permissions : try(permission.function_url_auth_type, null) != null || try(permission.action, null) == "lambda:InvokeFunctionUrl"
+    ]) ? { live = {} } : {},
+    var.aliases
+  )
+
   permissions_map = {
     for idx, permission in var.permissions : tostring(idx) => permission
   }

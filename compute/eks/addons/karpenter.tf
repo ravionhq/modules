@@ -25,6 +25,15 @@ resource "helm_release" "karpenter_crd" {
   upgrade_install  = true
 }
 
+locals {
+  # The chart runs two controllers with required per-node anti-affinity and
+  # keeps them off Karpenter-provisioned nodes, so each needs its own system
+  # node. Karpenter cannot provision a node for itself; on a one-node system
+  # group the second replica would stay Pending and every Helm upgrade would
+  # time out waiting for it.
+  karpenter_controller_replicas = var.system_node_count == null ? 2 : max(1, min(2, var.system_node_count))
+}
+
 resource "helm_release" "karpenter" {
   count = var.karpenter_enabled ? 1 : 0
 
@@ -40,6 +49,7 @@ resource "helm_release" "karpenter" {
   values = concat(
     [
       yamlencode({
+        replicas = local.karpenter_controller_replicas
         settings = {
           clusterName       = var.cluster_name
           interruptionQueue = module.karpenter[0].interruption_queue_name
@@ -51,6 +61,18 @@ resource "helm_release" "karpenter" {
       }),
     ],
     var.karpenter_helm_values,
+    # This setting owns the staticCapacity gate. Keep it last so an advanced
+    # Helm value cannot leave static capacity enabled after the count is zero,
+    # while all other caller settings and feature gates remain intact.
+    [
+      yamlencode({
+        settings = {
+          featureGates = {
+            staticCapacity = var.karpenter_spot_warm_min_instances > 0
+          }
+        }
+      }),
+    ],
   )
 
   # The controller pod needs the Pod Identity association and interruption
@@ -78,6 +100,8 @@ resource "helm_release" "karpenter_default_node_pool" {
   name      = "karpenter-default-node-pool"
   namespace = var.karpenter_controller_namespace
   chart     = "${path.module}/charts/karpenter-resources"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/karpenter-resources/Chart.yaml")).version
 
   upgrade_install = true
 
@@ -107,6 +131,9 @@ resource "helm_release" "karpenter_default_node_pool" {
         expireAfter         = var.karpenter_default_node_pool.expire_after
         consolidationPolicy = var.karpenter_default_node_pool.consolidation_policy
         consolidateAfter    = var.karpenter_default_node_pool.consolidate_after
+      }
+      spotWarm = {
+        minInstances = var.karpenter_spot_warm_min_instances
       }
     }),
   ]

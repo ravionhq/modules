@@ -41,7 +41,7 @@ resource "aws_appautoscaling_policy" "target_tracking" {
       content {
         predefined_metric_type = predefined_metric_specification.value
         resource_label = predefined_metric_specification.value == "ALBRequestCountPerTarget" ? (
-          local.enable_load_balancer ? "${split("/", local.primary_target_group_arn_suffix)[1]}/${split("/", local.primary_target_group_arn_suffix)[2]}/${split("/", local.primary_target_group_arn_suffix)[3]}" : null
+          local.enable_load_balancer && !local.enable_nlb_listener ? try("${data.aws_lb.attached[0].arn_suffix}/${local.primary_target_group_arn_suffix}", null) : null
         ) : null
       }
     }

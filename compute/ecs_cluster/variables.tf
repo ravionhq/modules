@@ -235,36 +235,36 @@ variable "ec2_key_name" {
   default     = null
 }
 
-variable "ec2_min_size" {
+variable "ec2_min_instances" {
   type        = number
-  description = "The minimum number of EC2 instances in the Auto Scaling Group."
+  description = "Minimum number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count."
   default     = 0
 
   validation {
-    condition     = var.ec2_min_size >= 0
-    error_message = "The ec2_min_size must be 0 or greater."
+    condition     = var.ec2_min_instances >= 0
+    error_message = "The ec2_min_instances must be 0 or greater."
   }
 }
 
-variable "ec2_max_size" {
+variable "ec2_max_instances" {
   type        = number
-  description = "The maximum number of EC2 instances in the Auto Scaling Group."
+  description = "Maximum number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count."
   default     = 10
 
   validation {
-    condition     = var.ec2_max_size >= 1
-    error_message = "The ec2_max_size must be at least 1."
+    condition     = var.ec2_max_instances >= 1
+    error_message = "The ec2_max_instances must be at least 1."
   }
 }
 
-variable "ec2_desired_capacity" {
+variable "ec2_desired_instances" {
   type        = number
-  description = "The desired number of EC2 instances in the Auto Scaling Group."
+  description = "Desired number of EC2 host instances in the ECS capacity Auto Scaling Group. This is instance count, not ECS task count."
   default     = 1
 
   validation {
-    condition     = var.ec2_desired_capacity >= 0
-    error_message = "The ec2_desired_capacity must be 0 or greater."
+    condition     = var.ec2_desired_instances >= 0
+    error_message = "The ec2_desired_instances must be 0 or greater."
   }
 }
 
@@ -806,5 +806,45 @@ variable "cloudwatch_ok_actions" {
 variable "region" {
   type        = string
   description = "AWS region. When null, the provider's configured region is used."
+  default     = null
+}
+
+################################################################################
+# Ravion-managed domains (optional)
+################################################################################
+
+variable "use_ravion_managed_domains" {
+  type        = bool
+  description = "Allocate a Ravion-managed wildcard domain for the cluster and serve its certificate from the selected ALB's existing HTTPS listener. Requires exactly one HTTPS-enabled ALB."
+  default     = false
+}
+
+variable "ravion_cluster_name" {
+  type        = string
+  description = "Free-form name leaf for the cluster's Ravion wildcard domain (becomes <name>-<hash>.<ravion-apex>). Defaults to the module instance given id."
+  default     = null
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the default leaf for the Ravion wildcard domain."
+  default     = null
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns this cluster's Ravion-managed certificate. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external/API-key runs. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*) the wildcard ACM cert is issued in. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_region" {
+  type        = string
+  description = "AWS region the cluster wildcard cert lives in. Defaults to the module region."
   default     = null
 }

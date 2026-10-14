@@ -41,6 +41,29 @@ locals {
   # coordinator updates itself and pins its executor Jobs to the image it runs.
   ravion_operator_self_update_effective = var.ravion_operator_self_update_enabled
 
+  # Coordinators run one per system node, so the configured count is capped to
+  # the nodes that are guaranteed to exist. When the cap leaves a single
+  # coordinator, distinct-node placement is dropped too: a self-update then
+  # surges its replacement onto the same node instead of having no surviving
+  # replica to revert to. An explicitly configured single coordinator is left
+  # to the precondition below.
+  ravion_operator_coordinator_replicas       = var.system_node_count == null ? var.ravion_operator_coordinator_replicas : max(1, min(var.ravion_operator_coordinator_replicas, var.system_node_count))
+  ravion_operator_coordinator_capped         = local.ravion_operator_coordinator_replicas < var.ravion_operator_coordinator_replicas
+  ravion_operator_coordinator_distinct_nodes = var.ravion_operator_coordinator_distinct_nodes_enabled && !(local.ravion_operator_coordinator_capped && local.ravion_operator_coordinator_replicas < 2)
+
+  # The chart's distinct-node mode renders only per-node anti-affinity and drops
+  # .Values.affinity, so coordinators placed that way are pinned to the system
+  # node group by selector: a fixed count on nodes Karpenter does not manage.
+  # Otherwise Operator takes the shared add-on placement (addon_placement.tf);
+  # with addon_placement_enabled off it gets neither.
+  ravion_operator_pinned_to_system_nodes = var.addon_placement_enabled && var.ravion_operator_coordinator_enabled && local.ravion_operator_coordinator_distinct_nodes && length(local.system_node_labels) > 0
+  ravion_operator_placement_values = (
+    local.ravion_operator_pinned_to_system_nodes ? [yamlencode({
+      nodeSelector = local.system_node_labels
+      tolerations  = local.addon_tolerations
+    })] : local.addon_placement_values
+  )
+
   # Names and keys the two charts must agree on. Both ends are wired from these
   # locals rather than from the charts' defaults so they cannot drift apart.
   ravion_operator_k8s_secret_name   = "ravion-operator-credential"
@@ -161,6 +184,8 @@ resource "helm_release" "ravion_operator_credential" {
   name      = "ravion-operator-credential"
   namespace = var.ravion_operator_namespace
   chart     = "${path.module}/charts/operator-credential"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/operator-credential/Chart.yaml")).version
 
   create_namespace = true
   upgrade_install  = true
@@ -262,8 +287,8 @@ resource "helm_release" "ravion_operator" {
         coordinator = {
           enabled              = var.ravion_operator_coordinator_enabled
           adaptive             = false
-          replicas             = var.ravion_operator_coordinator_replicas
-          requireDistinctNodes = var.ravion_operator_coordinator_distinct_nodes_enabled
+          replicas             = local.ravion_operator_coordinator_replicas
+          requireDistinctNodes = local.ravion_operator_coordinator_distinct_nodes
         }
       }),
     ],
@@ -271,6 +296,7 @@ resource "helm_release" "ravion_operator" {
     # may present doing it. Built in observability_ravion_operator.tf, because what may
     # be reached is a property of the thing being reached.
     local.ravion_operator_observability_proxy_values,
+    local.ravion_operator_placement_values,
     var.ravion_operator_helm_values,
   )
 
@@ -318,7 +344,7 @@ resource "helm_release" "ravion_operator" {
       error_message = "HA coordinators require ravion_operator_execution_jobs_enabled."
     }
     precondition {
-      condition     = !var.ravion_operator_coordinator_enabled || !var.ravion_operator_coordinator_distinct_nodes_enabled || !local.ravion_operator_self_update_effective || var.ravion_operator_coordinator_replicas >= 2
+      condition     = !var.ravion_operator_coordinator_enabled || !local.ravion_operator_coordinator_distinct_nodes || !local.ravion_operator_self_update_effective || local.ravion_operator_coordinator_replicas >= 2
       error_message = "A single HA coordinator on distinct nodes leaves no surviving replica to revert a failed self-update. Set ravion_operator_coordinator_replicas >= 2, ravion_operator_coordinator_distinct_nodes_enabled = false, or ravion_operator_self_update_enabled = false."
     }
     precondition {

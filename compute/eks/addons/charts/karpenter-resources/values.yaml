@@ -28,3 +28,7 @@ nodePool:
   expireAfter: 720h
   consolidationPolicy: WhenEmptyOrUnderutilized
   consolidateAfter: 15m
+
+spotWarm:
+  # Zero disables the static Spot NodePool.
+  minInstances: 0

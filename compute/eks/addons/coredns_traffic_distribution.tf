@@ -13,9 +13,11 @@
 resource "helm_release" "coredns_traffic_distribution" {
   count = var.topology_aware_routing_enabled ? 1 : 0
 
-  name            = "coredns-traffic-distribution"
-  namespace       = "kube-system"
-  chart           = "${path.module}/charts/coredns-traffic-distribution"
+  name      = "coredns-traffic-distribution"
+  namespace = "kube-system"
+  chart     = "${path.module}/charts/coredns-traffic-distribution"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version         = yamldecode(file("${path.module}/charts/coredns-traffic-distribution/Chart.yaml")).version
   upgrade_install = true
 
   values = [yamlencode({

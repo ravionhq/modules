@@ -3,8 +3,8 @@ definition:
   name: AWS KMS Key
   description: Creates a regional symmetric AWS KMS encryption key and stable alias.
 release:
-  version: 0.1.0
-  description: Create regional symmetric AWS KMS encryption keys with optional key-user access.
+  version: 0.2.0
+  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

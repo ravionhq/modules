@@ -5,6 +5,8 @@ ravion_state_backend_workspace: >-
 pipelines:
   defaults:
     input:
+      $merge:
+        - ../stack/terraform-runner-permissions-pipeline-inputs.yml
       aws_account_id: "<< module.input.execution_environment_id ? null : module.input.aws_account_id >>"
       aws_region: "<< module.input.execution_environment_id ? null : module.input.aws_region >>"
       base_path: $with.base_path

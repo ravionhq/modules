@@ -1,0 +1,53 @@
+{{- range $component := list "query" "store" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - name: http
+      port: {{ ternary 9090 10902 (eq $component "query") }}
+      targetPort: http
+    {{- if eq $component "store" }}
+    - name: grpc
+      port: 10901
+      targetPort: grpc
+    {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-sidecar
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Values.prometheusRelease }}
+    app.kubernetes.io/component: server
+  ports:
+    - name: grpc
+      port: 10901
+      targetPort: thanos-grpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-compactor
+  namespace: {{ .Release.Namespace }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: compactor
+  ports:
+    - name: http
+      port: 10902
+      targetPort: http

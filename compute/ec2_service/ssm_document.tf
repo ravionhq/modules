@@ -16,13 +16,13 @@
 # command under supervisord.
 #
 # NAMING CONTRACT: the document name is derived by the platform as
-# "<autoscaling_group_name>-deploy" — both names come from var.name in
-# this module, so the convention holds by construction. Do not rename
-# one without the other (and the platform's Ec2DeployDocumentName).
+# "<autoscaling_group_name>-deploy". Use the actual group name, which can
+# be fixed or generated, so replacements keep this contract with the
+# platform's Ec2DeployDocumentName.
 ################################################################################
 
 resource "aws_ssm_document" "deploy" {
-  name            = "${var.name}-deploy"
+  name            = "${module.autoscaling.autoscaling_group_name}-deploy"
   document_type   = "Command"
   document_format = "YAML"
 

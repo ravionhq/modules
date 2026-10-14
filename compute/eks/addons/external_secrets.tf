@@ -41,6 +41,11 @@ resource "helm_release" "external_secrets" {
         }
       }),
     ],
+    # The controller, its webhook and its cert controller are three Deployments.
+    var.addon_placement_enabled ? [yamlencode(merge(local.addon_pod_placement, {
+      webhook        = local.addon_pod_placement
+      certController = local.addon_pod_placement
+    }))] : [],
     var.eso_helm_values,
   )
 
@@ -73,6 +78,8 @@ resource "helm_release" "external_secrets_stores" {
   name      = "external-secrets-stores"
   namespace = var.eso_namespace
   chart     = "${path.module}/charts/external-secrets-resources"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/external-secrets-resources/Chart.yaml")).version
 
   upgrade_install = true
 
@@ -81,7 +88,7 @@ resource "helm_release" "external_secrets_stores" {
       # No auth block is rendered: the store inherits the controller pod's
       # Pod Identity credentials via the AWS SDK default credential chain.
       region            = data.aws_region.current.region
-      allowedNamespaces = local.eso_allowed_namespaces
+      allowedNamespaces = local.eso_store_namespaces
       secretsManagerStore = {
         name = var.eso_secrets_manager_store_name
       }
@@ -97,8 +104,8 @@ resource "helm_release" "external_secrets_stores" {
   # read any secret. Refuse to create the stores in that state.
   lifecycle {
     precondition {
-      condition     = length(local.eso_allowed_namespaces) > 0
-      error_message = "The External Secrets cluster stores would be usable from every namespace: eso_allowed_namespaces is empty and Ravion Operator manages no namespaces (it is disabled or in full-cluster mode). Set eso_allowed_namespaces to the namespaces that may read secrets, or set eso_cluster_secret_stores_creation_enabled = false and create your own stores."
+      condition     = length(local.eso_store_namespaces) > 0
+      error_message = "The External Secrets cluster stores would be usable from every namespace: eso_allowed_namespaces is empty, Ravion Operator manages no namespaces (it is disabled or in full-cluster mode), and the add-ons read no secrets of their own. Set eso_allowed_namespaces to the namespaces that may read secrets, or set eso_cluster_secret_stores_creation_enabled = false and create your own stores."
     }
   }
 

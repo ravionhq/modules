@@ -3,7 +3,8 @@
 ################################################################################
 
 resource "aws_autoscaling_group" "this" {
-  name = var.name
+  name        = var.name_prefix == null ? var.name : null
+  name_prefix = var.name_prefix
 
   min_size         = var.min_size
   max_size         = var.max_size

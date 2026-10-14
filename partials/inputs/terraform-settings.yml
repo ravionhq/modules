@@ -14,6 +14,7 @@
   immutable: true
   label: Ravion Terraform workspace name
   type: string
+- $include: ./terraform-runner-permissions.yml
 - default: {}
   description: Optional raw Terraform variable overrides for advanced module inputs or one-off overrides. Values here override the generated variables above.
   id: advanced_terraform_variables

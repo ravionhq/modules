@@ -1,0 +1,14 @@
+# The load balancer controller registers the Service's pod IPs with the target
+# group. No networking block: the cluster security group already admits the
+# shared public ALB on every TCP port (load_balancers.tf).
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  serviceRef:
+    name: {{ .Values.serviceName }}
+    port: {{ .Values.servicePort }}
+  targetGroupARN: {{ .Values.targetGroupArn }}
+  targetType: ip

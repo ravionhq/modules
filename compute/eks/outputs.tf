@@ -101,6 +101,16 @@ output "topology_aware_routing_enabled" {
   value       = var.topology_aware_routing_enabled
 }
 
+output "metrics_server_addon_arn" {
+  description = "ARN of the AWS-managed Metrics Server EKS add-on (null when disabled)."
+  value       = module.addons.metrics_server_addon_arn
+}
+
+output "metrics_server_addon_version" {
+  description = "Resolved version of the AWS-managed Metrics Server EKS add-on (null when disabled)."
+  value       = module.addons.metrics_server_addon_version
+}
+
 ################################################################################
 # Node Groups
 ################################################################################

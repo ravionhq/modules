@@ -90,6 +90,28 @@ variables {
 # Name Validation Tests
 #-------------------------------------------------------------------------------
 
+run "test_all_methods_only_caches_reads" {
+  command = plan
+
+  variables {
+    default_cache_behavior = {
+      target_origin_id       = "s3-origin"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    }
+  }
+
+  assert {
+    condition     = toset(aws_cloudfront_distribution.this["primary"].default_cache_behavior[0].allowed_methods) == toset(["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"])
+    error_message = "All HTTP methods must reach the origin."
+  }
+
+  assert {
+    condition     = toset(aws_cloudfront_distribution.this["primary"].default_cache_behavior[0].cached_methods) == toset(["GET", "HEAD"])
+    error_message = "Allowing writes must not enable caching their responses."
+  }
+}
+
 # Test: Valid name - basic
 run "test_name_validation_valid_basic" {
   command = plan

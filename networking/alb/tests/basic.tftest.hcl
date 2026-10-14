@@ -109,7 +109,7 @@ run "internal_alb" {
   command = plan
 
   variables {
-    internal = true
+    internal_load_balancer_enabled = true
   }
 
   assert {
@@ -314,7 +314,8 @@ run "waf_enabled" {
   command = plan
 
   variables {
-    web_acl_arn = "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/test-waf/12345678-1234-1234-1234-123456789012"
+    waf_association_enabled = true
+    web_acl_arn             = "arn:aws:wafv2:us-east-1:123456789012:regional/webacl/test-waf/12345678-1234-1234-1234-123456789012"
   }
 
   assert {
@@ -380,12 +381,12 @@ run "security_group_created" {
   command = plan
 
   assert {
-    condition     = module.security_group.aws_security_group.this.vpc_id == "vpc-12345678"
+    condition     = module.security_group.security_group_vpc_id == "vpc-12345678"
     error_message = "Security group should be created in the specified VPC"
   }
 
   assert {
-    condition     = module.security_group.aws_security_group.this.name == "test-alb-alb"
+    condition     = module.security_group.security_group_name == "test-alb-alb"
     error_message = "Security group should have correct name"
   }
 }
@@ -395,7 +396,7 @@ run "security_group_http_ingress" {
   command = plan
 
   assert {
-    condition     = length(module.security_group.aws_vpc_security_group_ingress_rule.this) > 0
+    condition     = length(module.security_group.ingress_rule_ids) > 0
     error_message = "HTTP ingress rules should be created when HTTP listener enabled"
   }
 }
@@ -410,7 +411,7 @@ run "security_group_https_ingress" {
   }
 
   assert {
-    condition     = length(module.security_group.aws_vpc_security_group_ingress_rule.this) > 0
+    condition     = length(module.security_group.ingress_rule_ids) > 0
     error_message = "HTTPS ingress rules should be created when HTTPS listener enabled"
   }
 }
@@ -420,12 +421,12 @@ run "security_group_egress" {
   command = plan
 
   assert {
-    condition     = length(module.security_group.aws_vpc_security_group_egress_rule.allow_all_ipv4) == 1
+    condition     = length(module.security_group.all_egress_rule_ids) == 2
     error_message = "Egress rule should allow all IPv4 traffic"
   }
 
   assert {
-    condition     = length(module.security_group.aws_vpc_security_group_egress_rule.allow_all_ipv6) == 1
+    condition     = length(module.security_group.all_egress_rule_ids) == 2
     error_message = "Egress rule should allow all IPv6 traffic"
   }
 }
@@ -440,7 +441,7 @@ run "custom_ingress_cidrs" {
   }
 
   assert {
-    condition     = length(module.security_group.aws_vpc_security_group_ingress_rule.this) > 0
+    condition     = length(module.security_group.ingress_rule_ids) > 0
     error_message = "HTTP ingress rules should be created with custom CIDR blocks"
   }
 }
@@ -530,7 +531,7 @@ run "preserve_host_header" {
   command = plan
 
   variables {
-    preserve_host_header = true
+    host_header_preservation_enabled = true
   }
 
   assert {
@@ -577,20 +578,13 @@ run "ingress_security_groups" {
     ingress_security_group_ids = ["sg-0123456789abcdef0"]
   }
 
+  # Child-module resources are not addressable from tests, so count the rules
+  # through the module output: HTTP + HTTPS listeners x (default IPv4 CIDR,
+  # default IPv6 CIDR, one source security group) = 6; without the security
+  # group it would be 4 (see security_group_http_ingress).
   assert {
-    condition = length([
-      for rule in module.security_group.aws_vpc_security_group_ingress_rule.this : rule
-      if rule.referenced_security_group_id == "sg-0123456789abcdef0"
-    ]) == 2
-    error_message = "Should create HTTP and HTTPS ingress rules referencing the source security group"
-  }
-
-  assert {
-    condition = length([
-      for rule in module.security_group.aws_vpc_security_group_ingress_rule.this : rule
-      if rule.referenced_security_group_id == "sg-0123456789abcdef0" && rule.from_port == 443
-    ]) == 1
-    error_message = "Should create an HTTPS ingress rule referencing the source security group"
+    condition     = length(module.security_group.ingress_rule_ids) == 6
+    error_message = "Should create HTTP and HTTPS ingress rules referencing the source security group in addition to the CIDR rules"
   }
 }
 
@@ -598,11 +592,11 @@ run "ingress_security_groups" {
 run "no_ingress_security_groups_by_default" {
   command = plan
 
+  # HTTP listener only x (default IPv4 CIDR, default IPv6 CIDR) = 2; a source
+  # security group would add one more rule per listener (see
+  # ingress_security_groups).
   assert {
-    condition = length([
-      for rule in module.security_group.aws_vpc_security_group_ingress_rule.this : rule
-      if rule.referenced_security_group_id != null
-    ]) == 0
+    condition     = length(module.security_group.ingress_rule_ids) == 2
     error_message = "Should not create security group referenced ingress rules by default"
   }
 }

@@ -21,6 +21,9 @@
 # and a CronJob's are `<name>-<job-id>-<suffix>`. The two-segment tail -
 # neither segment may contain a hyphen - keeps a sibling service whose name
 # merely starts with this one (`api` vs `api-worker`) out of the selection.
+# Split web/worker releases also include the reserved <name>-spot Deployment.
+# CloudWatch cannot aggregate these dimensions here, so it shows a separate Spot
+# chart and explicitly labels the original dimension On-Demand in split mode.
 # Every metric name is on the add-ons module's curated allow-list; anything
 # added must be too, or the chart will render empty.
 #
@@ -55,7 +58,7 @@
     aws_account_id: << module.input.aws_account_id >>
     region: << module.input.amp_workspace_region >>
     workspace_id: << module.input.amp_workspace_id >>
-    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
     unit: cores
 - id: cpu
   name: CPU usage
@@ -65,10 +68,10 @@
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
     endpoint: << module.input.prometheus_endpoint >>
-    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
     unit: cores
 - id: cpu
-  name: CPU usage
+  name: 'CPU usage<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? " (On-Demand)" : "" >>'
   type: line
   enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
   source:
@@ -91,7 +94,7 @@
     aws_account_id: << module.input.aws_account_id >>
     region: << module.input.amp_workspace_region >>
     workspace_id: << module.input.amp_workspace_id >>
-    query: 'sum(container_memory_working_set_bytes{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"})'
+    query: 'sum(container_memory_working_set_bytes{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"})'
     unit: B
 - id: memory
   name: Memory working set
@@ -101,10 +104,10 @@
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
     endpoint: << module.input.prometheus_endpoint >>
-    query: 'sum(container_memory_working_set_bytes{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"})'
+    query: 'sum(container_memory_working_set_bytes{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"})'
     unit: B
 - id: memory
-  name: Memory working set
+  name: 'Memory working set<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? " (On-Demand)" : "" >>'
   type: line
   enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
   source:
@@ -127,7 +130,7 @@
     aws_account_id: << module.input.aws_account_id >>
     region: << module.input.amp_workspace_region >>
     workspace_id: << module.input.amp_workspace_id >>
-    query: 'sum(increase(kube_pod_container_status_restarts_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(increase(kube_pod_container_status_restarts_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
 - id: restarts
   name: Container restarts
   type: line
@@ -136,13 +139,13 @@
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
     endpoint: << module.input.prometheus_endpoint >>
-    query: 'sum(increase(kube_pod_container_status_restarts_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(increase(kube_pod_container_status_restarts_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
 # `pod_number_of_container_restarts` is the running total for a pod, not the
 # count inside the period, so the closest period-stable reading is Maximum.
 # The Prometheus entries above plot restarts per interval; this one plots how
 # many times the worst pod has restarted since it started.
 - id: restarts
-  name: Container restarts
+  name: 'Container restarts<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? " (On-Demand)" : "" >>'
   type: line
   enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
   source:
@@ -165,7 +168,7 @@
     aws_account_id: << module.input.aws_account_id >>
     region: << module.input.amp_workspace_region >>
     workspace_id: << module.input.amp_workspace_id >>
-    query: 'sum(rate(container_network_receive_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(rate(container_network_receive_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
     unit: B/s
 - id: network_rx
   name: Network in
@@ -175,10 +178,10 @@
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
     endpoint: << module.input.prometheus_endpoint >>
-    query: 'sum(rate(container_network_receive_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(rate(container_network_receive_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
     unit: B/s
 - id: network_rx
-  name: Network in
+  name: 'Network in<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? " (On-Demand)" : "" >>'
   type: line
   enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
   source:
@@ -201,7 +204,7 @@
     aws_account_id: << module.input.aws_account_id >>
     region: << module.input.amp_workspace_region >>
     workspace_id: << module.input.amp_workspace_id >>
-    query: 'sum(rate(container_network_transmit_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(rate(container_network_transmit_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
     unit: B/s
 - id: network_tx
   name: Network out
@@ -211,10 +214,10 @@
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
     endpoint: << module.input.prometheus_endpoint >>
-    query: 'sum(rate(container_network_transmit_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
+    query: 'sum(rate(container_network_transmit_bytes_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
     unit: B/s
 - id: network_tx
-  name: Network out
+  name: 'Network out<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? " (On-Demand)" : "" >>'
   type: line
   enabled: << module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
   source:
@@ -283,3 +286,79 @@
     href: >-
       << module.input.metrics_external_links == nil ? "" :
       reduce(filter(module.input.metrics_external_links, #.provider == "otlp"), #acc + #.href_prefix, "") >>
+
+- id: cpu_spot
+  name: CPU usage (Spot)
+  type: line
+  enabled: << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_cpu_usage_total
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>-spot
+- id: memory_spot
+  name: Memory working set (Spot)
+  type: line
+  enabled: << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_memory_working_set
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>-spot
+- id: restarts_spot
+  name: Container restarts (Spot)
+  type: line
+  enabled: << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_number_of_container_restarts
+    statistic: Maximum
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>-spot
+- id: network_rx_spot
+  name: Network in (Spot)
+  type: line
+  enabled: << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_network_rx_bytes
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>-spot
+- id: network_tx_spot
+  name: Network out (Spot)
+  type: line
+  enabled: << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.metrics_rendering_providers != nil && "cloudwatch" in module.input.metrics_rendering_providers >>
+  source:
+    type: cloudwatch
+    aws_account_id: << module.input.aws_account_id >>
+    region: << module.input.aws_region >>
+    namespace: ContainerInsights
+    name: pod_network_tx_bytes
+    statistic: Average
+    dimensions:
+      ClusterName: << module.input.cluster_name >>
+      Namespace: << module.input.namespace >>
+      PodName: << module.input.name >>-spot

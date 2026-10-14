@@ -57,12 +57,14 @@ override_resource {
 }
 
 variables {
-  cluster_name      = "test-cluster"
-  region            = "us-east-2"
-  karpenter_enabled = false
-  eso_enabled       = true
-  logs_providers    = []
-  metrics_providers = []
+  traces_destinations    = []
+  ebs_csi_driver_enabled = false
+  cluster_name           = "test-cluster"
+  region                 = "us-east-2"
+  karpenter_enabled      = false
+  eso_enabled            = true
+  logs_providers         = []
+  metrics_providers      = []
 }
 
 run "stores_default_to_the_operator_workload_namespaces" {

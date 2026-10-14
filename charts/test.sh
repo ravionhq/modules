@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -39,7 +39,7 @@ done
 # module carries its own charts and they are tested from here too.
 chart_path() {
   case "$1" in
-    karpenter-resources | warm-capacity) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    karpenter-resources | warm-capacity | ebs-storage) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -76,6 +76,17 @@ render() {
   echo "${out}"
 }
 
+# Asserts that Helm rejects values for a chart.
+expect_template_failure() {
+  local chart="$1" desc="$2"
+  shift 2
+  if helm template test-release "$(chart_path "${chart}")" "$@" >"${WORK_DIR}/expected-failure.out" 2>&1; then
+    fail "${desc}" "render rejected the values" "render succeeded"
+  else
+    pass "${desc}"
+  fi
+}
+
 # Queries a rendered manifest array. Usage: q <file> <expression>
 # Prints an empty string rather than "null" when the path is absent.
 q() {
@@ -91,12 +102,39 @@ count() {
   q "$1" "[.[] | select(.kind == \"$2\")] | length"
 }
 
+assert_json_unique_keys() {
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    json.load(stream, object_pairs_hook=unique_object)
+PY
+}
+
 ################################################################################
 # helm lint — every chart against every ci/*-values.yaml
 ################################################################################
 
 lint_chart() {
   local chart="$1"
+  local schema
+  schema="$(chart_path "${chart}")/values.schema.json"
+  if [[ -f "${schema}" ]]; then
+    if assert_json_unique_keys "${schema}" >"${WORK_DIR}/schema-keys.out" 2>&1; then
+      pass "schema ${chart} has no duplicate JSON keys"
+    else
+      fail "schema ${chart} has no duplicate JSON keys" "unique object keys" "$(cat "${WORK_DIR}/schema-keys.out")"
+    fi
+  fi
   for values in "$(chart_path "${chart}")"/ci/*-values.yaml; do
     local label
     label="$(basename "${values}")"
@@ -106,6 +144,246 @@ lint_chart() {
       fail "lint ${chart} (${label})" "exit 0" "$(cat "${WORK_DIR}/lint.out")"
     fi
   done
+}
+
+################################################################################
+# KEDA-backed Spot burst shared by the web and worker charts.
+################################################################################
+
+test_spot_burst_chart() {
+  local chart="$1"
+  local values="${CHARTS_DIR}/${chart}/ci/spot-burst-values.yaml"
+  local base_name="test-release-${chart}"
+  local spot_name="${base_name}-spot"
+  local burst_args=(--values "${values}" --set autoscaling.enabled=true)
+  if [[ "${chart}" == "rvn-eks-web" ]]; then
+    burst_args+=(--set networkPolicy.enabled=true)
+  fi
+
+  local burst
+  burst="$(render "${chart}" spot-burst "${burst_args[@]}")"
+  local baseline='.[] | select(.kind == "Deployment") | select(.metadata.name == "'"${base_name}"'")'
+  local spot='.[] | select(.kind == "Deployment") | select(.metadata.name == "'"${spot_name}"'")'
+  local scaled='.[] | select(.kind == "ScaledObject")'
+
+  assert_eq "${chart}: burst mode renders a baseline and Spot Deployment" \
+    "2" "$(count "${burst}" Deployment)"
+  assert_eq "${chart}: the default minimum keeps initial and upgrade renders at zero" \
+    "0" "$(q "$(render "${chart}" spot-upgrade --values "${values}" --is-upgrade)" \
+      '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.replicas')"
+  assert_eq "${chart}: baseline keeps its stable release name and fixed replica floor" \
+    "3" "$(q "${burst}" "${baseline} | .spec.replicas")"
+  assert_eq "${chart}: Spot Deployment name ends in -spot" \
+    "${spot_name}" "$(q "${burst}" "${spot} | .metadata.name")"
+  assert_eq "${chart}: Spot Deployment selector uses a distinct app name" \
+    "${chart}-spot" "$(q "${burst}" "${spot} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: Spot Deployment and ScaledObject target names agree" \
+    "${spot_name}" "$(q "${burst}" "${scaled} | .spec.scaleTargetRef.name")"
+  assert_eq "${chart}: no CPU/memory HPA competes with KEDA" \
+    "0" "$(count "${burst}" HorizontalPodAutoscaler)"
+  assert_eq "${chart}: one KEDA ScaledObject is rendered" \
+    "1" "$(count "${burst}" ScaledObject)"
+  assert_eq "${chart}: KEDA may scale the Spot Deployment from zero" \
+    "0 8 30 300" \
+    "$(q "${burst}" "${scaled} | [.spec.minReplicaCount, .spec.maxReplicaCount, .spec.pollingInterval, .spec.cooldownPeriod] | join(\" \")")"
+  local min_replicas min_burst
+  for min_replicas in 1 3; do
+    min_burst="$(render "${chart}" "min-spot-${min_replicas}" --values "${values}" \
+      --set "spotBurst.minReplicas=${min_replicas}")"
+    assert_eq "${chart}: configured minimum sets initial Spot Deployment replicas (${min_replicas})" \
+      "${min_replicas}" "$(q "${min_burst}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.replicas')"
+    assert_eq "${chart}: configured minimum sets the KEDA ScaledObject floor (${min_replicas})" \
+      "${min_replicas}" "$(q "${min_burst}" '.[] | select(.kind == "ScaledObject") | .spec.minReplicaCount')"
+  done
+  assert_eq "${chart}: KEDA scale-down stabilization and restore policy are fixed" \
+    "300 false" \
+    "$(q "${burst}" "${scaled} | [.spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleDown.stabilizationWindowSeconds, .spec.advanced.restoreToOriginalReplicaCount] | join(\" \")")"
+  assert_eq "${chart}: scaler receives the configured external trigger unchanged" \
+    "prometheus vector(0)" \
+    "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query] | join(\" \")")"
+  local utilization
+  utilization="$(render "${chart}" utilization-metric-type --values "${values}" \
+    --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"serverAddress":"http://example.invalid:9090","query":"vector(0)","threshold":"1","activationThreshold":"0","ignoreNullValues":"false"},"metricType":"Utilization"}]')"
+  assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering" \
+    "Utilization" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].metricType')"
+  assert_eq "${chart}: baseline and Spot pods use the same image" \
+    "1" \
+    "$(q "${burst}" "[.[] | select(.kind == \"Deployment\") | .spec.template.spec.containers[0].image] | unique | length")"
+  assert_eq "${chart}: pod environment is shared across both pools" \
+    "1" \
+    "$(q "${burst}" "[.[] | select(.kind == \"Deployment\") | .spec.template.spec.containers[0].env] | unique | length")"
+  assert_eq "${chart}: both pools use the same ServiceAccount" \
+    "test-release-${chart}" \
+    "$(q "${burst}" "[.[] | select(.kind == \"Deployment\") | .spec.template.spec.serviceAccountName] | unique | join(\" \")")"
+  assert_eq "${chart}: both pool pods carry the EC2 compute annotation" \
+    "ec2" \
+    "$(q "${burst}" "[.[] | select(.kind == \"Deployment\") | .spec.template.metadata.annotations.\"eks.amazonaws.com/compute-type\"] | unique | join(\" \")")"
+  assert_eq "${chart}: custom pod annotations remain present" \
+    "retained" \
+    "$(q "${burst}" "${baseline} | .spec.template.metadata.annotations.\"example.com/test-annotation\"")"
+  assert_eq "${chart}: user pod labels cannot replace reserved identity or pool labels" \
+    "rvn-eks-${chart#rvn-eks-} test-release baseline ${chart}-spot test-release spot" \
+    "$(q "${burst}" "${baseline} | [.spec.template.metadata.labels.\"app.kubernetes.io/name\", .spec.template.metadata.labels.\"app.kubernetes.io/instance\", .spec.template.metadata.labels.\"ravion.com/spot-burst-pool\"] | join(\" \")") $(q "${burst}" "${spot} | [.spec.template.metadata.labels.\"app.kubernetes.io/name\", .spec.template.metadata.labels.\"app.kubernetes.io/instance\", .spec.template.metadata.labels.\"ravion.com/spot-burst-pool\"] | join(\" \")")"
+  assert_eq "${chart}: non-reserved user pod labels remain present" \
+    "retained" "$(q "${burst}" "${spot} | .spec.template.metadata.labels.\"example.com/test-label\"")"
+  assert_eq "${chart}: baseline spread is scoped to the baseline pool" \
+    "baseline" \
+    "$(q "${burst}" "${baseline} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"ravion.com/spot-burst-pool\"")"
+  assert_eq "${chart}: Spot spread is scoped to the Spot pool" \
+    "spot" \
+    "$(q "${burst}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"ravion.com/spot-burst-pool\"")"
+  assert_eq "${chart}: Spot spread selector matches the Spot app name" \
+    "${chart}-spot" \
+    "$(q "${burst}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: each pool gets separate required affinity terms" \
+    "4 4" \
+    "$(q "${burst}" "${baseline} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms | length") $(q "${burst}" "${spot} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms | length")"
+  assert_eq "${chart}: On-Demand terms admit managed and Karpenter capacity labels only" \
+    "ON_DEMAND on-demand" \
+    "$(q "${burst}" "[${baseline} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[].matchExpressions[] | select(.key == \"eks.amazonaws.com/capacityType\") | .values[0]] | unique | join(\" \")") $(q "${burst}" "[${baseline} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[].matchExpressions[] | select(.key == \"karpenter.sh/capacity-type\") | .values[0]] | unique | join(\" \")")"
+  assert_eq "${chart}: Spot terms admit managed and Karpenter capacity labels only" \
+    "SPOT spot" \
+    "$(q "${burst}" "[${spot} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[].matchExpressions[] | select(.key == \"eks.amazonaws.com/capacityType\") | .values[0]] | unique | join(\" \")") $(q "${burst}" "[${spot} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[].matchExpressions[] | select(.key == \"karpenter.sh/capacity-type\") | .values[0]] | unique | join(\" \")")"
+  assert_eq "${chart}: user hardware requirements apply to all expanded terms" \
+    "c8a.xlarge test-node" \
+    "$(q "${burst}" "[${spot} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[].matchExpressions[] | select(.key == \"kubernetes.io/instance-type\") | .values[0]] | unique | join(\" \")") $(q "${burst}" "[${spot} | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[].matchFields[] | select(.key == \"metadata.name\") | .values[0]] | unique | join(\" \")")"
+  assert_eq "${chart}: preferred node and pod affinities are preserved" \
+    "1 example" \
+    "$(q "${burst}" "${spot} | .spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution | length") $(q "${burst}" "${spot} | .spec.template.spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels.app")"
+  assert_eq "${chart}: PDB is baseline-only and uses the fixed baseline floor" \
+    "1 rvn-eks-${chart#rvn-eks-} test-release" \
+    "$(count "${burst}" PodDisruptionBudget) $(q "${burst}" '.[] | select(.kind == "PodDisruptionBudget") | [.spec.selector.matchLabels."app.kubernetes.io/name", .spec.selector.matchLabels."app.kubernetes.io/instance"] | join(" ")')"
+  assert_eq "${chart}: no Spot pool label is added to the baseline-only PDB" \
+    "" "$(q "${burst}" '.[] | select(.kind == "PodDisruptionBudget") | .spec.selector.matchLabels."ravion.com/spot-burst-pool"')"
+
+  local explicit_spread
+  explicit_spread="$(render "${chart}" explicit-spot-spread --values "${values}" \
+    --set-json 'topologySpreadConstraints=[{"maxSkew":2,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway","labelSelector":{"matchLabels":{"custom":"value"}}}]')"
+  assert_eq "${chart}: explicit user spread selectors are not rewritten" \
+    "value" "$(q "${explicit_spread}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.custom")"
+  assert_eq "${chart}: explicit spread is not silently made pool-specific" \
+    "" "$(q "${explicit_spread}" "${spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"ravion.com/spot-burst-pool\"")"
+
+  local disabled long_name long_first long_second override_case
+  disabled="$(render "${chart}" disabled-stale-values --values "${values}" \
+    --set spotBurst.enabled=false --set spotBurst.baselineReplicas=7 \
+    --set spotBurst.minReplicas=9 --set spotBurst.maxReplicas=8 --set autoscaling.enabled=true)"
+  assert_eq "${chart}: disabled burst ignores stale settings and restores ordinary HPA" \
+    "1 1 0" \
+    "$(count "${disabled}" Deployment) $(count "${disabled}" HorizontalPodAutoscaler) $(count "${disabled}" ScaledObject)"
+  assert_eq "${chart}: inactive burst baseline stays under ordinary autoscaling" \
+    "" "$(q "${disabled}" '.[] | select(.kind == "Deployment") | .spec.replicas')"
+
+  long_name="spot-burst-fullname-override-that-is-longer-than-sixty-three-characters"
+  long_first="$(render "${chart}" long-spot-name --values "${values}" --set "nameOverride=${long_name}")"
+  long_second="$(render "${chart}" long-spot-name-repeat --values "${values}" --set "nameOverride=${long_name}")"
+  local long_baseline_name hashed_spot_name
+  long_baseline_name="$(q "${long_first}" '.[] | select(.kind == "Deployment") | select((.metadata.name | test("-spot$")) | not) | .metadata.name')"
+  hashed_spot_name="$(q "${long_first}" '.[] | select(.kind == "Deployment") | select(.metadata.name | test("-spot$")) | .metadata.name')"
+  assert_eq "${chart}: long Spot Deployment names fit the Kubernetes 63-character limit" \
+    "63" "${#hashed_spot_name}"
+  assert_eq "${chart}: long Spot name retains the -spot suffix" \
+    "true" "$([[ "${hashed_spot_name}" == *-spot ]] && echo true || echo false)"
+  if [[ "${hashed_spot_name}" =~ -[a-f0-9]{8}-spot$ ]]; then
+    pass "${chart}: long Spot name includes a deterministic hash"
+  else
+    fail "${chart}: long Spot name includes a deterministic hash" "8 lowercase hex digits before -spot" "${hashed_spot_name}"
+  fi
+  assert_eq "${chart}: long-name Spot hashes are deterministic" \
+    "${hashed_spot_name}" "$(q "${long_second}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .metadata.name')"
+  if [[ "${long_baseline_name}" == "${hashed_spot_name}" ]]; then
+    fail "${chart}: long Spot and baseline names remain distinct" "different names" "${long_baseline_name}"
+  else
+    pass "${chart}: long Spot and baseline names remain distinct"
+  fi
+  local long_baseline_selector long_spot_selector
+  long_baseline_selector="$(q "${long_first}" '.[] | select(.kind == "Deployment") | select((.metadata.name | test("-spot$")) | not) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
+  long_spot_selector="$(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
+  if [[ ${#long_spot_selector} -le 63 ]]; then
+    pass "${chart}: long Spot selector name fits the Kubernetes 63-character limit"
+  else
+    fail "${chart}: long Spot selector name fits the Kubernetes 63-character limit" "at most 63" "${#long_spot_selector}"
+  fi
+  if [[ "${long_spot_selector}" =~ -[a-f0-9]{8}-spot$ ]]; then
+    pass "${chart}: long Spot selector retains its deterministic hash"
+  else
+    fail "${chart}: long Spot selector retains its deterministic hash" "8 lowercase hex digits before -spot" "${long_spot_selector}"
+  fi
+  assert_eq "${chart}: long baseline selector matches its pod label" \
+    "${long_baseline_selector}" "$(q "${long_first}" '.[] | select(.kind == "Deployment") | select((.metadata.name | test("-spot$")) | not) | .spec.template.metadata.labels."app.kubernetes.io/name"')"
+  assert_eq "${chart}: long Spot selector matches its pod label and spread selector" \
+    "${long_spot_selector} ${long_spot_selector}" "$(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.template.metadata.labels."app.kubernetes.io/name"') $(q "${long_first}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels."app.kubernetes.io/name"')"
+  assert_eq "${chart}: long Spot selector is distinct from the baseline selector" \
+    "true" "$([[ "${long_baseline_selector}" != "${long_spot_selector}" ]] && echo true || echo false)"
+  assert_eq "${chart}: long Spot selector hash is deterministic" \
+    "${long_spot_selector}" "$(q "${long_second}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.selector.matchLabels."app.kubernetes.io/name"')"
+
+  override_case="$(render "${chart}" selector-name-override --values "${values}" \
+    --set fullnameOverride=api --set nameOverride=api-spot)"
+  local override_baseline='.[] | select(.kind == "Deployment" and .metadata.name == "api")'
+  local override_spot='.[] | select(.kind == "Deployment" and .metadata.name == "api-spot")'
+  assert_eq "${chart}: fullname/name override baseline selector remains stable" \
+    "api-spot" "$(q "${override_case}" "${override_baseline} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: fullname/name override baseline pod matches its selector" \
+    "api-spot" "$(q "${override_case}" "${override_baseline} | .spec.template.metadata.labels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: fullname/name override Spot selector derives from baseline name" \
+    "api-spot-spot" "$(q "${override_case}" "${override_spot} | .spec.selector.matchLabels.\"app.kubernetes.io/name\"")"
+  assert_eq "${chart}: fullname/name override Spot selector matches pod and spread selectors" \
+    "api-spot-spot api-spot-spot" "$(q "${override_case}" "${override_spot} | .spec.template.metadata.labels.\"app.kubernetes.io/name\"") $(q "${override_case}" "${override_spot} | .spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels.\"app.kubernetes.io/name\"")"
+
+  expect_template_failure "${chart}" "${chart}: Spot minimum cannot exceed Spot maximum" \
+    --values "${values}" --set spotBurst.minReplicas=9 --set spotBurst.maxReplicas=8
+
+  local replica_floor_chart="${WORK_DIR}/${chart}-replica-floor"
+  local replica_floor_output="${WORK_DIR}/${chart}-replica-floor.yaml"
+  cp -R "$(chart_path "${chart}")" "${replica_floor_chart}"
+  cat >"${replica_floor_chart}/templates/replica-floor-test.yaml" <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spot-replica-floor-test
+data:
+  replicas: {{ include "${chart}.spotReplicasAtMinimum" (dict "minimum" .Values.spotBurst.minReplicas "replicas" .Values.replicaCount) | quote }}
+EOF
+  helm template test-release "${replica_floor_chart}" --values "${values}" \
+    --set spotBurst.minReplicas=3 --set replicaCount=10 |
+    yq ea '[.] | map(select(. != null))' >"${replica_floor_output}"
+  assert_eq "${chart}: owned live replicas above max are preserved for autoscaler reconciliation" \
+    "10" "$(q "${replica_floor_output}" '.[] | select(.kind == "ConfigMap") | .data.replicas')"
+  helm template test-release "${replica_floor_chart}" --values "${values}" \
+    --set spotBurst.minReplicas=3 --set replicaCount=1 |
+    yq ea '[.] | map(select(. != null))' >"${replica_floor_output}"
+  assert_eq "${chart}: owned live replicas below minimum are raised to the configured floor" \
+    "3" "$(q "${replica_floor_output}" '.[] | select(.kind == "ConfigMap") | .data.replicas')"
+
+  local cpu_with_minimum
+  cpu_with_minimum="$(render "${chart}" cpu-trigger-with-minimum --values "${values}" \
+    --set spotBurst.minReplicas=1 \
+    --set-json 'spotBurst.triggers=[{"type":"cpu","metadata":{"value":"80"}}]')"
+  assert_eq "${chart}: CPU trigger is allowed when the Spot minimum is nonzero" \
+    "1 1 cpu" \
+    "$(q "${cpu_with_minimum}" '.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$"))) | .spec.replicas') $(q "${cpu_with_minimum}" '.[] | select(.kind == "ScaledObject") | .spec.minReplicaCount') $(q "${cpu_with_minimum}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].type')"
+
+  expect_template_failure "${chart}" "${chart}: burst requires at least one external trigger" \
+    --values "${values}" --set-json 'spotBurst.triggers=[]'
+  expect_template_failure "${chart}" "${chart}: CPU-only trigger cannot wake a zero-replica Deployment" \
+    --values "${values}" --set-json 'spotBurst.triggers=[{"type":"cpu","metadata":{"value":"80"}}]'
+  expect_template_failure "${chart}" "${chart}: CPU and memory triggers alone cannot wake a zero-replica Deployment" \
+    --values "${values}" --set-json 'spotBurst.triggers=[{"type":"cpu","metadata":{"value":"80"}},{"type":"memory","metadata":{"value":"80"}}]'
+  expect_template_failure "${chart}" "${chart}: baseline replicas must be at least one" \
+    --values "${values}" --set spotBurst.baselineReplicas=0
+  expect_template_failure "${chart}" "${chart}: trigger metadata values must be strings" \
+    --values "${values}" --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"threshold":1}}]'
+  expect_template_failure "${chart}" "${chart}: unsupported TriggerAuthentication kind is rejected" \
+    --values "${values}" --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"threshold":"1"},"authenticationRef":{"name":"test-auth","kind":"Other"}}]'
+  if helm template test-release "$(chart_path "${chart}")" --values "${values}" \
+    --set spotBurst.kedaEnabled=false >"${WORK_DIR}/missing-keda.out" 2>&1; then
+    fail "${chart}: burst requires KEDA add-on" "clear prerequisite error" "render succeeded"
+  elif [[ "$(<"${WORK_DIR}/missing-keda.out")" == *"requires KEDA to be installed by rvn-eks-addons"* ]]; then
+    pass "${chart}: burst requires KEDA add-on"
+  else
+    fail "${chart}: burst requires KEDA add-on" "clear prerequisite error" "$(cat "${WORK_DIR}/missing-keda.out")"
+  fi
 }
 
 ################################################################################
@@ -335,6 +613,20 @@ test_rvn_eks_web() {
     "1" "$(count "${deny_all}" NetworkPolicy)"
   assert_eq "web: an allow-list with no sources denies every ingress peer" \
     "0" "$(q "${deny_all}" "${np} | .spec.ingress | length")"
+
+  test_spot_burst_chart rvn-eks-web
+  local spot_burst
+  spot_burst="$(render "${chart}" spot-burst-service --values "${CHARTS_DIR}/${chart}/ci/spot-burst-values.yaml" \
+    --set networkPolicy.enabled=true)"
+  assert_eq "web: shared Service selects both release pools by instance label only" \
+    "app.kubernetes.io/instance" \
+    "$(q "${spot_burst}" '.[] | select(.kind == "Service") | .spec.selector | keys | join(" ")')"
+  assert_eq "web: shared NetworkPolicy selects both release pools by instance label only" \
+    "app.kubernetes.io/instance" \
+    "$(q "${spot_burst}" '.[] | select(.kind == "NetworkPolicy") | .spec.podSelector.matchLabels | keys | join(" ")')"
+  assert_eq "web: both pools retain the same TargetGroupBinding readiness gate" \
+    "target-health.elbv2.k8s.aws/test-release-rvn-eks-web-0" \
+    "$(q "${spot_burst}" '[.[] | select(.kind == "Deployment") | .spec.template.spec.readinessGates[].conditionType] | unique | join(" ")')"
 }
 
 ################################################################################
@@ -423,6 +715,7 @@ test_rvn_eks_worker() {
     "0" "$(count "${pdb_single}" PodDisruptionBudget)"
 
   test_secrets_contract "${chart}" "${full}" "${default}" Deployment
+  test_spot_burst_chart rvn-eks-worker
 }
 
 ################################################################################
@@ -566,13 +859,41 @@ test_secrets_contract() {
 
 test_karpenter_resources() {
   local chart="karpenter-resources"
-  local default with_key ebs
+  local default positive with_key ebs static
   default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  positive="$(render "${chart}" positive --values "$(chart_path "${chart}")/ci/default-values.yaml" --set spotWarm.minInstances=3)"
   with_key="$(render "${chart}" customer-key --values "$(chart_path "${chart}")/ci/customer-key-values.yaml")"
   ebs='.[] | select(.kind == "EC2NodeClass") | .spec.blockDeviceMappings[0]'
+  static='.[] | select(.kind == "NodePool") | select(.metadata.name == "spot-warm")'
 
   assert_eq "${chart}: renders one EC2NodeClass and one NodePool" \
     "1 1" "$(count "${default}" EC2NodeClass) $(count "${default}" NodePool)"
+  assert_eq "${chart}: zero warm instances omits the static NodePool" \
+    "1" "$(count "${default}" NodePool)"
+  assert_eq "${chart}: positive warm instances render a second NodePool" \
+    "2" "$(count "${positive}" NodePool)"
+  assert_eq "${chart}: static pool uses the requested replicas and replacement headroom" \
+    "3 4" "$(q "${positive}" "${static} | [.spec.replicas, .spec.limits.nodes] | join(\" \")")"
+  assert_eq "${chart}: static pool is Spot-only and inherits scheduling constraints" \
+    "linux amd64 spot c,m,r Gt 2" \
+    "$(q "${positive}" "${static} | [.spec.template.spec.requirements[0].values[0], .spec.template.spec.requirements[1].values[0], .spec.template.spec.requirements[2].values[0], (.spec.template.spec.requirements[3].values | join(\",\")), (.spec.template.spec.requirements[4].operator + \" \" + .spec.template.spec.requirements[4].values[0])] | join(\" \")")"
+  assert_eq "${chart}: static pool reuses the default class and expiration" \
+    "default 720h" "$(q "${positive}" "${static} | [.spec.template.spec.nodeClassRef.name, .spec.template.spec.expireAfter] | join(\" \")")"
+  assert_eq "${chart}: static pool has no dynamic-only controls" \
+    "limits replicas template" "$(q "${positive}" "${static} | .spec | keys | sort | join(\" \")")"
+  assert_eq "${chart}: static pool template has only permitted fields" \
+    "expireAfter nodeClassRef requirements" "$(q "${positive}" "${static} | .spec.template.spec | keys | sort | join(\" \")")"
+
+  if helm template test-release "$(chart_path "${chart}")" --set spotWarm.minInstances=-1 >/dev/null 2>&1; then
+    fail "${chart}: negative warm instance count is rejected" "helm template failure" "helm template succeeded"
+  else
+    pass "${chart}: negative warm instance count is rejected"
+  fi
+  if helm template test-release "$(chart_path "${chart}")" --set spotWarm.minInstances=1.5 >/dev/null 2>&1; then
+    fail "${chart}: fractional warm instance count is rejected" "helm template failure" "helm template succeeded"
+  else
+    pass "${chart}: fractional warm instance count is rejected"
+  fi
 
   # The Terraform module hands the chart kmsKeyId "" when no customer key is
   # set; the manifest must then carry no kmsKeyID at all, or Karpenter would
@@ -632,6 +953,43 @@ test_warm_capacity() {
 }
 
 ################################################################################
+# ebs-storage (compute/eks/addons)
+################################################################################
+
+test_ebs_storage() {
+  local chart="ebs-storage"
+  local default class_only sc map dep ctr
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  class_only="$(render "${chart}" class-only --values "$(chart_path "${chart}")/ci/storage-class-only-values.yaml")"
+  sc='.[] | select(.kind == "StorageClass")'
+  map='.[] | select(.kind == "MutatingAdmissionPolicy")'
+  dep='.[] | select(.kind == "Deployment")'
+  ctr="${dep} | .spec.template.spec.containers[0]"
+
+  assert_eq "${chart}: gp3 is the default class and allows volume expansion" \
+    "gp3 true true gp3 true WaitForFirstConsumer" \
+    "$(q "${default}" "${sc} | [.metadata.name, .metadata.annotations.\"storageclass.kubernetes.io/is-default-class\", .allowVolumeExpansion, .parameters.type, .parameters.encrypted, .volumeBindingMode] | join(\" \")")"
+  assert_eq "${chart}: expansion policy and binding render by default" \
+    "1 1 Ignore" \
+    "$(count "${default}" MutatingAdmissionPolicy) $(count "${default}" MutatingAdmissionPolicyBinding) $(q "${default}" "${map} | .spec.failurePolicy")"
+  assert_eq "${chart}: policy only matches StatefulSet updates" \
+    "apps statefulsets UPDATE" \
+    "$(q "${default}" "${map} | .spec.matchConstraints.resourceRules[0] | [.apiGroups[0], .resources[0], .operations[0]] | join(\" \")")"
+  assert_eq "${chart}: requested sizes are recorded before the templates are reverted" \
+    "ApplyConfiguration JSONPatch" \
+    "$(q "${default}" "${map} | [.spec.mutations[].patchType] | join(\" \")")"
+  assert_eq "${chart}: resizer runs kubectl with a busybox shell" \
+    "registry.k8s.io/kubectl:v1.36.4 /tools/sh public.ecr.aws/docker/library/busybox:1.37.0-musl" \
+    "$(q "${default}" "${ctr} | .image") $(q "${default}" "${ctr} | .command[0]") $(q "${default}" "${dep} | .spec.template.spec.initContainers[0].image")"
+  assert_eq "${chart}: resizer may only list StatefulSets and grow claims" \
+    "list get,list,patch" \
+    "$(q "${default}" '.[] | select(.kind == "ClusterRole") | .rules[0].verbs | join(",")') $(q "${default}" '.[] | select(.kind == "ClusterRole") | .rules[1].verbs | join(",")')"
+  assert_eq "${chart}: class-only values render the StorageClass alone" \
+    "1 0 0" \
+    "$(count "${class_only}" StorageClass) $(count "${class_only}" MutatingAdmissionPolicy) $(count "${class_only}" Deployment)"
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -642,6 +1000,7 @@ for chart in "${CHARTS[@]}"; do
     rvn-eks-cron) test_rvn_eks_cron ;;
     karpenter-resources) test_karpenter_resources ;;
     warm-capacity) test_warm_capacity ;;
+    ebs-storage) test_ebs_storage ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

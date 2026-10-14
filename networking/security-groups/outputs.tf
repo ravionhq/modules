@@ -68,3 +68,11 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "all_egress_rule_ids" {
+  description = "IDs of the allow-all egress rules (IPv4 then IPv6) created when all_egress_enabled is true. Empty otherwise."
+  value = concat(
+    [for r in aws_vpc_security_group_egress_rule.allow_all_ipv4 : r.id],
+    [for r in aws_vpc_security_group_egress_rule.allow_all_ipv6 : r.id],
+  )
+}

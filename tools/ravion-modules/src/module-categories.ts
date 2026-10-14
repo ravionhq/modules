@@ -70,7 +70,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Cluster",
     description: "For services that share container capacity, load balancers, and placement configuration.",
     sortOrder: 90,
-    definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons"],
+    definitionTypes: ["rvn-ecs-cluster", "rvn-eks-cluster", "rvn-eks-addons", "rvn-eks-chart"],
   },
   {
     givenId: "machine-image",
@@ -84,7 +84,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Network",
     description: "For private subnets, internet access, service connectivity, and shared load balancers.",
     sortOrder: 100,
-    definitionTypes: ["rvn-aws-alb", "rvn-aws-network"],
+    definitionTypes: ["rvn-aws-alb", "rvn-aws-alternat", "rvn-aws-network"],
   },
   {
     givenId: "domain",
@@ -105,7 +105,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Security",
     description: "For identity, permissions, encryption keys, and least-privilege access.",
     sortOrder: 130,
-    definitionTypes: ["rvn-aws-compliance", "rvn-aws-iam-policy", "rvn-aws-iam-role", "rvn-aws-kms"],
+    definitionTypes: ["rvn-aws-compliance", "rvn-aws-secret", "rvn-aws-iam-policy", "rvn-aws-iam-role", "rvn-aws-kms"],
   },
   {
     givenId: "iac",

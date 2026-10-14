@@ -2,6 +2,8 @@
 
 This module creates an AWS Auto Scaling Group with optional launch template, scaling policies, lifecycle hooks, scheduled actions, warm pool, and traffic source integrations.
 
+By default the group uses the fixed `name`. For workloads that need create-before-destroy replacements (including recovery from a tainted group), set `name_prefix` to generate a unique physical group name. Use `autoscaling_group_name` wherever a consumer needs that physical name; `name` remains the stable prefix for resource tags and other companion resources. Switching an existing fixed-name group to prefix mode replaces the group and its instances, so back up any instance-local data first.
+
 ## Features
 
 - Auto Scaling Group with configurable capacity limits and health checks
@@ -296,6 +298,7 @@ module "asg" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name prefix for all resources | `string` | n/a | yes |
+| name_prefix | Optional prefix for a generated ASG name (enables create-before-destroy replacements) | `string` | `null` | no |
 | tags | Map of tags to assign to resources | `map(string)` | `{}` | no |
 | vpc_zone_identifier | List of subnet IDs for the ASG | `list(string)` | n/a | yes |
 

@@ -59,7 +59,7 @@ variable "topology_aware_routing_enabled" {
 
 variable "kubectl_image" {
   type        = string
-  description = "kubectl image (repository:tag) the kube-dns patch Jobs run. Pinned; override for clusters that must pull from a private mirror."
+  description = "kubectl image (repository:tag) the kube-dns patch Jobs and the volume resizer run. Pinned; override for clusters that must pull from a private mirror."
   default     = "registry.k8s.io/kubectl:v1.36.4"
   nullable    = false
 
@@ -81,7 +81,7 @@ variable "aws_load_balancer_controller_enabled" {
 
 variable "aws_load_balancer_controller_chart_version" {
   type        = string
-  description = "Version of the aws-load-balancer-controller Helm chart to install. The bundled CRD chart matches the default; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
+  description = "Version of the aws-load-balancer-controller Helm chart to install. CRDs are upgraded from the same version and retained on uninstall; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
   default     = "3.5.0"
   nullable    = false
 
@@ -115,8 +115,8 @@ variable "aws_load_balancer_controller_helm_values" {
 
 variable "ebs_csi_driver_enabled" {
   type        = bool
-  description = "Install the aws-ebs-csi-driver add-on and create its Pod Identity role so workloads can use EBS-backed persistent volumes."
-  default     = false
+  description = "Install the aws-ebs-csi-driver add-on and its Pod Identity role. Enabled by default for the Prometheus and Tempo working volumes; disable when another provisioner supplies persistent storage."
+  default     = true
 }
 
 variable "ebs_csi_addon_version" {
@@ -129,6 +129,32 @@ variable "ebs_csi_addon_configuration_values" {
   type        = string
   description = "JSON string of add-on configuration overrides for aws-ebs-csi-driver."
   default     = null
+}
+
+variable "ebs_default_storage_class_enabled" {
+  type        = bool
+  description = "Create an encrypted gp3 StorageClass named `gp3` with volume expansion allowed, and make it the cluster default. Requires ebs_csi_driver_enabled. Fails to install if a StorageClass named `gp3` already exists and was not created by this module."
+  default     = true
+  nullable    = false
+}
+
+variable "statefulset_volume_expansion_enabled" {
+  type        = bool
+  description = "Let a StatefulSet update through when the only volumeClaimTemplate change is a larger storage request, and grow the existing PersistentVolumeClaims online to match. Without it, the API server rejects the update and the deploy fails. Requires ebs_csi_driver_enabled and Kubernetes 1.36+ (MutatingAdmissionPolicy); on older clusters it is skipped with a warning."
+  default     = true
+  nullable    = false
+}
+
+variable "busybox_image" {
+  type        = string
+  description = "Statically linked busybox image (repository:tag) that supplies a shell to the volume resizer, which otherwise runs the kubectl image. Pinned; override for clusters that must pull from a private mirror."
+  default     = "public.ecr.aws/docker/library/busybox:1.37.0-musl"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^(.*):([^:/]+)$", var.busybox_image))
+    error_message = "busybox_image must be a repository:tag reference."
+  }
 }
 
 ################################################################################
@@ -326,6 +352,73 @@ variable "karpenter_default_node_pool_creation_enabled" {
   type        = bool
   description = "Create a general-purpose default NodePool and EC2NodeClass so Karpenter can provision nodes out of the box. Disable to manage NodePools yourself."
   default     = true
+}
+
+variable "keda_enabled" {
+  type        = bool
+  description = "Install KEDA and its CRDs for event-driven workload autoscaling. Scaling triggers are configured separately on workloads."
+  default     = false
+  nullable    = false
+}
+
+variable "keda_namespace" {
+  type        = string
+  description = "Namespace for KEDA's operator, metrics API server and admission webhooks."
+  default     = "keda"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.keda_namespace))
+    error_message = "The keda_namespace must be a valid Kubernetes namespace name."
+  }
+}
+
+variable "keda_chart_version" {
+  type        = string
+  description = "Pinned KEDA Helm chart version. Verify Kubernetes compatibility before upgrading or enabling."
+  default     = "2.20.2"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.keda_chart_version))
+    error_message = "The keda_chart_version must be a pinned major.minor.patch version."
+  }
+}
+
+variable "keda_helm_values" {
+  type        = list(string)
+  description = "Additional KEDA Helm values documents. Overrides can change controller placement and installed components; do not put credentials in values."
+  default     = []
+  nullable    = false
+}
+
+variable "karpenter_spot_warm_min_instances" {
+  type        = number
+  description = "Minimum number of Spot instances in a static warm NodePool. A positive value enables alpha static Spot capacity; zero disables the feature. Workloads must tolerate and select Spot capacity to use it."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.karpenter_spot_warm_min_instances >= 0 && var.karpenter_spot_warm_min_instances == floor(var.karpenter_spot_warm_min_instances)
+    error_message = "The karpenter_spot_warm_min_instances must be a non-negative integer."
+  }
+
+  validation {
+    condition     = var.karpenter_spot_warm_min_instances == 0 || (var.karpenter_enabled && var.karpenter_default_node_pool_creation_enabled)
+    error_message = "The karpenter_spot_warm_min_instances requires both karpenter_enabled and karpenter_default_node_pool_creation_enabled to be true when nonzero."
+  }
+
+  validation {
+    condition = var.karpenter_spot_warm_min_instances == 0 || try(
+      tonumber(split(".", var.karpenter_chart_version)[0]) > 1 ||
+      (
+        tonumber(split(".", var.karpenter_chart_version)[0]) == 1 &&
+        tonumber(split(".", var.karpenter_chart_version)[1]) >= 8
+      ),
+      false,
+    )
+    error_message = "The karpenter_chart_version must be at least 1.8.0 when karpenter_spot_warm_min_instances is nonzero because static NodePools require Karpenter's staticCapacity feature gate."
+  }
 }
 
 variable "node_subnet_ids" {
@@ -937,6 +1030,31 @@ variable "ravion_operator_warm_capacity" {
   }
 }
 
+variable "system_node_count" {
+  type        = number
+  description = "Nodes guaranteed to exist that Karpenter does not manage: the minimum size of the cluster's system node group. Karpenter's controller and the HA coordinators run only on such nodes, one per node, so their replica counts are capped to it (Karpenter at 2, coordinators at ravion_operator_coordinator_replicas). With a single node, one of each runs without HA instead of a second replica staying Pending and failing Helm upgrades. Null applies no cap."
+  default     = null
+
+  validation {
+    condition     = var.system_node_count == null || (try(var.system_node_count >= 0 && floor(var.system_node_count) == var.system_node_count, false))
+    error_message = "The system_node_count must be a whole number of nodes, or null."
+  }
+}
+
+variable "system_node_labels" {
+  type        = map(string)
+  description = "Node labels that identify the system node group (the compute/eks composite labels it role=system). Add-ons prefer these nodes, and HA coordinators placed on distinct nodes are pinned to them. Ignored when system_node_count is 0. Empty sets no preference."
+  default     = {}
+  nullable    = false
+}
+
+variable "addon_placement_enabled" {
+  type        = bool
+  description = "Require On-Demand capacity for the add-on controllers and stores, prefer the system node group, and tolerate CriticalAddonsOnly, so a Spot reclaim cannot take them down. Disable before supplying your own affinity through the add-on Helm values."
+  default     = true
+  nullable    = false
+}
+
 variable "ravion_operator_coordinator_enabled" {
   type        = bool
   description = "Enable elected HA coordinators. Requires executor Jobs and a replica-aware Ravion gateway."
@@ -1273,7 +1391,7 @@ variable "alloy_helm_values" {
 
 variable "grafana_enabled" {
   type        = bool
-  description = "Install Grafana in the cluster, preprovisioned with both Ravion datasources: Amazon Managed Prometheus over SigV4 and the in-cluster Loki. This is the only way to see the logs in Grafana - Amazon Managed Grafana runs outside the cluster and cannot reach Loki, which is deliberately not exposed. No ingress is created; reach it with a port-forward or add one through grafana_helm_values."
+  description = "Install Grafana in the cluster with data sources for the selected Loki, Prometheus/Thanos, Tempo and AMP stores. Without grafana_access it has no ingress: use a port-forward. Amazon Managed Grafana cannot reach these private stores without additional networking."
   default     = false
   nullable    = false
 }
@@ -1310,10 +1428,143 @@ variable "grafana_helm_values" {
   nullable    = false
 }
 
+variable "grafana_access" {
+  type = object({
+    enabled                 = optional(bool, false)
+    method                  = optional(string, "load_balancer")
+    load_balancer           = optional(string, "private")
+    listener_rule_priority  = optional(number)
+    ingress_class_name      = optional(string)
+    ingress_annotations     = optional(map(string), {})
+    ingress_tls_secret_name = optional(string)
+    hostname                = optional(string)
+  })
+  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. Install that controller before turning this on: the AWS Load Balancer Controller, which this module runs alongside any shared load balancer, refuses an Ingress whose IngressClass does not exist yet. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth and grafana_auth_providers."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = contains(["load_balancer", "ingress"], var.grafana_access.method)
+    error_message = "The grafana_access.method must be load_balancer or ingress."
+  }
+
+  validation {
+    condition     = contains(["public", "private"], var.grafana_access.load_balancer)
+    error_message = "The grafana_access.load_balancer must be public or private."
+  }
+}
+
+variable "grafana_auth" {
+  type = object({
+    login_form_enabled = optional(bool, true)
+    default_role       = optional(string, "Viewer")
+  })
+  description = "Grafana's own sign-in settings. login_form_enabled keeps username and password sign-in for Grafana's local users, including the generated admin; false removes the login form and HTTP basic auth both. default_role is the role an account gets the first time it signs in through a provider (users.auto_assign_org_role): Viewer, Editor or Admin."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_auth.default_role)
+    error_message = "The grafana_auth.default_role must be Viewer, Editor or Admin."
+  }
+}
+
+variable "grafana_auth_providers" {
+  type = list(object({
+    provider              = string
+    name                  = optional(string)
+    client_id             = optional(string)
+    client_secret_arn     = optional(string)
+    tenant_id             = optional(string)
+    url                   = optional(string)
+    auth_url              = optional(string)
+    token_url             = optional(string)
+    api_url               = optional(string)
+    scopes                = optional(string)
+    allowed_domains       = optional(list(string), [])
+    allowed_groups        = optional(list(string), [])
+    allowed_organizations = optional(list(string), [])
+    team_ids              = optional(list(string), [])
+    role_attribute_path   = optional(string)
+    settings              = optional(map(string), {})
+  }))
+  description = <<-EOT
+    OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) give the provider its client. Leave either out when grafana_secrets gives it as GF_AUTH_<PROVIDER>_CLIENT_ID or GF_AUTH_<PROVIDER>_CLIENT_SECRET.
+    - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
+    - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
+    - role_attribute_path maps the provider's user info to a Grafana role.
+    - settings passes any other key of the section through verbatim.
+  EOT
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
+    error_message = "Each grafana_auth_providers entry's provider must be one of: google, github, gitlab, azuread, okta, generic_oauth."
+  }
+
+  validation {
+    condition     = length(distinct([for entry in var.grafana_auth_providers : entry.provider])) == length(var.grafana_auth_providers)
+    error_message = "Each provider can appear in grafana_auth_providers once: Grafana has one [auth.<provider>] section per provider."
+  }
+}
+
+variable "grafana_environment_variables" {
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  description = "Plain environment variables for the in-cluster Grafana, as an EKS workload's environment_variables: {name, value} objects. Grafana reads any setting from GF_<SECTION>_<KEY>, and expands $__env{NAME} in every setting."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for variable in var.grafana_environment_variables : trimspace(variable.name) != ""])
+    error_message = "Each grafana_environment_variables entry needs a name."
+  }
+
+  validation {
+    condition     = length(distinct([for variable in var.grafana_environment_variables : variable.name])) == length(var.grafana_environment_variables)
+    error_message = "Each grafana_environment_variables entry must name a distinct environment variable."
+  }
+}
+
+variable "grafana_secrets" {
+  type = list(object({
+    name       = string
+    value_from = string
+  }))
+  description = "Secret environment variables for the in-cluster Grafana, as an EKS workload's secrets: {name, value_from} objects. value_from is a full Secrets Manager or SSM Parameter Store ARN, and a Secrets Manager ARN may end in ECS's :<json key>:<version stage>:<version id> to read one key of a JSON secret. External Secrets reads each one inside the cluster, so none is ever a Helm value. GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET give a sign-in provider its client."
+  default     = []
+  nullable    = false
+
+  # The name is the environment variable and the key in the Kubernetes Secret,
+  # under the rule the EKS workload charts hold a secret's name to.
+  validation {
+    condition     = alltrue([for secret in var.grafana_secrets : can(regex("^[A-Za-z_][A-Za-z0-9_.-]*$", secret.name))])
+    error_message = "Each grafana_secrets name must be an environment variable name: letters, digits, underscores, dots and dashes, starting with a letter or an underscore."
+  }
+
+  validation {
+    condition     = length(distinct([for secret in var.grafana_secrets : secret.name])) == length(var.grafana_secrets)
+    error_message = "Each grafana_secrets entry must name a distinct environment variable."
+  }
+
+  validation {
+    condition = alltrue([
+      for secret in var.grafana_secrets :
+      can(regex("^arn:[^:]+:secretsmanager:[^:]+:[0-9]+:secret:[^:]+(:[^:]*){0,3}$", trimspace(secret.value_from))) ||
+      can(regex("^arn:[^:]+:ssm:[^:]+:[0-9]+:parameter/[^:]+$", trimspace(secret.value_from)))
+    ])
+    error_message = "Each grafana_secrets value_from must be a full Secrets Manager or SSM Parameter Store ARN. A Secrets Manager ARN may end in :<json key>:<version stage>:<version id> to read one key of a JSON secret, as in arn:aws:secretsmanager:us-east-1:123456789012:secret:app-AbCdEf:password::."
+  }
+}
+
 ################################################################################
 # Observability providers
 #
-# One multi-select per signal. Loki (in-cluster) and Amazon Managed Prometheus
+# One multi-select per signal. Loki, Prometheus with Thanos, and Tempo on S3
 # are the defaults: a fresh instance gets Ravion's full Logs and Metrics
 # experience with no configuration, and nothing CloudWatch is ever installed as
 # a side effect. Every other destination — including CloudWatch — is a member of
@@ -1342,7 +1593,7 @@ variable "logs_providers" {
 variable "metrics_providers" {
   type        = list(string)
   description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
-  default     = ["amp"]
+  default     = ["prometheus"]
   nullable    = false
 
   validation {
@@ -1352,6 +1603,122 @@ variable "metrics_providers" {
     ])
     error_message = "Each metrics_providers entry must be one of: amp, prometheus, cloudwatch, grafana_cloud, datadog, new_relic, otlp."
   }
+}
+
+variable "traces_destinations" {
+  # A list of objects rather than list(object(...)): a list's elements must
+  # convert to one type, and the Tempo card's free-form helm_values never shares
+  # one with the other cards' (null, or {}), so the form's cards would be refused.
+  # The validations below take the place of the object type.
+  type        = any
+  description = <<-EOT
+    Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
+    - xray: AWS X-Ray, in region (the cluster's when null).
+    - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
+    - datadog: site and a Secrets Manager ARN holding the API key.
+    - new_relic: new_relic_region (us or eu) and a Secrets Manager ARN holding the license key.
+    - otlp: any OTLP/HTTP traces receiver (endpoint), and optionally a Secrets Manager ARN holding an Authorization header value.
+    A vendor that is also a logs or metrics destination uses that signal's site, region and secret.
+  EOT
+  default     = [{ destination = "tempo" }]
+  nullable    = false
+
+  validation {
+    condition     = can(concat(var.traces_destinations, [])) && alltrue([for entry in var.traces_destinations : can(keys(entry)) && can(tostring(entry.destination))])
+    error_message = "traces_destinations must be a list of objects, each with a destination."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : contains(["xray", "tempo", "grafana_cloud", "datadog", "new_relic", "otlp"], try(entry.destination, ""))])
+    error_message = "Each traces_destinations entry's destination must be one of: xray, tempo, grafana_cloud, datadog, new_relic, otlp."
+  }
+
+  validation {
+    condition     = length(distinct([for entry in var.traces_destinations : try(entry.destination, "")])) == length(var.traces_destinations)
+    error_message = "Each destination can appear in traces_destinations once."
+  }
+
+  validation {
+    condition = alltrue([for entry in var.traces_destinations : length(setsubtract(try(keys(entry), []), [
+      "destination",
+      "retention_days", "storage_backend", "s3_bucket_name", "persistence_enabled", "persistence_size",
+      "metrics_generator_enabled", "storage_class", "chart_version", "helm_values",
+      "region",
+      "url", "user", "token_secret_arn",
+      "site", "api_key_secret_arn",
+      "new_relic_region", "license_key_secret_arn",
+      "endpoint", "headers_secret_arn",
+    ])) == 0])
+    error_message = "A traces_destinations entry has a field no destination takes. The fields are listed in the variable's description."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : try(entry.retention_days, null) == null || try(entry.retention_days >= 1, false)])
+    error_message = "A tempo destination's retention_days must be at least 1."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : contains(["", "s3", "local"], try(trimspace(entry.storage_backend), ""))])
+    error_message = "A tempo destination's storage_backend must be s3 or local."
+  }
+
+  validation {
+    condition     = alltrue([for entry in var.traces_destinations : try(entry.helm_values, null) == null || can(keys(entry.helm_values))])
+    error_message = "A tempo destination's helm_values must be an object of chart values."
+  }
+}
+
+variable "tempo_service_account" {
+  type        = string
+  description = "Service account Tempo runs as. The Pod Identity association binds the S3 role to this name, so the chart and the association are driven from this single value."
+  default     = "ravion-tempo"
+  nullable    = false
+}
+
+variable "tempo_resources" {
+  type = object({
+    cpu_request    = optional(string, "200m")
+    memory_request = optional(string, "512Mi")
+    cpu_limit      = optional(string)
+    memory_limit   = optional(string, "2Gi")
+  })
+  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted."
+  default     = {}
+  nullable    = false
+}
+
+variable "tempo_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents merged into the grafana-community/tempo chart values, after the values this module derives and the tempo destination's helm_values (later entries win)."
+  default     = []
+  nullable    = false
+}
+
+variable "thanos_image" {
+  type        = string
+  description = "Pinned Thanos image used by the Prometheus sidecar, Query, Store Gateway, and Compactor."
+  default     = "quay.io/thanos/thanos:v0.42.4"
+  nullable    = false
+
+  validation {
+    condition     = length(trimspace(var.thanos_image)) > 0
+    error_message = "thanos_image must not be empty."
+  }
+}
+
+variable "thanos_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents for the local Thanos chart, including query/store/compactor resources and placement (later entries win). Compactor must remain a singleton for its bucket."
+  default     = []
+  nullable    = false
+}
+
+variable "otlp_collector_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents for the OTLP collector that receives workload traces and metrics: resources, replicas, placement, processors (later entries win)."
+  default     = []
+  nullable    = false
 }
 
 variable "observability_namespace" {
@@ -1496,13 +1863,42 @@ variable "metrics_cloudwatch" {
 
 variable "metrics_prometheus" {
   type = object({
-    retention_days = optional(number)
-    storage_size   = optional(string)
-    endpoint       = optional(string)
+    retention_days     = optional(number)
+    storage_size       = optional(string)
+    storage_class      = optional(string)
+    endpoint           = optional(string)
+    s3_storage_enabled = optional(bool)
+    s3_bucket_name     = optional(string)
+    s3_retention_days  = optional(number)
   })
-  description = "Prometheus running in the cluster, with the remote-write receiver on and a PersistentVolume behind it. Set endpoint to point at a Prometheus you already run, and the module installs nothing and only remote-writes to it. Installing needs a working StorageClass, which on a Ravion cluster means ebs_csi_driver_enabled."
+  description = "In-cluster Prometheus: local retention (15 days), working volume (50Gi), and Thanos S3 storage (enabled, 365-day retention). Set endpoint to use an existing remote-write receiver and skip all managed Prometheus/Thanos resources. storage_class defaults to managed gp3 or the cluster default. Existing buckets must be dedicated, in the cluster region, and allow the generated Pod Identity roles; customer-managed KMS grants are not provisioned."
   default     = {}
   nullable    = false
+
+  validation {
+    condition     = var.metrics_prometheus.retention_days == null ? true : var.metrics_prometheus.retention_days >= 1 && floor(var.metrics_prometheus.retention_days) == var.metrics_prometheus.retention_days
+    error_message = "metrics_prometheus.retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = var.metrics_prometheus.s3_retention_days == null ? true : var.metrics_prometheus.s3_retention_days >= 1 && floor(var.metrics_prometheus.s3_retention_days) == var.metrics_prometheus.s3_retention_days
+    error_message = "metrics_prometheus.s3_retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.endpoint), "") == "" || can(regex("^https?://[^/]+", trimspace(var.metrics_prometheus.endpoint)))
+    error_message = "metrics_prometheus.endpoint must be an HTTP or HTTPS base URL."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.s3_bucket_name), "") == "" || can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", trimspace(var.metrics_prometheus.s3_bucket_name)))
+    error_message = "metrics_prometheus.s3_bucket_name must be a valid 3-63 character lowercase S3 bucket name, or null or blank to create one."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_prometheus.storage_size), "") == "" || can(regex("^[1-9][0-9]*(Mi|Gi|Ti)$", trimspace(var.metrics_prometheus.storage_size)))
+    error_message = "metrics_prometheus.storage_size must be a positive volume size such as 50Gi."
+  }
 }
 
 variable "metrics_grafana_cloud" {
@@ -1669,4 +2065,44 @@ variable "karpenter_interruption_queue_alarm_ok_actions" {
     condition     = length(var.karpenter_interruption_queue_alarm_ok_actions) <= 5 && alltrue([for arn in var.karpenter_interruption_queue_alarm_ok_actions : can(regex("^arn:", arn))])
     error_message = "Specify at most five action ARNs."
   }
+}
+
+################################################################################
+# Ravion-managed domains (optional)
+################################################################################
+
+variable "use_ravion_managed_domains" {
+  type        = bool
+  description = "Allocate a Ravion-managed wildcard domain for the cluster and serve its certificate from the selected shared ALB's existing HTTPS listener. Requires exactly one HTTPS-enabled ALB."
+  default     = false
+}
+
+variable "ravion_cluster_name" {
+  type        = string
+  description = "Free-form name leaf for the cluster's Ravion wildcard domain (becomes <name>-<hash>.<ravion-apex>). Defaults to the module instance given id, then to name."
+  default     = null
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the default leaf for the Ravion wildcard domain."
+  default     = null
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns this cluster's Ravion-managed certificate. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external/API-key runs. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*) the wildcard ACM cert is issued in. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_region" {
+  type        = string
+  description = "AWS region the cluster wildcard cert lives in. Defaults to the module region."
+  default     = null
 }

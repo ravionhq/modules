@@ -34,6 +34,13 @@ mock_provider "aws" {
   }
 
   override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
+  override_data {
     target = data.aws_partition.current
     values = {
       partition  = "aws"
@@ -50,8 +57,9 @@ mock_provider "aws" {
 }
 
 variables {
-  name         = "test-image"
-  parent_image = "ami-0123456789abcdef0"
+  name               = "test-image"
+  module_instance_id = "minst_test"
+  parent_image       = "ami-0123456789abcdef0"
   components = [
     {
       name = "provision"
@@ -69,6 +77,21 @@ variables {
 
 run "defaults" {
   command = plan
+
+  assert {
+    condition     = terraform_data.build_cleanup.input.module_instance_id == "minst_test" && terraform_data.build_cleanup.input.account_id == "123456789012"
+    error_message = "Destroy cleanup must capture the module and AWS account identity"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].tags.ModuleId == "minst_test"
+    error_message = "Managed components must carry the cleanup ownership tag"
+  }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].skip_destroy
+    error_message = "Document components must be retained for historical build recipes"
+  }
 
   assert {
     condition     = aws_imagebuilder_infrastructure_configuration.this.name == "test-image"
@@ -338,6 +361,11 @@ run "changed_document_is_a_new_component" {
     condition     = aws_imagebuilder_component.this["provision"].name != "test-image-provision-26a95f58"
     error_message = "A changed document must produce a differently named component"
   }
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].skip_destroy
+    error_message = "Replacement components must also retain versions referenced by build recipes"
+  }
 }
 
 run "changed_parameter_value_keeps_the_same_component" {
@@ -406,6 +434,11 @@ run "changed_component_version_is_a_new_component" {
 
 run "steps_become_a_component_document" {
   command = plan
+
+  assert {
+    condition     = aws_imagebuilder_component.this["provision"].skip_destroy
+    error_message = "Steps components must be retained for historical build recipes"
+  }
 
   variables {
     components = [
@@ -847,5 +880,88 @@ run "a_log_prefix_is_granted_and_written_under" {
   assert {
     condition     = one(one(aws_imagebuilder_infrastructure_configuration.this.logging).s3_logs).s3_key_prefix == "builds"
     error_message = "Image Builder must write under the prefix the policy grants"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Block public access for AMIs — unchanged unless set, then every region a
+# release lands in takes the chosen state
+# ------------------------------------------------------------------------------
+
+run "block_public_access_is_left_unchanged_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_ec2_image_block_public_access.this) == 0
+    error_message = "The module must not manage block public access for AMIs unless it is set"
+  }
+}
+
+run "block_public_access_unblocked_covers_every_release_region_once" {
+  command = plan
+
+  variables {
+    image_block_public_access = "unblocked"
+    distribution_regions      = ["us-east-1", "us-west-2", "us-east-2"]
+  }
+
+  assert {
+    condition     = toset(keys(aws_ec2_image_block_public_access.this)) == toset(["us-west-2", "us-east-1", "us-east-2"])
+    error_message = "The build region and each distribution region must be set once, got ${join(", ", keys(aws_ec2_image_block_public_access.this))}"
+  }
+
+  assert {
+    condition     = alltrue([for region, setting in aws_ec2_image_block_public_access.this : setting.state == "unblocked" && setting.region == region])
+    error_message = "Each region's setting must be unblocked, in that region"
+  }
+}
+
+run "block_public_access_block_new_sharing_turns_the_block_back_on" {
+  command = plan
+
+  variables {
+    image_block_public_access = "block-new-sharing"
+    distribution_regions      = ["us-east-1"]
+  }
+
+  assert {
+    condition     = alltrue([for region, setting in aws_ec2_image_block_public_access.this : setting.state == "block-new-sharing" && setting.region == region]) && length(aws_ec2_image_block_public_access.this) == 2
+    error_message = "The build region and each distribution region must block new sharing"
+  }
+}
+
+run "block_public_access_rejects_other_states" {
+  command = plan
+
+  variables {
+    image_block_public_access = "blocked"
+  }
+
+  expect_failures = [var.image_block_public_access]
+}
+
+# ------------------------------------------------------------------------------
+# Module instance id — output as given, for references that name this module
+# ------------------------------------------------------------------------------
+
+run "module_instance_id_is_output_as_given" {
+  command = plan
+
+  assert {
+    condition     = output.module_instance_id == "minst_test"
+    error_message = "module_instance_id must be output as given, got ${output.module_instance_id}"
+  }
+}
+
+run "module_instance_id_is_null_outside_ravion" {
+  command = plan
+
+  variables {
+    module_instance_id = null
+  }
+
+  assert {
+    condition     = output.module_instance_id == null
+    error_message = "module_instance_id must be null when no module instance is given"
   }
 }

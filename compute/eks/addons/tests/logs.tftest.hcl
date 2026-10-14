@@ -71,15 +71,17 @@ mock_provider "helm" {}
 mock_provider "ravion" {}
 
 # Both signals start empty so every run opts into exactly the providers it is
-# about. The defaults ([loki] and [amp]) have their own coverage in
+# about. Default S3 stores have their own coverage in
 # observability.tftest.hcl.
 variables {
-  cluster_name      = "test-cluster"
-  region            = "us-east-2"
-  karpenter_enabled = false
-  eso_enabled       = false
-  logs_providers    = []
-  metrics_providers = []
+  traces_destinations    = []
+  ebs_csi_driver_enabled = false
+  cluster_name           = "test-cluster"
+  region                 = "us-east-2"
+  karpenter_enabled      = false
+  eso_enabled            = false
+  logs_providers         = []
+  metrics_providers      = []
 }
 
 ################################################################################
@@ -368,6 +370,23 @@ run "alloy_attaches_the_agreed_label_set" {
   assert {
     condition     = strcontains(yamldecode(helm_release.alloy[0].values[0]).alloy.configMap.content, "url = \"http://ravion-loki.ravion-operator.svc.cluster.local:3100/loki/api/v1/push\"")
     error_message = "Alloy must push to the in-cluster Loki"
+  }
+}
+
+# A node Alloy cannot schedule onto is a node whose logs silently never reach
+# Loki. The system node group may be tainted CriticalAddonsOnly to keep it for
+# Karpenter, CoreDNS and Operator coordinators, and those are exactly the logs
+# needed when the cluster misbehaves.
+run "alloy_runs_on_tainted_nodes" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.alloy[0].values[0]).controller.tolerations == [{ operator = "Exists" }]
+    error_message = "Alloy must tolerate every taint so it collects logs from every node"
   }
 }
 

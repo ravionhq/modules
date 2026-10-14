@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.3.2
-  description: Retain access logs for 365 days by default to meet SOC 2 log retention requirements.
+  version: 1.5.1
+  description: Allow all HTTP methods by default so form submissions and API writes reach your app without changing caching.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -341,9 +341,9 @@ module:
     - id: allowed_methods
       label: Allowed methods
       type: string
-      description: HTTP methods CloudFront forwards to the origin. Use all methods for apps that accept form posts or API writes.
+      description: Methods forwarded to the origin; only GET and HEAD responses are cached.
       required: true
-      default: read
+      default: all
       values:
         - label: All methods
           description: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE
@@ -392,18 +392,18 @@ module:
       type: string
       description: Controls what CloudFront forwards to the origin. Use None for private S3 origins so CloudFront can sign OAC requests without forwarding the viewer Host header.
       required: true
-      default: 216adef6-5c7f-47e4-b989-5492eafa07d3
+      default: 33f36d7e-f396-46d9-90e0-52428a34d9dc
       values:
         - label: None
           description: Forward only what the cache policy includes. Recommended for private S3 origins with OAC.
           value: none
-        - label: AllViewer (recommended)
+        - label: AllViewer
           description: Forwards the Host header, cookies, and query strings so load balancer routing and app sessions work.
           value: 216adef6-5c7f-47e4-b989-5492eafa07d3
         - label: AllViewerExceptHostHeader
           description: Forwards everything except Host. The origin sees its own domain, which breaks host-based listener rules.
           value: b689b0a8-53d0-40ab-baf2-68738e2966ac
-        - label: AllViewerAndCloudFrontHeaders-2022-06
+        - label: AllViewerAndCloudFrontHeaders-2022-06 (recommended)
           description: AllViewer plus CloudFront headers such as viewer country and device type.
           value: 33f36d7e-f396-46d9-90e0-52428a34d9dc
         - label: CORS-CustomOrigin
@@ -828,7 +828,7 @@ module:
 
     ## How load balancer connections work
 
-    ECS and standalone ALBs route requests using listener rules that match the request's host and path. CloudFront preserves that behavior: the default origin request policy (AWS managed AllViewer) forwards the viewer's Host header to the load balancer, so the same listener rules keep routing each request to the right service.
+    ECS and standalone ALBs route requests using listener rules that match the request's host and path. CloudFront preserves that behavior: the default origin request policy (AWS managed AllViewerAndCloudFrontHeaders-2022-06) forwards the viewer's Host header to the load balancer, so the same listener rules keep routing each request to the right service. It also forwards CloudFront-Viewer-Country and other CloudFront headers.
 
     That means the origin is really the load balancer, not an individual service:
 
@@ -905,12 +905,16 @@ module:
     | Setting | Default | Why |
     | --- | --- | --- |
     | Cache policy | UseOriginCacheControlHeaders-QueryStrings | Caches only responses where the app sends Cache-Control headers and includes query strings in the cache key |
-    | Origin request policy | AllViewer | Forwards Host, cookies, and query strings so app sessions and ALB routing work |
+    | Origin request policy | AllViewerAndCloudFrontHeaders-2022-06 | Forwards Host, cookies, query strings, and CloudFront headers including viewer country |
     | Require signed URLs | false | Allows public viewer access unless enabled with trusted key groups |
-    | Allowed methods | Read only | Only GET and HEAD reach the origin; choose Read and OPTIONS or All methods to accept form posts and API writes |
+    | Allowed methods | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |
     | Viewer protocol policy | Redirect to HTTPS | Viewers are upgraded to HTTPS automatically |
 
-    With the recommended cache policy, nothing is cached until the app opts in by returning Cache-Control headers such as public, max-age=300. Responses without caching headers always go to the origin. The cache key includes query strings, and the origin request policy controls what else reaches the origin, so keep AllViewer selected when load balancer listener rules depend on the viewer Host header. Choose CachingDisabled to turn off edge caching entirely, or CachingOptimized to cache aggressively regardless of origin headers. Pick Custom policy ID to use a cache policy you created in your own account.
+    With the recommended cache policy, nothing is cached until the app opts in by returning Cache-Control headers such as public, max-age=300. Responses without caching headers always go to the origin. The cache key includes query strings, and the origin request policy controls what else reaches the origin. Both AllViewer and AllViewerAndCloudFrontHeaders-2022-06 preserve the viewer Host header for load balancer listener rules. Choose CachingDisabled to turn off edge caching entirely, or CachingOptimized to cache aggressively regardless of origin headers. Pick Custom policy ID to use a cache policy you created in your own account.
+
+    Forwarding CloudFront-Viewer-Country does not add it to the cache key. If your app returns country-specific content, such as geo pricing, choose CachingDisabled or a custom cache policy that includes CloudFront-Viewer-Country to avoid serving one country's response to another.
+
+    New instances use AllViewerAndCloudFrontHeaders-2022-06 starting with version 1.5.0. Existing instances keep their saved origin request policy; select this policy explicitly to forward viewer country. For private S3 origins with OAC, continue to use None instead.
 
     Response headers policy is optional and adds headers such as the SecurityHeadersPolicy set or CORS headers to every response.
 
@@ -971,9 +975,9 @@ module:
     | Additional origins | No | [] | Extra origins with optional custom headers for path-based cache behaviors |
     | Redirect rules | No | [] | Ordered URL-pattern redirects returned before contacting an origin |
     | Viewer protocol policy | Yes | Redirect to HTTPS | How viewers connect to CloudFront |
-    | Allowed methods | Yes | Read only | GET and HEAD only; switch to Read and OPTIONS or All methods for apps that write |
+    | Allowed methods | Yes | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |
     | Cache policy | Yes | UseOriginCacheControlHeaders-QueryStrings | AWS managed policies by name, or a custom policy ID |
-    | Origin request policy | Yes | AllViewer | AWS managed policies by name, or a custom policy ID |
+    | Origin request policy | Yes | AllViewerAndCloudFrontHeaders-2022-06 | AWS managed policies by name, or a custom policy ID |
     | Require signed URLs | No | false | Requires signed URLs or signed cookies on the default behavior |
     | Trusted key group IDs | When signed URLs are enabled | [] | Existing CloudFront key groups trusted for signatures |
     | Response headers policy | No | None | Managed security headers or CORS policies, or a custom policy ID |
@@ -989,7 +993,7 @@ module:
 
     - The primary origin is always the load balancer or domain you select, with the fixed origin ID primary. ECS and ALB references discover an existing load balancer's DNS name and ARN; they do not create per-service origins, because listener rules already fan traffic out behind one origin.
     - Caching is disabled by default. A wrong edge cache on dynamic responses is worse than no cache, so caching is an explicit per-path opt-in.
-    - The AllViewer origin request policy is the default so Host-based listener rules, cookies, and query strings keep working unchanged behind CloudFront.
+    - The AllViewerAndCloudFrontHeaders-2022-06 origin request policy is the default so apps receive viewer country while Host-based listener rules, cookies, and query strings keep working behind CloudFront.
     - Redirects use one managed CloudFront Function shared by the module's distributions and attached to every cache behavior.
     - One module instance manages one distribution. Create additional instances when domains need different edge configuration; they can share the same origin.
     - The certificate is referenced from an ACM Certificate module instance so the us-east-1 requirement is explicit and reusable.

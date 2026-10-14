@@ -76,7 +76,7 @@ output "event_source_mapping_ids" {
 output "alias_arns" {
   description = "Map of alias names to alias ARNs."
   value = {
-    for alias_name, alias in aws_lambda_alias.this : alias_name => alias.arn
+    for alias_name, alias in merge(aws_lambda_alias.this, aws_lambda_alias.live) : alias_name => alias.arn
   }
 }
 

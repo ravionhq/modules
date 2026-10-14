@@ -6,6 +6,7 @@ resource "aws_lambda_function_url" "this" {
   count = var.function_url_enabled ? 1 : 0
 
   function_name      = aws_lambda_function.this.function_name
+  qualifier          = aws_lambda_alias.live["live"].name
   authorization_type = var.function_url_auth_type
   invoke_mode        = var.function_url_invoke_mode
 

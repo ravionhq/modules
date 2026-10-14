@@ -15,10 +15,16 @@ resource "aws_imagebuilder_component" "this" {
   version     = var.component_version
   data        = each.value.data
 
-  tags = local.tags
+  # Successful build recipes retain references to historical components.
+  skip_destroy = true
 
-  # A changed component exists before the old one is deleted, so the next
-  # deploy always has a component to build with.
+  tags = merge(local.tags, var.module_instance_id == null ? {} : {
+    ModuleId  = var.module_instance_id
+    Module    = "compute/ami"
+    ManagedBy = "terraform"
+  })
+
+  # Create the replacement before retiring the old component from state.
   lifecycle {
     create_before_destroy = true
   }

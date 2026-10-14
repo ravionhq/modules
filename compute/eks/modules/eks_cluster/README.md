@@ -35,7 +35,7 @@ Prefer the [`compute/eks`](../..) composite. This module is nested under
 
 | Name               | Version    |
 | ------------------ | ---------- |
-| opentofu/terraform | >= 1.10.0  |
+| opentofu/terraform | >= 1.12.0  |
 | aws                | >= 6.0     |
 | tls                | >= 4.0     |
 

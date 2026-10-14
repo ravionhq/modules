@@ -13,7 +13,7 @@
 - id: secrets
   label: Runtime secrets
   type: array
-  description: Secrets injected into the ECS task at runtime as an array of {name, value_from} objects. value_from can be an SSM parameter or Secrets Manager ARN.
+  description: Secrets injected into the ECS task at runtime, as an array of objects with `name` and `value_from` keys (snake_case, not `valueFrom`). value_from is an SSM Parameter Store or Secrets Manager ARN.
   placeholder: |-
     - name: DATABASE_URL
-      valueFrom: arn:aws:ssm:...
+      value_from: arn:aws:ssm:us-east-1:123456789012:parameter/my-app/database-url

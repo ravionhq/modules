@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ebs-storage
+description: Default gp3 StorageClass for the EBS CSI driver, and online expansion of StatefulSet volumes when a volumeClaimTemplate's storage request grows.
+type: application
+version: 0.1.0

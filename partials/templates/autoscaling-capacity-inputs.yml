@@ -1,14 +1,14 @@
 - $merge:
-    - id: min_capacity
-      label: Minimum capacity
+    - id: min_tasks
+      label: Minimum tasks
       type: number
       min: 0
       default: 1
-    - $with.min_capacity_overrides
+    - $with.min_overrides
 - $merge:
-    - id: max_capacity
-      label: Maximum capacity
+    - id: max_tasks
+      label: Maximum tasks
       type: number
       min: 1
       default: 3
-    - $with.max_capacity_overrides
+    - $with.max_overrides

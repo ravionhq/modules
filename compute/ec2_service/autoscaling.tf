@@ -6,6 +6,7 @@ module "autoscaling" {
   source = "../autoscaling"
 
   name                = var.name
+  name_prefix         = var.autoscaling_group_generated_name_enabled ? "${var.name}-" : null
   vpc_zone_identifier = var.subnet_ids
 
   # Capacity

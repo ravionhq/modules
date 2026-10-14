@@ -4,12 +4,21 @@
 # Preserve the live autoscaler-owned desired size, clamping only when it falls
 # outside the requested bounds. Ignoring desired_size would send an invalid
 # scaling_config when min_size rises above it or max_size drops below it.
+#
+# Replaced blue/green. AWS can change several node group settings only by
+# recreating the group (instance types, capacity type, AMI type, subnets, node
+# role, moving onto a custom launch template). With a fixed name the old group
+# has to be deleted before its replacement can exist, which leaves the cluster
+# with no nodes from this group while one drains and the other boots. A
+# generated name lets the replacement come up first; the old group is then
+# drained and deleted onto it. The ravion.com/node-group tag carries the
+# logical name so the scaling lookup can find a group whose name is generated.
 ################################################################################
 
 resource "aws_eks_node_group" "this" {
-  cluster_name    = var.cluster_name
-  node_group_name = var.name
-  node_role_arn   = local.node_role_arn
+  cluster_name           = var.cluster_name
+  node_group_name_prefix = "${var.name}-"
+  node_role_arn          = local.node_role_arn
 
   subnet_ids     = var.subnet_ids
   capacity_type  = var.capacity_type
@@ -55,9 +64,12 @@ resource "aws_eks_node_group" "this" {
   tags = merge(local.tags, {
     Name                                        = "${var.cluster_name}-${var.name}"
     "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+    "ravion.com/node-group"                     = var.name
   })
 
   lifecycle {
+    create_before_destroy = true
+
     precondition {
       condition     = var.min_size <= var.max_size
       error_message = "min_size must not exceed max_size."

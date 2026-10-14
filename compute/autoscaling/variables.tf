@@ -4,11 +4,22 @@
 
 variable "name" {
   type        = string
-  description = "Name prefix for all resources created by this module."
+  description = "Name for resources created by this module, including the Auto Scaling Group unless name_prefix is set."
 
   validation {
     condition     = length(var.name) > 0 && length(var.name) <= 255
     error_message = "The name must be between 1 and 255 characters."
+  }
+}
+
+variable "name_prefix" {
+  type        = string
+  description = "Optional prefix for a generated Auto Scaling Group name. Use this instead of a fixed group name to allow create-before-destroy replacement."
+  default     = null
+
+  validation {
+    condition     = var.name_prefix == null || (length(var.name_prefix) > 0 && length(var.name_prefix) <= 200)
+    error_message = "The name_prefix must be null or between 1 and 200 characters to leave room for the generated suffix."
   }
 }
 

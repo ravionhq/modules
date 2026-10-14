@@ -1,10 +1,10 @@
 definition:
   type: rvn-aws-ami
   name: AMI
-  description: Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI from a parent image and ordered components, copies it to every region, publishes it when asked, and retires older images.
+  description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.1.0
-  description: First release. Creates the EC2 Image Builder infrastructure an AMI is baked on. Each deploy builds an AMI in the module's region, copies it to every additional region, tags it, publishes it when asked, and retires older images past the public and private counts each region keeps.
+  version: 0.3.1
+  description: Retain components during updates and clean up retained build resources when the stack is destroyed.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -883,6 +883,18 @@ module:
       placeholder: Select a region
       type: string_array
       values: $values:aws/regions
+    - collapsible: true
+      description: AWS's block on public AMI sharing in the build region and every additional region. It is an account setting and covers every AMI the account owns in those regions. Unset, the module leaves it unchanged, and clearing it keeps the last state.
+      id: image_block_public_access
+      label: Block public access for AMIs
+      type: string
+      values:
+        - description: Allows public sharing, so a deploy with Publish on can grant launch permission all.
+          label: unblocked
+          value: unblocked
+        - description: Blocks new public sharing. Images that are already public stay public.
+          label: block-new-sharing
+          value: block-new-sharing
     - id: section_retention
       label: Retention
       type: section
@@ -919,11 +931,14 @@ module:
         ami_tags: << module.input.ami_tags || {} >>
         components: << module.input.components || [] >>
         description: << module.input.description || nil >>
+        distribution_regions: << module.input.distribution_regions || [] >>
+        image_block_public_access: << module.input.image_block_public_access || nil >>
         instance_managed_policy_arns: << module.input.instance_managed_policy_arns || [] >>
         instance_policy_json: << module.input.instance_policy_json || nil >>
         instance_types: << module.input.instance_types >>
         log_bucket: << module.input.log_bucket || nil >>
         log_prefix: << module.input.log_prefix >>
+        module_instance_id: << module.id >>
         name: << module.input.name >>
         parent_image: '<< module.input.parent_image_source == "image" ? module.input.parent_image : nil >>'
         parent_image_lookup: >-
@@ -1035,6 +1050,14 @@ module:
 
     Image Builder components are immutable. This module names each by a hash of its content, so a changed document is a new component beside the old one, and the next deploy builds with it. There is no version to bump.
 
+    Components created by this module remain in AWS when replaced or removed, because earlier build recipes can still reference them. They leave Terraform state but are not deleted. Image retention settings do not clean up components.
+
+    Stack destruction cleans up this module's tagged Image Builder build records, recipes, and retained components in the build region. It does not delete EC2 AMIs, snapshots, or running instances. Stop deployments first; active builds, remaining dependencies, or missing permissions fail the destroy so you can resolve the error and retry. Resources in previous build regions or without the module's ownership tags need manual cleanup. Apply this version once before destroying an existing stack to install the cleanup hook, and keep the module configuration present through destruction.
+
+    The destroy runner needs Bash, jq, and AWS CLI v2 with support for listing deprecated images. The default apply/destroy permissions cover cleanup. Custom policies must also allow Image Builder's `ListImages`, `ListImageBuildVersions`, `ListImageRecipes`, `ListComponents`, `ListComponentBuildVersions`, `DeleteImage`, `DeleteImageRecipe`, and `DeleteComponent` actions. CLI credentials must use the same AWS account as Terraform. The component ownership tags `ModuleId`, `Module`, and `ManagedBy` are reserved; do not copy them to external components.
+
+    When upgrading an existing stack, apply the retention setting with component content unchanged before making a change that replaces a component. The provider reads `skip_destroy` from the old resource's state during deletion. An already failed replacement can leave a deposed component with the old setting; upgrading the configuration alone does not repair that state. Inspect and back up the state before any separately approved recovery, without deleting successful build recipes or images.
+
     ## Deploying
 
     Start a deploy from a pipeline with a `deploy` step, from the dashboard, or with `ravion deploy create`. A build commonly takes 20-60 minutes, and the deploy finishes once every copy is available.
@@ -1069,7 +1092,7 @@ module:
 
     ## Public images
 
-    New AWS accounts block public AMI sharing in every region, and a deploy with Publish on fails in a region that still blocks it. Turning the block off is a change to the account rather than to one image: it covers every image the account owns in that region. Turn it off per region with `aws ec2 disable-image-block-public-access --region <region>`.
+    New AWS accounts block public AMI sharing in every region, and a deploy with Publish on fails in a region that still blocks it. Turning the block off is a change to the account rather than to one image: it covers every image the account owns in that region. Set Block public access for AMIs to `unblocked` to turn it off in the build region and every additional region, or turn it off per region with `aws ec2 disable-image-block-public-access --region <region>`. Set it to `block-new-sharing` to turn the block back on. Clearing the setting or deleting the module leaves each region's block as it last was.
 
     A public image cannot be backed by an encrypted snapshot. Publish images built on an unencrypted parent image, in regions where EBS encryption by default is off.
 

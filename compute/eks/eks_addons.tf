@@ -1,5 +1,5 @@
 ################################################################################
-# Post-compute Add-ons (CoreDNS)
+# Post-compute Add-ons (CoreDNS and Metrics Server)
 #
 # Must run after the system node group exists — Deployment-kind add-ons deadlock
 # without schedulable compute. Optional add-ons (EBS CSI, Container Insights,
@@ -13,8 +13,11 @@ module "addons" {
 
   cluster_name = module.cluster.cluster_name
 
-  coredns_addon_version              = var.coredns_addon_version
-  coredns_addon_configuration_values = local.coredns_addon_configuration_values
+  coredns_addon_version                     = var.coredns_addon_version
+  coredns_addon_configuration_values        = local.coredns_addon_configuration_values
+  metrics_server_enabled                    = var.metrics_server_enabled
+  metrics_server_addon_version              = var.metrics_server_addon_version
+  metrics_server_addon_configuration_values = var.metrics_server_addon_configuration_values
 
   tags = local.tags
 }

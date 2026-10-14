@@ -8,7 +8,7 @@ resource "aws_lambda_function" "this" {
   role          = local.lambda_role_arn
 
   package_type = var.package_type
-  publish      = var.version_publishing_enabled
+  publish      = var.version_publishing_enabled || length(local.aliases) > 0
 
   architectures                  = [var.architecture]
   memory_size                    = var.memory_size

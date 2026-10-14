@@ -46,6 +46,11 @@ output "https_listener_arn" {
   value       = local.create_https_listener ? aws_lb_listener.https[0].arn : null
 }
 
+output "https_listener_certificate_arn" {
+  description = "The default certificate ARN on the HTTPS listener (null if disabled)."
+  value       = local.create_https_listener ? aws_lb_listener.https[0].certificate_arn : null
+}
+
 ################################################################################
 # Security Group
 ################################################################################
@@ -65,6 +70,11 @@ output "security_group_arn" {
   value       = module.security_group.security_group_arn
 }
 
+output "security_group_ingress_rule_ids" {
+  description = "Map of the ALB security group's ingress rule keys to rule IDs (listener ports x allowed CIDR/IPv6/security-group sources)."
+  value       = module.security_group.ingress_rule_ids
+}
+
 ################################################################################
 # Access Logs
 ################################################################################
@@ -77,6 +87,15 @@ output "access_logs_bucket_name" {
 output "access_logs_bucket_arn" {
   description = "The ARN of the S3 bucket for access logs (null if access logs disabled or using existing bucket)."
   value       = local.create_access_logs_bucket ? aws_s3_bucket.access_logs[0].arn : null
+}
+
+################################################################################
+# WAF
+################################################################################
+
+output "web_acl_arn" {
+  description = "The ARN of the WAFv2 Web ACL associated with the ALB (null when no WAF association is enabled)."
+  value       = var.waf_association_enabled ? aws_wafv2_web_acl_association.this[0].web_acl_arn : null
 }
 
 ################################################################################
@@ -104,4 +123,9 @@ output "aws_account_id" {
 output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
+}
+
+output "additional_certificate_arns" {
+  description = "Certificate ARNs attached to the HTTPS listener via SNI (certificate_arns[1..]). Empty when at most one certificate is configured."
+  value       = [for c in aws_lb_listener_certificate.additional : c.certificate_arn]
 }

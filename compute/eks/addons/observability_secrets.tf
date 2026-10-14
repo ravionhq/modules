@@ -41,6 +41,8 @@ locals {
   observability_external_secrets = concat(
     local.observability_collector_secrets,
     local.ravion_operator_proxy_credential_secrets,
+    local.grafana_auth_secrets,
+    local.grafana_env_secrets,
   )
 
   observability_secrets_enabled = length(local.observability_external_secrets) > 0
@@ -52,6 +54,8 @@ resource "helm_release" "observability_secrets" {
   name      = "ravion-observability-secrets"
   namespace = local.observability_namespace
   chart     = "${path.module}/charts/observability-secrets"
+  # Pinned so a Chart.yaml bump shows in the plan (see lb_controller.tf).
+  version = yamldecode(file("${path.module}/charts/observability-secrets/Chart.yaml")).version
 
   create_namespace = true
   upgrade_install  = true
@@ -74,7 +78,7 @@ resource "helm_release" "observability_secrets" {
   lifecycle {
     precondition {
       condition     = var.eso_enabled && var.eso_cluster_secret_stores_creation_enabled
-      error_message = "A vendor observability provider was selected with a secret ARN, but the External Secrets Operator is off (eso_enabled / eso_cluster_secret_stores_creation_enabled). Vendor credentials are materialized in-cluster by ESO and are never passed as Helm values, so the operator and its ClusterSecretStore are a hard requirement: turn External Secrets on, or drop the vendor provider."
+      error_message = "A secret ARN was given (a vendor observability provider's token, a Grafana sign-in provider's client secret, or one of grafana_secrets), but the External Secrets Operator is off (eso_enabled / eso_cluster_secret_stores_creation_enabled). These secrets are materialized in-cluster by ESO and are never passed as Helm values, so the operator and its ClusterSecretStore are a hard requirement: turn External Secrets on, or drop the provider."
     }
   }
 }

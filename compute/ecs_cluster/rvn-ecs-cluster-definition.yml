@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 1.1.0
-  description: Add a Compliance section with a default log retention that ECS services inherit and CloudWatch alarms enabled by default for the public and private Application Load Balancers, and document that Container Insights is enabled by default for SOC 2 compliance.
+  version: 2.2.0
+  description: "Add opt-in Ravion-managed domains: a shared wildcard certificate and DNS for the cluster, served as the default certificate on the selected ALB HTTPS listener while every BYO certificate stays attached via SNI."
 module:
   inputs:
     - id: network
@@ -104,6 +104,25 @@ module:
           value: 3653
       min: 0
       type: number
+    - id: section_managed_domains
+      label: Managed domains
+      type: section
+    - default: false
+      description: "On: add domains on each service; Ravion manages certificates and listener rules. Off: attach certificates here and configure listener rules on each service. Requires one HTTPS-enabled ALB when on."
+      id: use_ravion_managed_domains
+      label: Ravion-managed domains
+      type: boolean
+    - description: Base for service addresses; uses the cluster module ID when empty.
+      id: ravion_cluster_name
+      label: Cluster domain
+      patterns:
+        - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+      required: false
+      show_when:
+        use_ravion_managed_domains: true
+      suffix: ".<< platform.apex >>"
+      type: string
     - id: section_capacity
       label: Capacity providers
       type: section
@@ -131,18 +150,22 @@ module:
         ec2_instance_type:
           not: ""
       type: section
-    - description: Minimum EC2 instances in the Auto Scaling Group. To speed up deployments and autoscaling, set this high enough to keep spare capacity for all ECS services using this cluster. As a starting point, use about 2x the total desired task instances across those services.
-      id: ec2_min_size
-      label: Min instances
+    - description: Minimum number of EC2 host instances in the Auto Scaling Group (not ECS tasks). To speed up deployments and autoscaling, keep enough spare instance capacity for all ECS services on this cluster; as a starting point, size for about 2x the total desired tasks across those services.
+      id: ec2_min_instances
+      moved_from:
+        - ec2_min_size
+      label: Minimum EC2 instances
       min: 0
       placeholder: "0"
       show_when:
         ec2_instance_type:
           not: ""
       type: number
-    - description: Maximum EC2 instances in the Auto Scaling Group. Must be high enough to accommodate 2x the total max task instances across all ECS services using this cluster, otherwise deployments can fail.
-      id: ec2_max_size
-      label: Max instances
+    - description: Maximum number of EC2 host instances in the Auto Scaling Group (not ECS tasks). Must be large enough to hold 2x the total maximum tasks across all ECS services on this cluster, otherwise deployments can fail.
+      id: ec2_max_instances
+      moved_from:
+        - ec2_max_size
+      label: Maximum EC2 instances
       min: 1
       placeholder: "10"
       show_when:
@@ -298,6 +321,7 @@ module:
         show_when:
           public_alb_enabled: true
           public_alb_https_enabled: true
+          use_ravion_managed_domains: false
     - collapsible: true
       description: SSL policy for public ALB HTTPS.
       id: public_alb_ssl_policy
@@ -368,6 +392,7 @@ module:
         show_when:
           private_alb_enabled: true
           private_alb_https_enabled: true
+          use_ravion_managed_domains: false
     - collapsible: true
       description: SSL policy for private ALB HTTPS.
       id: private_alb_ssl_policy
@@ -682,8 +707,8 @@ module:
 
     | Field                           | Description                                             |
     | ------------------------------- | ------------------------------------------------------- |
-    | Minimum instances               | Keep enough EC2 capacity for all ECS services; start around 2x the total desired task instances |
-    | Maximum instances               | Must fit 2x the total max task instances across all ECS services, or deployments can fail       |
+    | Minimum EC2 host instances      | Keep enough spare instance capacity for all ECS services; start around 2x the total desired tasks |
+    | Maximum EC2 host instances      | Must fit 2x the total maximum tasks across all ECS services, or deployments can fail             |
     | Root volume size                | Root EBS volume size for ECS instances                  |
     | Additional security groups      | Extra security groups attached to ECS instances         |
     | Spot instances                  | Use Spot instances in the EC2 Auto Scaling Group        |
@@ -741,8 +766,8 @@ module:
         ec2_managed_scaling_enabled: << module.input.ec2_managed_scaling_enabled >>
         ec2_managed_scaling_target_capacity: << module.input.ec2_managed_scaling_target_capacity >>
         ec2_managed_termination_protection_enabled: << module.input.ec2_managed_termination_protection_enabled >>
-        ec2_max_size: << module.input.ec2_max_size >>
-        ec2_min_size: << module.input.ec2_min_size >>
+        ec2_max_instances: << module.input.ec2_max_instances >>
+        ec2_min_instances: << module.input.ec2_min_instances >>
         ec2_root_volume_size: << module.input.ec2_root_volume_size >>
         ec2_root_volume_type: << module.input.ec2_root_volume_type >>
         ec2_security_group_ids: << module.input.ec2_security_group_ids >>
@@ -782,7 +807,7 @@ module:
         public_alb_https_enabled: << module.input.public_alb_https_enabled >>
         public_alb_idle_timeout: << module.input.public_alb_idle_timeout >>
         public_alb_ssl_policy: << module.input.public_alb_ssl_policy >>
-        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn >>
+        public_alb_web_acl_arn: << module.input.public_alb_web_acl_arn || nil >>
         public_nlb_access_logs_bucket_arn: << module.input.public_nlb_access_logs_bucket_arn >>
         public_nlb_elastic_ip_allocation_ids: << module.input.public_nlb_elastic_ip_allocation_ids >>
         public_nlb_access_logs_enabled: << module.input.public_nlb_access_logs_enabled >>
@@ -791,6 +816,10 @@ module:
         public_nlb_security_group_ids: << module.input.public_nlb_additional_security_group_ids >>
         public_subnet_ids: << module.input.public_subnet_ids || [] >>
         region: << module.input.aws_region >>
+        use_ravion_managed_domains: << module.input.use_ravion_managed_domains >>
+        ravion_cluster_name: << module.input.ravion_cluster_name >>
+        ravion_aws_account_id: << module.input.aws_account_id >>
+        ravion_aws_region: << module.input.aws_region >>
         tags:
           $include: ../stack/ravion-tags.yml
         vpc_id: << module.input.vpc_id >>

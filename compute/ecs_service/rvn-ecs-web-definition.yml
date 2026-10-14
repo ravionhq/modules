@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 1.6.0
-  description: Add a Compliance section with log retention inherited from the ECS cluster and CloudWatch alarms enabled by default for CPU, memory, running tasks, and load balancer target health, and document that image scanning on push is enabled by default for SOC 2 compliance.
+  version: 2.3.0
+  description: "Use custom domains instead of the default Ravion address, with the default as a fallback."
 module:
   inputs:
     - id: section_cluster
@@ -17,6 +17,47 @@ module:
       mapped_inputs:
         - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
         - $include: ../../partials/inputs/ecs-service-cluster-alb-mapped-inputs.yml
+        - id: ravion_managed_domains_enabled
+          label: Ravion-managed domains
+          type: boolean
+          description: "On: Ravion manages service certificates and listener rules. Off: attach certificates on the cluster and configure listener rules here."
+          collapsible: true
+          default: << ref.stack.output.ravion_managed_domains_enabled || false >>
+        - id: cluster_parent_fqdn
+          label: Cluster domain
+          type: string
+          description: Base for the service's Ravion address.
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.ravion_cluster_domain_fqdn>>
+        - id: public_alb_dns_name
+          immutable: true
+          label: Public ALB DNS name
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.public_alb_dns_name>>
+        - id: public_alb_zone_id
+          immutable: true
+          label: Public ALB hosted zone ID
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.public_alb_zone_id>>
+        - id: private_alb_dns_name
+          immutable: true
+          label: Private ALB DNS name
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.private_alb_dns_name>>
+        - id: private_alb_zone_id
+          immutable: true
+          label: Private ALB hosted zone ID
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.private_alb_zone_id>>
         - default: <<ref.stack.output.public_alb_arn_suffix>>
           id: public_alb_arn_suffix
           immutable: true
@@ -47,6 +88,32 @@ module:
       description: Expose this service through the public ALB. Turn off to use the private ALB.
       default: true
     - $include: ../../partials/inputs/private-subnet-placement.yml
+    - id: section_domains
+      label: Domains
+      show_when:
+        ravion_managed_domains_enabled: true
+      type: section
+    - id: ravion_domain_name
+      label: Default Ravion domain
+      description: Used only when no custom domains are set.
+      type: string
+      default: << module.given_id >>
+      suffix: ".<< module.input.cluster_parent_fqdn >>"
+      required: false
+      patterns:
+        - message: Use 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+      show_when:
+        ravion_managed_domains_enabled: true
+    - add_button_label: Add custom domain
+      description: Replaces the default Ravion domain; Ravion manages certificates and listener rules. Add the provided DNS records at your DNS provider.
+      id: domains
+      label: Custom domains
+      max_length: 5
+      placeholder: app.example.com
+      show_when:
+        ravion_managed_domains_enabled: true
+      type: string_array
     - $include: ../../partials/inputs/ecs-service-build-inputs.yml
     - id: section_deployment
       label: Deployment
@@ -304,9 +371,22 @@ module:
         target_group_stickiness_type: app_cookie
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
-        field_overrides: {}
+        # Managed mode discards caller listener rules (the module creates
+        # host-header rules for the Ravion and custom domains).
+        field_overrides:
+          show_when:
+            ravion_managed_domains_enabled: false
     - $include: ../../partials/inputs/ecs-service-capacity-inputs.yml
     - $include: ../../partials/inputs/ecs-service-autoscaling-inputs.yml
+    - id: request_count_target_value
+      label: Requests per task target
+      type: number
+      description: Target average number of load balancer requests per task per minute (ALBRequestCountPerTarget). Applies only with the Rolling deployment strategy, because blue/green, linear, and canary deployments move production traffic between target groups. Leave blank to disable request-count autoscaling.
+      collapsible: true
+      min: 1
+      required: false
+      show_when:
+        auto_scaling_enabled: true
     - $template: ../../partials/templates/ecs-service-runtime-env-inputs.yml
       with:
         environment_variables_description: Runtime environment variables passed to the app container. PORT is added automatically from the container port setting.
@@ -325,6 +405,8 @@ module:
     pipelines:
       defaults:
         input:
+          $merge:
+            - ../../partials/stack/terraform-runner-permissions-pipeline-inputs.yml
           aws_account_id: "<< module.input.execution_environment_id ? null : module.input.aws_account_id >>"
           aws_region: "<< module.input.execution_environment_id ? null : module.input.aws_region >>"
           base_path: compute/ecs_service
@@ -335,7 +417,14 @@ module:
           stack_id: <<stack.id>>
           terraform_variables:
             $merge:
-              - ../../partials/stack/ecs-service-common-terraform-variables.yml
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: >-
+                    ...<< module.input.request_count_target_value != nil && module.input.deployment_strategy == "rolling" ?
+                    [{policy_name: "request_count", predefined_metric: "ALBRequestCountPerTarget", target_value: module.input.request_count_target_value,
+                    scale_in_cooldown: module.input.scale_in_cooldown, scale_out_cooldown:
+                    module.input.scale_out_cooldown, scale_in_enabled: module.input.scale_in_enabled}] : []
+                    >>
               - ../../partials/stack/ecs-service-compliance-terraform-variables.yml
               - cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
                 cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
@@ -379,6 +468,20 @@ module:
                 load_balancer_security_group_id: >-
                   << module.input.public_alb_routing_enabled ? module.input.public_alb_security_group_id :
                   module.input.private_alb_security_group_id >>
+                cluster_parent_fqdn: << module.input.cluster_parent_fqdn >>
+                ravion_domain_name: << module.input.ravion_domain_name >>
+                domains: << module.input.domains || [] >>
+                cluster_https_listener_arn: >-
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_https_listener_arn :
+                  module.input.private_alb_https_listener_arn >>
+                cluster_alb_dns_name: >-
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_dns_name :
+                  module.input.private_alb_dns_name >>
+                cluster_alb_zone_id: >-
+                  << module.input.public_alb_routing_enabled ? module.input.public_alb_zone_id :
+                  module.input.private_alb_zone_id >>
+                ravion_aws_account_id: << module.input.aws_account_id >>
+                ravion_aws_region: << module.input.aws_region >>
           tool: opentofu
           tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
         variant: standard
@@ -464,7 +567,7 @@ module:
         "protocol": "tcp"}], "readonly_root_filesystem": false, "repository_credentials":
         (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
         module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
-        "stop_timeout": 30}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
         "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
         value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
         module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
@@ -501,8 +604,13 @@ module:
         "container_port": (module.input.container_port), "protocol": "tcp"}], "readonly_root_filesystem":
         false, "repository_credentials": (module.input.image_registry_credentials_secret_arn ?
         {credentials_parameter: module.input.image_registry_credentials_secret_arn} : nil), "secrets":
-        (module.input.secrets), "stop_timeout": 30}]) | concat(module.input.sidecars ? module.input.sidecars
-        : []) >>
+        (module.input.secrets), "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
+        (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
+        (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
+        "environment": #.environment, "secrets": #.secrets, "port_mappings": #.port_mappings,
+        "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
+        #.entry_point, "working_directory": #.working_directory}) : []) >>
   ui:
     logs:
       - id: ecs_service_logs
@@ -708,6 +816,7 @@ module:
     | Desired tasks            | 1       | Running tasks when autoscaling is disabled     |
     | CPU target (%)           | 70      | Average CPU utilization target                 |
     | Memory target (%)        | 80      | Average memory utilization target              |
+    | Requests per task target | blank   | Average ALB requests per task per minute (Rolling deployments only) |
     | Scale-in cooldown (secs) | 300     | Delay before another scale-in action           |
     | Scale-out cooldown (secs)| 300     | Delay before another scale-out action          |
     | Scale-in disabled        | false   | Prevents autoscaling from reducing task count  |
@@ -717,6 +826,8 @@ module:
     Use Runtime environment variables for plain container environment values. Ravion also sets PORT from Container port.
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
+
+    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 
@@ -848,15 +959,15 @@ module:
     | Run pre-deploy command          | No       | false                      | Enable a task before each deployment               |
     | Pre-deploy command arguments    | Yes*     | []                         | Command arguments run before each deployment       |
     | Pre-deploy environment variables| No       | []                         | Extra environment variables for the pre-deploy task |
-    | Pre-deploy CPU units            | No       | App task CPU               | CPU override for the pre-deploy task               |
-    | Pre-deploy memory (MiB)         | No       | App task memory            | Memory override for the pre-deploy task            |
+    | Pre-deploy CPU                  | No       | App task CPU               | CPU override for the pre-deploy task               |
+    | Pre-deploy memory               | No       | App task memory            | Memory override for the pre-deploy task            |
     | Pre-deploy ephemeral storage    | No       | Task definition default    | Ephemeral storage override for the pre-deploy task |
     | Pre-deploy timeout (secs)       | No       | 1800                       | Maximum pre-deploy task wait time                  |
     | Run post-deploy command         | No       | false                      | Enable a task after each successful deployment     |
     | Post-deploy command arguments   | Yes*     | []                         | Command arguments run after each successful deployment |
     | Post-deploy environment variables| No      | []                         | Extra environment variables for the post-deploy task |
-    | Post-deploy CPU units           | No       | App task CPU               | CPU override for the post-deploy task              |
-    | Post-deploy memory (MiB)        | No       | App task memory            | Memory override for the post-deploy task           |
+    | Post-deploy CPU                 | No       | App task CPU               | CPU override for the post-deploy task              |
+    | Post-deploy memory              | No       | App task memory            | Memory override for the post-deploy task           |
     | Post-deploy ephemeral storage   | No       | Task definition default    | Ephemeral storage override for the post-deploy task |
     | Post-deploy timeout (secs)      | No       | 1800                       | Maximum post-deploy task wait time                 |
     | Autoscaling                     | No       | true                       | Enable CPU and optional memory target tracking     |
@@ -885,7 +996,7 @@ module:
     - The module always models an HTTP web service behind an Application Load Balancer. NLB, worker, and service discovery patterns are intentionally outside this module definition.
     - Tasks default to private subnets even for public web services. The ALB is public; the tasks remain private when the VPC has NAT or equivalent egress.
     - Built images are pushed to an ECR repository created with the service stack. Managed ECR repository lets a pipeline push images to that repository without a module build config. Pull from image registry lets teams bring their own image pipeline.
-    - Desired count uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
+    - The service uses the autoscaling minimum when autoscaling is enabled and the Desired tasks input when autoscaling is disabled.
     - Advanced Terraform variables exist for exceptional lower-level overrides. Prefer the typed Ravion fields whenever possible.
 
     ## Learn more

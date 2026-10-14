@@ -200,6 +200,56 @@ each by a hash of its content instead: a changed document is a new component
 beside the old one, and the next deploy builds with it. `component_version`
 never has to change for an apply to succeed.
 
+Components created by this module are retained in AWS when replaced or removed,
+because successful build recipes can still reference them. `skip_destroy = true`
+removes them from Terraform state without deleting them. `create_before_destroy`
+only orders replacement; it does not remove those recipe dependencies. Image
+retention settings do not clean up components. Components supplied by ARN are
+not tagged or managed by this module.
+
+When upgrading an existing stack, apply the retention setting with component
+content unchanged before making a change that replaces a component. The provider
+reads `skip_destroy` from the old resource's state during deletion. An already
+failed replacement can leave a deposed component with the old setting; upgrading
+the configuration alone does not repair that state. Inspect and back up the state
+before any separately approved recovery, without deleting successful build
+recipes or images.
+
+### Stack destruction
+
+On stack destruction, a destroy-time script deletes this module instance's
+Image Builder build records, then recipes, then retained components in the build
+region. It does not deregister EC2 AMIs, delete snapshots, or terminate instances.
+Build records and recipes must have the matching `ModuleId` tag; components must
+also have `Module=compute/ami` and `ManagedBy=terraform`. These three component
+ownership tags are reserved. Untagged resources and resources owned by other
+modules are left alone. Do not copy ownership tags onto external components.
+
+Cleanup requires `module_instance_id` (automatically set in Ravion). Without it,
+resources remain for manual cleanup. Resources left in a previous build region,
+or historical components whose ownership tags were overridden, also need manual
+cleanup. Apply this version once before destroying an existing stack to record
+the cleanup resource in state. Destroy while the module configuration is still
+present; simply removing its configuration also removes its destroy provisioner.
+
+The script has no replacement triggers, so ordinary component or input updates
+do not run it. Do not force-replace or taint `terraform_data.build_cleanup`, or
+add `create_before_destroy` to it. Stop deployments before destroying the stack.
+Active builds, dependency errors, and permission errors fail destruction; resolve
+the error and retry. Already-deleted resources are safe to retry.
+
+The destroy runner needs Bash, jq, and AWS CLI v2 with `list-images
+--include-deprecated` support. CLI credentials must access the same account as
+the AWS provider; the script verifies the account before deleting anything.
+Ravion's default apply/destroy role uses AdministratorAccess. Custom roles need
+`sts:GetCallerIdentity` and these Image Builder actions in addition to their
+normal Terraform permissions:
+
+- `imagebuilder:ListImages`, `imagebuilder:ListImageBuildVersions`
+- `imagebuilder:ListImageRecipes`
+- `imagebuilder:ListComponents`, `imagebuilder:ListComponentBuildVersions`
+- `imagebuilder:DeleteImage`, `imagebuilder:DeleteImageRecipe`, `imagebuilder:DeleteComponent`
+
 ## Parent image
 
 `parent_image` pins one image: an AMI id, an Image Builder image ARN, or
@@ -231,6 +281,7 @@ at the bucket root.
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | name | Name of the configurations, and the prefix of every other resource this module creates | `string` | n/a | yes |
+| module_instance_id | Id of the Ravion module instance these resources belong to. Ravion sets it; null outside Ravion | `string` | `null` | no |
 | components | Components each build runs, in order. Each sets `source` (`steps`, `document` or `arn`) and the fields it names: `build_steps`/`validate_steps`/`test_steps` and `parameter_definitions`, `data`, or `arn`. Optional `description`, `platform`, `parameters` | `list(object)` | n/a | yes |
 | description | Description stored on the infrastructure and distribution configurations | `string` | `null` | no |
 | region | Region images are built in | `string` | provider region | no |
@@ -249,6 +300,8 @@ at the bucket root.
 | ami_name | Image name. Must contain `{{ imagebuilder:buildDate }}` or `{{ imagebuilder:buildVersion }}` | `string` | `<name>-{{ imagebuilder:buildDate }}` | no |
 | ami_description | Description stored on each image built, in the build region | `string` | `null` | no |
 | ami_tags | Tags written on each image built, in the build region | `map(string)` | `{}` | no |
+| distribution_regions | Regions each deploy copies the finished image to, beyond the build region | `list(string)` | `[]` | no |
+| image_block_public_access | Block public access for AMIs in the build region and every distribution region: unblocked or block-new-sharing. Null leaves the account's state unchanged | `string` | `null` | no |
 
 ## Outputs
 
@@ -261,6 +314,7 @@ at the bucket root.
 | image_builder_distribution_configuration_arn | The ARN of the build-region distribution configuration |
 | instance_role_arn | The ARN of the build instance's IAM role |
 | instance_role_name | The name of the build instance's IAM role |
+| module_instance_id | Id of the Ravion module instance these resources belong to, for a reference that names this module |
 
 ## Testing
 

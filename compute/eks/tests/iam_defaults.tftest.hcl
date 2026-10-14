@@ -120,6 +120,8 @@ run "composite_forwards_irsa_opt_in" {
     secrets_encryption_enabled             = false
     oidc_provider_creation_enabled         = true
     vpc_resource_controller_policy_enabled = true
+    # prevent_destroy follows deletion protection and would refuse teardown.
+    deletion_protection_enabled = false
   }
   assert {
     condition     = output.oidc_provider_arn == "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-2.amazonaws.com/id/MOCK"

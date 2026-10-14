@@ -5,6 +5,7 @@
 resource "aws_s3_bucket_lifecycle_configuration" "this" {
   count = local.create_lifecycle_configuration ? 1 : 0
 
+  region = var.region
   bucket = aws_s3_bucket.this.id
 
   dynamic "rule" {

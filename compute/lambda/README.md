@@ -2,6 +2,14 @@
 
 This module creates an AWS Lambda function with broad runtime configuration support, optional IAM role creation, CloudWatch log group management, and optional integrations such as permissions, event source mappings, aliases, and function URL.
 
+## Deployment and rollback
+
+Function URLs and event source mappings invoke the `live` alias, which is created automatically when either integration is enabled. Aliases require published versions, so version publishing is enabled automatically when aliases exist. Ravion owns only the `live` alias version after creation; Terraform applies do not reset its deployments or rollbacks. Change `live` through Ravion (or explicitly in AWS), not its Terraform `function_version` input after creation. Other aliases, such as `staging`, remain Terraform-managed and honor configured version changes.
+
+`AWS_IAM` function URL callers need `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` on the `live` alias ARN. Public (`NONE`) URLs receive alias-qualified permissions restricted to URL invocations.
+
+Rollback restores the published version's code and configuration without rebuilding. Only invocations through the deployment alias follow rollback; unqualified invocations use `$LATEST`. Image targets require a recorded image digest that still exists in ECR; keep rollback images outside destructive lifecycle rules.
+
 ## Features
 
 - Supports both `Zip` and `Image` package types
