@@ -120,6 +120,7 @@ run "custom_domain_creates_certificate_domain_and_rule" {
 
   variables {
     domains               = ["www.example.com"]
+    ravion_domain_name    = "fallback"
     ravion_aws_account_id = "aws_testaccount"
   }
 
@@ -135,12 +136,22 @@ run "custom_domain_creates_certificate_domain_and_rule" {
 
   assert {
     condition     = length(ravion_domain.wildcard) == 0
-    error_message = "A custom external domain must not be nested under the cluster wildcard"
+    error_message = "An explicit custom domain must replace the default Ravion domain"
   }
 
   assert {
     condition     = length(aws_lb_listener_rule.ravion) == 1
     error_message = "The custom hostname must be routed to the service target group"
+  }
+
+  assert {
+    condition     = length(local.ravion_host_headers) == 1 && local.ravion_host_headers[0] == "www.example.com"
+    error_message = "Only the explicitly configured custom domain must be routed"
+  }
+
+  assert {
+    condition     = output.ravion_domain_fqdn == "www.example.com" && output.ravion_domain_url == "https://www.example.com"
+    error_message = "The first configured custom domain must be the primary output"
   }
 }
 
@@ -149,16 +160,27 @@ run "mixed_domains_share_one_custom_certificate" {
 
   variables {
     domains = [
-      "api.cluster.ravion.app",
-      "www.example.com",
+      " api.cluster.ravion.app. ",
+      "WWW.example.com",
+      "www.example.com.",
       "api.example.com",
     ]
     ravion_aws_account_id = "aws_testaccount"
   }
 
   assert {
-    condition     = length(ravion_domain.wildcard) == 1
-    error_message = "The single-label child must ride the cluster wildcard"
+    condition = (
+      length(local.effective_domains) == 3
+      && local.effective_domains[0] == "api.cluster.ravion.app"
+      && local.effective_domains[1] == "www.example.com"
+      && local.effective_domains[2] == "api.example.com"
+    )
+    error_message = "Explicit domains must be normalized, deduplicated in order, and used without adding the default"
+  }
+
+  assert {
+    condition     = length(ravion_domain.wildcard) == 1 && !contains(local.effective_domains, "test-service.cluster.ravion.app")
+    error_message = "Only the explicitly configured wildcard domain must be allocated"
   }
 
   assert {
@@ -169,6 +191,67 @@ run "mixed_domains_share_one_custom_certificate" {
   assert {
     condition     = length(ravion_aws_acm_certificate.svc) == 1
     error_message = "All custom domains for a service must share one certificate"
+  }
+
+  assert {
+    condition     = output.ravion_domain_fqdn == "api.cluster.ravion.app"
+    error_message = "The first explicit domain must remain the primary output"
+  }
+}
+
+run "separate_ravion_domain_name_is_fallback" {
+  command = plan
+
+  variables {
+    ravion_domain_name    = "api"
+    ravion_aws_account_id = "aws_testaccount"
+  }
+
+  assert {
+    condition = (
+      length(local.effective_domains) == 1
+      && local.effective_domains[0] == "api.cluster.ravion.app"
+      && output.ravion_domain_fqdn == "api.cluster.ravion.app"
+    )
+    error_message = "The separate Ravion domain input must supply the fallback when no custom domains are set"
+  }
+
+  assert {
+    condition     = length(ravion_domain.wildcard) == 1 && length(ravion_domain.custom) == 0
+    error_message = "The fallback Ravion domain must be managed as the only effective domain"
+  }
+}
+
+run "normalized_blank_domains_use_ravion_fallback" {
+  command = plan
+
+  variables {
+    ravion_domain_name = "fallback"
+    domains            = ["   ", ".", " . "]
+  }
+
+  assert {
+    condition = (
+      length(local.normalized_domains) == 0
+      && length(local.effective_domains) == 1
+      && local.effective_domains[0] == "fallback.cluster.ravion.app"
+    )
+    error_message = "Domains that normalize to empty must still use the configured fallback"
+  }
+}
+
+run "manual_mode_has_no_managed_domains" {
+  command = plan
+
+  variables {
+    cluster_parent_fqdn      = null
+    load_balancer_attachment = null
+    domains                  = ["api.example.com"]
+  }
+
+  assert {
+    condition     = length(ravion_domain.wildcard) == 0 && length(ravion_domain.custom) == 0 && length(aws_lb_listener_rule.ravion) == 0 && output.ravion_domain_fqdn == null
+    error_message = "Manual mode must not allocate managed domains or rules"
   }
 }
 

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   validate:
     name: Validate Terraform Modules
-    runs-on: ravion/ee=github-actions/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -67,6 +67,12 @@ jobs:
 
       - name: Test CloudFront viewer-request function
         run: node --test cdn/cloudfront/functions/viewer_request.test.js
+
+      - name: Test AMI module
+        run: |
+          python3 -B -m unittest discover -s compute/ami/tests -p 'test_*.py' -v
+          tofu -chdir=compute/ami init -backend=false
+          tofu -chdir=compute/ami test -filter=tests/basic.tftest.hcl
 
       - name: Test EKS capacity reconciliation
         run: |
