@@ -52,4 +52,17 @@ resource "aws_route_table_association" "private" {
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = local.nat_gateway_high_availability_enabled ? aws_route_table.private[count.index].id : aws_route_table.private[0].id
+
+  # Move a subnet onto a route table only once that table has its routes.
+  # Turning on NAT gateway high availability creates a route table per AZ;
+  # without this, a subnet switches to its new table in seconds while the
+  # table's NAT gateway takes minutes to create, cutting off its internet,
+  # peering, and gateway endpoint traffic in the meantime.
+  depends_on = [
+    aws_route.private_nat,
+    aws_route.private_ipv6_egress,
+    aws_route.private_vpc_peering,
+    aws_vpc_endpoint.s3,
+    aws_vpc_endpoint.dynamodb,
+  ]
 }
