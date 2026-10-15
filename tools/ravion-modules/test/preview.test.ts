@@ -242,8 +242,8 @@ describe("rvn-preview-ingress module definition", () => {
       "$values:aws/security-groups?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&vpcId=<<module.input.vpc_id>>",
     );
     assert.equal(
-      terraformVariables(definition.module).sandbox_host_security_group_ids,
-      "<< module.input.sandbox_host_security_group_ids >>",
+      terraformVariables(definition.module).sandbox_host_security_groups,
+      '<< map(uniq(module.input.sandbox_host_security_group_ids), {"name": #, "id": #}) >>',
     );
   });
 
