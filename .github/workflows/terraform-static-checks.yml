@@ -18,7 +18,9 @@ concurrency:
 jobs:
   validate:
     name: Validate Terraform Modules
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate/interruptible=true
+    # The provider cache unpacks every provider version the modules pin, which
+    # no longer fits the default 8 GiB disk.
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk=20/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
