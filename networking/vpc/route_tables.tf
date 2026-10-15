@@ -57,7 +57,9 @@ resource "aws_route_table_association" "private" {
   # Turning on NAT gateway high availability creates a route table per AZ;
   # without this, a subnet switches to its new table in seconds while the
   # table's NAT gateway takes minutes to create, cutting off its internet,
-  # peering, and gateway endpoint traffic in the meantime.
+  # peering, and gateway endpoint traffic in the meantime. Because of these
+  # dependencies, `-target` on an association also applies their removals;
+  # see "Migrating between NAT topologies" in the README instead.
   depends_on = [
     aws_route.private_nat,
     aws_route.private_ipv6_egress,
