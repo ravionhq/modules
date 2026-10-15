@@ -39,8 +39,8 @@ resource "aws_rds_cluster" "this" {
   # Authentication
   master_username                     = var.master_username
   master_password                     = var.master_user_password_management_enabled || local.create_master_user_secret ? null : var.master_password
-  master_password_wo                  = local.create_master_user_secret ? ephemeral.random_password.master_user[0].result : null
-  master_password_wo_version          = local.create_master_user_secret ? var.master_user_secret_version : null
+  master_password_wo                  = local.create_master_user_secret ? local.master_user_secret_password : null
+  master_password_wo_version          = local.create_master_user_secret ? local.master_user_secret_password_version : null
   manage_master_user_password         = var.master_user_password_management_enabled ? true : null
   master_user_secret_kms_key_id       = var.master_user_password_management_enabled ? var.master_user_secret_kms_key_id : null
   iam_database_authentication_enabled = var.iam_database_authentication_enabled

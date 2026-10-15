@@ -157,6 +157,14 @@ run "test_proxy_defaults_to_named_master_secret" {
     }
   }
 
+  # tofu test cannot mock the ephemeral secret read.
+  override_module {
+    target = module.master_user_secret_password
+    outputs = {
+      password = "test-password"
+    }
+  }
+
   assert {
     condition     = length(local.proxy_auth_secret_arns) == 1 && local.proxy_auth_secret_arns[0] == "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/app/db-AbCdEf"
     error_message = "RDS Proxy should authenticate with the named master secret by default."

@@ -330,7 +330,6 @@ module "aurora" {
 | ------------------ | --------- |
 | opentofu/terraform | >= 1.11.0 |
 | aws                | >= 6.0    |
-| random             | >= 3.7    |
 
 ## Inputs
 
@@ -486,7 +485,7 @@ module "aurora" {
 
 - **Encryption at Rest**: Enabled by default using AWS managed keys. Optionally provide your own KMS key.
 - **Secrets Manager**: Master password managed by Secrets Manager by default. No plaintext passwords in state.
-- **Named master secret**: Set `master_user_secret_name` (with `master_user_password_management_enabled = false`) to store the master credentials in a secret you name, such as one under a prefix External Secrets Operator can read. The password is an ephemeral value written through write-only arguments, so it is never stored in state or plan files, and nothing rotates it. Increment `master_user_secret_version` to set a new password. Switching an existing cluster to this mode changes the master password in place; it does not replace the cluster.
+- **Named master secret**: Set `master_user_secret_name` (with `master_user_password_management_enabled = false`) to store the master credentials in a secret you name, such as one under a prefix External Secrets Operator can read. The password is generated ephemerally and written through write-only arguments, so it is never stored in state or plan files, and nothing rotates it. The secret is the one source of the password: a new password goes to the secret only, and the cluster reads it back from the secret and rewrites its own whenever the secret's version changes. Renaming the secret, a retry after a partial apply, or a replaced cluster therefore always leaves the cluster and the secret with the same password. Increment `master_user_secret_version` to set a new password. Switching an existing cluster to this mode changes the master password in place; it does not replace the cluster.
 - **IAM Authentication**: Optionally enable IAM database authentication for MySQL and PostgreSQL.
 - **VPC Only**: The cluster is deployed within your VPC with no public access by default.
 - **Security Groups**: Fine-grained access control via security group rules.

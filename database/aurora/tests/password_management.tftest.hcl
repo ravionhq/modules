@@ -134,6 +134,22 @@ run "test_named_secret_holds_module_managed_password" {
     }
   }
 
+  override_resource {
+    target = aws_secretsmanager_secret_version.master_user
+    values = {
+      version_id = "11111111-1111-1111-1111-111111111111"
+    }
+  }
+
+  # tofu test cannot mock the ephemeral secret read, so its module is
+  # overridden with what it would return.
+  override_module {
+    target = module.master_user_secret_password
+    outputs = {
+      password = "test-password"
+    }
+  }
+
   assert {
     condition     = aws_secretsmanager_secret.master_user[0].name == "prod/temporal/db"
     error_message = "The named secret should be created with master_user_secret_name."
@@ -155,13 +171,74 @@ run "test_named_secret_holds_module_managed_password" {
   }
 
   assert {
-    condition     = aws_rds_cluster.this.master_password_wo_version == 1 && aws_secretsmanager_secret_version.master_user[0].secret_string_wo_version == 1
-    error_message = "The cluster and the secret should be written at the same password version."
+    condition     = aws_secretsmanager_secret_version.master_user[0].secret_string_wo_version == 1
+    error_message = "The secret should be written at master_user_secret_version."
+  }
+
+  assert {
+    condition     = aws_rds_cluster.this.master_password_wo_version == parseint(substr(sha256("11111111-1111-1111-1111-111111111111"), 0, 12), 16)
+    error_message = "The cluster's password version should follow the secret's version ID, so the cluster is rewritten from the secret whenever the secret changes."
   }
 
   assert {
     condition     = output.cluster_master_user_secret_arn == "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/temporal/db-AbCdEf"
     error_message = "cluster_master_user_secret_arn should return the named secret's ARN."
+  }
+}
+
+# Renaming the secret recreates it with a new password. The cluster must take
+# that password too even though master_user_secret_version did not change: its
+# password version follows the new secret version's ID.
+run "test_renamed_secret_rewrites_cluster_password" {
+  command = apply
+
+  variables {
+    name                                    = "test-cluster"
+    engine                                  = "aurora-postgresql"
+    engine_version                          = "16.4"
+    instance_class                          = "db.t4g.medium"
+    vpc_id                                  = "vpc-12345678"
+    subnet_ids                              = ["subnet-11111111", "subnet-22222222"]
+    security_group_creation_enabled         = false
+    security_group_id                       = "sg-12345678"
+    master_username                         = "dbadmin"
+    master_user_password_management_enabled = false
+    master_user_secret_name                 = "prod/temporal/db-renamed"
+    master_user_secret_kms_key_id           = "arn:aws:kms:us-east-1:123456789012:key/test"
+  }
+
+  override_resource {
+    target = aws_secretsmanager_secret_version.master_user
+    values = {
+      version_id = "22222222-2222-2222-2222-222222222222"
+    }
+  }
+
+  override_module {
+    target = module.master_user_secret_password
+    outputs = {
+      password = "test-password-renamed"
+    }
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret.master_user[0].name == "prod/temporal/db-renamed"
+    error_message = "The secret should be recreated under its new name."
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_version.master_user[0].secret_string_wo_version == 1
+    error_message = "The rename should not need master_user_secret_version to change."
+  }
+
+  assert {
+    condition     = aws_rds_cluster.this.master_password_wo_version == parseint(substr(sha256("22222222-2222-2222-2222-222222222222"), 0, 12), 16)
+    error_message = "A renamed secret should rewrite the cluster's password from the new secret."
+  }
+
+  assert {
+    condition     = aws_rds_cluster.this.master_password_wo_version != parseint(substr(sha256("11111111-1111-1111-1111-111111111111"), 0, 12), 16)
+    error_message = "The cluster's password version should change when the secret is replaced."
   }
 }
 
