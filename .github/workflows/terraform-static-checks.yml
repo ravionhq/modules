@@ -124,6 +124,11 @@ jobs:
           tofu -chdir=networking/alternat init -backend=false
           tofu -chdir=networking/alternat test
 
+      - name: Test PlanetScale Vitess lifecycle
+        run: |
+          tofu -chdir=database/planetscale_vitess init -backend=false -input=false -lockfile=readonly
+          python3 -m unittest discover -s database/planetscale_vitess/tests -p 'test_*.py' -v
+
       - name: Lint modules
         run: tflint --recursive
 

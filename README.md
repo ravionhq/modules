@@ -29,6 +29,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `preview`         | Preview of a repository's branches: each branch runs in its own sandbox from shell steps, with its HTTP ports served through a preview ingress; a module definition with no Terraform (the `rvn-preview` module definition) | Unreleased |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
+| `database/`   | `planetscale_vitess` | PlanetScale MySQL with saved integrations, organization-specific regions and cluster sizes including Metal NVMe, and short-lived runner credentials, standard Terraform pipeline defaults and shared advanced settings, automatic default-keyspace adoption after creation, in-place resizing, configurable replicas and credential CIDRs, and advanced VTGate/backup controls (includes organization-only `rvn-planetscale-vitess` module definition) | Unreleased |
 | `database/`   | `rds`             | AWS RDS instances with free storage and read/write IOPS alarms          | v1.1.0  |
 | `database/`   | `rds-proxy`       | AWS RDS Proxy for connection pooling in front of RDS instances or Aurora clusters (standalone or via the `rds`/`aurora` modules) (includes `rvn-rds-proxy` module definition) | v1.0.0  |
 | `hosting/`    | `static_site`     | Static site hosting with S3, CloudFront Functions, and default CloudFront 5xx alarms | v1.0.0  |
@@ -83,13 +84,14 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v2.3.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.2.2 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.19.0 | `compute/eks/addons/` |
-| `rvn-eks-chart` | EKS Helm Chart | v0.2.1 | `compute/eks_service/` |
-| `rvn-eks-cluster` | EKS Cluster | v0.8.0 | `compute/eks/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.19.1 | `compute/eks/addons/` |
+| `rvn-eks-chart` | EKS Helm Chart | v0.3.0 | `compute/eks_service/` |
+| `rvn-eks-cluster` | EKS Cluster | v0.8.1 | `compute/eks/` |
 | `rvn-eks-web` | EKS Web Service | v1.8.0 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v0.11.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
+| `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |
 | `rvn-preview` | Preview | v0.1.0 | `compute/preview/` |
 | `rvn-preview-ingress` | Preview Ingress | v0.1.0 | `networking/preview_ingress/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
