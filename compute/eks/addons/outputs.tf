@@ -609,6 +609,22 @@ output "keda_chart_version" {
   value       = var.keda_enabled ? helm_release.keda[0].version : null
 }
 
+output "cert_manager_enabled" {
+  description = "Whether this add-ons instance installs cert-manager for Issuers and Certificates."
+  value       = var.cert_manager_enabled
+  depends_on  = [helm_release.cert_manager]
+}
+
+output "cert_manager_namespace" {
+  description = "cert-manager namespace, or null when cert-manager is disabled."
+  value       = var.cert_manager_enabled ? var.cert_manager_namespace : null
+}
+
+output "cert_manager_chart_version" {
+  description = "cert-manager chart version, or null when cert-manager is disabled."
+  value       = var.cert_manager_enabled ? helm_release.cert_manager[0].version : null
+}
+
 output "thanos_role_arns" {
   description = "Pod Identity roles keyed by sidecar, store, and compactor; empty when Thanos is disabled."
   value       = { for name, role in module.thanos_role : name => role.role_arn }
