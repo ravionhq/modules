@@ -43,16 +43,18 @@ mock_provider "aws" {
   override_resource {
     target = aws_lb.this
     values = {
-      arn      = "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/net/previews/1234567890123456"
-      dns_name = "previews-1234567890123456.elb.us-east-2.amazonaws.com"
-      zone_id  = "ZLMOA37VPKANP"
+      arn        = "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/net/previews/1234567890123456"
+      arn_suffix = "net/previews/1234567890123456"
+      dns_name   = "previews-1234567890123456.elb.us-east-2.amazonaws.com"
+      zone_id    = "ZLMOA37VPKANP"
     }
   }
 
   override_resource {
     target = aws_lb_target_group.traffic
     values = {
-      arn = "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/previews-https/1111111111111111"
+      arn        = "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/previews-https/1111111111111111"
+      arn_suffix = "targetgroup/previews-https/1111111111111111"
     }
   }
 
@@ -575,7 +577,7 @@ run "launch_template_is_locked_down" {
   }
 
   assert {
-    condition     = aws_launch_template.router.image_id == "ami-0aaaaaaaaaaaaaaaa" && aws_launch_template.router.instance_type == "t3.small"
+    condition     = aws_launch_template.router.image_id == "ami-0aaaaaaaaaaaaaaaa" && aws_launch_template.router.instance_type == "t3.micro"
     error_message = "The instance must default to a t3.small from the looked-up image"
   }
 }
@@ -730,5 +732,33 @@ run "outputs_describe_the_router" {
   assert {
     condition     = output.aws_account_id == "123456789012" && output.region == "us-east-2"
     error_message = "The account and region outputs must describe where the resources live"
+  }
+
+  assert {
+    condition     = output.load_balancer_arn_suffix == "net/previews/1234567890123456" && output.traffic_target_group_arn_suffix == "targetgroup/previews-https/1111111111111111"
+    error_message = "The load balancer and traffic target group must be named the way their CloudWatch metrics are"
+  }
+}
+
+run "router_can_be_turned_off" {
+  command = plan
+
+  variables {
+    router_enabled = false
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.min_size == 0 && aws_autoscaling_group.router.max_size == 0 && aws_autoscaling_group.router.desired_capacity == 0
+    error_message = "A router turned off must leave the Auto Scaling group with no instance"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.wait_for_elb_capacity == 0
+    error_message = "An apply that turns the router off must not wait for a healthy router"
+  }
+
+  assert {
+    condition     = length(aws_lb.this.subnets) == 2 && aws_launch_template.router.instance_type == "t3.micro"
+    error_message = "Turning the router off must keep the load balancer and launch template, so turning it on again needs no new resources"
   }
 }

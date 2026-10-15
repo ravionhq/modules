@@ -1,19 +1,19 @@
 ################################################################################
 # Auto Scaling Group
 #
-# One router instance, kept alive. An instance the load balancer reports
-# unhealthy is replaced, which is also what retries a boot that failed. A
-# replacement is launched before the instance it replaces is drained, so the
-# load balancer always has a router that can route.
+# One router instance, kept alive, or none while the router is turned off. An
+# instance the load balancer reports unhealthy is replaced, which is also what
+# retries a boot that failed. A replacement is launched before the instance it
+# replaces is drained, so the load balancer always has a router that can route.
 ################################################################################
 
 resource "aws_autoscaling_group" "router" {
   name                = local.router_name
   vpc_zone_identifier = var.router_subnet_ids
 
-  min_size         = 1
-  max_size         = 1
-  desired_capacity = 1
+  min_size         = local.router_count
+  max_size         = local.router_count
+  desired_capacity = local.router_count
 
   target_group_arns = [
     aws_lb_target_group.traffic.arn,
@@ -26,7 +26,7 @@ resource "aws_autoscaling_group" "router" {
   # The apply succeeds only once the router answers its health check behind
   # the load balancer, so a router that cannot install or start fails the run
   # that launched it.
-  wait_for_elb_capacity     = 1
+  wait_for_elb_capacity     = local.router_count
   wait_for_capacity_timeout = "10m"
 
   launch_template {

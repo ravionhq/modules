@@ -37,6 +37,8 @@ locals {
     health   = "health checks"
   }
 
+  router_count = var.router_enabled ? 1 : 0
+
   # Ports sandbox hosts publish previews on. The router forwards nowhere else.
   preview_port_range = {
     from = 20000

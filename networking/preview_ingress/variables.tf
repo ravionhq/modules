@@ -193,11 +193,11 @@ variable "ssl_policy" {
 variable "instance_type" {
   type        = string
   description = "EC2 instance type of the router. Its architecture must match the image's."
-  default     = "t3.small"
+  default     = "t3.micro"
 
   validation {
     condition     = can(regex("^[a-z0-9-]+\\.[a-z0-9]+$", var.instance_type))
-    error_message = "The instance_type must be an EC2 instance type such as t3.small."
+    error_message = "The instance_type must be an EC2 instance type such as t3.micro."
   }
 }
 
@@ -232,6 +232,12 @@ variable "image_name_pattern" {
     condition     = length(var.image_name_pattern) > 0
     error_message = "The image_name_pattern must not be empty."
   }
+}
+
+variable "router_enabled" {
+  type        = bool
+  description = "Run the router. When false the Auto Scaling group keeps no instance and no preview URL answers, while the load balancer, certificate and domains stay in place for when it is turned on again."
+  default     = true
 }
 
 variable "ssm_enabled" {

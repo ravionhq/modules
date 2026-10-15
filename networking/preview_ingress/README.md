@@ -118,6 +118,8 @@ An instance whose boot script fails never starts the router. It stays unhealthy 
 
 The router runs the release its image carries. A change to the launch template (image, instance type, API origin, tags) replaces the instance: the new router is launched first, receives its routes from Ravion and passes its health check, and only then is the old one drained and terminated. A newer image found by the lookup is such a change; pin `image_id` to decide when it happens.
 
+Set `router_enabled` to false to turn the router off: the Auto Scaling group keeps no instance, and no preview URL answers. The load balancer, certificate and domains stay in place, so turning it on again launches one router and nothing else.
+
 A router answers its health check only once it holds its routes, and keeps answering it if it later loses its connection to Ravion: it goes on forwarding every running preview, and only waking a paused one waits for the connection. A router instance that fails its health checks is replaced by the Auto Scaling group.
 
 ## Security groups
@@ -157,7 +159,8 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 | sandbox_host_security_groups | Security groups of the sandbox hosts whose previews the router serves, each with a `name` you choose for its rules. Each gets one inbound rule for the router's group on the preview port range | `list(object({ name = string, id = string }))` | `[]` | no |
 | ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
 | ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
-| instance_type | EC2 instance type of the router | `string` | `"t3.small"` | no |
+| instance_type | EC2 instance type of the router | `string` | `"t3.micro"` | no |
+| router_enabled | Run the router. False keeps no instance and no preview URL answers | `bool` | `true` | no |
 | image_id | AMI the router boots. Null looks up the newest image of `image_owner` | `string` | `null` | no |
 | image_owner | AWS account that publishes the looked-up image: a 12-digit ID, or `self`, `amazon`, `aws-marketplace` | `string` | `"600013814144"` | no |
 | image_name_pattern | AMI name pattern of the looked-up image | `string` | `"ravion-preview-router-*"` | no |
@@ -184,7 +187,9 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 | custom_domain_names | The custom wildcard domains previews can be served under |
 | custom_certificate_arn | ARN of the certificate that covers the custom domains. Null when there are none |
 | load_balancer_security_group_id | ID of the load balancer's security group |
-| autoscaling_group_name | Name of the Auto Scaling group that keeps the router running |
+| load_balancer_arn_suffix | ARN suffix of the load balancer, the `LoadBalancer` dimension of its `AWS/NetworkELB` metrics |
+| traffic_target_group_arn_suffix | ARN suffix of the HTTPS target group, the `TargetGroup` dimension of the router's health metrics |
+| autoscaling_group_name | Name of the Auto Scaling group that keeps the router running, the `AutoScalingGroupName` dimension of its `AWS/EC2` metrics |
 | image_id | The AMI new router instances boot |
 | aws_account_id | AWS account ID where the resources are deployed |
 | region | AWS region where the resources are deployed |
@@ -193,7 +198,7 @@ Ravion reads the `sandbox_router_*` outputs to route the previews of this module
 
 ## Limits
 
-- One router instance. A change to it is rolled out by launching the replacement first; an instance that fails is replaced by the Auto Scaling group once its health checks fail.
+- One router instance, or none while `router_enabled` is false. A change to it is rolled out by launching the replacement first; an instance that fails is replaced by the Auto Scaling group once its health checks fail.
 - IPv4 only, and an internet-facing load balancer only.
 - HTTP/1.1 between the load balancer and the router. WebSocket upgrades pass through.
 - The load balancer writes no access logs.

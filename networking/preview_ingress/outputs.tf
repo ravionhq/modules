@@ -68,6 +68,16 @@ output "load_balancer_security_group_id" {
   value       = aws_security_group.load_balancer.id
 }
 
+output "load_balancer_arn_suffix" {
+  description = "The load balancer's ARN suffix, the LoadBalancer dimension of its AWS/NetworkELB metrics."
+  value       = aws_lb.this.arn_suffix
+}
+
+output "traffic_target_group_arn_suffix" {
+  description = "The HTTPS target group's ARN suffix, the TargetGroup dimension of the router's health metrics in AWS/NetworkELB."
+  value       = aws_lb_target_group.traffic.arn_suffix
+}
+
 output "autoscaling_group_name" {
   description = "The name of the Auto Scaling group that keeps the router instance running."
   value       = aws_autoscaling_group.router.name

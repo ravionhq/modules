@@ -46,6 +46,14 @@ module:
     - id: load_balancer_security_group_id
       type: string
       label: Load balancer security group ID
+    - id: load_balancer_arn_suffix
+      type: string
+      label: Load balancer ARN suffix
+      description: The LoadBalancer dimension of the load balancer's CloudWatch metrics.
+    - id: traffic_target_group_arn_suffix
+      type: string
+      label: HTTPS target group ARN suffix
+      description: The TargetGroup dimension of the router's health metrics.
     - id: autoscaling_group_name
       type: string
       label: Auto Scaling group name
@@ -129,12 +137,17 @@ module:
     - id: section_router
       label: Router
       type: section
+    - id: router_enabled
+      label: Router running
+      type: boolean
+      description: Turn off to pause the router. Its instance is terminated and no preview URL answers until it is turned on again. The load balancer, certificate and domains stay.
+      default: true
     - id: instance_type
       label: Instance type
       type: string
-      description: One instance runs at all times. The default image is x86_64.
+      description: The router's instance type. Ravion publishes the router image for x86_64 instance types.
       required: true
-      default: t3.small
+      default: t3.micro
       no_options_message: Select a VPC Network, or enter an AWS account and region, to load available EC2 instance types.
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
     - id: private_subnet_placement_enabled
@@ -147,24 +160,6 @@ module:
       type: boolean
       description: Gives the router instance an IAM role that allows AWS Systems Manager Session Manager and nothing else. Turn off to launch the instance with no IAM role.
       default: true
-    - id: image_id
-      label: Image ID
-      type: string
-      description: Pins the AMI the router boots. Leave blank for the newest image the image owner publishes.
-      collapsible: true
-      placeholder: ami-...
-      patterns:
-        - message: An AMI ID, such as ami-0123456789abcdef0.
-          pattern: ^ami-[0-9a-f]+$
-    - id: image_owner
-      label: Image owner
-      type: string
-      description: AWS account that publishes the router image. Enter a 12-digit account ID, or self for this account's own images. Leave blank for Ravion's images.
-      collapsible: true
-      placeholder: "123456789012"
-      patterns:
-        - message: A 12-digit AWS account ID, or one of self, amazon, aws-marketplace.
-          pattern: ^([0-9]{12}|self|amazon|aws-marketplace)$
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
     - $include: ../../partials/inputs/terraform-settings.yml
@@ -175,8 +170,6 @@ module:
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
         domains: << module.input.domains || [] >>
-        image_id: << module.input.image_id || nil >>
-        image_owner: << module.input.image_owner || nil >>
         ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
         instance_type: << module.input.instance_type >>
         module_instance_id: << module.id >>
@@ -185,6 +178,7 @@ module:
         ravion_aws_account_id: << module.input.aws_account_id >>
         ravion_domain_name: << module.input.ravion_domain_name >>
         region: << module.input.aws_region >>
+        router_enabled: << module.input.router_enabled >>
         router_public_ip_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
         router_subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
         sandbox_host_security_groups: '<< map(uniq(module.input.sandbox_host_security_group_ids), {"name": #, "id": #}) >>'
@@ -192,6 +186,250 @@ module:
         tags:
           $include: ../../partials/stack/ravion-tags.yml
         vpc_id: << module.input.vpc_id >>
+  ui:
+    metrics:
+      - id: healthy_routers
+        name: Healthy routers
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: HealthyHostCount
+          statistic: Minimum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+            TargetGroup: << module.output.traffic_target_group_arn_suffix >>
+      - id: unhealthy_routers
+        name: Unhealthy routers
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: UnHealthyHostCount
+          statistic: Maximum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+            TargetGroup: << module.output.traffic_target_group_arn_suffix >>
+      - id: new_connections
+        name: New connections
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: NewFlowCount
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: active_connections
+        name: Active connections
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ActiveFlowCount
+          statistic: Average
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: data_processed
+        name: Data processed
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ProcessedBytes
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: peak_throughput
+        name: Peak throughput
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: PeakBytesPerSecond
+          statistic: Maximum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: capacity_units
+        name: Load balancer capacity units
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ConsumedLCUs
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: client_tls_errors
+        name: Client TLS negotiation errors
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ClientTLSNegotiationErrorCount
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: blocked_connections
+        name: Connections blocked by ingress CIDRs
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: SecurityGroupBlockedFlowCount_Inbound_TCP
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: client_resets
+        name: Resets sent by clients
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_Client_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: router_resets
+        name: Resets sent by the router
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_Target_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: load_balancer_resets
+        name: Resets sent by the load balancer
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_ELB_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: router_cpu
+        name: Router CPU utilization
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: CPUUtilization
+          statistic: Average
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_cpu_credit_balance
+        name: Router CPU credit balance
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: CPUCreditBalance
+          statistic: Average
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_cpu_credit_usage
+        name: Router CPU credits used
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: CPUCreditUsage
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_network_in
+        name: Router network in
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkIn
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_network_out
+        name: Router network out
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkOut
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_packets_in
+        name: Router packets in
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkPacketsIn
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_packets_out
+        name: Router packets out
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkPacketsOut
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_status_check_failed
+        name: Router status check failures
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: StatusCheckFailed
+          statistic: Maximum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
   readme: |
     Entry point for sandbox previews. A Network Load Balancer with a managed wildcard domain and certificate, in front of a router that sends each preview hostname to its sandbox and wakes a paused sandbox on request.
 
@@ -254,7 +492,7 @@ module:
     | Security group | Inbound | Outbound |
     | --- | --- | --- |
     | Load balancer | TCP 443 and 80 from the ingress CIDRs | The router's three ports |
-    | Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 inside the VPC |
+    | Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 to the sandbox host security groups |
 
     No CIDR reaches the router. Ports 20000-20998 are where sandbox hosts publish previews.
 
@@ -264,11 +502,20 @@ module:
 
     The instance boots the newest preview router image Ravion publishes for the instance type's architecture. Its boot script starts the router. The script holds no credential. The router obtains its credential from Ravion at start with the instance's signed identity document, and keeps it in memory.
 
-    The router runs the release its image carries. A change to the instance type or image replaces the instance: the new router is launched first and takes over once it holds its routes and passes its health check, then the old one is drained. Set Image ID to decide when a newer image is adopted.
+    The router runs the release its image carries. A newer image Ravion publishes, or a change to the instance type, replaces the instance at the next stack run: the new router is launched first and takes over once it holds its routes and passes its health check, then the old one is drained.
+
+    Turn off Router running to pause the router. Its instance is terminated and no preview URL answers. The load balancer, certificate and domains stay, so turning it on again launches one router and nothing else.
 
     A stack run succeeds once the router answers its health check behind the load balancer. A router that never turns healthy fails the run after ten minutes; the cause is in the instance's console output.
 
     Session Manager access gives operators a shell on the instance through AWS Systems Manager. The instance role holds that permission and no other.
+
+    ## Metrics
+
+    The Metrics tab reads CloudWatch in your account:
+
+    - Load balancer: healthy and unhealthy routers, new and active connections, data processed, peak throughput, capacity units, client TLS errors, connections the ingress CIDRs block, and resets by side.
+    - Router instance: CPU utilization, CPU credit balance and use, network bytes and packets, and status check failures. These follow the Auto Scaling group, so they continue across a router replacement.
 
     ## Configuration
 
@@ -280,11 +527,10 @@ module:
     | Ingress IPv4 CIDRs | No | 0.0.0.0/0 | Sources allowed to open previews |
     | Preview domain | No | {module} | Base for preview addresses on Ravion's managed apex |
     | Custom domains | No | [] | Wildcard domains in your own DNS zones, 10 max |
-    | Instance type | Yes | t3.small | Router instance type |
+    | Router running | No | true | Turn off to pause the router |
+    | Instance type | Yes | t3.micro | Router instance type, x86_64 |
     | Run in private subnets | No | true | Router placement |
     | Session Manager access | No | true | Instance role for AWS Systems Manager Session Manager |
-    | Image ID | No | Newest published image | AMI the router boots |
-    | Image owner | No | Ravion | AWS account that publishes the router image |
     | Tags | No | Standard Ravion tags | Additional tags applied to resources |
     | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
     | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
