@@ -102,12 +102,15 @@ jobs:
 
   test:
     name: Test ${{ matrix.name }}
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-test-${{ strategy.job-index }}/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=${{ matrix.memory || 4 }}/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-test-${{ strategy.job-index }}/interruptible=true
     strategy:
       fail-fast: false
       matrix:
         include:
+          # tofu test keeps an AWS provider process alive per run, and this
+          # module's tests peak near 8 GB, so 4 GB runners kill them.
           - name: CloudFront module
+            memory: 8
             run: |
               tofu -chdir=cdn/cloudfront init -backend=false
               tofu -chdir=cdn/cloudfront test
