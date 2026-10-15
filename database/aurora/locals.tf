@@ -102,12 +102,24 @@ locals {
 
   instances = length(var.instances) > 0 ? var.instances : local.generated_instances
 
+  # Module-managed master credentials in a named Secrets Manager secret
+  create_master_user_secret = var.master_user_secret_name != null
+
+  # The cluster's password, read back from the named secret (ephemeral, never in
+  # state), and its write-only version, derived from the secret's version ID:
+  # every new secret version (a version bump, a new secret name, a recreated
+  # secret) rewrites the cluster's password from the secret, and an unchanged one
+  # never does. 48 bits of the ID's hash fit the provider's int.
+  master_user_secret_password         = local.create_master_user_secret ? module.master_user_secret_password[0].password : null
+  master_user_secret_password_version = local.create_master_user_secret ? parseint(substr(sha256(aws_secretsmanager_secret_version.master_user[0].version_id), 0, 12), 16) : null
+
   # RDS Proxy
   create_proxy        = var.proxy_creation_enabled
   proxy_engine_family = local.is_mysql ? "MYSQL" : "POSTGRESQL"
   proxy_auth_secret_arns = (
     length(var.proxy_auth_secret_arns) > 0 ? var.proxy_auth_secret_arns :
-    var.master_user_password_management_enabled ? [for s in aws_rds_cluster.this.master_user_secret : s.secret_arn] : []
+    var.master_user_password_management_enabled ? [for s in aws_rds_cluster.this.master_user_secret : s.secret_arn] :
+    local.create_master_user_secret ? [aws_secretsmanager_secret.master_user[0].arn] : []
   )
   proxy_secret_kms_key_arns = distinct(concat(
     var.proxy_secret_kms_key_arns,

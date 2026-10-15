@@ -328,8 +328,8 @@ module "aurora" {
 
 | Name               | Version   |
 | ------------------ | --------- |
-| opentofu/terraform | >= 1.10.0 |
-| aws                | >= 5.0    |
+| opentofu/terraform | >= 1.11.0 |
+| aws                | >= 6.0    |
 
 ## Inputs
 
@@ -363,7 +363,9 @@ module "aurora" {
 | master_password | Optional master password when Secrets Manager management is disabled. Leave null to preserve an imported or restored cluster's externally managed password. | `string` | `null` | no |
 | master_user_password_management_enabled | Use Secrets Manager for the master password. Disable before importing a cluster whose existing password is managed externally. | `bool` | `true` | no |
 | master_user_password_preservation_enabled | Preserve an existing externally managed password by omitting password configuration. The named cluster must already exist in AWS, and password management must be disabled. | `bool` | `false` | no |
-| master_user_secret_kms_key_id | KMS key ARN for the Secrets Manager secret. | `string` | `null` | no |
+| master_user_secret_kms_key_id | KMS key ARN for the Secrets Manager secret (AWS-managed or named). | `string` | `null` | no |
+| master_user_secret_name | Name of a Secrets Manager secret the module creates for the master credentials. The module generates the password and writes it through write-only arguments, so it never reaches state. Not rotated automatically. Requires `master_user_password_management_enabled = false`. | `string` | `null` | no |
+| master_user_secret_version | Increment to generate a new password for `master_user_secret_name`. | `number` | `1` | no |
 | iam_database_authentication_enabled | Enable IAM database authentication. | `bool` | `false` | no |
 | storage_encryption_enabled | Enable encryption at rest. | `bool` | `true` | no |
 | kms_key_id | KMS key ARN for storage encryption. | `string` | `null` | no |
@@ -455,7 +457,7 @@ module "aurora" {
 | cluster_hosted_zone_id | The Route53 hosted zone ID. |
 | cluster_database_name | The database name. |
 | cluster_master_username | The master username. |
-| cluster_master_user_secret_arn | The Secrets Manager secret ARN for credentials. |
+| cluster_master_user_secret_arn | The Secrets Manager secret ARN for credentials: the named secret when `master_user_secret_name` is set, otherwise the AWS-managed secret. |
 | instance_identifiers | Map of instance key to instance identifier. |
 | instance_arns | Map of instance key to instance ARN. |
 | instance_endpoints | Map of instance key to instance endpoint. |
@@ -483,6 +485,7 @@ module "aurora" {
 
 - **Encryption at Rest**: Enabled by default using AWS managed keys. Optionally provide your own KMS key.
 - **Secrets Manager**: Master password managed by Secrets Manager by default. No plaintext passwords in state.
+- **Named master secret**: Set `master_user_secret_name` (with `master_user_password_management_enabled = false`) to store the master credentials in a secret you name, such as one under a prefix External Secrets Operator can read. The password is generated ephemerally and written through write-only arguments, so it is never stored in state or plan files, and nothing rotates it. The secret is the one source of the password: a new password goes to the secret only, and the cluster reads it back from the secret and rewrites its own whenever the secret's version changes. Renaming the secret, a retry after a partial apply, or a replaced cluster therefore always leaves the cluster and the secret with the same password. Increment `master_user_secret_version` to set a new password. Switching an existing cluster to this mode changes the master password in place; it does not replace the cluster.
 - **IAM Authentication**: Optionally enable IAM database authentication for MySQL and PostgreSQL.
 - **VPC Only**: The cluster is deployed within your VPC with no public access by default.
 - **Security Groups**: Fine-grained access control via security group rules.

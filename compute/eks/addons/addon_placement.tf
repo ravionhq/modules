@@ -2,8 +2,8 @@
 # Add-on placement
 #
 # The controllers and stores this module installs (load balancer controller,
-# External Secrets, KEDA, kube-state-metrics, the collectors, Loki,
-# Prometheus, Thanos, Tempo, Grafana and Ravion Operator) are what the cluster
+# External Secrets, KEDA, cert-manager, kube-state-metrics, the collectors,
+# Loki, Prometheus, Thanos, Tempo, Grafana and Ravion Operator) are what the cluster
 # needs to recover from anything, so a single Spot reclaim must never take them
 # all down at once. Each gets the same rules:
 #

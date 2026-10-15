@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.19.1
-  description: "Let a Grafana dashboard variable over a Tempo attribute list values from the dashboard's time range, up to 24 hours, instead of failing when nothing sent that attribute in the last few minutes."
+  version: 0.20.0
+  description: "Optionally install cert-manager to issue and renew TLS certificates inside the cluster."
 module:
   inputs:
     - id: cluster
@@ -592,6 +592,27 @@ module:
       description: Verify this version against your cluster's Kubernetes version before enabling.
       show_when:
         keda_enabled: true
+    - id: section_cert_manager
+      label: Certificates
+      type: section
+    - id: cert_manager_enabled
+      label: cert-manager
+      type: boolean
+      description: Issue and renew TLS certificates in the cluster; Issuers and Certificates are configured separately.
+      default: false
+    - id: cert_manager_namespace
+      label: cert-manager namespace
+      type: string
+      default: cert-manager
+      show_when:
+        cert_manager_enabled: true
+    - id: cert_manager_chart_version
+      label: cert-manager chart version
+      type: string
+      default: v1.21.2
+      description: Verify this version against your cluster's Kubernetes version before enabling.
+      show_when:
+        cert_manager_enabled: true
     - id: section_ebs_csi
       label: EBS CSI driver
       type: section
@@ -1651,6 +1672,9 @@ module:
         keda_enabled: << module.input.keda_enabled == true >>
         keda_namespace: '<< module.input.keda_enabled == true && module.input.keda_namespace != nil ? module.input.keda_namespace : "keda" >>'
         keda_chart_version: '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>'
+        cert_manager_enabled: << module.input.cert_manager_enabled == true >>
+        cert_manager_namespace: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_namespace != nil ? module.input.cert_manager_namespace : "cert-manager" >>'
+        cert_manager_chart_version: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_chart_version != nil ? module.input.cert_manager_chart_version : "v1.21.2" >>'
         karpenter_enabled: << module.input.karpenter_enabled >>
         karpenter_interruption_queue_alarm_creation_enabled: '<< module.input.karpenter_interruption_queue_alarm_creation_enabled != nil ? module.input.karpenter_interruption_queue_alarm_creation_enabled : true >>'
         karpenter_interruption_queue_alarm_age_threshold_seconds: '<< module.input.karpenter_interruption_queue_alarm_age_threshold_seconds != nil ? module.input.karpenter_interruption_queue_alarm_age_threshold_seconds : 60 >>'
@@ -1998,6 +2022,14 @@ module:
 
     **KEDA chart version** defaults to `2.20.2`. Its published Kubernetes test matrix covers 1.33–1.35; verify newer cluster versions, including 1.36, in staging before production adoption. Advanced chart settings can be supplied through `keda_helm_values` in **Advanced Terraform variables**.
 
+    ## Certificates
+
+    **cert-manager** is optional and off by default. Enabling it installs the controller, webhook, CA injector and CRDs in **cert-manager namespace**. Components default to On-Demand EC2 placement so certificates keep renewing through Spot interruptions. It creates no Issuers or Certificates; define those alongside the workloads that use them.
+
+    The CRDs are kept when cert-manager is turned off, because deleting them would delete every Certificate and Issuer in the cluster and the Secrets they own. Check for an existing cert-manager installation before enabling: a cluster can run only one.
+
+    **cert-manager chart version** defaults to `v1.21.2`. Check the version's supported Kubernetes releases against your cluster before enabling or upgrading. Advanced chart settings, such as webhook replicas, can be supplied through `cert_manager_helm_values` in **Advanced Terraform variables**.
+
     ## Logs, metrics and traces destinations
 
     Each signal is a list of destinations. **Loki, Prometheus with Thanos, and Tempo, each storing in S3, are the defaults**, so a new cluster's Logs and Metrics tabs work with nothing filled in, and its traces are in the in-cluster Grafana. CloudWatch log and metrics collectors are not installed unless selected. The interruption queue uses native SQS metrics independently of these collectors.
@@ -2147,6 +2179,9 @@ module:
     | KEDA                   | No       | `false`              | Event-driven workload autoscaler and its CRDs          |
     | KEDA namespace         | No       | `keda`               | Namespace for the KEDA components                     |
     | KEDA chart version     | No       | `2.20.2`             | Pinned official Helm chart                            |
+    | cert-manager           | No       | `false`              | TLS certificate controller and its CRDs                |
+    | cert-manager namespace | No       | `cert-manager`       | Namespace for the cert-manager components              |
+    | cert-manager chart version | No   | `v1.21.2`            | Pinned official Helm chart                            |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |
