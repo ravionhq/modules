@@ -101,7 +101,7 @@ The `ingress` reference also fills these inputs from the selected preview ingres
 | port | Port the app listens on inside the sandbox | `number` | n/a | yes |
 | health_check_path | Absolute HTTP path requested to tell whether the port is ready | `string` | `/` | yes |
 | ravion_domain_name | Name of the port's address under the preview ingress's wildcard domain: one DNS label. The address is `<branch>-<name>.<ingress domain>`. Used only when `domains` is empty. Unset uses the module ID for the first port, and the module ID followed by the port's `name` for the others | `string` | unset | no |
-| domains | At most one custom domain of the preview ingress, `*.<domain>`, used by no other port of the module. The address is `<branch>.<domain>`, and it replaces the default Ravion domain | `list(string)` | `[]` | no |
+| domains | At most one custom domain of the preview ingress, `*.<domain>`, used by no other port of the module. The address is `<branch>.<domain>`, and it replaces the default Ravion domain. Not served yet: a deploy of a port that sets one is refused | `list(string)` | `[]` | no |
 
 ## The preview block
 

@@ -117,7 +117,7 @@ module:
             - message: Use 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number.
               pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
         - add_button_label: Add custom domain
-          description: Replaces the default Ravion domain with a custom domain of the preview ingress. Each branch takes the place of the star.
+          description: Replaces the default Ravion domain with a custom domain of the preview ingress. Each branch takes the place of the star. Not served yet, so a deploy of a port that sets one is refused.
           id: domains
           label: Custom domains
           max_length: 1
@@ -339,7 +339,7 @@ module:
     | Port setting | Address |
     | --- | --- |
     | Default Ravion domain | `{branch}-{name}.{ingress domain}`, where the name is the value you enter |
-    | Custom domains | `{branch}.{domain}` for the custom domain `*.{domain}` |
+    | Custom domains | `{branch}.{domain}` for the custom domain `*.{domain}`. Not served yet: a deploy of a port that sets one is refused |
 
     The ingress domain is the preview ingress's wildcard domain on Ravion's managed apex. A blank Default Ravion domain uses the module ID as the name for the first port, and the module ID followed by the port's name for the others.
 
