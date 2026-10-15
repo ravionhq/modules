@@ -39,14 +39,24 @@ function terraformVariables(module: Record<string, unknown>): Record<string, unk
   return record(record(record(pipelines.defaults).input).terraform_variables);
 }
 
+const ROUTER_METRICS_NAMESPACE = "Ravion/PreviewRouter";
+
+function charts(module: Record<string, unknown>): Record<string, unknown>[] {
+  return records(record(module.ui).metrics);
+}
+
+function routerCharts(module: Record<string, unknown>): Record<string, unknown>[] {
+  return charts(module).filter((chart) => record(chart.source).namespace === ROUTER_METRICS_NAMESPACE);
+}
+
 describe("rvn-preview module definition", () => {
-  it("is inputs and a preview block, with no stack, build or deploy", async () => {
+  it("is inputs, a preview block and charts, with no stack, build or deploy", async () => {
     const definition = await compileDefinitionFile(previewDefinitionPath);
 
     assert.equal(definition.type, "rvn-preview");
     assert.equal(definition.name, "Preview");
     assert.equal(definition.global, false);
-    assert.deepEqual(Object.keys(definition.module).sort(), ["inputs", "preview", "readme"]);
+    assert.deepEqual(Object.keys(definition.module).sort(), ["inputs", "preview", "readme", "ui"]);
   });
 
   it("maps its inputs into every field of the preview block with whole templates", async () => {
@@ -81,7 +91,7 @@ describe("rvn-preview module definition", () => {
       inputs.flatMap((input) => [input.id, ...(Array.isArray(input.mapped_inputs) ? records(input.mapped_inputs).map((mapped) => mapped.id) : [])]),
     );
 
-    const read = templateLeaves(definition.module.preview).flatMap((template) =>
+    const read = [definition.module.preview, definition.module.ui].flatMap(templateLeaves).flatMap((template) =>
       [...template.matchAll(/module\.input\.([a-z_]+)/g)].map((match) => match[1]),
     );
     assert.ok(read.length > 0);
@@ -157,15 +167,65 @@ describe("rvn-preview module definition", () => {
     const ingress = findInput(inputs, "ingress");
     assert.equal(ingress.type, "$ref:rvn-preview-ingress");
     const mapped = records(ingress.mapped_inputs);
-    assert.deepEqual(
-      mapped.map((input) => [input.id, input.default]),
-      [["ingress_wildcard_domain_name", "<<ref.stack.output.wildcard_domain_name>>"]],
-    );
+    assert.equal(findInput(mapped, "ingress_wildcard_domain_name").default, "<<ref.stack.output.wildcard_domain_name>>");
 
     const ravionDomain = findInput(records(findInput(inputs, "ports").item_inputs), "ravion_domain_name");
     assert.equal(ravionDomain.suffix, ".<< module.input.ingress_wildcard_domain_name >>");
     assert.equal(ravionDomain.prefix, "{branch}-");
     assert.equal(JSON.stringify(definition.module.inputs).includes("platform.apex"), false);
+  });
+
+  it("copies the ingress's AWS account and region from the selected ingress, where its router publishes metrics", async () => {
+    const definition = await compileDefinitionFile(previewDefinitionPath);
+    const ingress = findInput(records(definition.module.inputs), "ingress");
+
+    assert.deepEqual(
+      records(ingress.mapped_inputs).map((input) => [input.id, input.default]),
+      [
+        ["ingress_wildcard_domain_name", "<<ref.stack.output.wildcard_domain_name>>"],
+        // The Ravion AWS account record, which a CloudWatch source takes. The
+        // ingress's aws_account_id output is the 12-digit account number.
+        ["ingress_aws_account_id", "<< ref.input.aws_account_id >>"],
+        // The region the ingress's resources were applied in, which its
+        // aws_region input leaves to the provider when unset.
+        ["ingress_region", "<<ref.stack.output.region>>"],
+      ],
+    );
+  });
+
+  it("charts this module's requests from the metrics its ingress's router publishes", async () => {
+    const definition = await compileDefinitionFile(previewDefinitionPath);
+    const metrics = charts(definition.module);
+
+    assert.deepEqual(
+      metrics.map((chart) => [chart.id, record(chart.source).name, record(chart.source).statistic]),
+      [
+        ["requests", "Requests", "Sum"],
+        ["responses_4xx", "Responses4xx", "Sum"],
+        ["responses_5xx", "Responses5xx", "Sum"],
+        ["latency_average", "Latency", "Average"],
+        ["wakes", "Wakes", "Sum"],
+        ["wake_duration", "WakeDuration", "Average"],
+        ["open_websockets", "OpenWebSockets", "Maximum"],
+      ],
+    );
+    for (const chart of metrics) {
+      assert.equal(chart.type, "line");
+      // A preview with no ingress serves no port, so the router has nothing to report.
+      assert.equal(chart.enabled, "<< module.input.ingress != nil >>");
+      assert.deepEqual(record(chart.source), {
+        type: "cloudwatch",
+        aws_account_id: "<< module.input.ingress_aws_account_id >>",
+        region: "<< module.input.ingress_region >>",
+        namespace: ROUTER_METRICS_NAMESPACE,
+        name: record(chart.source).name,
+        statistic: record(chart.source).statistic,
+        dimensions: {
+          IngressModuleInstanceId: "<< module.input.ingress >>",
+          PreviewModuleInstanceId: "<< module.id >>",
+        },
+      });
+    }
   });
 
   it("takes environment variables in the catalog's runtime shape", async () => {
@@ -262,6 +322,59 @@ describe("rvn-preview-ingress module definition", () => {
     for (const output of outputs) {
       assert.ok(outputsFile.includes(`output "${String(output.id)}"`), `expected Terraform output ${String(output.id)}`);
     }
+  });
+
+  it("charts the router's request metrics for this module instance", async () => {
+    const definition = await compileDefinitionFile(ingressDefinitionPath);
+    const metrics = routerCharts(definition.module);
+
+    assert.deepEqual(
+      metrics.map((chart) => [chart.id, record(chart.source).name, record(chart.source).statistic, record(chart.source).group_by]),
+      [
+        ["requests", "Requests", "Sum", undefined],
+        ["responses_2xx", "Responses2xx", "Sum", undefined],
+        ["responses_3xx", "Responses3xx", "Sum", undefined],
+        ["responses_4xx", "Responses4xx", "Sum", undefined],
+        ["responses_5xx", "Responses5xx", "Sum", undefined],
+        ["latency_average", "Latency", "Average", undefined],
+        ["latency_maximum", "Latency", "Maximum", undefined],
+        ["requests_by_hostname", "Requests", "Sum", "Hostname"],
+        ["responses_5xx_by_hostname", "Responses5xx", "Sum", "Hostname"],
+        ["unknown_hostname_requests", "UnknownHostnameRequests", "Sum", undefined],
+        ["wakes", "Wakes", "Sum", undefined],
+        ["wake_failures", "WakeFailures", "Sum", undefined],
+        ["wake_duration", "WakeDuration", "Average", undefined],
+        ["held_requests", "HeldRequests", "Maximum", undefined],
+        ["open_websockets", "OpenWebSockets", "Maximum", undefined],
+        ["routes", "Routes", "Maximum", undefined],
+        // A 0/1 gauge: the minimum shows a disconnection anywhere in the period.
+        ["control_plane_connected", "ControlPlaneConnected", "Minimum", undefined],
+        ["router_memory", "MemoryUsedMiB", "Maximum", undefined],
+      ],
+    );
+    for (const chart of metrics) {
+      const source = record(chart.source);
+      assert.equal(chart.type, "line");
+      assert.equal(source.type, "cloudwatch");
+      assert.equal(source.aws_account_id, "<< module.input.aws_account_id >>");
+      assert.equal(source.region, "<< module.output.region >>");
+      // Grouped charts draw one series per value of group_by among the series
+      // that carry these dimensions as well.
+      assert.deepEqual(source.dimensions, { IngressModuleInstanceId: "<< module.id >>" });
+    }
+  });
+
+  it("lets the router publish in the namespace its charts read and no other", async () => {
+    const iamRole = await readFile(resolve(repoRoot, "networking/preview_ingress/iam_role.tf"), "utf8");
+
+    assert.ok(iamRole.includes(`"cloudwatch:namespace" = "${ROUTER_METRICS_NAMESPACE}"`));
+  });
+
+  it("gives every chart its own id", async () => {
+    const definition = await compileDefinitionFile(ingressDefinitionPath);
+    const ids = charts(definition.module).map((chart) => chart.id);
+
+    assert.equal(new Set(ids).size, ids.length);
   });
 
   it("passes every new input to a Terraform variable of its own", async () => {

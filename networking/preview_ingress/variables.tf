@@ -242,6 +242,6 @@ variable "router_enabled" {
 
 variable "ssm_enabled" {
   type        = bool
-  description = "Give the router instance an IAM role that allows AWS Systems Manager Session Manager and nothing else, for operator shell access. When false the instance has no IAM role. The image must carry the SSM Agent."
+  description = "Add AWS Systems Manager Session Manager access to the router instance's IAM role, for operator shell access. When false the role holds only the permission to publish the router's metrics. The image must carry the SSM Agent."
   default     = true
 }

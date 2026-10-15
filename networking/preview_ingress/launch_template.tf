@@ -10,11 +10,8 @@ resource "aws_launch_template" "router" {
 
   user_data = base64encode(local.user_data)
 
-  dynamic "iam_instance_profile" {
-    for_each = var.ssm_enabled ? [1] : []
-    content {
-      arn = aws_iam_instance_profile.router[0].arn
-    }
+  iam_instance_profile {
+    arn = aws_iam_instance_profile.router.arn
   }
 
   network_interfaces {

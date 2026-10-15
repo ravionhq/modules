@@ -20,6 +20,20 @@ module:
           collapsible: true
           required: false
           default: <<ref.stack.output.wildcard_domain_name>>
+        - id: ingress_aws_account_id
+          label: Ingress AWS account
+          type: string
+          description: AWS account of the preview ingress, where its router publishes request metrics.
+          collapsible: true
+          required: false
+          default: << ref.input.aws_account_id >>
+        - id: ingress_region
+          label: Ingress region
+          type: string
+          description: Region of the preview ingress, where its router publishes request metrics.
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.region>>
       required: false
     - id: section_source
       label: Source
@@ -185,6 +199,106 @@ module:
     idle: << module.input.idle_timeout_seconds >>
     retention: << module.input.retention_seconds >>
     pull_requests: << module.input.pull_request_previews_enabled >>
+  ui:
+    metrics:
+      - id: requests
+        name: Requests
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Requests
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: responses_4xx
+        name: 4xx responses
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses4xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: responses_5xx
+        name: 5xx responses
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses5xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: latency_average
+        name: Latency (avg)
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Latency
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: wakes
+        name: Wakes
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Wakes
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: wake_duration
+        name: Wake duration (avg)
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: WakeDuration
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: open_websockets
+        name: Open WebSockets
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: OpenWebSockets
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
   readme: |
     Preview of a repository's branches. Each branch runs in its own sandbox from shell steps you define, with its HTTP ports served through a preview ingress.
 
@@ -275,6 +389,12 @@ module:
     Sandbox execution environment selects the sandbox pool that runs the previews. The module's preview ingress must list that execution environment's security group under Sandbox host security groups.
 
     Changes to the steps, ports and variables take effect on the next deploy. Changes to the execution environment and the sandbox sizes apply to sandboxes created afterwards.
+
+    ## Metrics
+
+    The Metrics tab reads the metrics the preview ingress's router publishes to CloudWatch, in the ingress's AWS account and region: requests, 4xx and 5xx responses, average latency, wakes of paused previews and their average duration, and open WebSockets. Each chart covers every branch and every exposed port of this module.
+
+    A module with no preview ingress serves no address and has no metrics.
 
     ## Configuration
 

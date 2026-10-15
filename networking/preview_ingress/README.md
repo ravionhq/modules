@@ -17,7 +17,7 @@ Requests travel from the browser to the load balancer, to the router, to the san
 | Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes; the replacement is launched and healthy before the old instance is drained |
 | Two security groups | One for the load balancer, one for the router |
 | Sandbox host rules | One inbound rule on each group of `sandbox_host_security_groups`: the preview port range from the router's group, and one outbound rule from the router's group to it |
-| IAM role and instance profile | Session Manager access for operators. Created only with `ssm_enabled` |
+| IAM role and instance profile | Lets the router publish its metrics to CloudWatch in the `Ravion/PreviewRouter` namespace. With `ssm_enabled`, also Session Manager access for operators |
 
 ## Usage
 
@@ -135,7 +135,38 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 
 ## Session Manager
 
-`ssm_enabled` gives the instance a role with the `AmazonSSMManagedInstanceCore` policy and no other permission. Session Manager also needs the SSM Agent in the image. Turn `ssm_enabled` off to launch the instance with no IAM role.
+`ssm_enabled` attaches the `AmazonSSMManagedInstanceCore` policy to the instance role. Session Manager also needs the SSM Agent in the image. Turn `ssm_enabled` off to leave the role with only the permission to publish the router's metrics.
+
+## Metrics
+
+The router publishes request metrics to CloudWatch every minute, in the `Ravion/PreviewRouter` namespace of the module's account and region. The instance role allows `cloudwatch:PutMetricData` with the condition `cloudwatch:namespace = Ravion/PreviewRouter`. The action has no resource-level permissions, so the namespace condition is its only scope.
+
+Each metric is published under one or more of these dimension sets:
+
+| Set | Dimensions | Scope |
+| --- | --- | --- |
+| Router | `IngressModuleInstanceId` | Everything the router serves |
+| Preview | `IngressModuleInstanceId`, `PreviewModuleInstanceId` | The hostnames of one preview module instance |
+| Hostname | `IngressModuleInstanceId`, `Hostname` | One preview hostname |
+
+`IngressModuleInstanceId` is `module_instance_id`. `PreviewModuleInstanceId` is the module instance of the preview that owns the hostname.
+
+| Metric | Dimension sets | Description |
+| --- | --- | --- |
+| `Requests` | Router, Preview, Hostname | Requests |
+| `Responses2xx`, `Responses3xx`, `Responses4xx` | Router, Preview | Responses by status class |
+| `Responses5xx` | Router, Preview, Hostname | 5xx responses |
+| `Latency` | Router, Preview | Request latency in milliseconds, as a statistic set |
+| `UnknownHostnameRequests` | Router | Requests for a hostname with no route |
+| `Wakes`, `WakeFailures` | Router, Preview | Wakes of paused sandboxes, and those that failed |
+| `WakeDuration` | Router, Preview | Wake duration in milliseconds, as a statistic set |
+| `HeldRequests` | Router | Requests held while their sandbox wakes, the maximum in the minute |
+| `OpenWebSockets` | Router, Preview | Open WebSocket connections, the maximum in the minute |
+| `Routes` | Router | Routes the router holds |
+| `ControlPlaneConnected` | Router | 1 while the router is connected to Ravion, otherwise 0 |
+| `MemoryUsedMiB` | Router | Memory the router uses, in MiB |
+
+The module's definition charts these on the Metrics tab beside the load balancer's `AWS/NetworkELB` metrics and the instance's `AWS/EC2` metrics.
 
 ## Requirements
 
@@ -164,7 +195,7 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 | image_id | AMI the router boots. Null looks up the newest image of `image_owner` | `string` | `null` | no |
 | image_owner | AWS account that publishes the looked-up image: a 12-digit ID, or `self`, `amazon`, `aws-marketplace` | `string` | `"600013814144"` | no |
 | image_name_pattern | AMI name pattern of the looked-up image | `string` | `"ravion-preview-router-*"` | no |
-| ssm_enabled | Give the instance a role that allows Session Manager and nothing else | `bool` | `true` | no |
+| ssm_enabled | Add Session Manager access to the instance role | `bool` | `true` | no |
 | ravion_domain_name | Name leaf of the wildcard domain: Ravion issues `*.<name>.<apex>`. Null uses the module instance given id | `string` | `null` | no |
 | module_instance_given_id | The module instance's given id, the default leaf of the wildcard domain. Injected as `TF_VAR_module_instance_given_id` inside a stack run | `string` | `null` | no |
 | domains | Custom wildcard domains previews can be served under, each `*.<domain>` in a DNS zone you control. At most 10 | `list(string)` | `[]` | no |

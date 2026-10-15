@@ -85,7 +85,13 @@ A module with no `ports` runs its steps, serves no address, and needs no `ingres
 | idle_timeout_seconds | Seconds without a running command or an open connection before a preview is paused. `0` keeps it running; other values start at 60. Unset uses 900, or 14400 for a pull request's preview | `number` | unset | no |
 | retention_seconds | Seconds a paused preview is kept before it expires. Unset uses 86400, or 604800 for a pull request's preview | `number` | unset | no |
 
-The `ingress` reference also fills `ingress_wildcard_domain_name` from the preview ingress's `wildcard_domain_name` output. The form shows it after the Default Ravion domain of each port.
+The `ingress` reference also fills these inputs from the selected preview ingress:
+
+| Name | From | Used for |
+| --- | --- | --- |
+| ingress_wildcard_domain_name | The `wildcard_domain_name` output | The form shows it after the Default Ravion domain of each port |
+| ingress_aws_account_id | The `aws_account_id` input, Ravion's record of the AWS account | The account the Metrics tab reads |
+| ingress_region | The `region` output | The region the Metrics tab reads |
 
 ### Ports
 
@@ -110,6 +116,22 @@ The `ingress` reference also fills `ingress_wildcard_domain_name` from the previ
 | `ingress` | `ingress` |
 | `idle`, `retention` | `idle_timeout_seconds`, `retention_seconds` |
 | `pull_requests` | `pull_request_previews_enabled` |
+
+## Metrics
+
+The module creates no AWS resources, so its charts read the metrics the preview ingress's router publishes to CloudWatch under `Ravion/PreviewRouter`, in the ingress's account and region. Each chart is scoped to the dimensions `IngressModuleInstanceId` (the `ingress` reference) and `PreviewModuleInstanceId` (this module instance), so it covers every branch and every port of the module.
+
+| Chart | Metric | Statistic |
+| --- | --- | --- |
+| Requests | `Requests` | Sum |
+| 4xx responses | `Responses4xx` | Sum |
+| 5xx responses | `Responses5xx` | Sum |
+| Latency (avg) | `Latency` | Average |
+| Wakes | `Wakes` | Sum |
+| Wake duration (avg) | `WakeDuration` | Average |
+| Open WebSockets | `OpenWebSockets` | Maximum |
+
+A module with no `ingress` shows no charts. The preview ingress's README lists every metric the router publishes.
 
 ## Variables Ravion sets
 

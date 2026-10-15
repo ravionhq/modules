@@ -664,26 +664,45 @@ run "image_and_instance_type_must_share_an_architecture" {
   expect_failures = [aws_launch_template.router]
 }
 
-run "session_manager_access_is_the_instance_role_only_permission" {
+run "router_may_publish_metrics_in_its_namespace_only" {
   command = plan
 
   assert {
-    condition     = length(aws_iam_role.router) == 1 && length(aws_iam_instance_profile.router) == 1 && length(aws_iam_role_policy_attachment.router_ssm) == 1
+    condition     = aws_iam_instance_profile.router.role == aws_iam_role.router.name && aws_launch_template.router.iam_instance_profile[0].arn == aws_iam_instance_profile.router.arn
+    error_message = "The instance must use the module's instance profile"
+  }
+
+  assert {
+    condition     = aws_iam_role_policy.router_metrics.role == aws_iam_role.router.id && length(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement) == 1
+    error_message = "The router's role must hold one inline statement"
+  }
+
+  assert {
+    condition     = one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Effect == "Allow" && one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Action == "cloudwatch:PutMetricData" && one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Resource == "*"
+    error_message = "The statement must allow cloudwatch:PutMetricData, which has no resource-level permissions, and nothing else"
+  }
+
+  assert {
+    condition     = one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Condition == { StringEquals = { "cloudwatch:namespace" = "Ravion/PreviewRouter" } }
+    error_message = "The router must publish metrics only in the Ravion/PreviewRouter namespace"
+  }
+}
+
+run "session_manager_access_adds_the_session_manager_core_policy" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.router_ssm) == 1 && aws_iam_role_policy_attachment.router_ssm[0].role == aws_iam_role.router.name
     error_message = "Session Manager access must be on by default"
   }
 
   assert {
     condition     = aws_iam_role_policy_attachment.router_ssm[0].policy_arn == "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-    error_message = "The instance role must hold the Session Manager core policy and nothing else"
-  }
-
-  assert {
-    condition     = aws_launch_template.router.iam_instance_profile[0].arn == aws_iam_instance_profile.router[0].arn
-    error_message = "The instance must use the module's instance profile"
+    error_message = "Session Manager access must attach the Session Manager core policy and no other managed policy"
   }
 }
 
-run "session_manager_off_leaves_the_instance_without_a_role" {
+run "session_manager_off_leaves_the_metrics_permission_only" {
   command = plan
 
   variables {
@@ -691,13 +710,13 @@ run "session_manager_off_leaves_the_instance_without_a_role" {
   }
 
   assert {
-    condition     = length(aws_iam_role.router) == 0 && length(aws_iam_instance_profile.router) == 0 && length(aws_iam_role_policy_attachment.router_ssm) == 0
-    error_message = "Turning Session Manager off must create no role or instance profile"
+    condition     = length(aws_iam_role_policy_attachment.router_ssm) == 0
+    error_message = "Turning Session Manager off must attach no managed policy"
   }
 
   assert {
-    condition     = length(aws_launch_template.router.iam_instance_profile) == 0
-    error_message = "The instance must launch with no instance profile"
+    condition     = aws_launch_template.router.iam_instance_profile[0].arn == aws_iam_instance_profile.router.arn && aws_iam_role_policy.router_metrics.role == aws_iam_role.router.id
+    error_message = "With Session Manager off the router must keep its role, so it can still publish its metrics"
   }
 }
 

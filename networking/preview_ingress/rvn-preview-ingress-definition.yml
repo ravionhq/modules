@@ -158,7 +158,7 @@ module:
     - id: ssm_enabled
       label: Session Manager access
       type: boolean
-      description: Gives the router instance an IAM role that allows AWS Systems Manager Session Manager and nothing else. Turn off to launch the instance with no IAM role.
+      description: Adds AWS Systems Manager Session Manager access to the router instance's IAM role. Turn off to leave the role with only the permission to publish the router's metrics.
       default: true
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -188,6 +188,212 @@ module:
         vpc_id: << module.input.vpc_id >>
   ui:
     metrics:
+      - id: requests
+        name: Requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Requests
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_2xx
+        name: 2xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses2xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_3xx
+        name: 3xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses3xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_4xx
+        name: 4xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses4xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_5xx
+        name: 5xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses5xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: latency_average
+        name: Latency (avg)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Latency
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: latency_maximum
+        name: Latency (max)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Latency
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: requests_by_hostname
+        name: Requests by hostname
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Requests
+          statistic: Sum
+          group_by: Hostname
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_5xx_by_hostname
+        name: 5xx responses by hostname
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses5xx
+          statistic: Sum
+          group_by: Hostname
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: unknown_hostname_requests
+        name: Unknown hostname requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: UnknownHostnameRequests
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: wakes
+        name: Sandbox wakes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Wakes
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: wake_failures
+        name: Sandbox wake failures
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: WakeFailures
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: wake_duration
+        name: Sandbox wake duration (avg)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: WakeDuration
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: held_requests
+        name: Held requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: HeldRequests
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: open_websockets
+        name: Open WebSockets
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: OpenWebSockets
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: routes
+        name: Routes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Routes
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: control_plane_connected
+        name: Control plane connected
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: ControlPlaneConnected
+          statistic: Minimum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
       - id: healthy_routers
         name: Healthy routers
         type: line
@@ -346,6 +552,18 @@ module:
           statistic: Average
           dimensions:
             AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_memory
+        name: Router memory used
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: MemoryUsedMiB
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
       - id: router_cpu_credit_balance
         name: Router CPU credit balance
         type: line
@@ -508,14 +726,17 @@ module:
 
     A stack run succeeds once the router answers its health check behind the load balancer. A router that never turns healthy fails the run after ten minutes; the cause is in the instance's console output.
 
-    Session Manager access gives operators a shell on the instance through AWS Systems Manager. The instance role holds that permission and no other.
+    The instance role allows the router to publish its metrics to CloudWatch, in the `Ravion/PreviewRouter` namespace only. Session Manager access adds a shell on the instance for operators, through AWS Systems Manager.
 
     ## Metrics
 
     The Metrics tab reads CloudWatch in your account:
 
+    - Requests, published by the router every minute: requests, responses by status class, latency average and maximum, requests and 5xx responses per preview hostname, requests for unknown hostnames, sandbox wakes, wake failures and wake duration, requests held during a wake, open WebSockets, routes, and whether the router is connected to Ravion.
     - Load balancer: healthy and unhealthy routers, new and active connections, data processed, peak throughput, capacity units, client TLS errors, connections the ingress CIDRs block, and resets by side.
-    - Router instance: CPU utilization, CPU credit balance and use, network bytes and packets, and status check failures. These follow the Auto Scaling group, so they continue across a router replacement.
+    - Router instance: CPU utilization, memory used by the router, CPU credit balance and use, network bytes and packets, and status check failures. These follow the module instance and its Auto Scaling group, so they continue across a router replacement.
+
+    Each Preview module that serves ports through this ingress charts its own requests, responses, latency, wakes and open WebSockets.
 
     ## Configuration
 
@@ -530,7 +751,7 @@ module:
     | Router running | No | true | Turn off to pause the router |
     | Instance type | Yes | t3.micro | Router instance type, x86_64 |
     | Run in private subnets | No | true | Router placement |
-    | Session Manager access | No | true | Instance role for AWS Systems Manager Session Manager |
+    | Session Manager access | No | true | AWS Systems Manager Session Manager access to the router instance |
     | Tags | No | Standard Ravion tags | Additional tags applied to resources |
     | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
     | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
