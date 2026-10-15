@@ -102,12 +102,16 @@ locals {
 
   instances = length(var.instances) > 0 ? var.instances : local.generated_instances
 
+  # Module-managed master credentials in a named Secrets Manager secret
+  create_master_user_secret = var.master_user_secret_name != null
+
   # RDS Proxy
   create_proxy        = var.proxy_creation_enabled
   proxy_engine_family = local.is_mysql ? "MYSQL" : "POSTGRESQL"
   proxy_auth_secret_arns = (
     length(var.proxy_auth_secret_arns) > 0 ? var.proxy_auth_secret_arns :
-    var.master_user_password_management_enabled ? [for s in aws_rds_cluster.this.master_user_secret : s.secret_arn] : []
+    var.master_user_password_management_enabled ? [for s in aws_rds_cluster.this.master_user_secret : s.secret_arn] :
+    local.create_master_user_secret ? [aws_secretsmanager_secret.master_user[0].arn] : []
   )
   proxy_secret_kms_key_arns = distinct(concat(
     var.proxy_secret_kms_key_arns,

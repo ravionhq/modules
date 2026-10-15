@@ -261,13 +261,50 @@ variable "master_user_password_preservation_enabled" {
 }
 
 variable "master_user_secret_kms_key_id" {
-  description = "The ARN of the KMS key used to encrypt the master user secret in Secrets Manager."
+  description = "The ARN of the KMS key used to encrypt the master user secret in Secrets Manager: the AWS-managed secret, or the named secret when master_user_secret_name is set."
   type        = string
   default     = null
 
   validation {
     condition     = var.master_user_secret_kms_key_id == null || can(regex("^arn:aws:kms:", var.master_user_secret_kms_key_id))
     error_message = "KMS key ID must be an ARN starting with 'arn:aws:kms:'."
+  }
+}
+
+variable "master_user_secret_name" {
+  description = "Name of a Secrets Manager secret the module creates to hold the master credentials. When set, the module generates the master password itself and writes it to the cluster and the secret through write-only arguments, so it never reaches state or plan files. The secret is never rotated automatically; increment master_user_secret_version to set a new password. Requires master_user_password_management_enabled = false."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.master_user_secret_name == null || (can(regex("^[A-Za-z0-9/_+=.@-]+$", var.master_user_secret_name)) && length(var.master_user_secret_name) <= 512)
+    error_message = "master_user_secret_name must be 1-512 characters of letters, numbers, and / _ + = . @ -."
+  }
+
+  validation {
+    condition     = var.master_user_secret_name == null || !var.master_user_password_management_enabled
+    error_message = "master_user_secret_name requires master_user_password_management_enabled = false: the module, not AWS, manages the password stored in the named secret."
+  }
+
+  validation {
+    condition     = var.master_user_secret_name == null || !var.master_user_password_preservation_enabled
+    error_message = "master_user_secret_name and master_user_password_preservation_enabled cannot both be set: a named secret sets a new master password."
+  }
+
+  validation {
+    condition     = var.master_user_secret_name == null || var.master_password == null
+    error_message = "master_user_secret_name and master_password cannot both be set: the module generates the password stored in the named secret."
+  }
+}
+
+variable "master_user_secret_version" {
+  description = "Version of the module-generated master password stored in master_user_secret_name. Increment it to generate a new password and write it to both the cluster and the secret on the next apply."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.master_user_secret_version >= 1 && floor(var.master_user_secret_version) == var.master_user_secret_version
+    error_message = "master_user_secret_version must be a whole number of at least 1."
   }
 }
 

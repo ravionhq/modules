@@ -67,7 +67,11 @@ output "cluster_master_username" {
 
 output "cluster_master_user_secret_arn" {
   description = "The ARN of the Secrets Manager secret containing the master user credentials."
-  value       = var.master_user_password_management_enabled ? try(aws_rds_cluster.this.master_user_secret[0].secret_arn, null) : null
+  value = (
+    local.create_master_user_secret ? aws_secretsmanager_secret.master_user[0].arn :
+    var.master_user_password_management_enabled ? try(aws_rds_cluster.this.master_user_secret[0].secret_arn, null) :
+    null
+  )
 }
 
 ################################################################################
