@@ -36,6 +36,20 @@ jobs:
       - name: Check formatting
         run: tofu fmt -check -recursive
 
+      # Each AWS provider version is about 770 MB unpacked, so lock files that
+      # drift apart slow down validate and can fill the runner disk.
+      - name: Check every lock file pins the same AWS provider
+        run: |
+          set -euo pipefail
+          pins=$(git ls-files '*.terraform.lock.hcl' | xargs awk '
+            /^provider "registry\.(opentofu\.org|terraform\.io)\/hashicorp\/aws"/ { aws = 1; next }
+            aws && $1 == "version" { gsub(/"/, "", $3); print $3 "\t" FILENAME; aws = 0 }')
+          if [ "$(cut -f1 <<< "${pins}" | sort -u | wc -l)" -gt 1 ]; then
+            echo "::error::Lock files pin different hashicorp/aws versions. Pin them all to one version."
+            sort <<< "${pins}"
+            exit 1
+          fi
+
       # TFLint and Trivy read called modules from .terraform/modules. `tofu get`
       # downloads those without the providers, which validate installs.
       - name: Download called modules
@@ -62,9 +76,9 @@ jobs:
           exit-code: '1'
           severity: HIGH,CRITICAL
 
-  # The modules pin many AWS provider versions, about 770 MB each unpacked.
-  # Six shards keep each job to a few versions, within the default 8 GiB disk.
-  # Within a job, the plugin cache installs each version once.
+  # Validating the modules one after another takes several minutes, so they
+  # are split across six jobs. Within a job, the plugin cache installs each
+  # provider version once for all its modules.
   validate:
     name: Validate modules (${{ matrix.shard }}/6)
     runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate-${{ matrix.shard }}/interruptible=true
@@ -84,7 +98,7 @@ jobs:
       - name: Validate module syntax
         run: |
           mkdir -p "$RUNNER_TEMP/plugin-cache"
-          TF_PLUGIN_CACHE_DIR="$RUNNER_TEMP/plugin-cache" .github/scripts/validate-modules.sh ${{ matrix.shard }} 6 3
+          TF_PLUGIN_CACHE_DIR="$RUNNER_TEMP/plugin-cache" .github/scripts/validate-modules.sh ${{ matrix.shard }} 6
 
   test:
     name: Test ${{ matrix.name }}
@@ -170,7 +184,7 @@ jobs:
     name: Validate Terraform Modules
     if: always()
     needs: [lint, validate, test]
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=1/memory=2/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-result/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-result/interruptible=true
     steps:
       - name: Check results
         env:
