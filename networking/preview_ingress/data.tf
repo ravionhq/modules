@@ -8,11 +8,6 @@ data "aws_region" "current" {}
 
 data "aws_partition" "current" {}
 
-# The VPC's IPv4 ranges bound where the router may open preview connections.
-data "aws_vpc" "this" {
-  id = var.vpc_id
-}
-
 data "aws_ec2_instance_type" "router" {
   instance_type = var.instance_type
 }

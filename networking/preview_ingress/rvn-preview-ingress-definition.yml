@@ -187,7 +187,7 @@ module:
         region: << module.input.aws_region >>
         router_public_ip_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
         router_subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
-        sandbox_host_security_group_ids: << module.input.sandbox_host_security_group_ids >>
+        sandbox_host_security_groups: '<< map(uniq(module.input.sandbox_host_security_group_ids), {"name": #, "id": #}) >>'
         ssm_enabled: << module.input.ssm_enabled >>
         tags:
           $include: ../../partials/stack/ravion-tags.yml

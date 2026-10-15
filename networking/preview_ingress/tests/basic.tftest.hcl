@@ -25,17 +25,6 @@ mock_provider "aws" {
   }
 
   override_data {
-    target = data.aws_vpc.this
-    values = {
-      cidr_block_associations = [
-        { association_id = "vpc-cidr-assoc-1", cidr_block = "10.0.0.0/16", state = "associated" },
-        { association_id = "vpc-cidr-assoc-2", cidr_block = "10.1.0.0/16", state = "associated" },
-        { association_id = "vpc-cidr-assoc-3", cidr_block = "10.9.0.0/16", state = "disassociated" },
-      ]
-    }
-  }
-
-  override_data {
     target = data.aws_ec2_instance_type.router
     values = {
       supported_architectures = ["x86_64"]
@@ -418,22 +407,29 @@ run "router_accepts_traffic_from_the_load_balancer_only" {
 run "router_reaches_the_control_plane_and_the_preview_port_range_only" {
   command = plan
 
+  variables {
+    sandbox_host_security_groups = [
+      { name = "pool_a", id = "sg-0cccccccccccccccc" },
+      { name = "pool_b", id = "sg-0dddddddddddddddd" },
+    ]
+  }
+
   assert {
     condition     = length(aws_vpc_security_group_egress_rule.router_https) == 1 && aws_vpc_security_group_egress_rule.router_https["443"].from_port == 443 && aws_vpc_security_group_egress_rule.router_https["443"].to_port == 443 && aws_vpc_security_group_egress_rule.router_https["443"].ip_protocol == "tcp" && aws_vpc_security_group_egress_rule.router_https["443"].cidr_ipv4 == "0.0.0.0/0"
     error_message = "The router's only route out of the VPC must be HTTPS"
   }
 
   assert {
-    condition     = toset(keys(aws_vpc_security_group_egress_rule.router_previews)) == toset(["10.0.0.0/16", "10.1.0.0/16"])
-    error_message = "The preview port range must be opened to every associated VPC CIDR and to no other address"
+    condition     = toset(keys(aws_vpc_security_group_egress_rule.router_previews)) == toset(["pool_a", "pool_b"])
+    error_message = "The preview port range must be opened to each sandbox host group and to no other destination"
   }
 
   assert {
     condition = alltrue([
-      for cidr, rule in aws_vpc_security_group_egress_rule.router_previews :
-      rule.security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == cidr && rule.ip_protocol == "tcp" && rule.from_port == 20000 && rule.to_port == 20998
+      for key, rule in aws_vpc_security_group_egress_rule.router_previews :
+      rule.security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.referenced_security_group_id == { pool_a = "sg-0cccccccccccccccc", pool_b = "sg-0dddddddddddddddd" }[key] && rule.cidr_ipv4 == null && rule.ip_protocol == "tcp" && rule.from_port == 20000 && rule.to_port == 20998
     ])
-    error_message = "Inside the VPC the router must reach TCP 20000-20998 only"
+    error_message = "Inside the VPC the router must reach TCP 20000-20998 on the sandbox host groups only"
   }
 }
 
@@ -464,6 +460,11 @@ run "no_sandbox_host_groups_adds_no_rule" {
   }
 
   assert {
+    condition     = length(aws_vpc_security_group_egress_rule.router_previews) == 0
+    error_message = "With no sandbox host security groups the router must reach no preview port"
+  }
+
+  assert {
     condition     = length(output.sandbox_host_security_group_ids) == 0
     error_message = "sandbox_host_security_group_ids must be empty when no group is given"
   }
@@ -473,18 +474,21 @@ run "sandbox_hosts_admit_the_router_on_the_preview_port_range" {
   command = plan
 
   variables {
-    sandbox_host_security_group_ids = ["sg-0dddddddddddddddd", "sg-0cccccccccccccccc", "sg-0dddddddddddddddd"]
+    sandbox_host_security_groups = [
+      { name = "pool_b", id = "sg-0dddddddddddddddd" },
+      { name = "pool_a", id = "sg-0cccccccccccccccc" },
+    ]
   }
 
   assert {
-    condition     = toset(keys(aws_vpc_security_group_ingress_rule.sandbox_hosts)) == toset(["sg-0cccccccccccccccc", "sg-0dddddddddddddddd"])
-    error_message = "Each sandbox host security group must get exactly one rule"
+    condition     = toset(keys(aws_vpc_security_group_ingress_rule.sandbox_hosts)) == toset(["pool_a", "pool_b"])
+    error_message = "Each sandbox host security group must get exactly one rule, named by its key"
   }
 
   assert {
     condition = alltrue([
-      for group, rule in aws_vpc_security_group_ingress_rule.sandbox_hosts :
-      rule.security_group_id == group && rule.referenced_security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == null && rule.cidr_ipv6 == null && rule.prefix_list_id == null
+      for key, rule in aws_vpc_security_group_ingress_rule.sandbox_hosts :
+      rule.security_group_id == { pool_a = "sg-0cccccccccccccccc", pool_b = "sg-0dddddddddddddddd" }[key] && rule.referenced_security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == null && rule.cidr_ipv6 == null && rule.prefix_list_id == null
     ])
     error_message = "Each rule must sit on the sandbox hosts' group and name the router's security group as its only source"
   }

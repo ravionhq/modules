@@ -16,7 +16,7 @@ Requests travel from the browser to the load balancer, to the router, to the san
 | Custom domain certificate and domains | One certificate for every entry of `domains`, attached to the TLS listener beside the wildcard certificate, and one `ravion_domain` per entry pointed at the load balancer. Created only with `domains` |
 | Launch template and Auto Scaling group | One router instance, replaced when it turns unhealthy or when the launch template changes; the replacement is launched and healthy before the old instance is drained |
 | Two security groups | One for the load balancer, one for the router |
-| Sandbox host rules | One inbound rule on each of `sandbox_host_security_group_ids`: the preview port range from the router's group |
+| Sandbox host rules | One inbound rule on each group of `sandbox_host_security_groups`: the preview port range from the router's group, and one outbound rule from the router's group to it |
 | IAM role and instance profile | Session Manager access for operators. Created only with `ssm_enabled` |
 
 ## Usage
@@ -36,7 +36,9 @@ module "preview_ingress" {
   public_subnet_ids = module.vpc.public_subnet_ids
   router_subnet_ids = module.vpc.private_subnet_ids
 
-  sandbox_host_security_group_ids = ["sg-0123456789abcdef0"]
+  sandbox_host_security_groups = [
+    { name = "sandbox_hosts", id = "sg-0123456789abcdef0" },
+  ]
 
   tags = {
     Environment = "staging"
@@ -60,7 +62,9 @@ module "preview_ingress" {
   public_subnet_ids = module.vpc.public_subnet_ids
   router_subnet_ids = module.vpc.private_subnet_ids
 
-  sandbox_host_security_group_ids = ["sg-0123456789abcdef0"]
+  sandbox_host_security_groups = [
+    { name = "sandbox_hosts", id = "sg-0123456789abcdef0" },
+  ]
 }
 ```
 
@@ -80,7 +84,9 @@ module "preview_ingress" {
   router_subnet_ids        = module.vpc.public_subnet_ids
   router_public_ip_enabled = true
 
-  sandbox_host_security_group_ids = ["sg-0123456789abcdef0"]
+  sandbox_host_security_groups = [
+    { name = "sandbox_hosts", id = "sg-0123456789abcdef0" },
+  ]
 }
 ```
 
@@ -119,11 +125,11 @@ A router answers its health check only once it holds its routes, and keeps answe
 | Group | Inbound | Outbound |
 | --- | --- | --- |
 | Load balancer | TCP 443 and 80 from `ingress_cidr_blocks` | TCP 8080, 8081 and 8082 to the router's group |
-| Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 to the VPC's IPv4 ranges |
+| Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 to each group in `sandbox_host_security_groups` |
 
 No CIDR reaches the router. Its outbound HTTPS serves the Ravion API and AWS APIs. Ports 20000-20998 are where sandbox hosts publish previews, and the router can open no other connection inside the VPC. A Ravion API on a port other than 443 adds that port to the router's outbound rules.
 
-The module adds one inbound rule to each security group in `sandbox_host_security_group_ids`: TCP 20000-20998 from the router's group. These are the groups of the sandbox hosts whose previews the router serves, and the router reaches no sandbox host outside them. The rules belong to this module, so a destroy removes them before the router's group. AWS refuses to delete a security group that another group's rule still names.
+The module adds one inbound rule to each security group in `sandbox_host_security_groups`: TCP 20000-20998 from the router's group. These are the groups of the sandbox hosts whose previews the router serves, and the router reaches no sandbox host outside them. Each group's `name` names its rules, so a group created in the same apply, such as `aws_security_group.sandbox_hosts.id`, can be passed as its `id`. The rules belong to this module, so a destroy removes them before the router's group. AWS refuses to delete a security group that another group's rule still names.
 
 ## Session Manager
 
@@ -148,7 +154,7 @@ The module adds one inbound rule to each security group in `sandbox_host_securit
 | public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
 | router_subnet_ids | Subnets the router instance launches in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
 | router_public_ip_enabled | Give the router instance a public IPv4 address, for public `router_subnet_ids` | `bool` | `false` | no |
-| sandbox_host_security_group_ids | Security groups of the sandbox hosts whose previews the router serves. Each gets one inbound rule for the router's group on the preview port range | `list(string)` | `[]` | no |
+| sandbox_host_security_groups | Security groups of the sandbox hosts whose previews the router serves, each with a `name` you choose for its rules. Each gets one inbound rule for the router's group on the preview port range | `list(object({ name = string, id = string }))` | `[]` | no |
 | ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
 | ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
 | instance_type | EC2 instance type of the router | `string` | `"t3.small"` | no |

@@ -14,15 +14,6 @@ mock_provider "aws" {
   }
 
   override_data {
-    target = data.aws_vpc.this
-    values = {
-      cidr_block_associations = [
-        { association_id = "vpc-cidr-assoc-1", cidr_block = "10.0.0.0/16", state = "associated" },
-      ]
-    }
-  }
-
-  override_data {
     target = data.aws_ec2_instance_type.router
     values = {
       supported_architectures = ["x86_64"]
@@ -198,10 +189,46 @@ run "sandbox_host_security_groups_must_be_ids" {
   command = plan
 
   variables {
-    sandbox_host_security_group_ids = ["default"]
+    sandbox_host_security_groups = [{ name = "sandbox_hosts", id = "default" }]
   }
 
-  expect_failures = [var.sandbox_host_security_group_ids]
+  expect_failures = [var.sandbox_host_security_groups]
+}
+
+run "sandbox_host_security_groups_appear_once" {
+  command = plan
+
+  variables {
+    sandbox_host_security_groups = [
+      { name = "pool_a", id = "sg-0cccccccccccccccc" },
+      { name = "pool_b", id = "sg-0cccccccccccccccc" },
+    ]
+  }
+
+  expect_failures = [var.sandbox_host_security_groups]
+}
+
+run "sandbox_host_security_group_names_are_unique" {
+  command = plan
+
+  variables {
+    sandbox_host_security_groups = [
+      { name = "pool", id = "sg-0cccccccccccccccc" },
+      { name = "pool", id = "sg-0dddddddddddddddd" },
+    ]
+  }
+
+  expect_failures = [var.sandbox_host_security_groups]
+}
+
+run "sandbox_host_security_group_names_are_not_empty" {
+  command = plan
+
+  variables {
+    sandbox_host_security_groups = [{ name = "", id = "sg-0cccccccccccccccc" }]
+  }
+
+  expect_failures = [var.sandbox_host_security_groups]
 }
 
 run "name_must_fit_a_load_balancer_name" {

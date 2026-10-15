@@ -43,14 +43,13 @@ locals {
     to   = 20998
   }
 
+  # The sandbox host groups by the name the caller gave each. The names are
+  # known at plan time even when a group is created in the same apply.
+  sandbox_host_security_groups = { for group in var.sandbox_host_security_groups : group.name => group.id }
+
   # Target group names share ELBv2's 32-character limit with the load
   # balancer. Short names stay readable; long names keep a stable hash.
   target_group_name_prefix = length(var.name) <= 26 ? var.name : "${substr(var.name, 0, 17)}-${substr(sha1(var.name), 0, 8)}"
-
-  vpc_cidr_blocks = [
-    for association in data.aws_vpc.this.cidr_block_associations : association.cidr_block
-    if association.state == "associated"
-  ]
 
   # AWS APIs are always HTTPS on 443. A control plane on another port needs
   # that port as well.

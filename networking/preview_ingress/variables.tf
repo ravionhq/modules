@@ -146,14 +146,32 @@ variable "ingress_cidr_blocks" {
   }
 }
 
-variable "sandbox_host_security_group_ids" {
-  type        = list(string)
-  description = "Security groups of the sandbox hosts whose previews the router serves. Each gets one inbound rule that admits the router's security group on the preview port range. The router cannot reach a sandbox host outside these groups."
+variable "sandbox_host_security_groups" {
+  type = list(object({
+    name = string
+    id   = string
+  }))
+  description = "Security groups of the sandbox hosts whose previews the router serves. Each gets one inbound rule that admits the router's security group on the preview port range, and the router one outbound rule to it. The router cannot reach a sandbox host outside these groups. `name` is a label you choose that names the group's rules, so `id` can be a group created in the same apply."
   default     = []
 
   validation {
-    condition     = alltrue([for id in var.sandbox_host_security_group_ids : can(regex("^sg-[0-9a-f]+$", id))])
-    error_message = "All sandbox_host_security_group_ids must be security group IDs starting with 'sg-'."
+    condition     = alltrue([for group in var.sandbox_host_security_groups : can(regex("^sg-[0-9a-f]+$", group.id))])
+    error_message = "Every id in sandbox_host_security_groups must be a security group ID starting with 'sg-'."
+  }
+
+  validation {
+    condition     = alltrue([for group in var.sandbox_host_security_groups : length(group.name) > 0])
+    error_message = "Every name in sandbox_host_security_groups must be non-empty."
+  }
+
+  validation {
+    condition     = length(distinct([for group in var.sandbox_host_security_groups : group.name])) == length(var.sandbox_host_security_groups)
+    error_message = "Each name in sandbox_host_security_groups must be used once."
+  }
+
+  validation {
+    condition     = length(distinct([for group in var.sandbox_host_security_groups : group.id])) == length(var.sandbox_host_security_groups)
+    error_message = "Each security group in sandbox_host_security_groups must be listed once."
   }
 }
 
