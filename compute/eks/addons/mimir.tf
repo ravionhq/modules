@@ -76,11 +76,14 @@ locals {
   # scale-down, sit there until then, so churn alone can fill an ingester that
   # holds far fewer live series. Past this many in-memory series it compacts
   # early and drops the inactive ones: half the memory limit at 8KiB a series.
+  # The limit counts only when this module sets it: without resilience,
+  # mimir_ingester_resources is not applied, so the threshold would follow a
+  # limit no pod has. Early compaction is off there, as in Mimir's default.
   mimir_ingester_memory_mib = try(
     tonumber(regex("^([0-9]+)(Mi|Gi)$", var.mimir_ingester_resources.limits.memory)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", var.mimir_ingester_resources.limits.memory)[1]],
     null,
   )
-  mimir_early_head_compaction_series = local.mimir_ingester_memory_mib == null ? 0 : floor(local.mimir_ingester_memory_mib * 1024 / 8 / 2)
+  mimir_early_head_compaction_series = var.addon_resilience_enabled && local.mimir_ingester_memory_mib != null ? floor(local.mimir_ingester_memory_mib * 1024 / 8 / 2) : 0
 
   mimir_values = {
     fullnameOverride = local.mimir_release_name

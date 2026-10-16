@@ -430,3 +430,19 @@ run "early_compaction_is_off_for_an_unparsed_memory_limit" {
     error_message = "A memory limit the module cannot read must leave early compaction off rather than guess."
   }
 }
+
+# Without resilience the module does not apply mimir_ingester_resources, so a
+# threshold derived from it would follow a limit no pod has.
+run "early_compaction_needs_the_limit_the_module_applies" {
+  command = plan
+
+  variables {
+    metrics_providers        = ["mimir"]
+    addon_resilience_enabled = false
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.blocks_storage.tsdb.early_head_compaction_min_in_memory_series == 0
+    error_message = "Early compaction must stay off when the module does not set the ingesters' memory limit."
+  }
+}
