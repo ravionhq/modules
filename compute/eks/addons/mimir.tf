@@ -45,11 +45,42 @@ locals {
   ]
 
   # Copies on separate nodes is a hard rule: two on one node lose two at once.
-  # Zones are soft, so a single-zone cluster still runs.
+  # A hostname spread alone does not keep it. It counts only nodes that exist,
+  # so three replicas on two nodes (2 and 1) are within a skew of one, and
+  # ravion-prod ran two ingesters on one node. Anti-affinity refuses the second
+  # pod, and Karpenter brings up a node for it. Zones are soft, so a
+  # single-zone cluster still runs.
   mimir_replica_spread = [
     { maxSkew = 1, topologyKey = "kubernetes.io/hostname", whenUnsatisfiable = "DoNotSchedule" },
     { maxSkew = 1, topologyKey = "topology.kubernetes.io/zone", whenUnsatisfiable = "ScheduleAnyway" },
   ]
+  mimir_replica_anti_affinity = {
+    for component, label in { ingester = "ingester", store_gateway = "store-gateway" } : component => {
+      podAntiAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = [{
+          topologyKey = "kubernetes.io/hostname"
+          labelSelector = {
+            matchLabels = {
+              "app.kubernetes.io/component" = label
+              "app.kubernetes.io/instance"  = local.mimir_release_name
+              "app.kubernetes.io/name"      = "mimir"
+            }
+          }
+        }]
+      }
+    }
+  }
+
+  # An ingester keeps every series it has seen in memory until it cuts a block,
+  # every two hours. Series from pods that have gone, after a rollout or a
+  # scale-down, sit there until then, so churn alone can fill an ingester that
+  # holds far fewer live series. Past this many in-memory series it compacts
+  # early and drops the inactive ones: half the memory limit at 8KiB a series.
+  mimir_ingester_memory_mib = try(
+    tonumber(regex("^([0-9]+)(Mi|Gi)$", var.mimir_ingester_resources.limits.memory)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", var.mimir_ingester_resources.limits.memory)[1]],
+    null,
+  )
+  mimir_early_head_compaction_series = local.mimir_ingester_memory_mib == null ? 0 : floor(local.mimir_ingester_memory_mib * 1024 / 8 / 2)
 
   mimir_values = {
     fullnameOverride = local.mimir_release_name
@@ -70,12 +101,12 @@ locals {
     ingester = merge(
       { replicas = 3, persistentVolume = { size = "50Gi", storageClass = local.mimir_config.storage_class } },
       { for key, value in { zoneAwareReplication = { enabled = true, topologyKey = "kubernetes.io/hostname", zones = local.mimir_zones } } : key => value if local.mimir_zone_aware },
-      { for key, value in { zoneAwareReplication = { enabled = false }, topologySpreadConstraints = local.mimir_replica_spread } : key => value if !local.mimir_zone_aware },
+      { for key, value in { zoneAwareReplication = { enabled = false }, topologySpreadConstraints = local.mimir_replica_spread, affinity = local.mimir_replica_anti_affinity.ingester } : key => value if !local.mimir_zone_aware },
     )
     store_gateway = merge(
       { replicas = 3, persistentVolume = { size = "20Gi", storageClass = local.mimir_config.storage_class } },
       { for key, value in { zoneAwareReplication = { enabled = true, topologyKey = "kubernetes.io/hostname", zones = local.mimir_zones } } : key => value if local.mimir_zone_aware },
-      { for key, value in { zoneAwareReplication = { enabled = false }, topologySpreadConstraints = local.mimir_replica_spread } : key => value if !local.mimir_zone_aware },
+      { for key, value in { zoneAwareReplication = { enabled = false }, topologySpreadConstraints = local.mimir_replica_spread, affinity = local.mimir_replica_anti_affinity.store_gateway } : key => value if !local.mimir_zone_aware },
     )
     compactor = {
       persistentVolume = { size = "50Gi", storageClass = local.mimir_config.storage_class }
@@ -96,7 +127,11 @@ locals {
             }
           }
         }
-        blocks_storage       = { storage_prefix = "blocks", s3 = { bucket_name = local.mimir_bucket_name } }
+        blocks_storage = {
+          storage_prefix = "blocks"
+          s3             = { bucket_name = local.mimir_bucket_name }
+          tsdb           = { early_head_compaction_min_in_memory_series = local.mimir_early_head_compaction_series }
+        }
         ruler_storage        = { storage_prefix = "ruler", s3 = { bucket_name = local.mimir_bucket_name } }
         alertmanager_storage = { storage_prefix = "alertmanager", s3 = { bucket_name = local.mimir_bucket_name } }
 
