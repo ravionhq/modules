@@ -65,10 +65,11 @@ locals {
   tempo_bucket_name = local.tempo_s3_enabled ? coalesce(local.tempo_config.s3_bucket, local.tempo_generated_bucket_name) : null
   tempo_bucket_arn  = local.tempo_s3_enabled ? "arn:${data.aws_partition.current.partition}:s3:::${local.tempo_bucket_name}" : null
 
-  # The metrics generator writes to the in-cluster Prometheus when there is one,
-  # otherwise to Amazon Managed Prometheus, signed with Tempo's own role.
+  # The metrics generator writes to the in-cluster stores when there are any
+  # (Prometheus, Mimir, or both while a cluster moves between them), otherwise
+  # to Amazon Managed Prometheus, signed with Tempo's own role.
   tempo_generator_enabled = local.tempo_enabled && local.tempo_config.metrics_generator_enabled
-  tempo_generator_target  = local.prometheus_enabled ? "prometheus" : (local.amp_enabled ? "amp" : null)
+  tempo_generator_target  = local.prometheus_enabled ? "prometheus" : (local.mimir_enabled ? "mimir" : (local.amp_enabled ? "amp" : null))
   tempo_generator_to_amp  = local.tempo_generator_enabled && local.tempo_generator_target == "amp"
 
   # Tempo needs AWS credentials only for S3 and for writing to AMP.
@@ -77,7 +78,7 @@ locals {
   # Every in-cluster Prometheus replica must get every sample, like the
   # collectors write them.
   tempo_generator_remote_write = local.tempo_generator_enabled ? [
-    for url in(local.tempo_generator_to_amp ? [local.amp_remote_write_endpoint] : local.prometheus_remote_write_endpoints) :
+    for url in(local.tempo_generator_to_amp ? [local.amp_remote_write_endpoint] : concat(local.prometheus_remote_write_endpoints, compact([local.mimir_remote_write_endpoint]))) :
     merge(
       {
         url            = url
@@ -368,7 +369,7 @@ resource "helm_release" "tempo" {
 
     precondition {
       condition     = !local.tempo_generator_enabled || local.tempo_generator_target != null
-      error_message = "Tempo's metrics generator writes service graphs and span metrics to Prometheus, but metrics_providers has neither prometheus nor amp. Select one, or turn the tempo destination's metrics_generator_enabled off."
+      error_message = "Tempo's metrics generator writes service graphs and span metrics to Prometheus, but metrics_providers has none of prometheus, mimir or amp. Select one, or turn the tempo destination's metrics_generator_enabled off."
     }
   }
 }

@@ -240,6 +240,30 @@ locals {
     compactor         = { podAnnotations = local.addon_do_not_disrupt }
   })] : []
 
+  # Mimir's chart already gives each component a maxUnavailable: 1 budget.
+  # Everything on the write and read paths runs two or more; the stores carry
+  # do-not-disrupt like the others, and ingesters reserve all the memory they
+  # may use.
+  mimir_stateless_components = ["distributor", "querier", "query_frontend", "query_scheduler", "gateway", "overrides_exporter"]
+  mimir_stateful_components  = ["ingester", "store_gateway", "compactor"]
+
+  mimir_resilience_values = var.addon_resilience_enabled ? [yamlencode(merge(
+    { for component in concat(local.mimir_stateless_components, local.mimir_stateful_components) : component => { priorityClassName = local.addon_critical_priority } },
+    {
+      distributor    = { priorityClassName = local.addon_critical_priority, replicas = 2 }
+      querier        = { priorityClassName = local.addon_critical_priority, replicas = 2 }
+      query_frontend = { priorityClassName = local.addon_critical_priority, replicas = 2 }
+      gateway        = { priorityClassName = local.addon_critical_priority, replicas = 2 }
+      ingester = {
+        priorityClassName = local.addon_critical_priority
+        podAnnotations    = local.addon_do_not_disrupt
+        resources         = var.mimir_ingester_resources
+      }
+      store_gateway = { priorityClassName = local.addon_critical_priority, podAnnotations = local.addon_do_not_disrupt }
+      compactor     = { priorityClassName = local.addon_critical_priority, podAnnotations = local.addon_do_not_disrupt }
+    },
+  ))] : []
+
   # Karpenter's chart already runs it at system-cluster-critical behind a
   # budget, off Karpenter nodes.
   karpenter_resilience_values = var.addon_resilience_enabled ? [yamlencode({

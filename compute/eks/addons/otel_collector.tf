@@ -107,6 +107,26 @@ locals {
         }
       }
     },
+    local.mimir_enabled ? {
+      # Mimir's distributors spread each sample to three ingesters themselves,
+      # so one exporter to its gateway is enough. Retry as long as for
+      # Prometheus: a rollout restarts the gateway and distributors too.
+      "prometheusremotewrite/mimir" = {
+        endpoint = local.mimir_remote_write_endpoint
+        tls = {
+          insecure = true
+        }
+        retry_on_failure = {
+          enabled          = true
+          initial_interval = "5s"
+          max_interval     = "30s"
+          max_elapsed_time = "600s"
+        }
+        resource_to_telemetry_conversion = {
+          enabled = false
+        }
+      }
+    } : {},
     local.metrics_datadog_enabled ? {
       datadog = {
         api = {
@@ -213,9 +233,11 @@ resource "helm_release" "otel_collector" {
     # Not a hard dependency — a missing target is a failed scrape, not a failed
     # collector — but it keeps the first minutes free of scrape errors.
     helm_release.kube_state_metrics,
-    # Remote-writing into a Prometheus that does not exist yet is a retry loop
-    # and a page of errors in the first minutes of a cluster's life.
+    # Remote-writing into a store that does not exist yet is a retry loop and
+    # a page of errors in the first minutes of a cluster's life; its retries
+    # give up after ten minutes, and Mimir may take twenty to install.
     helm_release.prometheus,
+    helm_release.mimir,
     # A vendor credential that is not materialized yet is a pod that never
     # starts, because the env var references a Secret key.
     helm_release.observability_secrets,

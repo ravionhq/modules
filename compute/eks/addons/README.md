@@ -11,7 +11,7 @@ Selectable add-ons for an existing EKS cluster, each toggled independently:
 | **External Secrets Operator** | `eso_enabled` | `true` | `external-secrets` Helm chart + Pod Identity role scoped to Secrets Manager / Parameter Store reads, plus the cluster-scoped `ravion-aws` and `ravion-aws-parameter-store` `ClusterSecretStore`s |
 | **EBS CSI driver** | `ebs_csi_driver_enabled` | `true` | `aws-ebs-csi-driver` EKS add-on + Pod Identity role, plus the local `charts/ebs-storage`: a default encrypted `gp3` StorageClass with volume expansion (`ebs_default_storage_class_enabled`) and online StatefulSet volume growth (`statefulset_volume_expansion_enabled`, Kubernetes 1.36+). See [EBS storage defaults](#ebs-storage-defaults) |
 | **Workload logs** | `logs_providers` | `["loki"]` | Per destination. `loki`: an S3 bucket with a retention lifecycle rule, a Pod Identity role scoped to it, Loki in single-binary mode, and Grafana Alloy as a collection DaemonSet. `cloudwatch` and every vendor: an OpenTelemetry contrib DaemonSet with one exporter each. `[]` installs nothing |
-| **Workload metrics** | `metrics_providers` | `["prometheus"]` | Per destination, all fed by one OpenTelemetry collector scraping a curated allow-list, and `kube-state-metrics`. `prometheus`: Prometheus on its own volume, with a Thanos sidecar, Query, Store Gateway and Compactor keeping its history in a dedicated S3 bucket through scoped Pod Identity roles. `amp`: an Amazon Managed Prometheus workspace and a Pod Identity role scoped to `aps:RemoteWrite` on it. Vendors: one more exporter on the same collector. `cloudwatch`: the `amazon-cloudwatch-observability` add-on. `[]` installs nothing |
+| **Workload metrics** | `metrics_providers` | `["prometheus"]` | Per destination, all fed by one OpenTelemetry collector scraping a curated allow-list, and `kube-state-metrics`. `prometheus`: Prometheus on its own volume, with a Thanos sidecar, Query, Store Gateway and Compactor keeping its history in a dedicated S3 bucket through scoped Pod Identity roles. `mimir`: Grafana Mimir for clusters that outgrow one Prometheus, three copies of every sample and history in its own S3 bucket. `amp`: an Amazon Managed Prometheus workspace and a Pod Identity role scoped to `aps:RemoteWrite` on it. Vendors: one more exporter on the same collector. `cloudwatch`: the `amazon-cloudwatch-observability` add-on. `[]` installs nothing |
 | **Workload traces** | `traces_destinations` | `[{ destination = "tempo" }]` | An OpenTelemetry collector of its own receiving OTLP at an in-cluster Service, with one exporter per destination. `tempo`: Tempo in the cluster, its blocks in a dedicated S3 bucket through a scoped Pod Identity role, on a persistent volume. `xray` and every vendor: an exporter each. `[]` installs nothing |
 | **CloudWatch (Container Insights)** | `cloudwatch` in either provider list | not selected | `amazon-cloudwatch-observability` EKS add-on + Pod Identity role, with **Auto-Monitor off**: the Fluent Bit half only when it is a logs destination, the metrics agent only when it is a metrics destination |
 | **Vendor credentials** | any vendor provider | not selected | One `ExternalSecret` per vendor (local `charts/observability-secrets`), materializing a Secrets Manager secret into a Kubernetes Secret the collectors read as environment variables |
@@ -62,6 +62,23 @@ With Thanos on (`metrics_prometheus.s3_storage_enabled`, the default), Prometheu
 - the replicas never share a node, prefer different zones, and a drain takes at most one (`maxUnavailable: 1`). One replica can crash, restart, replay its WAL or move while the other serves dashboards, Ravion and KEDA.
 
 Each replica requests `prometheus_resources`, so two double that cost, and both upload their blocks to S3. Without Thanos, readers query Prometheus directly and a single replica runs, since two would answer differently. Moving an existing single Prometheus to two replaces its Deployment and volume with a StatefulSet: the samples not yet in an uploaded block, roughly the last one to three hours, are lost once; S3 history is untouched.
+
+### Grafana Mimir
+
+`mimir` in `metrics_providers` installs [Grafana Mimir](https://grafana.com/docs/mimir/latest/) (`mimir-distributed` 6.2.0, Mimir 3.2.0) for clusters that outgrow one Prometheus, which holds every series in one server's memory. Mimir spreads them across ingesters instead and adds more as a cluster grows. Prometheus remains the right choice for most clusters: Mimir runs about 18 pods where Prometheus and Thanos run 6.
+
+- **Three copies of every sample.** Distributors write each sample to three ingesters. Two copies never share a node, and the copies spread across zones where they can. Set `metrics_mimir.zones` to three or more availability zones to pin one copy to each, so losing a zone loses nothing; this adds Grafana's rollout-operator, which drives the zoned rollouts.
+- **No Kafka.** The chart's default ingest path runs Kafka; the module uses Mimir's classic path, which writes straight to the ingesters, so there is no extra stateful system to run.
+- **Nothing is turned away.** Mimir's defaults cap a tenant at 150,000 series and 10,000 samples a second, and refuse late samples. The module lifts the series and rate caps, raises the label limits, and accepts samples up to 15 minutes late, which covers the collectors' ten-minute retries. Size the ingesters (`mimir_ingester_resources`, 6Gi each by default, each holding a copy of every series) instead.
+- **History in S3.** Blocks go to a dedicated bucket (`ravion-mimir-<cluster>-<account>`, or `metrics_mimir.s3_bucket_name`) through one Pod Identity role; the compactor owns retention (`metrics_mimir.retention_days`, 365).
+- **One tenant.** Multi-tenancy is off, so writers and readers need no `X-Scope-OrgID` header.
+- **The same queries.** Writers push to `http://ravion-mimir-gateway.<namespace>.svc.cluster.local/api/v1/push`; readers query the `/prometheus` path (`mimir_endpoint`), the same PromQL as Prometheus. Ravion's Metrics tab, Grafana (`ravion-mimir`) and Tempo's service graph read it, and a KEDA prometheus trigger takes `mimir_endpoint` as its `serverAddress`.
+- **Placement and protection.** Ingesters, store-gateways and the compactor run on the stateful add-on nodes with `karpenter.sh/do-not-disrupt`; with Karpenter that is usually three extra 16 GiB nodes. The other components run two replicas each with the add-ons. Every component is `system-cluster-critical`, behind the chart's budgets.
+- **No ruler or Alertmanager**, since nothing here defines rules or alerts.
+
+**Moving from Prometheus.** Select both: every sample then goes to both stores, Ravion keeps reading Prometheus, and nothing is lost. Once Mimir holds enough history, deselect `prometheus`. History already in the Thanos bucket is not copied; Mimir's `mimirtool backfill` can upload it.
+
+Mimir needs Kubernetes 1.32 or later. Mimir itself is AGPL-3.0 (the chart is Apache-2.0); this module installs it unmodified.
 
 ### Nodes for the stores
 
@@ -291,6 +308,7 @@ Each signal is a list of destinations. **Loki, Prometheus with Thanos, and Tempo
 | `metrics_providers` | Exporter | Destination | In Ravion |
 |---|---|---|---|
 | `prometheus` *(default)* | `prometheusremotewrite` | Prometheus in your cluster on its own volume; Thanos keeps its history in S3 | **Renders**, through Ravion Operator, behind AMP when both are selected |
+| `mimir` | `prometheusremotewrite` | Grafana Mimir in your cluster, three copies of every sample, history in S3 | **Renders**, through Ravion Operator, after Prometheus when both are selected |
 | `amp` | `prometheusremotewrite` + SigV4 | Amazon Managed Prometheus workspace in your account | **Renders**, first when selected |
 | `cloudwatch` | the CloudWatch agent (add-on) | `ContainerInsights` metric namespace | **Renders**, last in the chain |
 | `grafana_cloud` | `prometheusremotewrite` + basic auth | Grafana Cloud Prometheus remote write | Ships + link |
@@ -789,7 +807,7 @@ failed during initialization have no provider resources to migrate.
 | statefulset_volume_expansion_enabled | Grow StatefulSet volumes online when a deploy raises their `volumeClaimTemplates` storage (with EBS CSI, Kubernetes 1.36+). | `bool` | `true` | no |
 | busybox_image | Static busybox image that supplies a shell to the volume resizer. | `string` | `"public.ecr.aws/docker/library/busybox:1.37.0-musl"` | no |
 | logs_providers | Where container logs go: any of `loki`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns logs off. Null falls back to the deprecated `logs_enabled`. | `list(string)` | `["loki"]` | no |
-| metrics_providers | Where metrics go: any of `prometheus`, `amp`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns metrics off. Null falls back to the deprecated `metrics_enabled`. | `list(string)` | `["prometheus"]` | no |
+| metrics_providers | Where metrics go: any of `prometheus`, `mimir`, `amp`, `cloudwatch`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`. `[]` turns metrics off. Null falls back to the deprecated `metrics_enabled`. | `list(string)` | `["prometheus"]` | no |
 | traces_destinations | Where workload traces go, one entry per destination: `{ destination, ... }` with `destination` one of `tempo`, `xray`, `grafana_cloud`, `datadog`, `new_relic`, `otlp`, and that destination's own settings. Tempo: `retention_days`, `storage_backend` (`s3` or `local`), `s3_bucket_name`, `persistence_enabled`, `persistence_size`, `storage_class`, `metrics_generator_enabled`, `chart_version`, `helm_values`. X-Ray: `region`. Grafana Cloud: `url`, `user`, `token_secret_arn`. Datadog: `site`, `api_key_secret_arn`. New Relic: `new_relic_region`, `license_key_secret_arn`. OTLP: `endpoint`, `headers_secret_arn`. A vendor that is also a logs or metrics destination uses that signal's site and secret. A non-empty list runs the OTLP collector with an in-cluster receiver; the receiver authenticates no sender. | list of objects (`any`, so the Tempo card's free-form `helm_values` never has to share a type with the other cards) | `[{ destination = "tempo" }]` | no |
 | otlp_collector_helm_values | Extra YAML documents for the OTLP collector: resources, replicas, placement, processors. | `list(string)` | `[]` | no |
 | thanos_image | Image of the Prometheus sidecar, Query, Store Gateway and Compactor. | `string` | `"quay.io/thanos/thanos:v0.42.4"` | no |
@@ -808,6 +826,9 @@ failed during initialization have no provider resources to migrate.
 | metrics_prometheus | `{ retention_days, storage_size, storage_class, endpoint, s3_storage_enabled, s3_bucket_name, s3_retention_days }`: 15 days locally, 50Gi, the managed `gp3` class or the cluster default, and Thanos history in S3 for 365 days. `endpoint` points at a Prometheus you already run and skips every managed metrics store. | `object` | `{}` | no |
 | prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.33.0"` / `[]` | no |
 | prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each Prometheus server replica; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 10Gi, limit 10Gi | no |
+| metrics_mimir | `{ retention_days, s3_bucket_name, storage_class, zones }`: 365 days of history, a created bucket, the managed `gp3` class or the cluster default, and no zone pinning. `zones` takes three or more availability zones, one copy of every sample in each. | `object` | `{}` | no |
+| mimir_chart_version / mimir_helm_values | grafana/mimir-distributed chart version and value overrides: more ingesters, caches, per-component resources. | `string` / `list(string)` | `"6.2.0"` / `[]` | no |
+| mimir_ingester_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each of the three ingesters. Applied with `addon_resilience_enabled`. | `object` | 1 / 6Gi, limit 6Gi | no |
 | prometheus_replicas | Prometheus replicas when Thanos is on, each receiving every sample (see Highly available Prometheus); 1 without Thanos. 1–3. | `number` | `2` | no |
 | logs_otlp / metrics_otlp | `{ endpoint, headers_secret_arn }`. The secret holds the value of an `Authorization` header. | `object` | `{}` | no |
 | metrics_amp | `{ workspace_id, region, alias }`. Falls back to the flat `amp_workspace_id` / `amp_region` / `amp_alias`. | `object` | `{}` | no |
@@ -922,11 +943,13 @@ All outputs are null when the corresponding add-on is disabled.
 | cloudwatch_observability_addon_version / cloudwatch_observability_role_arn | CloudWatch Observability add-on version and Pod Identity role. |
 | cloudwatch_application_signals_namespaces | Namespaces Application Signals was asked for. Auto-Monitor stays cluster-wide-off when this is non-empty; annotate exactly these. |
 | logs_providers / metrics_providers | The destinations selected, as given. |
-| logs_rendering_providers / metrics_rendering_providers | The selected destinations Ravion can read, **in fallback order** (`loki → cloudwatch`, `amp → prometheus → cloudwatch`). Empty when the signal is off or only ship-only destinations are selected. |
+| logs_rendering_providers / metrics_rendering_providers | The selected destinations Ravion can read, **in fallback order** (`loki → cloudwatch`, `amp → prometheus → mimir → cloudwatch`). Empty when the signal is off or only ship-only destinations are selected. |
 | logs_cloudwatch_log_group | `/ravion/eks/<cluster>`, one stream per pod as `<namespace>/<pod>/<container>` (null unless `cloudwatch` is a logs destination). |
 | logs_external_links / metrics_external_links | One `{ provider, name, href_prefix }` per ship-only destination; the caller appends its own query to `href_prefix`. |
 | cluster_arn | ARN of the EKS cluster whose stores Ravion Operator queries. |
-| prometheus_endpoint | Query URL Grafana and Ravion Operator read: Thanos Query, Prometheus itself without S3 history, or the supplied endpoint. Null unless `prometheus` is a metrics destination. |
+| prometheus_endpoint | The in-cluster query URL Ravion charts from: Thanos Query, Prometheus itself without S3 history, or the supplied endpoint; Mimir's `/prometheus` API when `mimir` is selected without `prometheus`. Null unless one of them is a metrics destination. |
+| mimir_endpoint / mimir_remote_write_endpoint | Mimir's query (`/prometheus`) and push URLs through its gateway, null unless `mimir` is selected. |
+| mimir_s3_bucket / mimir_role_arn | Mimir's blocks bucket and its Pod Identity role. |
 | prometheus_remote_write_endpoint | Where samples are written to Prometheus, apart from the query URL. |
 | prometheus_s3_bucket / prometheus_s3_bucket_arn | The metrics history bucket, null without Thanos storage. |
 | thanos_role_arns | The sidecar's, Store Gateway's and Compactor's Pod Identity roles. |

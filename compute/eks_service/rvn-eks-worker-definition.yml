@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.12.0
-  description: Keep the Spot pool running when its scaling metrics are unavailable, instead of freezing at its current size.
+  version: 0.13.0
+  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
 module:
   inputs:
     - id: section_cluster
@@ -225,7 +225,7 @@ module:
       - id: replicas_available
         name: Replicas available
         type: line
-        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>
@@ -244,7 +244,7 @@ module:
       - id: replicas_desired
         name: Replicas desired
         type: line
-        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>

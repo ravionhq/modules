@@ -59,6 +59,20 @@ locals {
         }
       },
     ] : [],
+    local.mimir_enabled ? [
+      {
+        name      = "Ravion Metrics (in-cluster Mimir)"
+        uid       = "ravion-mimir"
+        type      = "prometheus"
+        access    = "proxy"
+        url       = local.mimir_endpoint
+        isDefault = !local.amp_enabled && !local.prometheus_enabled && !local.loki_enabled
+        jsonData = {
+          httpMethod     = "POST"
+          prometheusType = "Mimir"
+        }
+      },
+    ] : [],
     local.tempo_enabled ? [
       merge(
         {
@@ -67,7 +81,7 @@ locals {
           type      = "tempo"
           access    = "proxy"
           url       = local.tempo_endpoint
-          isDefault = !local.amp_enabled && !local.prometheus_enabled && !local.loki_enabled
+          isDefault = !local.amp_enabled && !local.prometheus_enabled && !local.mimir_enabled && !local.loki_enabled
         },
         {
           jsonData = merge(
@@ -82,7 +96,7 @@ locals {
             {
               for key, value in {
                 serviceMap = {
-                  datasourceUid = local.tempo_generator_to_amp ? "ravion-amp" : "ravion-prometheus"
+                  datasourceUid = lookup({ amp = "ravion-amp", prometheus = "ravion-prometheus", mimir = "ravion-mimir" }, coalesce(local.tempo_generator_target, "prometheus"))
                 }
               } : key => value if local.tempo_generator_enabled
             },

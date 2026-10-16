@@ -390,6 +390,73 @@ run "stores_run_on_their_own_on_demand_nodes" {
   }
 }
 
+run "mimir_stores_run_on_the_stateful_nodes_and_the_rest_with_the_add_ons" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  assert {
+    condition = alltrue([
+      for component in ["ingester", "store_gateway", "compactor"] :
+      one([for d in helm_release.mimir[0].values : yamldecode(d)[component] if can(yamldecode(d)[component].affinity)]) == local.addon_stateful_placement
+    ])
+    error_message = "Mimir's ingesters, store-gateways and compactor hold volumes and must run on the stateful add-on nodes."
+  }
+
+  assert {
+    condition = alltrue([
+      for component in ["distributor", "querier", "query_frontend", "query_scheduler", "gateway", "overrides_exporter"] :
+      one([for d in helm_release.mimir[0].values : yamldecode(d)[component] if can(yamldecode(d)[component].affinity)]) == local.addon_pod_placement
+    ])
+    error_message = "Mimir's stateless components must run with the other add-ons."
+  }
+}
+
+run "mimir_is_protected_and_its_ingesters_sized" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  assert {
+    condition = alltrue([
+      for component in ["distributor", "querier", "query_frontend", "query_scheduler", "gateway", "overrides_exporter", "ingester", "store_gateway", "compactor"] :
+      one([for d in helm_release.mimir[0].values : yamldecode(d) if can(yamldecode(d).ingester.resources)])[component].priorityClassName == "system-cluster-critical"
+    ])
+    error_message = "Every Mimir component must outrank workloads for scheduling."
+  }
+
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).ingester if can(yamldecode(d).ingester.resources)]).resources == { requests = { cpu = "1", memory = "6Gi" }, limits = { memory = "6Gi" } }
+    error_message = "Ingesters must reserve all the memory they may use."
+  }
+
+  assert {
+    condition = alltrue([
+      for component in ["ingester", "store_gateway", "compactor"] :
+      one([for d in helm_release.mimir[0].values : yamldecode(d) if can(yamldecode(d).ingester.resources)])[component].podAnnotations["karpenter.sh/do-not-disrupt"] == "true"
+    ])
+    error_message = "Mimir's stores must not be moved by consolidation mid-write."
+  }
+
+  assert {
+    condition = alltrue([
+      for component in ["distributor", "querier", "query_frontend", "gateway"] :
+      one([for d in helm_release.mimir[0].values : yamldecode(d) if can(yamldecode(d).ingester.resources)])[component].replicas == 2
+    ])
+    error_message = "Mimir's write and read paths must run two of each component."
+  }
+
+  # Two copies on one node would lose two of the three at once.
+  assert {
+    condition     = contains(yamldecode(helm_release.mimir[0].values[0]).ingester.topologySpreadConstraints, { maxSkew = 1, topologyKey = "kubernetes.io/hostname", whenUnsatisfiable = "DoNotSchedule" }) && contains(yamldecode(helm_release.mimir[0].values[0]).store_gateway.topologySpreadConstraints, { maxSkew = 1, topologyKey = "kubernetes.io/hostname", whenUnsatisfiable = "DoNotSchedule" })
+    error_message = "Ingesters and store-gateways must each run on their own node."
+  }
+}
+
 run "without_karpenter_stores_keep_the_shared_placement" {
   command = plan
 

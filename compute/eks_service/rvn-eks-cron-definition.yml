@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.4.5
-  description: Keep sandbox builds' disk between runs, so Docker layers and dependencies stay cached.
+  version: 0.5.0
+  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
 module:
   inputs:
     - id: section_cluster
@@ -228,7 +228,7 @@ module:
       - id: job_runs_succeeded
         name: Runs succeeded
         type: line
-        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>
@@ -247,7 +247,7 @@ module:
       - id: job_runs_failed
         name: Runs failed
         type: line
-        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>

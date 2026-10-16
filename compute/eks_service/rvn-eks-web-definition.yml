@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.9.0
-  description: Keep the Spot pool running when its scaling metrics are unavailable, instead of freezing at its current size.
+  version: 1.10.0
+  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
 module:
   inputs:
     - id: section_cluster
@@ -567,7 +567,7 @@ module:
       - id: replicas_available
         name: Replicas available
         type: line
-        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>
@@ -597,7 +597,7 @@ module:
           statistic: Average
       # Desired replicas has no CloudWatch equivalent at all: the count lives
       # in the Deployment spec, which Container Insights never reads. The chain
-      # ends at the in-cluster Prometheus.
+      # ends at the in-cluster Prometheus or Mimir.
       - id: replicas_desired
         name: Replicas desired
         type: line
@@ -611,7 +611,7 @@ module:
       - id: replicas_desired
         name: Replicas desired
         type: line
-        enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+        enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << module.input.cluster_arn >>
