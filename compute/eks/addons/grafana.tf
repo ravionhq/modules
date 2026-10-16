@@ -199,6 +199,7 @@ resource "helm_release" "grafana" {
       }, local.grafana_ingress_values)),
     ],
     local.addon_placement_values,
+    local.grafana_resilience_values,
     var.grafana_helm_values,
   )
 

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -39,7 +39,7 @@ done
 # module carries its own charts and they are tested from here too.
 chart_path() {
   case "$1" in
-    karpenter-resources | warm-capacity | ebs-storage) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    karpenter-resources | warm-capacity | ebs-storage | thanos) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -914,6 +914,46 @@ test_karpenter_resources() {
     "$(q "${with_key}" "${ebs} | .ebs.kmsKeyID")"
   assert_eq "${chart}: a customer root volume size reaches the manifest" \
     "50Gi" "$(q "${with_key}" "${ebs} | .ebs.volumeSize")"
+
+  # Without a floor Karpenter packs a store onto the cheapest node its request
+  # fits, and the store then exhausts it. The spot-warm pool keeps its own sizing.
+  local default_pool floorless
+  default_pool='.[] | select(.kind == "NodePool") | select(.metadata.name == "default")'
+  floorless="$(render "${chart}" floorless --values "$(chart_path "${chart}")/ci/default-values.yaml" --set nodePool.minInstanceMemoryMiB=0)"
+  assert_eq "${chart}: default pool launches nothing below 8 GiB" \
+    "Gt 8191" "$(q "${default}" "${default_pool} | .spec.template.spec.requirements[] | select(.key == \"karpenter.k8s.aws/instance-memory\") | .operator + \" \" + .values[0]")"
+  assert_eq "${chart}: a zero floor omits the memory requirement" \
+    "0" "$(q "${floorless}" "[${default_pool} | .spec.template.spec.requirements[] | select(.key == \"karpenter.k8s.aws/instance-memory\")] | length")"
+  assert_eq "${chart}: the static pool has no memory floor" \
+    "0" "$(q "${positive}" "[${static} | .spec.template.spec.requirements[] | select(.key == \"karpenter.k8s.aws/instance-memory\")] | length")"
+}
+
+################################################################################
+# thanos (compute/eks/addons)
+################################################################################
+
+test_thanos() {
+  local chart="thanos"
+  local default resilient
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  resilient="$(render "${chart}" resilient --values "$(chart_path "${chart}")/ci/resilient-values.yaml")"
+
+  assert_eq "${chart}: defaults run one query and one store with no budgets" \
+    "1 1 0" "$(q "${default}" '.[] | select(.kind == "Deployment" and .metadata.name == "test-release-query") | .spec.replicas') $(q "${default}" '.[] | select(.kind == "Deployment" and .metadata.name == "test-release-store") | .spec.replicas') $(count "${default}" PodDisruptionBudget)"
+  assert_eq "${chart}: defaults set no priority class" \
+    "0" "$(q "${default}" '[.[] | select(.spec.template.spec.priorityClassName)] | length')"
+  assert_eq "${chart}: two query and two store replicas" \
+    "2 2" "$(q "${resilient}" '.[] | select(.kind == "Deployment" and .metadata.name == "test-release-query") | .spec.replicas') $(q "${resilient}" '.[] | select(.kind == "Deployment" and .metadata.name == "test-release-store") | .spec.replicas')"
+  assert_eq "${chart}: each replicated component keeps one replica through a drain" \
+    "1 1" "$(q "${resilient}" '[.[] | select(.kind == "PodDisruptionBudget") | .spec.minAvailable] | join(" ")')"
+  assert_eq "${chart}: a budget selects only its own component" \
+    "query store" "$(q "${resilient}" '[.[] | select(.kind == "PodDisruptionBudget") | .spec.selector.matchLabels."app.kubernetes.io/component"] | sort | join(" ")')"
+  assert_eq "${chart}: replicas prefer distinct nodes" \
+    "kubernetes.io/hostname ScheduleAnyway" "$(q "${resilient}" '.[] | select(.kind == "Deployment" and .metadata.name == "test-release-query") | .spec.template.spec.topologySpreadConstraints[0] | .topologyKey + " " + .whenUnsatisfiable')"
+  assert_eq "${chart}: every component outranks applications" \
+    "system-cluster-critical system-cluster-critical system-cluster-critical" "$(q "${resilient}" '[.[] | select(.kind == "Deployment" or .kind == "StatefulSet") | .spec.template.spec.priorityClassName] | join(" ")')"
+  assert_eq "${chart}: the singleton compactor is never moved by Karpenter" \
+    "1 true" "$(q "${resilient}" '.[] | select(.kind == "StatefulSet") | .spec.replicas') $(q "${resilient}" '.[] | select(.kind == "StatefulSet") | .spec.template.metadata.annotations."karpenter.sh/do-not-disrupt"')"
 }
 
 ################################################################################
@@ -1001,6 +1041,7 @@ for chart in "${CHARTS[@]}"; do
     karpenter-resources) test_karpenter_resources ;;
     warm-capacity) test_warm_capacity ;;
     ebs-storage) test_ebs_storage ;;
+    thanos) test_thanos ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

@@ -53,9 +53,13 @@ resource "helm_release" "prometheus" {
         server = {
           # The receiver is off by default, and without it every remote write
           # from the collector is a 404.
+          # The query limits keep one query (KEDA, Grafana and Thanos all fan
+          # out to this server) from exhausting its memory.
           extraFlags = concat([
             "web.enable-lifecycle",
             "web.enable-remote-write-receiver",
+            "query.max-samples=30000000",
+            "query.timeout=2m",
             ], local.thanos_enabled ? [
             "storage.tsdb.min-block-duration=2h",
             "storage.tsdb.max-block-duration=2h",
@@ -69,6 +73,9 @@ resource "helm_release" "prometheus" {
           }
 
           retention = "${local.prometheus_config.retention_days}d"
+          # A full volume crashes Prometheus. Delete the oldest blocks first,
+          # well before the volume fills.
+          retentionSize = local.prometheus_retention_size
 
           persistentVolume = {
             enabled      = true
@@ -111,6 +118,7 @@ resource "helm_release" "prometheus" {
       }),
     ],
     var.addon_placement_enabled ? [yamlencode({ server = local.addon_pod_placement })] : [],
+    local.prometheus_resilience_values,
     var.prometheus_helm_values,
   )
 

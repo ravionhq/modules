@@ -20,6 +20,9 @@ Internal chart installed by `compute/eks/addons/thanos.tf`. It connects to the T
 | `compactor.storageSize` | `20Gi` | Persistent compaction working space; size for the largest compaction group |
 | `compactor.storageClass` | cluster default | Parent uses managed encrypted `gp3` when available |
 | `nodeSelector`, `tolerations` | empty | Pod placement |
+| `query.replicas`, `store.replicas` | `1` | Above one, replicas prefer distinct nodes and each component gets a `minAvailable: 1` PodDisruptionBudget. The parent module sets 2 with `addon_resilience_enabled` |
+| `priorityClassName` | empty | Applied to every component; the parent module sets `system-cluster-critical` |
+| `compactor.podAnnotations` | empty | Compactor pod annotations; the parent module sets `karpenter.sh/do-not-disrupt` |
 
 Tune these through `thanos_helm_values`. Retained StatefulSet PVCs are not deleted on chart uninstall. S3 history lifecycle is controlled separately by the parent Terraform module.
 

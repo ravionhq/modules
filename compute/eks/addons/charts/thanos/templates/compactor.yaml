@@ -18,8 +18,14 @@ spec:
         app.kubernetes.io/component: compactor
       annotations:
         checksum/objstore: {{ .Values.objstoreConfig | sha256sum }}
+        {{- with .Values.compactor.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       serviceAccountName: {{ .Release.Name }}-compactor
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534

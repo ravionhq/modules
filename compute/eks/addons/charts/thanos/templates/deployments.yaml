@@ -6,7 +6,7 @@ metadata:
   name: {{ $.Release.Name }}-{{ $component }}
   namespace: {{ $.Release.Namespace }}
 spec:
-  replicas: 1
+  replicas: {{ index $.Values $component "replicas" }}
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ $.Release.Name }}
@@ -20,6 +20,9 @@ spec:
         checksum/objstore: {{ $.Values.objstoreConfig | sha256sum }}
     spec:
       serviceAccountName: {{ $.Release.Name }}-{{ $component }}
+      {{- with $.Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -28,6 +31,18 @@ spec:
       nodeSelector: {{ $.Values.nodeSelector | toJson }}
       tolerations: {{ $.Values.tolerations | toJson }}
       affinity: {{ $.Values.affinity | toJson }}
+      {{- if gt (int (index $.Values $component "replicas")) 1 }}
+      # Soft: one eligible node still runs every replica.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          matchLabelKeys: [pod-template-hash]
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+              app.kubernetes.io/component: {{ $component }}
+      {{- end }}
       containers:
         - name: {{ $component }}
           image: {{ $.Values.image | quote }}

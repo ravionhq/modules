@@ -226,6 +226,8 @@ run "disabled_placement_leaves_the_charts_alone" {
 
   variables {
     addon_placement_enabled = false
+    # Resilience has its own document; leave it out to see placement alone.
+    addon_resilience_enabled = false
   }
 
   assert {

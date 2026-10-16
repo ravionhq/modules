@@ -1,0 +1,14 @@
+# What the add-ons module renders with addon_resilience_enabled.
+objstoreConfig: |
+  type: S3
+  config:
+    bucket: example-metrics
+    endpoint: s3.us-east-2.amazonaws.com
+priorityClassName: system-cluster-critical
+query:
+  replicas: 2
+store:
+  replicas: 2
+compactor:
+  podAnnotations:
+    karpenter.sh/do-not-disrupt: "true"

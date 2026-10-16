@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.20.0
-  description: "Optionally install cert-manager to issue and renew TLS certificates inside the cluster."
+  version: 0.21.0
+  description: "Keep the cluster add-ons running through node pressure, consolidation and node failures: controllers run two replicas behind disruption budgets, add-ons take priority over applications, Prometheus is sized for its real memory use, and Karpenter replaces failed nodes and no longer launches nodes under 8 GiB."
 module:
   inputs:
     - id: cluster

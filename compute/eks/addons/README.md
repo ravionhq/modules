@@ -41,6 +41,18 @@ The controllers and stores this module installs (load balancer controller, Exter
 
 HA coordinators placed on distinct nodes are pinned to `system_node_labels` by node selector instead, because the Operator chart replaces affinity with its own per-node rule in that mode. The placement is its own values document ahead of each release's caller Helm values, so a caller document can replace it; set `addon_placement_enabled = false` before supplying your own affinity. DaemonSets (Alloy, the logs collector) are unaffected.
 
+## Add-on resilience
+
+Placement keeps the add-ons off Spot; `addon_resilience_enabled` (the default) keeps them running once placed. Without it, a Prometheus server that requested no memory was packed onto 2–4 GiB nodes, exhausted them and was OOM-killed and evicted in a loop, and every deploy that waited on a KEDA ScaledObject failed while it was down. With it:
+
+- **Priority.** Controllers and stores run at `system-cluster-critical`, per-node agents (Alloy, the logs collector) at `system-node-critical`, so under pressure applications are evicted and preempted first. The logs collector also tolerates every taint, like Alloy.
+- **Replicas and budgets.** KEDA (operator, metrics apiserver, webhooks), cert-manager (controller, webhook, cainjector), External Secrets (controller with leader election, webhook, cert controller) and Thanos Query and Store run two replicas, prefer distinct nodes, and keep one through any drain (`minAvailable: 1`). The load balancer controller keeps one through a drain. Collectors and kube-state-metrics stay single replicas: two would duplicate series.
+- **Single-replica stores.** Prometheus, Loki, Tempo and the Thanos compactor carry `karpenter.sh/do-not-disrupt`, so consolidation never moves them mid-write.
+- **Sizing.** Prometheus requests `prometheus_resources` (7Gi, limit 10Gi), has ten minutes to replay its WAL before liveness applies, bounds local retention at four fifths of its volume, and limits per-query samples and time. The remote-write exporter retries for ten minutes across a Prometheus restart. Controllers, webhooks, Grafana, kube-state-metrics and the Karpenter controller request what they use.
+- **Nodes.** Karpenter's `nodeRepair` gate replaces nodes that stay NotReady, and the default NodePool launches nothing below `karpenter_default_node_pool.min_instance_memory_mib` (8 GiB; 0 removes the floor).
+
+Each release gets this as its own values document after the placement and ahead of its caller Helm values, so a caller document can replace any of it; set `addon_resilience_enabled = false` before supplying your own replicas, budgets or priority classes.
+
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
 from rejecting add-on installation while its pods are still starting.
@@ -720,6 +732,7 @@ failed during initialization have no provider resources to migrate.
 | system_node_count | Minimum size of the system node group. Caps Karpenter's controller replicas (at 2) and the HA coordinators to the nodes they can run on. Null applies no cap. | `number` | `null` | no |
 | system_node_labels | Labels identifying the system node group. Add-ons prefer it; HA coordinators on distinct nodes are pinned to it. Ignored when system_node_count is 0. Empty sets no preference. | `map(string)` | `{}` | no |
 | addon_placement_enabled | Require On-Demand capacity for add-on controllers and stores, prefer the system node group, and tolerate `CriticalAddonsOnly`. | `bool` | `true` | no |
+| addon_resilience_enabled | Priority classes, two-replica controllers behind disruption budgets, do-not-disrupt stores, sized requests and Karpenter node repair (see Add-on resilience). | `bool` | `true` | no |
 | kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs and the volume resizer. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
@@ -741,7 +754,7 @@ failed during initialization have no provider resources to migrate.
 | karpenter_default_node_pool_creation_enabled | Create the default NodePool + EC2NodeClass. | `bool` | `true` | no |
 | node_subnet_ids | Private subnets for the default NodePool and internal load balancers. Required when Karpenter's default NodePool, the private ALB, or the private NLB is enabled. | `list(string)` | `null` | no |
 | cluster_security_group_id | Cluster security group for Karpenter nodes and load-balancer-to-pod ingress. Required when Karpenter's default NodePool or any shared load balancer is enabled. | `string` | `null` | no |
-| karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry, consolidation). | `object` | `{}` | no |
+| karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry, consolidation, smallest instance memory in MiB: 8192 by default, 0 for no floor). | `object` | `{}` | no |
 | karpenter_spot_warm_min_instances | Minimum warm Spot instances in a static NodePool; zero removes it. | `number` | `0` | no |
 | eso_enabled | Install the External Secrets Operator, its Pod Identity role, and the Ravion ClusterSecretStores. | `bool` | `true` | no |
 | eso_chart_version | external-secrets chart version. | `string` | `"2.11.0"` | no |
@@ -777,6 +790,7 @@ failed during initialization have no provider resources to migrate.
 | logs_splunk | `{ hec_url, hec_token_secret_arn, index }`. | `object` | `{}` | no |
 | metrics_prometheus | `{ retention_days, storage_size, storage_class, endpoint, s3_storage_enabled, s3_bucket_name, s3_retention_days }`: 15 days locally, 50Gi, the managed `gp3` class or the cluster default, and Thanos history in S3 for 365 days. `endpoint` points at a Prometheus you already run and skips every managed metrics store. | `object` | `{}` | no |
 | prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.33.0"` / `[]` | no |
+| prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for the Prometheus server; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 7Gi, limit 10Gi | no |
 | logs_otlp / metrics_otlp | `{ endpoint, headers_secret_arn }`. The secret holds the value of an `Authorization` header. | `object` | `{}` | no |
 | metrics_amp | `{ workspace_id, region, alias }`. Falls back to the flat `amp_workspace_id` / `amp_region` / `amp_alias`. | `object` | `{}` | no |
 | metrics_cloudwatch | `{ enhanced_observability_enabled, application_signals_enabled, application_signals_namespaces, addon_version, addon_configuration_values }`. Auto-Monitor stays off unless Application Signals is enabled with no namespace list. | `object` | `{}` | no |

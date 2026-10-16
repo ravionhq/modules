@@ -60,6 +60,7 @@ resource "helm_release" "karpenter" {
         }
       }),
     ],
+    local.karpenter_resilience_values,
     var.karpenter_helm_values,
     # This setting owns the staticCapacity gate. Keep it last so an advanced
     # Helm value cannot leave static capacity enabled after the count is zero,
@@ -131,6 +132,9 @@ resource "helm_release" "karpenter_default_node_pool" {
         expireAfter         = var.karpenter_default_node_pool.expire_after
         consolidationPolicy = var.karpenter_default_node_pool.consolidation_policy
         consolidateAfter    = var.karpenter_default_node_pool.consolidate_after
+        # Without a floor Karpenter packs pods onto the cheapest node that fits
+        # their requests, and stores outgrow 2-4 GiB nodes.
+        minInstanceMemoryMiB = var.karpenter_default_node_pool.min_instance_memory_mib
       }
       spotWarm = {
         minInstances = var.karpenter_spot_warm_min_instances

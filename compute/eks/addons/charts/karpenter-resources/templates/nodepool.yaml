@@ -22,6 +22,13 @@ spec:
         - key: karpenter.k8s.aws/instance-generation
           operator: Gt
           values: ["2"]
+        {{- if gt (int .Values.nodePool.minInstanceMemoryMiB) 0 }}
+        # Never the smallest instances: a store that outgrows its request
+        # exhausts them and takes every pod on the node down with it.
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: [{{ sub (int .Values.nodePool.minInstanceMemoryMiB) 1 | quote }}]
+        {{- end }}
       nodeClassRef:
         group: karpenter.k8s.aws
         kind: EC2NodeClass

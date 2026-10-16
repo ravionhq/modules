@@ -92,6 +92,14 @@ locals {
         tls = {
           insecure = true
         }
+        # Prometheus replays its WAL for minutes after a restart. Retrying for
+        # longer than that keeps the samples written meanwhile.
+        retry_on_failure = {
+          enabled          = true
+          initial_interval = "5s"
+          max_interval     = "30s"
+          max_elapsed_time = "600s"
+        }
         resource_to_telemetry_conversion = {
           enabled = false
         }
@@ -191,7 +199,7 @@ resource "helm_release" "otel_collector" {
   create_namespace = true
   upgrade_install  = true
 
-  values = concat([local.otel_collector_values], local.addon_placement_values, var.otel_collector_helm_values)
+  values = concat([local.otel_collector_values], local.addon_placement_values, local.collector_resilience_values, var.otel_collector_helm_values)
 
   depends_on = [
     # Service creation must wait for the load balancer admission webhook.

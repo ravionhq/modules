@@ -29,6 +29,7 @@ resource "helm_release" "cert_manager" {
       cainjector      = { tolerations = local.addon_tolerations }
       startupapicheck = { tolerations = local.addon_tolerations }
     })] : [],
+    local.cert_manager_resilience_values,
     var.cert_manager_helm_values,
   )
 

@@ -59,9 +59,10 @@ locals {
       { name = "thanos-http", containerPort = 10902 },
     ]
     volumeMounts = [{ name = "storage-volume", mountPath = "/data" }]
+    # Block uploads buffer in memory.
     resources = {
-      requests = { cpu = "100m", memory = "128Mi" }
-      limits   = { memory = "512Mi" }
+      requests = { cpu = "100m", memory = "256Mi" }
+      limits   = { memory = "1Gi" }
     }
     securityContext = {
       allowPrivilegeEscalation = false
@@ -142,7 +143,7 @@ resource "helm_release" "thanos" {
     compactor = {
       storageClass = local.prometheus_config.storage_class
     }
-  })], local.addon_placement_values, var.thanos_helm_values)
+  })], local.addon_placement_values, local.thanos_resilience_values, var.thanos_helm_values)
 
   lifecycle {
     precondition {

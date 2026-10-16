@@ -343,6 +343,7 @@ resource "helm_release" "loki" {
       }),
     ],
     var.addon_placement_enabled ? [yamlencode({ singleBinary = local.addon_pod_placement })] : [],
+    local.loki_resilience_values,
     var.loki_helm_values,
   )
 

@@ -850,9 +850,16 @@ variable "karpenter_default_node_pool" {
     root_volume_size     = optional(string, "20Gi")
     root_volume_type     = optional(string, "gp3")
     ebs_kms_key_arn      = optional(string)
+    # 8 GiB keeps the add-on stores off nodes they would run out of memory on.
+    min_instance_memory_mib = optional(number, 8192)
   })
-  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, how eagerly Karpenter consolidates, and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
+  description = "Settings for the default NodePool: allowed capacity types (on-demand/spot), EC2 instance categories, CPU architectures, total vCPU limit, node expiry, how eagerly Karpenter consolidates, the smallest instance memory it may launch (MiB, 0 for no floor), and the root volume Karpenter nodes launch with. Root volumes are always encrypted; ebs_kms_key_arn swaps the AWS-managed key for a customer-managed one."
   default     = {}
+
+  validation {
+    condition     = var.karpenter_default_node_pool.min_instance_memory_mib >= 0
+    error_message = "The karpenter_default_node_pool.min_instance_memory_mib must be zero or a positive number of MiB."
+  }
 
   validation {
     condition     = var.karpenter_default_node_pool.ebs_kms_key_arn == null || can(regex("^arn:aws[a-zA-Z-]*:kms:", var.karpenter_default_node_pool.ebs_kms_key_arn))
@@ -1089,6 +1096,13 @@ variable "system_node_labels" {
 variable "addon_placement_enabled" {
   type        = bool
   description = "Require On-Demand capacity for the add-on controllers and stores, prefer the system node group, and tolerate CriticalAddonsOnly, so a Spot reclaim cannot take them down. Disable before supplying your own affinity through the add-on Helm values."
+  default     = true
+  nullable    = false
+}
+
+variable "addon_resilience_enabled" {
+  type        = bool
+  description = "Give the add-on controllers and stores priority over applications, run the controllers as two replicas behind disruption budgets spread across nodes, size Prometheus for what it uses, keep Karpenter from moving single-replica stores, and let Karpenter replace NotReady nodes. Disable before supplying your own replicas, budgets or priority classes through the add-on Helm values."
   default     = true
   nullable    = false
 }
@@ -2053,6 +2067,19 @@ variable "prometheus_chart_version" {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.prometheus_chart_version))
     error_message = "The prometheus_chart_version must be a semantic version like '29.33.0' (no leading 'v')."
   }
+}
+
+variable "prometheus_resources" {
+  type = object({
+    requests = object({ cpu = string, memory = string })
+    limits   = object({ memory = string })
+  })
+  description = "CPU and memory for the Prometheus server container. Karpenter sizes the server's node from the request, so it must cover the working set, including WAL replay after a restart. Applied when addon_resilience_enabled is true."
+  default = {
+    requests = { cpu = "500m", memory = "7Gi" }
+    limits   = { memory = "10Gi" }
+  }
+  nullable = false
 }
 
 variable "prometheus_helm_values" {

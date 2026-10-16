@@ -28,6 +28,8 @@ nodePool:
   expireAfter: 720h
   consolidationPolicy: WhenEmptyOrUnderutilized
   consolidateAfter: 15m
+  # Smallest instance memory to launch, in MiB. Zero removes the floor.
+  minInstanceMemoryMiB: 8192
 
 spotWarm:
   # Zero disables the static Spot NodePool.
