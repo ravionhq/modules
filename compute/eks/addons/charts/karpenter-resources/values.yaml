@@ -42,8 +42,8 @@ statefulPool:
   name: addon-stateful
   taintKey: ravion.com/addon-stateful
   instanceCategories: ["m", "r"]
-  # A Prometheus replica requests 7Gi; 16 GiB leaves room for it and the
-  # node's daemons.
+  # A Prometheus replica requests 10Gi; a 16 GiB node's ~14.5 GiB allocatable
+  # leaves room for it and the node's daemons.
   minInstanceMemoryMiB: 16384
   cpuLimit: 64
   consolidateAfter: 1h
