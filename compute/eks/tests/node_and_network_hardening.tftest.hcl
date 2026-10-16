@@ -282,3 +282,35 @@ run "cni_warm_ip_target_rejects_zero" {
   }
   expect_failures = [var.vpc_cni_warm_ip_target]
 }
+
+run "cni_ip_targets_reject_fractions" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                       = "test-cluster"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+    # Direct submodule use: an administrator is registered by the caller.
+    cluster_admin_access_managed_externally = true
+    vpc_cni_warm_ip_target                  = 1.5
+    vpc_cni_minimum_ip_target               = 2.5
+  }
+  expect_failures = [var.vpc_cni_warm_ip_target, var.vpc_cni_minimum_ip_target]
+}
+
+run "composite_cni_ip_targets_reject_fractions" {
+  command = plan
+  variables {
+    name                       = "test-cluster"
+    region                     = "us-east-2"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+    vpc_cni_warm_ip_target     = 1.5
+    vpc_cni_minimum_ip_target  = 2.5
+  }
+  expect_failures = [var.vpc_cni_warm_ip_target, var.vpc_cni_minimum_ip_target]
+}

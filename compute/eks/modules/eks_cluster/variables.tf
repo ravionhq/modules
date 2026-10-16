@@ -303,8 +303,8 @@ variable "vpc_cni_warm_ip_target" {
   default     = null
 
   validation {
-    condition     = var.vpc_cni_warm_ip_target == null || try(var.vpc_cni_warm_ip_target >= 1, false)
-    error_message = "vpc_cni_warm_ip_target must be at least 1."
+    condition     = var.vpc_cni_warm_ip_target == null ? true : (var.vpc_cni_warm_ip_target >= 1 && floor(var.vpc_cni_warm_ip_target) == var.vpc_cni_warm_ip_target)
+    error_message = "vpc_cni_warm_ip_target must be a whole number of at least 1."
   }
 }
 
@@ -314,8 +314,8 @@ variable "vpc_cni_minimum_ip_target" {
   default     = null
 
   validation {
-    condition     = var.vpc_cni_minimum_ip_target == null || try(var.vpc_cni_minimum_ip_target >= 0, false)
-    error_message = "vpc_cni_minimum_ip_target must not be negative."
+    condition     = var.vpc_cni_minimum_ip_target == null ? true : (var.vpc_cni_minimum_ip_target >= 0 && floor(var.vpc_cni_minimum_ip_target) == var.vpc_cni_minimum_ip_target)
+    error_message = "vpc_cni_minimum_ip_target must be a whole number of at least 0."
   }
 }
 
