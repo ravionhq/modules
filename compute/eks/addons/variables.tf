@@ -1393,7 +1393,7 @@ variable "loki_persistence_enabled" {
 
 variable "prometheus_replicas" {
   type        = number
-  description = "Prometheus server replicas when Thanos is on (metrics_prometheus.s3_storage_enabled). Each receives every sample and has its own volume, so one can fail, restart or move while the other serves; Thanos merges their copies. Each replica costs prometheus_resources. Without Thanos, readers query Prometheus directly and a single replica runs. Changing an existing single Prometheus to more than one replaces its Deployment with a StatefulSet, losing up to two hours of local samples not yet uploaded to S3."
+  description = "Prometheus server replicas when Thanos is on (metrics_prometheus.s3_storage_enabled). Each receives every sample and has its own volume, so one can fail, restart or move while the other serves; Thanos merges their copies. Each replica costs prometheus_resources. Without Thanos, readers query Prometheus directly and a single replica runs. Changing an existing single Prometheus to more than one replaces its Deployment with a StatefulSet, losing once the samples not yet in an uploaded block, roughly the last one to three hours."
   default     = 2
   nullable    = false
 
@@ -2092,9 +2092,9 @@ variable "prometheus_resources" {
     requests = object({ cpu = string, memory = string })
     limits   = object({ memory = string })
   })
-  description = "CPU and memory for the Prometheus server container. Karpenter sizes the server's node from the request, so it must cover the working set, including WAL replay after a restart. Applied when addon_resilience_enabled is true."
+  description = "CPU and memory for the Prometheus server container. Karpenter sizes the server's node from the request, so it must cover the working set, including WAL replay after a restart. Keep the memory request equal to the limit: the kubelet evicts pods using more than their request first, and Prometheus sets its Go memory limit from the container limit. Applied when addon_resilience_enabled is true."
   default = {
-    requests = { cpu = "500m", memory = "7Gi" }
+    requests = { cpu = "500m", memory = "10Gi" }
     limits   = { memory = "10Gi" }
   }
   nullable = false

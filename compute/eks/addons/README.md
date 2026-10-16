@@ -48,7 +48,7 @@ Placement keeps the add-ons off Spot; `addon_resilience_enabled` (the default) k
 - **Priority.** Controllers and stores run at `system-cluster-critical`, per-node agents (Alloy, the logs collector) at `system-node-critical`, so under pressure applications are evicted and preempted first. The logs collector also tolerates every taint, like Alloy.
 - **Replicas and budgets.** KEDA (operator, metrics apiserver, webhooks), cert-manager (controller, webhook, cainjector), External Secrets (controller with leader election, webhook, cert controller) and Thanos Query and Store run two replicas, prefer distinct nodes, and keep one through any drain (`minAvailable: 1`). The load balancer controller keeps one through a drain. Collectors and kube-state-metrics stay single replicas: two would duplicate series.
 - **Stores.** Prometheus, Loki, Tempo and the Thanos compactor carry `karpenter.sh/do-not-disrupt`, so consolidation never moves them mid-write.
-- **Sizing.** Prometheus requests `prometheus_resources` (7Gi, limit 10Gi), has ten minutes to replay its WAL before liveness applies, bounds local retention at four fifths of its volume, and limits per-query samples and time. The remote-write exporter retries for ten minutes across a Prometheus restart. Controllers, webhooks, Grafana, kube-state-metrics and the Karpenter controller request what they use.
+- **Sizing.** Prometheus requests `prometheus_resources` (10Gi, equal to its limit, so the kubelet never evicts it first under memory pressure), has ten minutes to replay its WAL before liveness applies, bounds local retention at four fifths of its volume, and limits per-query samples and time. The remote-write exporter retries for ten minutes across a Prometheus restart. Controllers, webhooks, Grafana, kube-state-metrics and the Karpenter controller request what they use.
 - **Nodes.** Karpenter's `nodeRepair` gate replaces nodes that stay NotReady, and the default NodePool launches nothing below `karpenter_default_node_pool.min_instance_memory_mib` (8 GiB; 0 removes the floor).
 
 Each release gets this as its own values document after the placement and ahead of its caller Helm values, so a caller document can replace any of it; set `addon_resilience_enabled = false` before supplying your own replicas, budgets or priority classes.
@@ -61,7 +61,7 @@ With Thanos on (`metrics_prometheus.s3_storage_enabled`, the default), Prometheu
 - each replica labels its series `prometheus_replica=<pod name>`, and Thanos Query merges the copies into one answer, reaching every replica's sidecar through a headless Service;
 - the replicas never share a node, prefer different zones, and a drain takes at most one (`maxUnavailable: 1`). One replica can crash, restart, replay its WAL or move while the other serves dashboards, Ravion and KEDA.
 
-Each replica requests `prometheus_resources`, so two double that cost, and both upload their blocks to S3. Without Thanos, readers query Prometheus directly and a single replica runs, since two would answer differently. Moving an existing single Prometheus to two replaces its Deployment and volume with a StatefulSet: up to two hours of local samples not yet uploaded to S3 are lost once; S3 history is untouched.
+Each replica requests `prometheus_resources`, so two double that cost, and both upload their blocks to S3. Without Thanos, readers query Prometheus directly and a single replica runs, since two would answer differently. Moving an existing single Prometheus to two replaces its Deployment and volume with a StatefulSet: the samples not yet in an uploaded block, roughly the last one to three hours, are lost once; S3 history is untouched.
 
 ### Nodes for the stores
 
@@ -807,7 +807,7 @@ failed during initialization have no provider resources to migrate.
 | logs_splunk | `{ hec_url, hec_token_secret_arn, index }`. | `object` | `{}` | no |
 | metrics_prometheus | `{ retention_days, storage_size, storage_class, endpoint, s3_storage_enabled, s3_bucket_name, s3_retention_days }`: 15 days locally, 50Gi, the managed `gp3` class or the cluster default, and Thanos history in S3 for 365 days. `endpoint` points at a Prometheus you already run and skips every managed metrics store. | `object` | `{}` | no |
 | prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.33.0"` / `[]` | no |
-| prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each Prometheus server replica; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 7Gi, limit 10Gi | no |
+| prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each Prometheus server replica; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 10Gi, limit 10Gi | no |
 | prometheus_replicas | Prometheus replicas when Thanos is on, each receiving every sample (see Highly available Prometheus); 1 without Thanos. 1–3. | `number` | `2` | no |
 | logs_otlp / metrics_otlp | `{ endpoint, headers_secret_arn }`. The secret holds the value of an `Authorization` header. | `object` | `{}` | no |
 | metrics_amp | `{ workspace_id, region, alias }`. Falls back to the flat `amp_workspace_id` / `amp_region` / `amp_alias`. | `object` | `{}` | no |

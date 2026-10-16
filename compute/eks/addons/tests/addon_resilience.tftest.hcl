@@ -91,8 +91,8 @@ run "prometheus_is_sized_protected_and_given_time_to_start" {
   command = plan
 
   assert {
-    condition     = one([for d in helm_release.prometheus[0].values : yamldecode(d).server if can(yamldecode(d).server.resources)]).resources == { requests = { cpu = "500m", memory = "7Gi" }, limits = { memory = "10Gi" } }
-    error_message = "Prometheus must request the memory it uses, so Karpenter never places it on a node it will run out of."
+    condition     = one([for d in helm_release.prometheus[0].values : yamldecode(d).server if can(yamldecode(d).server.resources)]).resources == { requests = { cpu = "500m", memory = "10Gi" }, limits = { memory = "10Gi" } }
+    error_message = "Prometheus must request all the memory it may use, so Karpenter never places it on a node it will run out of and the kubelet never evicts it first under memory pressure."
   }
   assert {
     condition     = one([for d in helm_release.prometheus[0].values : yamldecode(d).server if can(yamldecode(d).server.resources)]).priorityClassName == "system-cluster-critical"
