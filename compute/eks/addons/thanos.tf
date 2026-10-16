@@ -140,8 +140,9 @@ resource "helm_release" "thanos" {
     objstoreConfig    = local.thanos_objstore_config
     prometheusRelease = local.prometheus_release_name
     retentionDays     = local.prometheus_config.s3_retention_days
-    # Query merges each series' copies from the Prometheus replicas.
-    replicaLabel = local.prometheus_ha ? "prometheus_replica" : ""
+    # Query merges each series' copies from the Prometheus replicas. Set even
+    # with one replica: S3 keeps the blocks every earlier replica uploaded.
+    replicaLabel = "prometheus_replica"
     compactor = {
       storageClass = local.prometheus_config.storage_class
     }

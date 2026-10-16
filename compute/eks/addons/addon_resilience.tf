@@ -254,7 +254,9 @@ locals {
     settings = { featureGates = { nodeRepair = true } }
   })] : []
 
-  # Four fifths of a Gi-sized volume, in the GB unit Prometheus reads. A size
-  # in any other unit leaves retention bounded by time alone.
-  prometheus_retention_size = can(regex("^([0-9]+)Gi$", local.prometheus_config.storage_size)) ? "${floor(tonumber(regex("^([0-9]+)Gi$", local.prometheus_config.storage_size)[0]) * 4 / 5)}GB" : ""
+  # Four fifths of the volume, in MB (Prometheus's units are base 2, so MiB).
+  # Whole GB would round a 1Gi volume down to 0, which turns size-based
+  # retention off.
+  prometheus_storage_mib    = try(tonumber(regex("^([0-9]+)(Mi|Gi|Ti)$", local.prometheus_config.storage_size)[0]) * { Mi = 1, Gi = 1024, Ti = 1048576 }[regex("^([0-9]+)(Mi|Gi|Ti)$", local.prometheus_config.storage_size)[1]], null)
+  prometheus_retention_size = local.prometheus_storage_mib == null ? "" : "${max(1, floor(local.prometheus_storage_mib * 4 / 5))}MB"
 }

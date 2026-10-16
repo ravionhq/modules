@@ -107,7 +107,7 @@ run "prometheus_is_sized_protected_and_given_time_to_start" {
     error_message = "WAL replay must get ten minutes before liveness can restart Prometheus."
   }
   assert {
-    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.retentionSize == "40GB"
+    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.retentionSize == "40960MB"
     error_message = "Local retention must be bounded below the 50Gi volume so a full disk can never crash Prometheus."
   }
   assert {
@@ -312,6 +312,32 @@ run "prometheus_runs_two_replicas_each_with_every_sample" {
   assert {
     condition     = one([for d in helm_release.thanos[0].values : yamldecode(d) if can(yamldecode(d).replicaLabel)]).replicaLabel == "prometheus_replica"
     error_message = "Thanos must merge the two replicas' copies of each series into one."
+  }
+}
+
+run "small_prometheus_volume_keeps_size_based_retention" {
+  command = plan
+
+  variables {
+    metrics_prometheus = { storage_size = "1Gi" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.retentionSize == "819MB"
+    error_message = "A 1Gi volume must still be bounded by size; rounding to 0GB would turn size-based retention off."
+  }
+}
+
+run "thanos_merges_replica_history_after_scaling_to_one" {
+  command = plan
+
+  variables {
+    prometheus_replicas = 1
+  }
+
+  assert {
+    condition     = one([for d in helm_release.thanos[0].values : yamldecode(d) if can(yamldecode(d).replicaLabel)]).replicaLabel == "prometheus_replica"
+    error_message = "S3 still holds every earlier replica's blocks; without the replica label Query would count that history once per replica."
   }
 }
 
