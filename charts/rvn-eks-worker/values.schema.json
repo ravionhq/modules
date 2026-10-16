@@ -235,6 +235,26 @@
           "type": "integer",
           "minimum": 0
         },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "replicas": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        },
         "triggers": {
           "type": "array",
           "items": {

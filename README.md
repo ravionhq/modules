@@ -82,11 +82,11 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v2.3.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.2.2 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.20.0 | `compute/eks/addons/` |
+| `rvn-eks-addons` | EKS Add-ons | v0.22.0 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v0.3.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.8.1 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.8.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.11.0 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.10.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.13.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
 | `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |

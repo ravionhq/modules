@@ -14,6 +14,22 @@ spec:
   maxReplicaCount: {{ .Values.spotBurst.maxReplicas }}
   pollingInterval: {{ .Values.spotBurst.pollingInterval }}
   cooldownPeriod: {{ .Values.spotBurst.cooldownPeriod }}
+  {{- $fallback := .Values.spotBurst.fallback }}
+  {{- $supported := true }}
+  {{- range .Values.spotBurst.triggers }}
+  {{- if or (has .type (list "cpu" "memory")) (eq (.metricType | default "") "Utilization") }}
+  {{- $supported = false }}
+  {{- end }}
+  {{- end }}
+  {{- if and $fallback.enabled $supported }}
+  # When KEDA cannot read the triggers' metrics (its metrics source is down),
+  # keep every running pod and never fewer than this floor. KEDA refuses a
+  # fallback on CPU, memory and Utilization triggers, so those go without.
+  fallback:
+    failureThreshold: {{ $fallback.failureThreshold }}
+    replicas: {{ min (ternary .Values.spotBurst.maxReplicas $fallback.replicas (kindIs "invalid" $fallback.replicas)) .Values.spotBurst.maxReplicas }}
+    behavior: currentReplicasIfHigher
+  {{- end }}
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:

@@ -164,6 +164,14 @@ spotBurst:
   pollingInterval: 30
   cooldownPeriod: 300
   triggers: []
+  # -- What KEDA does when it cannot read the triggers' metrics, for example
+  # while Prometheus is down: keep every running Spot pod and never fewer than
+  # replicas (null means maxReplicas). Not applied to CPU, memory or
+  # Utilization triggers, which KEDA does not support it for.
+  fallback:
+    enabled: true
+    failureThreshold: 3
+    replicas: null
 
 # -- PodDisruptionBudget limiting voluntary disruptions (node drains,
 # consolidation, upgrades). Rendered only when the replica floor

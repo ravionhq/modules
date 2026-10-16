@@ -101,7 +101,7 @@ run "render_contract" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_grpc/tempo"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_grpc/tempo"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster", "prometheusremotewrite/in_cluster_1"]
     error_message = "Workload traces must go to Tempo, and workload metrics to the in-cluster Prometheus."
   }
 

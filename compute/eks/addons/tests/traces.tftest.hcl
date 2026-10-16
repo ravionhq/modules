@@ -192,7 +192,7 @@ run "xray_without_amp_writes_traces_only" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster", "prometheusremotewrite/in_cluster_1"]
     error_message = "Workload metrics must go to the in-cluster Prometheus"
   }
 }
@@ -462,7 +462,7 @@ run "tempo_uses_a_size_limited_scratch_volume_by_default" {
   }
 
   assert {
-    condition     = !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo), "metricsGenerator") && length(helm_release.tempo[0].values) == 2
+    condition     = !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo), "metricsGenerator") && length(helm_release.tempo[0].values) == 3
     error_message = "The metrics generator and extra values must be off by default"
   }
 }
@@ -482,8 +482,8 @@ run "tempo_metrics_generator_writes_to_the_in_cluster_prometheus" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.enabled == true && yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0].url == "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090/api/v1/write" && !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0]), "sigv4")
-    error_message = "The generator must remote-write to the in-cluster Prometheus, unsigned"
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.enabled == true && [for target in yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write : target.url] == ["http://ravion-prometheus-server-0.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write", "http://ravion-prometheus-server-1.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write"] && !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0]), "sigv4")
+    error_message = "The generator must remote-write to every in-cluster Prometheus replica, unsigned"
   }
 
   assert {
@@ -546,7 +546,7 @@ run "tempo_takes_any_chart_values" {
   }
 
   assert {
-    condition     = length(helm_release.tempo[0].values) == 3 && yamldecode(helm_release.tempo[0].values[2]).replicas == 2 && yamldecode(helm_release.tempo[0].values[2]).tempo.overrides.defaults.global.max_bytes_per_trace == 10000000
+    condition     = length(helm_release.tempo[0].values) == 4 && yamldecode(helm_release.tempo[0].values[3]).replicas == 2 && yamldecode(helm_release.tempo[0].values[3]).tempo.overrides.defaults.global.max_bytes_per_trace == 10000000
     error_message = "A tempo destination's helm_values must reach the chart after the module's own values"
   }
 }
@@ -580,7 +580,7 @@ run "tempo_chart_values_beside_other_destinations" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.tempo[0].values[2]).replicas == 2 && yamldecode(helm_release.tempo[0].values[2]).tolerations[0].key == "dedicated" && yamldecode(helm_release.tempo[0].values[2]).resources.limits.memory == "2Gi"
+    condition     = yamldecode(helm_release.tempo[0].values[3]).replicas == 2 && yamldecode(helm_release.tempo[0].values[3]).tolerations[0].key == "dedicated" && yamldecode(helm_release.tempo[0].values[3]).resources.limits.memory == "2Gi"
     error_message = "A Tempo card's chart values must reach the chart whatever the other cards carry"
   }
 
@@ -601,7 +601,7 @@ run "tempo_card_with_empty_chart_values_beside_a_null_one" {
   }
 
   assert {
-    condition     = length(helm_release.tempo[0].values) == 2 && length(helm_release.otlp_collector) == 1
+    condition     = length(helm_release.tempo[0].values) == 3 && length(helm_release.otlp_collector) == 1
     error_message = "An empty Tempo card beside a null one must plan, as the form sends them"
   }
 }
@@ -785,7 +785,7 @@ run "traces_only_vendors_stay_out_of_the_metrics_pipeline" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster", "prometheusremotewrite/in_cluster_1"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
     error_message = "A traces destination must not receive metrics"
   }
 }

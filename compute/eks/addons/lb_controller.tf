@@ -93,6 +93,7 @@ resource "helm_release" "lb_controller" {
       }),
     ],
     local.addon_placement_values,
+    local.lb_controller_resilience_values,
     var.aws_load_balancer_controller_helm_values,
   )
 

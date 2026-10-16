@@ -163,6 +163,7 @@ resource "helm_release" "alloy" {
         }
       }),
     ],
+    local.alloy_resilience_values,
     var.alloy_helm_values,
   )
 

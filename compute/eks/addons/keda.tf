@@ -19,6 +19,7 @@ resource "helm_release" "keda" {
       affinity = local.addon_affinity
     })],
     var.addon_placement_enabled ? [yamlencode({ tolerations = local.addon_tolerations })] : [],
+    local.keda_resilience_values,
     var.keda_helm_values,
   )
 

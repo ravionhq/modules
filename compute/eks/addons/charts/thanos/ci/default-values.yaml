@@ -1,0 +1,5 @@
+objstoreConfig: |
+  type: S3
+  config:
+    bucket: example-metrics
+    endpoint: s3.us-east-2.amazonaws.com
