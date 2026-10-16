@@ -46,6 +46,7 @@ resource "helm_release" "external_secrets" {
       webhook        = local.addon_pod_placement
       certController = local.addon_pod_placement
     }))] : [],
+    local.external_secrets_resilience_values,
     var.eso_helm_values,
   )
 

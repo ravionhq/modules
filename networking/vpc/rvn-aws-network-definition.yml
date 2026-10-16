@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.2.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.2.1
+  description: Turning on NAT gateway high availability no longer cuts off private subnets while the new NAT gateways are created.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

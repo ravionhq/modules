@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon Aurora cluster. Supports Aurora PostgreSQL and Aurora MySQL with provisioned or Serverless v2 capacity.
 
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.5.0
+  description: Store the master password in a Secrets Manager secret you name, kept out of Terraform state and never rotated automatically.
 module:
   inputs:
     - id: network
@@ -518,7 +518,7 @@ module:
       label: Credentials & authentication
       type: section
     - default: true
-      description: Let AWS generate and manage the master password in Secrets Manager. Disable before importing a cluster whose existing password is managed externally.
+      description: Let AWS generate and manage the master password in Secrets Manager. Turn off to name the secret yourself, or before importing a cluster whose existing password is managed externally.
       id: master_user_password_management_enabled
       label: Manage password in Secrets Manager
       type: boolean
@@ -531,12 +531,36 @@ module:
         master_user_password_management_enabled: false
       type: boolean
     - collapsible: true
+      description: Generate the master password and store it in a Secrets Manager secret with this name, such as prod/app/db. Not rotated automatically; the password stays out of Terraform state.
+      id: master_user_secret_name
+      label: Master password secret name
+      patterns:
+        - message: 1-512 letters, numbers, and / _ + = . @ - characters.
+          pattern: ^[A-Za-z0-9/_+=.@-]{1,512}$
+      placeholder: prod/app/db
+      required: false
+      show_when:
+        master_user_password_management_enabled: false
+        master_user_password_preservation_enabled: false
+        restore_mode: none
+      type: string
+    - collapsible: true
+      default: 1
+      description: Increment to generate a new password and write it to the cluster and the secret on the next deploy.
+      id: master_user_secret_version
+      label: Master password version
+      min: 1
+      show_when:
+        master_user_password_management_enabled: false
+        master_user_password_preservation_enabled: false
+        restore_mode: none
+      type: number
+    - collapsible: true
       id: master_user_secret_kms_key_id
       label: Secrets Manager KMS key ARN
       placeholder: arn:aws:kms:...
       required: false
       show_when:
-        master_user_password_management_enabled: true
         restore_mode: none
       type: string
     - collapsible: true
@@ -1157,6 +1181,8 @@ module:
         master_user_password_management_enabled: << module.input.master_user_password_management_enabled >>
         master_user_password_preservation_enabled: << module.input.master_user_password_preservation_enabled || false >>
         master_user_secret_kms_key_id: << module.input.master_user_secret_kms_key_id >>
+        master_user_secret_name: '<< module.input.restore_mode == "none" && !module.input.master_user_password_management_enabled && !(module.input.master_user_password_preservation_enabled || false) ? module.input.master_user_secret_name : null >>'
+        master_user_secret_version: << module.input.master_user_secret_version || 1 >>
         master_username: << module.input.master_username >>
         minor_version_auto_upgrade_enabled: << module.input.minor_version_auto_upgrade_enabled >>
         monitoring_interval: << module.input.monitoring_interval >>
@@ -1435,6 +1461,8 @@ module:
 
     Master password management in AWS Secrets Manager is enabled by default, so AWS creates and stores the master password for the cluster. Before importing a cluster whose existing password is managed outside Secrets Manager, disable password management and enable Preserve existing master password. Leaving password management enabled causes AWS to generate a new master password. Preservation verifies that the named cluster already exists in AWS, preventing a new cluster from reaching AWS without any source of master credentials. Provide a Secrets Manager KMS key ARN when you need a customer-managed key for a managed secret.
 
+    To keep the master password in a secret you name, for example under a prefix that External Secrets Operator or another reader is already allowed to read, turn off password management and set Master password secret name. Ravion then generates the password, writes it to the cluster and to the named secret as `username`, `password`, `engine`, `port` and `dbname` keys, and keeps it out of Terraform state and plan files. AWS never rotates this password. Increment Master password version to set a new one. Switching an existing cluster to a named secret changes its master password in place and does not replace the cluster.
+
     Storage encryption is enabled by the Terraform module. Provide a storage KMS key ARN when you need a customer-managed key for cluster storage. IAM database authentication and the Aurora Data API HTTP endpoint are optional.
 
     ## Availability, backups, and maintenance
@@ -1478,6 +1506,8 @@ module:
     | Username | Yes for new clusters | dbadmin | Master database user. |
     | Manage password in Secrets Manager | No | true | Stores generated master credentials in AWS Secrets Manager. Disable before importing an externally managed password. |
     | Preserve existing master password | No | false | Verifies the cluster exists in AWS and leaves its externally managed password unchanged. |
+    | Master password secret name | No | - | Generates the master password and stores it in a Secrets Manager secret with this name. Requires password management off. |
+    | Master password version | No | 1 | Increment to set a new generated master password. |
     | Publicly accessible | No | false | Switches the DB subnet group to public subnets. Leave disabled unless public database access is intentional. |
     | Security group creation | No | true | Creates ingress rules from allowed security groups and CIDRs. |
     | Backup retention days | No | 7 | Aurora requires at least 1 day. |

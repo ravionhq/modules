@@ -5,17 +5,29 @@ retentionDays: 365
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# Applied to every component. Empty leaves the cluster default.
+priorityClassName: ""
+# The external label that tells Prometheus replicas apart. Set, Query merges
+# their copies of each series into one.
+replicaLabel: ""
 query:
+  # Above one, the replicas spread across nodes behind a minAvailable=1 budget.
+  replicas: 1
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
 store:
+  replicas: 1
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
 compactor:
   storageSize: 20Gi
   storageClass: null
+  podAnnotations: {}
+  # Empty uses the top-level affinity and tolerations.
+  affinity: {}
+  tolerations: []
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}

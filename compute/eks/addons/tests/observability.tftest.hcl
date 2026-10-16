@@ -676,8 +676,8 @@ run "in_cluster_prometheus_is_a_rendering_provider" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["prometheusremotewrite/in_cluster"].endpoint == "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090/api/v1/write"
-    error_message = "The collector must remote-write the same series into the in-cluster store"
+    condition     = yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["prometheusremotewrite/in_cluster"].endpoint == "http://ravion-prometheus-server-0.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write" && yamldecode(helm_release.otel_collector[0].values[0]).config.exporters["prometheusremotewrite/in_cluster_1"].endpoint == "http://ravion-prometheus-server-1.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write"
+    error_message = "The collector must remote-write the same series into every in-cluster Prometheus replica"
   }
 
   # It has no route out of the cluster, so Ravion Operator is the only way to read it.

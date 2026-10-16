@@ -28,7 +28,22 @@ nodePool:
   expireAfter: 720h
   consolidationPolicy: WhenEmptyOrUnderutilized
   consolidateAfter: 15m
+  # Smallest instance memory to launch, in MiB. Zero removes the floor.
+  minInstanceMemoryMiB: 8192
 
 spotWarm:
   # Zero disables the static Spot NodePool.
   minInstances: 0
+
+# A NodePool for the add-on stores alone (Prometheus, Loki, Tempo, the Thanos
+# compactor), which require it by name and tolerate its taint.
+statefulPool:
+  enabled: false
+  name: addon-stateful
+  taintKey: ravion.com/addon-stateful
+  instanceCategories: ["m", "r"]
+  # A Prometheus replica requests 10Gi; a 16 GiB node's ~14.5 GiB allocatable
+  # leaves room for it and the node's daemons.
+  minInstanceMemoryMiB: 16384
+  cpuLimit: 64
+  consolidateAfter: 1h

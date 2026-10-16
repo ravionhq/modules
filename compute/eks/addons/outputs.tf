@@ -509,7 +509,7 @@ output "metrics_providers" {
 }
 
 output "metrics_rendering_providers" {
-  description = "The selected metric providers Ravion's Metrics tab can read, in fallback order: amp, then prometheus, then cloudwatch. Empty when metrics are off."
+  description = "The selected metric providers Ravion's Metrics tab can read, in fallback order: amp, then prometheus, then mimir, then cloudwatch. Empty when metrics are off."
   value       = tolist(local.metrics_rendering_providers)
 }
 
@@ -519,8 +519,8 @@ output "metrics_external_links" {
 }
 
 output "prometheus_endpoint" {
-  description = "Prometheus-compatible query URL: Thanos Query (recent plus S3 history), plain Prometheus when S3 storage is off, or the supplied endpoint. Null unless prometheus is selected; Ravion reaches it through Operator."
-  value       = local.prometheus_endpoint
+  description = "The in-cluster Prometheus-compatible query URL Ravion charts from: Thanos Query (recent plus S3 history), plain Prometheus when S3 storage is off, or the supplied endpoint; with mimir selected and prometheus not, Mimir's /prometheus API. Null unless prometheus or mimir is selected; Ravion reaches it through Operator."
+  value       = local.metrics_query_endpoint
 }
 
 output "grafana_cloud_logs_query_url" {
@@ -609,6 +609,22 @@ output "keda_chart_version" {
   value       = var.keda_enabled ? helm_release.keda[0].version : null
 }
 
+output "cert_manager_enabled" {
+  description = "Whether this add-ons instance installs cert-manager for Issuers and Certificates."
+  value       = var.cert_manager_enabled
+  depends_on  = [helm_release.cert_manager]
+}
+
+output "cert_manager_namespace" {
+  description = "cert-manager namespace, or null when cert-manager is disabled."
+  value       = var.cert_manager_enabled ? var.cert_manager_namespace : null
+}
+
+output "cert_manager_chart_version" {
+  description = "cert-manager chart version, or null when cert-manager is disabled."
+  value       = var.cert_manager_enabled ? helm_release.cert_manager[0].version : null
+}
+
 output "thanos_role_arns" {
   description = "Pod Identity roles keyed by sidecar, store, and compactor; empty when Thanos is disabled."
   value       = { for name, role in module.thanos_role : name => role.role_arn }
@@ -646,4 +662,24 @@ output "ravion_aws_region" {
 output "ravion_managed_domains_enabled" {
   description = "True when the cluster owns a Ravion wildcard certificate for its selected HTTPS-enabled ALB. Workloads read this to show/hide managed-domain fields."
   value       = local.enable_ravion_domain
+}
+
+output "mimir_endpoint" {
+  description = "Mimir's Prometheus-compatible query URL, the gateway's /prometheus path (null unless mimir is selected). A KEDA prometheus trigger's serverAddress, or a Grafana data source."
+  value       = local.mimir_endpoint
+}
+
+output "mimir_remote_write_endpoint" {
+  description = "Mimir's Prometheus remote-write URL (null unless mimir is selected)."
+  value       = local.mimir_remote_write_endpoint
+}
+
+output "mimir_s3_bucket" {
+  description = "Mimir's dedicated blocks bucket, created or supplied (null unless mimir is selected)."
+  value       = local.mimir_bucket_name
+}
+
+output "mimir_role_arn" {
+  description = "IAM role Mimir's components assume through Pod Identity to read and write its bucket (null unless mimir is selected)."
+  value       = local.mimir_enabled ? module.mimir_role[0].role_arn : null
 }

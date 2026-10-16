@@ -831,7 +831,7 @@ Internet
 | Single NAT | `false` (default) | ~$32/month + data | Single AZ dependency | Dev/staging, cost-sensitive |
 | Multi-NAT | `true` | ~$32/month per AZ + data | High availability | Production workloads |
 
-> **Important:** Switching topology between single-NAT and multi-NAT on a live VPC has unavoidable per-subnet egress gaps because AWS only allows one route-table association per subnet at a time. See [Migrating between NAT topologies](#migrating-between-nat-topologies) below for the safe runbook.
+> **Important:** Switching from multi-NAT back to single-NAT on a live VPC needs a manual step before applying. See [Migrating between NAT topologies](#migrating-between-nat-topologies) below for the safe runbook.
 
 **Single NAT Gateway:**
 ```
@@ -983,67 +983,50 @@ module "vpc" {
 
 ## Migrating between NAT topologies
 
-Switching between single-NAT and multi-NAT (HA) on a **live** VPC needs care: each subnet's route-table association must be replaced (destroy-then-create) because AWS only allows one association per subnet at a time. The window is short (~1 second per subnet), but new connections during that window will fail. Existing connections survive on the previous NAT's connection-tracking until they tear down naturally.
+Switching between single-NAT and multi-NAT (HA) moves private subnets between route tables. The move itself has no gap: the provider swaps a subnet's route table in one `ReplaceRouteTableAssociation` call. What matters is that the route table a subnet moves onto already has its NAT, peering and gateway endpoint routes. Existing connections through the old NAT gateway are dropped once the subnet moves.
+
+Don't use `-target` on route table associations for either direction. A subnet's association depends on the route tables, NAT routes and gateway endpoints, so targeting it also applies their removals, such as deleting the NAT route of a route table another subnet still uses.
 
 ### Pre-flight checklist
 
-Before applying:
-
-1. **Decide the migration window.** Per-subnet egress gap of ~1s on each association swap. New TCP/UDP connections fail during the gap.
-2. **Verify the destination route table has the right routes.** When swapping a subnet onto a different RT, that RT must already have a working `0.0.0.0/0 → NAT` (and `::/0 → EIGW` if IPv6) route, or the subnet has zero egress until the route is added.
-3. **Check NAT capacity** (single-NAT direction). One NAT GW handles up to ~45 Gbps and 55k connections per dest IP/port pair, scaling automatically. Confirm your aggregate traffic fits.
-4. **Match `nat_gateway_eip_allocation_ids` to the target topology.** Length 1 for single-NAT, the resolved `subnet_count` for HA. The module's validation rejects mismatches.
-5. **Run `tofu plan` first** and verify there's no `-/+` on `aws_nat_gateway.this[0]` and no changes to `aws_route_table.private[0]`'s NAT route. If either appears, investigate before applying — those signal an unintended replacement.
-
-### HA → Single
-
-```hcl
-nat_gateway_high_availability_enabled = false
-nat_gateway_eip_allocation_ids = [<eip-0>]
-```
-
-Apply in stages so only one AZ's egress is affected at a time:
-
-```bash
-# Stage 1: move subnet[1] onto RT[0]. Subnet[2] still routes via NAT[2].
-tofu apply -target='aws_route_table_association.private[1]'
-# Verify subnet[1] connectivity (curl from a workload).
-
-# Stage 2: move subnet[2] onto RT[0]. Subnet[1] is now stable on NAT[0].
-tofu apply -target='aws_route_table_association.private[2]'
-# Verify subnet[2] connectivity.
-
-# Stage 3: clean up the now-orphan NATs and RTs (no traffic depends on them).
-tofu apply
-```
-
-Stages 1 and 2 each have a ~1s egress gap on the moving subnet. Stage 3 is gap-free.
+1. **Check NAT capacity** (single-NAT direction). One NAT GW handles up to ~45 Gbps and 55k connections per dest IP/port pair, scaling automatically. Confirm your aggregate traffic fits.
+2. **Match `nat_gateway_eip_allocation_ids` to the target topology.** Length 1 for single-NAT, the resolved `subnet_count` for HA. The module's validation rejects mismatches.
+3. **Run `tofu plan` first** and verify there's no `-/+` on `aws_nat_gateway.this[0]` and no changes to `aws_route_table.private[0]`'s NAT route. If either appears, investigate before applying — those signal an unintended replacement.
 
 ### Single → HA
-
-Inverse direction: spin up new NATs and RTs first (no impact), then swap subnets onto them one at a time.
 
 ```hcl
 nat_gateway_high_availability_enabled = true
 nat_gateway_eip_allocation_ids = [<eip-0>, <eip-1>, <eip-2>]   # length = subnet_count
 ```
 
+Apply as usual. From version 1.2.1, a subnet moves onto its new route table only after that table has its NAT, peering and gateway endpoint routes, so subnets keep egress while the new NAT gateways are created. Upgrade to 1.2.1 before switching on an older version.
+
+### HA → Single
+
+A plain apply deletes the per-AZ NAT routes and route tables before it moves the subnets off them, so move the subnets yourself first:
+
 ```bash
-# Stage 1: create new NATs and RTs. Subnets still routed via RT[0]/NAT[0].
-tofu apply \
-  -target='aws_nat_gateway.this' \
-  -target='aws_route_table.private' \
-  -target='aws_route.private_nat'
-# All three NATs now exist; new RTs have correct routes; nothing has moved yet.
+# Move every private subnet except subnet[0] onto RT[0]. No egress gap: each
+# call swaps the subnet's route table in place, and RT[0] already has the NAT,
+# peering and gateway endpoint routes. The swap gives the association a new
+# ID, so re-import it.
+attr() { tofu state show -no-color "$1" | awk -v key="$2" '$1 == key {gsub(/"/, "", $3); print $3}'; }
+rt0=$(attr 'aws_route_table.private[0]' id)
+for i in 1 2; do   # one per private subnet after the first
+  addr="aws_route_table_association.private[$i]"
+  subnet=$(attr "$addr" subnet_id)
+  aws ec2 replace-route-table-association --association-id "$(attr "$addr" id)" --route-table-id "$rt0"
+  tofu state rm "$addr"
+  tofu import "$addr" "$subnet/$rt0"
+done
+```
 
-# Stage 2: swap subnet[1] onto its own RT.
-tofu apply -target='aws_route_table_association.private[1]'
+Then set the target topology and apply. The associations already match it, so the apply only removes the per-AZ NAT gateways, routes and route tables, and the endpoint routes on those tables.
 
-# Stage 3: swap subnet[2] onto its own RT.
-tofu apply -target='aws_route_table_association.private[2]'
-
-# Stage 4: final converge (tag updates, etc.)
-tofu apply
+```hcl
+nat_gateway_high_availability_enabled = false
+nat_gateway_eip_allocation_ids = [<eip-0>]
 ```
 
 ### Recovery if an apply fails mid-flight

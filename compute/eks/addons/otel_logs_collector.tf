@@ -300,7 +300,7 @@ resource "helm_release" "otel_logs_collector" {
   create_namespace = true
   upgrade_install  = true
 
-  values = concat([local.otel_logs_values], var.otel_logs_collector_helm_values)
+  values = concat([local.otel_logs_values], local.node_agent_resilience_values, var.otel_logs_collector_helm_values)
 
   depends_on = [
     helm_release.lb_controller,

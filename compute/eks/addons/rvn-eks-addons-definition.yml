@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.19.1
-  description: "Let a Grafana dashboard variable over a Tempo attribute list values from the dashboard's time range, up to 24 hours, instead of failing when nothing sent that attribute in the last few minutes."
+  version: 0.22.0
+  description: "Add Grafana Mimir as an in-cluster metrics destination for clusters that outgrow one Prometheus: three copies of every sample on separate nodes, optionally one per availability zone, history in its own S3 bucket, no limits that reject metrics, and the same Metrics tab, Grafana and KEDA queries through its Prometheus API. Select it alongside Prometheus to move without losing data, then deselect Prometheus."
 module:
   inputs:
     - id: cluster
@@ -592,6 +592,27 @@ module:
       description: Verify this version against your cluster's Kubernetes version before enabling.
       show_when:
         keda_enabled: true
+    - id: section_cert_manager
+      label: Certificates
+      type: section
+    - id: cert_manager_enabled
+      label: cert-manager
+      type: boolean
+      description: Issue and renew TLS certificates in the cluster; Issuers and Certificates are configured separately.
+      default: false
+    - id: cert_manager_namespace
+      label: cert-manager namespace
+      type: string
+      default: cert-manager
+      show_when:
+        cert_manager_enabled: true
+    - id: cert_manager_chart_version
+      label: cert-manager chart version
+      type: string
+      default: v1.21.2
+      description: Verify this version against your cluster's Kubernetes version before enabling.
+      show_when:
+        cert_manager_enabled: true
     - id: section_ebs_csi
       label: EBS CSI driver
       type: section
@@ -1141,7 +1162,7 @@ module:
     - add_button_label: Add destination
       default:
         - prometheus
-      description: Send metrics to one or more destinations. Ravion queries Amazon Managed Prometheus first, then in-cluster Prometheus and CloudWatch. External destinations each receive a copy.
+      description: Send metrics to one or more destinations. Ravion queries Amazon Managed Prometheus first, then in-cluster Prometheus, in-cluster Mimir and CloudWatch. External destinations each receive a copy. Prometheus suits most clusters; Mimir is for clusters that outgrow one Prometheus, and costs more to run.
       id: metrics_providers
       label: Metrics destinations
       show_when:
@@ -1154,6 +1175,9 @@ module:
         - group_label: Shown in Ravion (fallback)
           label: Prometheus in your cluster
           value: prometheus
+        - group_label: Shown in Ravion (fallback)
+          label: Grafana Mimir in your cluster (large clusters)
+          value: mimir
         - group_label: Shown in Ravion (fallback)
           label: Amazon CloudWatch (Container Insights)
           value: cloudwatch
@@ -1250,6 +1274,43 @@ module:
         metrics_enabled: true
         metrics_providers: prometheus
       type: string
+    - default: 365
+      description: Days of metrics history Mimir keeps in S3.
+      id: mimir_retention_days
+      label: Mimir retention (days)
+      min: 1
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: number
+    - collapsible: true
+      description: Store Mimir's metrics in an existing bucket instead of creating one. It must be dedicated to Mimir on this cluster and in its region; customer-managed KMS grants remain your responsibility.
+      id: mimir_s3_bucket_name
+      label: Existing Mimir bucket
+      placeholder: my-cluster-mimir
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - collapsible: true
+      description: StorageClass of Mimir's volumes. Leave blank for the managed gp3 class, or the cluster default when the EBS CSI driver is off.
+      id: mimir_storage_class
+      label: Mimir storage class
+      placeholder: gp3
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - add_button_label: Add availability zone
+      collapsible: true
+      description: Three or more availability zones to keep one copy of every sample in each, so losing a whole zone loses nothing. Leave empty to keep the three copies on separate nodes, spread across zones where possible. The cluster's nodes must be able to launch in every zone listed.
+      id: mimir_zones
+      label: Mimir availability zones
+      placeholder: us-east-1a
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string_array
     - default: true
       description: Collect enhanced Container Insights metrics for pods and containers.
       id: cloudwatch_enhanced_observability_enabled
@@ -1651,6 +1712,9 @@ module:
         keda_enabled: << module.input.keda_enabled == true >>
         keda_namespace: '<< module.input.keda_enabled == true && module.input.keda_namespace != nil ? module.input.keda_namespace : "keda" >>'
         keda_chart_version: '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>'
+        cert_manager_enabled: << module.input.cert_manager_enabled == true >>
+        cert_manager_namespace: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_namespace != nil ? module.input.cert_manager_namespace : "cert-manager" >>'
+        cert_manager_chart_version: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_chart_version != nil ? module.input.cert_manager_chart_version : "v1.21.2" >>'
         karpenter_enabled: << module.input.karpenter_enabled >>
         karpenter_interruption_queue_alarm_creation_enabled: '<< module.input.karpenter_interruption_queue_alarm_creation_enabled != nil ? module.input.karpenter_interruption_queue_alarm_creation_enabled : true >>'
         karpenter_interruption_queue_alarm_age_threshold_seconds: '<< module.input.karpenter_interruption_queue_alarm_age_threshold_seconds != nil ? module.input.karpenter_interruption_queue_alarm_age_threshold_seconds : 60 >>'
@@ -1727,6 +1791,11 @@ module:
           s3_storage_enabled: '<< module.input.prometheus_s3_storage_enabled != nil ? module.input.prometheus_s3_storage_enabled : true >>'
           s3_bucket_name: << module.input.prometheus_s3_bucket_name >>
           s3_retention_days: '<< module.input.prometheus_s3_retention_days != nil ? module.input.prometheus_s3_retention_days : 365 >>'
+        metrics_mimir:
+          retention_days: '<< module.input.mimir_retention_days != nil ? module.input.mimir_retention_days : 365 >>'
+          s3_bucket_name: << module.input.mimir_s3_bucket_name >>
+          storage_class: << module.input.mimir_storage_class >>
+          zones: '<< module.input.mimir_zones != nil ? module.input.mimir_zones : [] >>'
         metrics_cloudwatch:
           enhanced_observability_enabled: '<< module.input.cloudwatch_enhanced_observability_enabled != nil ? module.input.cloudwatch_enhanced_observability_enabled : true >>'
           application_signals_enabled: '<< module.input.cloudwatch_application_signals_enabled != nil ? module.input.cloudwatch_application_signals_enabled : false >>'
@@ -1855,7 +1924,7 @@ module:
       - id: node_cpu
         name: Node CPU usage
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1876,7 +1945,7 @@ module:
       - id: node_cpu_allocatable
         name: Node CPU allocatable
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1897,7 +1966,7 @@ module:
       - id: node_memory
         name: Node memory working set
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1917,7 +1986,7 @@ module:
       - id: nodes_ready
         name: Nodes ready
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1936,7 +2005,7 @@ module:
       - id: pods_running
         name: Pods running
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1955,7 +2024,7 @@ module:
       - id: pods_pending
         name: Pods pending
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1997,6 +2066,14 @@ module:
     KEDA owns the external metrics API, so check for an existing adapter before installing. Remove dependent ScaledObjects and TriggerAuthentications before disabling it. CRDs are managed by the Helm chart; follow the selected version's upgrade and removal guidance.
 
     **KEDA chart version** defaults to `2.20.2`. Its published Kubernetes test matrix covers 1.33–1.35; verify newer cluster versions, including 1.36, in staging before production adoption. Advanced chart settings can be supplied through `keda_helm_values` in **Advanced Terraform variables**.
+
+    ## Certificates
+
+    **cert-manager** is optional and off by default. Enabling it installs the controller, webhook, CA injector and CRDs in **cert-manager namespace**. Components default to On-Demand EC2 placement so certificates keep renewing through Spot interruptions. It creates no Issuers or Certificates; define those alongside the workloads that use them.
+
+    The CRDs are kept when cert-manager is turned off, because deleting them would delete every Certificate and Issuer in the cluster and the Secrets they own. Check for an existing cert-manager installation before enabling: a cluster can run only one.
+
+    **cert-manager chart version** defaults to `v1.21.2`. Check the version's supported Kubernetes releases against your cluster before enabling or upgrading. Advanced chart settings, such as webhook replicas, can be supplied through `cert_manager_helm_values` in **Advanced Terraform variables**.
 
     ## Logs, metrics and traces destinations
 
@@ -2147,6 +2224,9 @@ module:
     | KEDA                   | No       | `false`              | Event-driven workload autoscaler and its CRDs          |
     | KEDA namespace         | No       | `keda`               | Namespace for the KEDA components                     |
     | KEDA chart version     | No       | `2.20.2`             | Pinned official Helm chart                            |
+    | cert-manager           | No       | `false`              | TLS certificate controller and its CRDs                |
+    | cert-manager namespace | No       | `cert-manager`       | Namespace for the cert-manager components              |
+    | cert-manager chart version | No   | `v1.21.2`            | Pinned official Helm chart                            |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |

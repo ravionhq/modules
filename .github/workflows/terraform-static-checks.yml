@@ -15,10 +15,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# The checks run as parallel jobs. "Validate Terraform Modules" is the
+# required check, so it stays as one job that passes only when all of them do.
 jobs:
-  validate:
-    name: Validate Terraform Modules
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate/interruptible=true
+  lint:
+    name: Format, lint and scan
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-lint/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -28,101 +30,38 @@ jobs:
         with:
           tofu_version: 1.12.3
 
-      # Every `tofu init` below would otherwise download its providers again,
-      # though most modules pin the same AWS provider versions. The plugin
-      # cache downloads each version once per run, and actions/cache carries
-      # it across runs until a lock file changes.
-      - name: Configure provider plugin cache
-        run: |
-          mkdir -p "$HOME/.terraform.d/plugin-cache"
-          echo "TF_PLUGIN_CACHE_DIR=$HOME/.terraform.d/plugin-cache" >> "$GITHUB_ENV"
-
-      - name: Cache providers
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.terraform.d/plugin-cache
-          key: tofu-providers-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
-          restore-keys: |
-            tofu-providers-${{ runner.os }}-
-
       - name: Setup TFLint
         uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4
 
       - name: Check formatting
         run: tofu fmt -check -recursive
 
+      # Each AWS provider version is about 770 MB unpacked, so lock files that
+      # drift apart slow down validate and can fill the runner disk.
+      - name: Check every lock file pins the same AWS provider
+        run: |
+          set -euo pipefail
+          pins=$(git ls-files '*.terraform.lock.hcl' | xargs awk '
+            /^provider "registry\.(opentofu\.org|terraform\.io)\/hashicorp\/aws"/ { aws = 1; next }
+            aws && $1 == "version" { gsub(/"/, "", $3); print $3 "\t" FILENAME; aws = 0 }')
+          if [ "$(cut -f1 <<< "${pins}" | sort -u | wc -l)" -gt 1 ]; then
+            echo "::error::Lock files pin different hashicorp/aws versions. Pin them all to one version."
+            sort <<< "${pins}"
+            exit 1
+          fi
+
+      # TFLint and Trivy read called modules from .terraform/modules. `tofu get`
+      # downloads those without the providers, which validate installs.
+      - name: Download called modules
+        run: |
+          set -euo pipefail
+          find . -mindepth 3 -maxdepth 3 -name versions.tf -exec dirname {} \; | sort |
+            xargs -P 4 -I{} tofu -chdir={} get
+
       - name: Initialize TFLint plugins
         run: tflint --init
         env:
           GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Validate module syntax
-        run: |
-          set -euo pipefail
-
-          modules=$(find . -mindepth 3 -maxdepth 3 -name versions.tf -exec dirname {} \; | sort)
-
-          for module in $modules; do
-            echo "Validating ${module}"
-            tofu -chdir="${module}" init -backend=false
-            tofu -chdir="${module}" validate
-          done
-
-      - name: Test CloudFront module
-        run: |
-          tofu -chdir=cdn/cloudfront init -backend=false
-          tofu -chdir=cdn/cloudfront test
-
-      - name: Test managed domains
-        run: |
-          tofu -chdir=compute/ecs_cluster init -backend=false
-          tofu -chdir=compute/ecs_cluster test -filter=tests/managed_domains.tftest.hcl
-          tofu -chdir=compute/ecs_service init -backend=false
-          tofu -chdir=compute/ecs_service test -filter=tests/managed_domains.tftest.hcl
-          tofu -chdir=compute/eks/addons init -backend=false
-          tofu -chdir=compute/eks/addons test -filter=tests/managed_domains.tftest.hcl
-
-      - name: Test CloudFront viewer-request function
-        run: node --test cdn/cloudfront/functions/viewer_request.test.js
-
-      - name: Test AMI module
-        run: |
-          python3 -B -m unittest discover -s compute/ami/tests -p 'test_*.py' -v
-          tofu -chdir=compute/ami init -backend=false
-          tofu -chdir=compute/ami test -filter=tests/basic.tftest.hcl
-
-      - name: Test EKS capacity reconciliation
-        run: |
-          python3 -m unittest discover -s compute/eks/tests -p 'test_*.py' -v
-          tofu -chdir=compute/eks init -backend=false
-          tofu -chdir=compute/eks test -filter=tests/node_group_scaling.tftest.hcl
-
-      - name: Test EKS load balancer controller CRD upgrades
-        run: |
-          tofu -chdir=compute/eks/addons init -backend=false
-          tofu -chdir=compute/eks/addons validate
-          tofu -chdir=compute/eks/addons test -filter=tests/lb_controller.tftest.hcl
-          python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_helm_dependencies.py' -v
-          python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_local_chart_versions.py' -v
-
-      - name: Test public ALB WAF association
-        run: |
-          tofu -chdir=compute/ecs_cluster init -backend=false
-          tofu -chdir=compute/ecs_cluster test -filter=tests/public_alb_waf.tftest.hcl
-          tofu -chdir=compute/eks/addons test -filter=tests/resource_names.tftest.hcl
-
-      - name: Test EC2 Auto Scaling Group naming
-        run: |
-          tofu -chdir=compute/autoscaling init -backend=false
-          tofu -chdir=compute/autoscaling test -filter=tests/group_naming.tftest.hcl
-          bash compute/autoscaling/tests/check_group_replacement.sh
-          tofu -chdir=compute/ec2_service init -backend=false
-          tofu -chdir=compute/ec2_service test -filter=tests/deploy_process_and_logs.tftest.hcl
-
-      - name: Test alterNAT module
-        run: |
-          tofu -chdir=networking/alternat init -backend=false
-          tofu -chdir=networking/alternat test
 
       - name: Lint modules
         run: tflint --recursive
@@ -137,21 +76,126 @@ jobs:
           exit-code: '1'
           severity: HIGH,CRITICAL
 
-      # restore-keys carries every version a previous run cached. Drop the
-      # ones no module linked to in this run, so a provider upgrade does not
-      # leave the old version in the cache for good. Runs before the cache is
-      # saved, which happens after the last step.
-      - name: Prune unused providers from cache
+  # Validating the modules one after another takes several minutes, so they
+  # are split across six jobs. Within a job, the plugin cache installs each
+  # provider version once for all its modules.
+  validate:
+    name: Validate modules (${{ matrix.shard }}/6)
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate-${{ matrix.shard }}/interruptible=true
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        with:
+          tofu_version: 1.12.3
+
+      - name: Validate module syntax
+        run: |
+          mkdir -p "$RUNNER_TEMP/plugin-cache"
+          TF_PLUGIN_CACHE_DIR="$RUNNER_TEMP/plugin-cache" .github/scripts/validate-modules.sh ${{ matrix.shard }} 6
+
+  test:
+    name: Test ${{ matrix.name }}
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=${{ matrix.memory || 4 }}/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-test-${{ strategy.job-index }}/interruptible=true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # tofu test keeps an AWS provider process alive per run, and this
+          # module's tests peak near 8 GB, so 4 GB runners kill them.
+          - name: CloudFront module
+            memory: 8
+            run: |
+              tofu -chdir=cdn/cloudfront init -backend=false
+              tofu -chdir=cdn/cloudfront test
+              node --test cdn/cloudfront/functions/viewer_request.test.js
+
+          - name: managed domains
+            run: |
+              tofu -chdir=compute/ecs_cluster init -backend=false
+              tofu -chdir=compute/ecs_cluster test -filter=tests/managed_domains.tftest.hcl
+              tofu -chdir=compute/ecs_service init -backend=false
+              tofu -chdir=compute/ecs_service test -filter=tests/managed_domains.tftest.hcl
+              tofu -chdir=compute/eks/addons init -backend=false
+              tofu -chdir=compute/eks/addons test -filter=tests/managed_domains.tftest.hcl
+
+          - name: AMI module
+            run: |
+              python3 -B -m unittest discover -s compute/ami/tests -p 'test_*.py' -v
+              tofu -chdir=compute/ami init -backend=false
+              tofu -chdir=compute/ami test -filter=tests/basic.tftest.hcl
+
+          - name: EKS capacity reconciliation
+            run: |
+              python3 -m unittest discover -s compute/eks/tests -p 'test_*.py' -v
+              tofu -chdir=compute/eks init -backend=false
+              tofu -chdir=compute/eks test -filter=tests/node_group_scaling.tftest.hcl
+
+          - name: EKS load balancer controller CRD upgrades
+            run: |
+              tofu -chdir=compute/eks/addons init -backend=false
+              tofu -chdir=compute/eks/addons validate
+              tofu -chdir=compute/eks/addons test -filter=tests/lb_controller.tftest.hcl
+              python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_helm_dependencies.py' -v
+              python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_local_chart_versions.py' -v
+
+          - name: public ALB WAF association
+            run: |
+              tofu -chdir=compute/ecs_cluster init -backend=false
+              tofu -chdir=compute/ecs_cluster test -filter=tests/public_alb_waf.tftest.hcl
+              tofu -chdir=compute/eks/addons init -backend=false
+              tofu -chdir=compute/eks/addons test -filter=tests/resource_names.tftest.hcl
+
+          - name: EC2 Auto Scaling Group naming
+            run: |
+              tofu -chdir=compute/autoscaling init -backend=false
+              tofu -chdir=compute/autoscaling test -filter=tests/group_naming.tftest.hcl
+              bash compute/autoscaling/tests/check_group_replacement.sh
+              tofu -chdir=compute/ec2_service init -backend=false
+              tofu -chdir=compute/ec2_service test -filter=tests/deploy_process_and_logs.tftest.hcl
+
+          - name: alterNAT module
+            run: |
+              tofu -chdir=networking/alternat init -backend=false
+              tofu -chdir=networking/alternat test
+
+          - name: PlanetScale Vitess lifecycle
+            run: |
+              tofu -chdir=database/planetscale_vitess init -backend=false -input=false -lockfile=readonly
+              python3 -m unittest discover -s database/planetscale_vitess/tests -p 'test_*.py' -v
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        with:
+          tofu_version: 1.12.3
+
+      - name: Run tests
         run: |
           set -euo pipefail
+          ${{ matrix.run }}
 
-          cache="$HOME/.terraform.d/plugin-cache"
-          used=$(find . -path '*/.terraform/providers/*' -type l -exec readlink {} \; | sort -u)
-
-          find "$cache" -mindepth 5 -maxdepth 5 -type d | while read -r dir; do
-            if ! grep -qxF "$dir" <<< "$used"; then
-              echo "Removing ${dir#"$cache"/}"
-              rm -rf "$dir"
+  result:
+    name: Validate Terraform Modules
+    if: always()
+    needs: [lint, validate, test]
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-result/interruptible=true
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [ "${result}" != "success" ]; then
+              exit 1
             fi
           done
-          find "$cache" -mindepth 1 -type d -empty -delete

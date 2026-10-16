@@ -141,6 +141,36 @@ run "test_proxy_requires_secret_when_password_management_disabled" {
   ]
 }
 
+run "test_proxy_defaults_to_named_master_secret" {
+  command = apply
+
+  variables {
+    proxy_creation_enabled                  = true
+    master_user_password_management_enabled = false
+    master_user_secret_name                 = "prod/app/db"
+  }
+
+  override_resource {
+    target = aws_secretsmanager_secret.master_user
+    values = {
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/app/db-AbCdEf"
+    }
+  }
+
+  # tofu test cannot mock the ephemeral secret read.
+  override_module {
+    target = module.master_user_secret_password
+    outputs = {
+      password = "test-password"
+    }
+  }
+
+  assert {
+    condition     = length(local.proxy_auth_secret_arns) == 1 && local.proxy_auth_secret_arns[0] == "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/app/db-AbCdEf"
+    error_message = "RDS Proxy should authenticate with the named master secret by default."
+  }
+}
+
 run "test_proxy_explicit_auth_secrets" {
   command = plan
 

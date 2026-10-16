@@ -83,7 +83,7 @@ module:
       min_current_value: true
       required: true
       type: string
-      values: $values:aws/eks-versions?region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
+      values: $values:aws/eks-versions?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
     - default: true
       description: Destroy and replacement plans fail until this is turned off.
       id: deletion_protection_enabled

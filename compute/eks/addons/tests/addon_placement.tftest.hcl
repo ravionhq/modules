@@ -65,6 +65,7 @@ variables {
   node_subnet_ids                         = ["subnet-0a", "subnet-0b"]
   karpenter_enabled                       = true
   keda_enabled                            = true
+  cert_manager_enabled                    = true
   eso_enabled                             = true
   eso_allowed_namespaces                  = ["ravion-prod"]
   logs_providers                          = []
@@ -94,6 +95,17 @@ run "add_ons_require_on_demand_and_prefer_the_system_group" {
   assert {
     condition     = yamldecode(helm_release.keda[0].values[1]).tolerations == [{ key = "CriticalAddonsOnly", operator = "Exists" }]
     error_message = "Add-ons must tolerate a CriticalAddonsOnly-tainted system group."
+  }
+  assert {
+    condition = alltrue([
+      for component in [
+        yamldecode(helm_release.cert_manager[0].values[0]),
+        yamldecode(helm_release.cert_manager[0].values[0]).webhook,
+        yamldecode(helm_release.cert_manager[0].values[0]).cainjector,
+        yamldecode(helm_release.cert_manager[0].values[0]).startupapicheck,
+      ] : component.affinity == local.addon_affinity
+    ])
+    error_message = "Every cert-manager component must require On-Demand capacity and prefer the system node group."
   }
 }
 
@@ -130,6 +142,8 @@ run "every_release_carries_the_placement" {
     traces_destinations                  = [{ destination = "xray" }, { destination = "tempo" }]
     grafana_enabled                      = true
     aws_load_balancer_controller_enabled = true
+    # The stores' own nodes are covered in addon_resilience.tftest.hcl.
+    addon_stateful_node_pool_enabled = false
   }
 
   # Each release must carry a document with the placement at the path its
@@ -214,10 +228,12 @@ run "disabled_placement_leaves_the_charts_alone" {
 
   variables {
     addon_placement_enabled = false
+    # Resilience has its own document; leave it out to see placement alone.
+    addon_resilience_enabled = false
   }
 
   assert {
-    condition     = length(helm_release.external_secrets[0].values) == 1 && length(helm_release.keda[0].values) == 1
+    condition     = length(helm_release.external_secrets[0].values) == 1 && length(helm_release.keda[0].values) == 1 && length(helm_release.cert_manager[0].values) == 1
     error_message = "With placement off, only the module's own values are rendered."
   }
   assert {

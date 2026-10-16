@@ -38,7 +38,9 @@ resource "aws_rds_cluster" "this" {
 
   # Authentication
   master_username                     = var.master_username
-  master_password                     = var.master_user_password_management_enabled ? null : var.master_password
+  master_password                     = var.master_user_password_management_enabled || local.create_master_user_secret ? null : var.master_password
+  master_password_wo                  = local.create_master_user_secret ? local.master_user_secret_password : null
+  master_password_wo_version          = local.create_master_user_secret ? local.master_user_secret_password_version : null
   manage_master_user_password         = var.master_user_password_management_enabled ? true : null
   master_user_secret_kms_key_id       = var.master_user_password_management_enabled ? var.master_user_secret_kms_key_id : null
   iam_database_authentication_enabled = var.iam_database_authentication_enabled
@@ -112,8 +114,8 @@ resource "aws_rds_cluster" "this" {
     }
 
     precondition {
-      condition     = var.master_user_password_management_enabled || var.master_password != null || try(data.aws_rds_cluster.password_preservation[0].arn != "", false) || var.snapshot_identifier != null || var.restore_to_point_in_time != null
-      error_message = "A new cluster requires master credentials. Enable master_user_password_management_enabled, provide master_password, restore a cluster, or enable master_user_password_preservation_enabled when importing an existing cluster."
+      condition     = var.master_user_password_management_enabled || local.create_master_user_secret || var.master_password != null || try(data.aws_rds_cluster.password_preservation[0].arn != "", false) || var.snapshot_identifier != null || var.restore_to_point_in_time != null
+      error_message = "A new cluster requires master credentials. Enable master_user_password_management_enabled, set master_user_secret_name, provide master_password, restore a cluster, or enable master_user_password_preservation_enabled when importing an existing cluster."
     }
 
     precondition {
@@ -157,8 +159,8 @@ resource "aws_rds_cluster" "this" {
     }
 
     precondition {
-      condition     = !var.proxy_creation_enabled || var.master_user_password_management_enabled || length(var.proxy_auth_secret_arns) > 0
-      error_message = "proxy_auth_secret_arns is required when proxy_creation_enabled is true and master_user_password_management_enabled is false."
+      condition     = !var.proxy_creation_enabled || var.master_user_password_management_enabled || local.create_master_user_secret || length(var.proxy_auth_secret_arns) > 0
+      error_message = "proxy_auth_secret_arns is required when proxy_creation_enabled is true and neither master_user_password_management_enabled nor master_user_secret_name is set."
     }
 
     precondition {

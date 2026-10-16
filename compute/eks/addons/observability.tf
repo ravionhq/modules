@@ -40,7 +40,7 @@ locals {
   # Selected members of the rendering lists, in fallback order. Empty when the
   # signal is off, which is what the tabs read as "turned off for this cluster".
   logs_rendering_providers    = tolist([for provider in ["loki", "cloudwatch"] : provider if contains(local.logs_providers, provider)])
-  metrics_rendering_providers = tolist([for provider in ["amp", "prometheus", "cloudwatch"] : provider if contains(local.metrics_providers, provider)])
+  metrics_rendering_providers = tolist([for provider in ["amp", "prometheus", "mimir", "cloudwatch"] : provider if contains(local.metrics_providers, provider)])
 
   logs_on    = length(local.logs_providers) > 0
   metrics_on = length(local.metrics_providers) > 0
@@ -50,6 +50,7 @@ locals {
   loki_enabled                  = contains(local.logs_providers, "loki")
   amp_enabled                   = contains(local.metrics_providers, "amp")
   prometheus_enabled            = contains(local.metrics_providers, "prometheus")
+  mimir_enabled                 = contains(local.metrics_providers, "mimir")
   logs_cloudwatch_enabled       = contains(local.logs_providers, "cloudwatch")
   metrics_cloudwatch_enabled    = contains(local.metrics_providers, "cloudwatch")
   cloudwatch_addon_enabled      = local.logs_cloudwatch_enabled || local.metrics_cloudwatch_enabled
@@ -115,9 +116,10 @@ locals {
   }
 
   loki_config = {
-    retention_days      = var.logs_loki.retention_days != null ? var.logs_loki.retention_days : var.log_retention_days
-    s3_bucket           = var.logs_loki.s3_bucket_name != null ? var.logs_loki.s3_bucket_name : var.loki_s3_bucket_name
-    persistence_enabled = var.logs_loki.persistence_enabled != null ? var.logs_loki.persistence_enabled : var.loki_persistence_enabled
+    retention_days = var.logs_loki.retention_days != null ? var.logs_loki.retention_days : var.log_retention_days
+    s3_bucket      = var.logs_loki.s3_bucket_name != null ? var.logs_loki.s3_bucket_name : var.loki_s3_bucket_name
+    # A volume whenever there is a StorageClass to bind it, unless set.
+    persistence_enabled = coalesce(var.logs_loki.persistence_enabled, var.loki_persistence_enabled, local.ebs_default_storage_class_enabled)
     persistence_size    = var.logs_loki.persistence_size != null ? var.logs_loki.persistence_size : var.loki_persistence_size
   }
 
@@ -233,6 +235,25 @@ locals {
   ) : null
 
   prometheus_remote_write_endpoint = local.prometheus_enabled ? "${local.prometheus_write_endpoint}/api/v1/write" : null
+
+  # The in-cluster Prometheus-compatible query URL Ravion and its service
+  # modules chart from: Prometheus first, so a cluster moving to Mimir keeps
+  # its history in view until Prometheus is deselected.
+  metrics_query_endpoint = local.prometheus_endpoint != null ? local.prometheus_endpoint : local.mimir_endpoint
+
+  # Replicas need Thanos to merge their copies of each series; without it,
+  # readers query Prometheus directly and two replicas would answer
+  # differently.
+  prometheus_replicas = local.thanos_enabled ? var.prometheus_replicas : 1
+  prometheus_ha       = local.prometheus_install && local.prometheus_replicas > 1
+
+  # Every writer sends every sample to every replica, each by its stable pod
+  # address behind the StatefulSet's headless Service. Through the load-balanced
+  # Service each replica would hold only part of the data.
+  prometheus_remote_write_endpoints = local.prometheus_ha ? [
+    for replica in range(local.prometheus_replicas) :
+    "http://${local.prometheus_release_name}-server-${replica}.${local.prometheus_release_name}-server-headless.${local.observability_namespace}.svc.cluster.local:9090/api/v1/write"
+  ] : compact([local.prometheus_remote_write_endpoint])
 
   # Grafana Cloud hands out a push URL; the query base is the same service with
   # the push path removed. Loki: <base>/loki/api/v1/push -> <base>/loki.

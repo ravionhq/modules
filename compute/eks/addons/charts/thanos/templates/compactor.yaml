@@ -18,16 +18,26 @@ spec:
         app.kubernetes.io/component: compactor
       annotations:
         checksum/objstore: {{ .Values.objstoreConfig | sha256sum }}
+        {{- with .Values.compactor.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       serviceAccountName: {{ .Release.Name }}-compactor
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- /* The compactor holds a volume; it may run on different nodes than
+      the stateless Query and Store. */}}
+      {{- $affinity := .Values.compactor.affinity | default .Values.affinity }}
+      {{- $tolerations := .Values.compactor.tolerations | default .Values.tolerations }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
         runAsGroup: 65534
         fsGroup: 65534
       nodeSelector: {{ .Values.nodeSelector | toJson }}
-      tolerations: {{ .Values.tolerations | toJson }}
-      affinity: {{ .Values.affinity | toJson }}
+      tolerations: {{ $tolerations | toJson }}
+      affinity: {{ $affinity | toJson }}
       containers:
         - name: compactor
           image: {{ .Values.image | quote }}
