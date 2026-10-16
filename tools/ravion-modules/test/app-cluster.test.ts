@@ -10,6 +10,31 @@ const definitionPath = resolve(modulePath, "rvn-app-cluster-definition.yml");
 
 const ROUTER_METRICS_NAMESPACE = "Ravion/AppRouter";
 
+// Every metric the app router publishes in ROUTER_METRICS_NAMESPACE, as the
+// runner names them (flightcontrol packages/runner/internal/approuter,
+// metrics.go). A chart that names anything else reads a series nobody writes.
+const ROUTER_METRIC_NAMES = [
+  "Requests",
+  "Responses2xx",
+  "Responses3xx",
+  "Responses4xx",
+  "Responses5xx",
+  "Latency",
+  "UnknownHostnameRequests",
+  "Wakes",
+  "WakeFailures",
+  "WakeDuration",
+  "HeldRequests",
+  "OpenWebSockets",
+  "Routes",
+  "ControlPlaneConnected",
+  "MemoryUsedMiB",
+  "RouterInstanceCPUUtilization",
+  "RouterInstanceMemoryUtilization",
+  "RouterInstanceNetworkInBytes",
+  "RouterInstanceNetworkOutBytes",
+];
+
 function record(value: unknown): Record<string, unknown> {
   assert.ok(value !== null && typeof value === "object" && !Array.isArray(value));
   return Object.fromEntries(Object.entries(value));
@@ -317,6 +342,13 @@ describe("rvn-app-cluster module definition", () => {
         // A 0/1 gauge: the minimum shows a disconnection anywhere in the period.
         ["control_plane_connected", "ControlPlaneConnected", "Minimum", undefined],
         ["router_memory", "MemoryUsedMiB", "Maximum", undefined],
+        // The instance the router runs on. While Ravion replaces it, two
+        // instances publish under one Router: the maximum shows the busier
+        // one's share, and the sums add both instances' bytes.
+        ["router_instance_cpu", "RouterInstanceCPUUtilization", "Maximum", undefined],
+        ["router_instance_memory", "RouterInstanceMemoryUtilization", "Maximum", undefined],
+        ["router_instance_network_in", "RouterInstanceNetworkInBytes", "Sum", undefined],
+        ["router_instance_network_out", "RouterInstanceNetworkOutBytes", "Sum", undefined],
       ],
     );
     for (const chart of metrics) {
@@ -328,6 +360,23 @@ describe("rvn-app-cluster module definition", () => {
       // The router publishes every datum under its cluster's module instance
       // id; grouped charts split that by one more dimension.
       assert.deepEqual(source.dimensions, { Router: "<< module.id >>" });
+    }
+  });
+
+  it("charts every metric the router publishes, under the names it publishes them", async () => {
+    const definition = await compileDefinitionFile(definitionPath);
+    const charted = new Set(chartsIn(definition.module, ROUTER_METRICS_NAMESPACE).map((chart) => record(chart.source).name));
+
+    assert.deepEqual([...charted].filter((name) => !ROUTER_METRIC_NAMES.includes(String(name))), []);
+    assert.deepEqual(
+      ROUTER_METRIC_NAMES.filter((name) => !charted.has(name)),
+      [],
+    );
+    for (const chart of chartsIn(definition.module, ROUTER_METRICS_NAMESPACE)) {
+      const groupBy = record(chart.source).group_by;
+      // The router's dimensions are Router, App and Hostname; the cluster's
+      // charts split by Hostname at most, an app's page by App.
+      assert.ok(groupBy === undefined || groupBy === "Hostname", `unexpected group_by ${String(groupBy)}`);
     }
   });
 

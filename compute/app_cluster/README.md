@@ -80,7 +80,7 @@ Outside a Ravion pipeline, set `module_instance_id` as above and export `RAVION_
 | Hosts kept parked and ready | `host_reserve_policy` | `NONE`. `FIXED` keeps `value` hosts; `PEAK` and `ROLLING_AVERAGE` follow the last `window_days` of use |
 | Most hosts at once, parked included | `max_hosts` | `10` |
 
-Ravion refuses to delete the pool while it runs sandboxes, so destroying a cluster that still has apps fails. Delete the apps first.
+Ravion refuses to delete the pool while it runs sandboxes, so destroying a cluster that still has apps fails. Delete the apps first. Once the pool is deleted, the destroy waits, up to 30 minutes, until Ravion has terminated the pool's hosts, so the hosts' security group and subnet are not removed from under them.
 
 ## Security groups
 
@@ -100,7 +100,7 @@ The sandbox hosts' rule that admits the router (`ravion app router to sandbox ho
 
 ## Metrics
 
-The router publishes request metrics to CloudWatch every minute, in the `Ravion/AppRouter` namespace of the module's account and region. The router's role allows `cloudwatch:PutMetricData` with the condition `cloudwatch:namespace = Ravion/AppRouter`. The action has no resource-level permissions, so the namespace condition is its only scope.
+The router publishes request metrics, and the use of the instance it runs on, to CloudWatch every minute, in the `Ravion/AppRouter` namespace of the module's account and region. The router's role allows `cloudwatch:PutMetricData` with the condition `cloudwatch:namespace = Ravion/AppRouter`. The action has no resource-level permissions, so the namespace condition is its only scope.
 
 Every datum carries the `Router` dimension, the cluster's module instance id, alone or with `App` (the app) or `Hostname`.
 
@@ -117,6 +117,11 @@ Every datum carries the `Router` dimension, the cluster's module instance id, al
 | `Routes` | Routes the router holds |
 | `ControlPlaneConnected` | 1 while the router is connected to Ravion, otherwise 0 |
 | `MemoryUsedMiB` | Memory the router uses, in MiB |
+| `RouterInstanceCPUUtilization` | Share of the minute the router instance's CPUs were busy, in percent |
+| `RouterInstanceMemoryUtilization` | Share of the router instance's memory in use, in percent |
+| `RouterInstanceNetworkInBytes`, `RouterInstanceNetworkOutBytes` | Bytes the router instance's network interfaces received and sent in the minute |
+
+The router instance's metrics carry the `Router` dimension alone. While Ravion replaces the router, both instances publish under the same `Router`, so the charts show the higher of their CPU and memory shares (`Maximum`) and the sum of their bytes.
 
 The module's definition charts these on the Metrics tab beside the load balancer's `AWS/NetworkELB` metrics and the pool's host minutes from the `BusyHosts` series its hosts publish in `Ravion/SandboxHost`.
 
@@ -126,7 +131,7 @@ The module's definition charts these on the Metrics tab beside the load balancer
 |------|---------|
 | opentofu/terraform | >= 1.10.0 |
 | aws | >= 6.0 |
-| ravion (`providers.ravion.com/ravion/ravion`) | A release with the `ravion_sandbox_pool` resource, configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.4-rc.1, the first release with the `ravion_sandbox_pool` resource, configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
 
 ## Inputs
 

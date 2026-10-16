@@ -708,6 +708,54 @@ module:
           statistic: Maximum
           dimensions:
             Router: << module.id >>
+      - id: router_instance_cpu
+        name: Router instance CPU utilization
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: RouterInstanceCPUUtilization
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: router_instance_memory
+        name: Router instance memory utilization
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: RouterInstanceMemoryUtilization
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: router_instance_network_in
+        name: Router instance network in
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: RouterInstanceNetworkInBytes
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: router_instance_network_out
+        name: Router instance network out
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: RouterInstanceNetworkOutBytes
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
       - id: hosts_running
         name: Running host minutes
         type: line
@@ -793,13 +841,13 @@ module:
 
     ## Destroying the cluster
 
-    Delete the cluster's apps first: Ravion refuses to delete the sandbox pool while it runs sandboxes, so a destroy with apps fails.
+    Delete the cluster's apps first: Ravion refuses to delete the sandbox pool while it runs sandboxes, so a destroy with apps fails. A destroy then waits until the pool's hosts are terminated before it removes their security group.
 
     ## Metrics
 
     The Metrics tab reads CloudWatch in your account:
 
-    - Router, published every minute: requests, responses by status class, latency average and maximum, requests and 5xx responses per hostname, requests for unknown hostnames, app wakes, wake failures and wake duration, requests held during a wake, open WebSockets, routes, whether the router is connected to Ravion, and the router's memory.
+    - Router, published every minute: requests, responses by status class, latency average and maximum, requests and 5xx responses per hostname, requests for unknown hostnames, app wakes, wake failures and wake duration, requests held during a wake, open WebSockets, routes, whether the router is connected to Ravion, the router's memory, and the CPU, memory and network use of the instance it runs on.
     - Load balancer: healthy and unhealthy routers, new and active connections, data processed, peak throughput, capacity units, client TLS errors, connections the allowed CIDRs block, and resets by side.
     - Sandbox pool: host minutes running and busy, from the minute each running host reports.
 
