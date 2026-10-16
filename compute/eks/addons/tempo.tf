@@ -74,14 +74,17 @@ locals {
   # Tempo needs AWS credentials only for S3 and for writing to AMP.
   tempo_role_enabled = local.tempo_s3_enabled || local.tempo_generator_to_amp
 
+  # Every in-cluster Prometheus replica must get every sample, like the
+  # collectors write them.
   tempo_generator_remote_write = local.tempo_generator_enabled ? [
+    for url in(local.tempo_generator_to_amp ? [local.amp_remote_write_endpoint] : local.prometheus_remote_write_endpoints) :
     merge(
       {
-        url            = local.tempo_generator_to_amp ? local.amp_remote_write_endpoint : local.prometheus_remote_write_endpoint
+        url            = url
         send_exemplars = true
       },
       { for key, value in { sigv4 = { region = local.amp_region } } : key => value if local.tempo_generator_to_amp },
-    ),
+    )
   ] : []
 
   # Blocks in S3, or on Tempo's own volume. For expressions rather than a
@@ -345,7 +348,7 @@ resource "helm_release" "tempo" {
         }
       }),
     ],
-    local.addon_placement_values,
+    var.addon_placement_enabled ? [yamlencode(local.addon_store_placement)] : [],
     local.tempo_resilience_values,
     length(keys(local.tempo_config.helm_values)) > 0 ? [yamlencode(local.tempo_config.helm_values)] : [],
     var.tempo_helm_values,

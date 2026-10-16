@@ -139,6 +139,12 @@ resource "helm_release" "karpenter_default_node_pool" {
       spotWarm = {
         minInstances = var.karpenter_spot_warm_min_instances
       }
+      # Nodes for the stores alone (see addon_resilience.tf).
+      statefulPool = {
+        enabled  = local.addon_stateful_pool_enabled
+        name     = local.addon_stateful_pool_name
+        taintKey = local.addon_stateful_taint_key
+      }
     }),
   ]
 

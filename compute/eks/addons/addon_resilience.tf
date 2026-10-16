@@ -34,6 +34,34 @@ locals {
 
   addon_budget = { minAvailable = 1 }
 
+  # The stores (Prometheus, Loki, Tempo, the Thanos compactor) hold data and
+  # take minutes to restart, so they get nodes of their own: a dedicated
+  # Karpenter NodePool of On-Demand nodes with room for them, tainted so
+  # applications never compete with them for memory. It needs the default
+  # NodePool's EC2NodeClass, and placement on to deliver it.
+  addon_stateful_pool_name    = "addon-stateful"
+  addon_stateful_taint_key    = "ravion.com/addon-stateful"
+  addon_stateful_pool_enabled = var.addon_stateful_node_pool_enabled && var.addon_placement_enabled && var.karpenter_enabled && var.karpenter_default_node_pool_creation_enabled
+
+  addon_stateful_placement = {
+    affinity = {
+      nodeAffinity = {
+        requiredDuringSchedulingIgnoredDuringExecution = {
+          nodeSelectorTerms = [{ matchExpressions = [{ key = "karpenter.sh/nodepool", operator = "In", values = [local.addon_stateful_pool_name] }] }]
+        }
+      }
+    }
+    tolerations = concat(
+      [{ key = local.addon_stateful_taint_key, operator = "Exists", effect = "NoSchedule" }],
+      local.addon_tolerations,
+    )
+  }
+
+  # What a store gets: its own nodes when the pool exists, otherwise the shared
+  # add-on placement. Round-tripped through JSON because the two documents
+  # differ in shape, which a conditional cannot return.
+  addon_store_placement = jsondecode(local.addon_stateful_pool_enabled ? jsonencode(local.addon_stateful_placement) : jsonencode(local.addon_pod_placement))
+
   # Soft: a cluster with one eligible node still schedules both replicas.
   # pod-template-hash keeps a rollout's new pods from counting the old ones.
   addon_spread = {

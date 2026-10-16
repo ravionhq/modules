@@ -84,11 +84,13 @@ locals {
         }
       }
     } : {},
-    local.prometheus_enabled ? {
+    {
       # The in-cluster store, written to exactly the way AMP is - it is a
-      # rendering provider, so the same series have to reach it.
-      "prometheusremotewrite/in_cluster" = {
-        endpoint = local.prometheus_remote_write_endpoint
+      # rendering provider, so the same series have to reach it. One exporter
+      # per replica: each must hold every sample.
+      for replica, endpoint in local.prometheus_remote_write_endpoints :
+      (replica == 0 ? "prometheusremotewrite/in_cluster" : "prometheusremotewrite/in_cluster_${replica}") => {
+        endpoint = endpoint
         tls = {
           insecure = true
         }
@@ -104,7 +106,7 @@ locals {
           enabled = false
         }
       }
-    } : {},
+    },
     local.metrics_datadog_enabled ? {
       datadog = {
         api = {

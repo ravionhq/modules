@@ -37,6 +37,36 @@ spec:
       port: 10901
       targetPort: thanos-grpc
 ---
+# Query's view of every sidecar and every Store Gateway. Through a ClusterIP
+# Service each gRPC connection reaches one pod, so with two Prometheus replicas
+# Query would see one replica's data at a time; headless, DNS returns every pod
+# and Query keeps a connection to each. (A Service cannot be made headless in
+# place, so these sit beside the ClusterIP ones.)
+{{- range $target := list "sidecar" "store" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $target }}-headless
+  namespace: {{ $.Release.Namespace }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    {{- if eq $target "sidecar" }}
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ $.Values.prometheusRelease }}
+    app.kubernetes.io/component: server
+    {{- else }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: store
+    {{- end }}
+  ports:
+    - name: grpc
+      port: 10901
+      targetPort: {{ ternary "thanos-grpc" "grpc" (eq $target "sidecar") }}
+{{- end }}
+---
 apiVersion: v1
 kind: Service
 metadata:

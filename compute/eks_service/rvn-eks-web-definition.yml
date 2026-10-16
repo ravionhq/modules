@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.8.0
-  description: Add a configurable minimum to the KEDA Spot pool.
+  version: 1.9.0
+  description: Keep the Spot pool running when its scaling metrics are unavailable, instead of freezing at its current size.
 module:
   inputs:
     - id: section_cluster
@@ -540,6 +540,8 @@ module:
                   pollingInterval: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_polling_interval != nil ? module.input.spot_burst_polling_interval : 30 >>'
                   cooldownPeriod: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_cooldown_period != nil ? module.input.spot_burst_cooldown_period : 300 >>'
                   triggers: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_triggers != nil ? module.input.spot_burst_triggers : [] >>'
+                  fallback:
+                    replicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_fallback_replicas != nil ? module.input.spot_burst_fallback_replicas : nil >>'
   ui:
     links: |-
       <<

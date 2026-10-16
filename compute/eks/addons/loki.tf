@@ -304,6 +304,11 @@ resource "helm_release" "loki" {
           replicas  = 1
           resources = local.loki_resources
 
+          # Changes whenever loki_volume_migration recreates the StatefulSet
+          # (see loki_volume_migration.tf), so this release is always upgraded
+          # after it and the StatefulSet is never left deleted.
+          podAnnotations = { "ravion.com/volume-layout" = local.loki_volume_layout }
+
           persistence = {
             enabled = local.loki_config.persistence_enabled
             size    = local.loki_config.persistence_size
@@ -342,16 +347,18 @@ resource "helm_release" "loki" {
         minio        = { enabled = false }
       }),
     ],
-    var.addon_placement_enabled ? [yamlencode({ singleBinary = local.addon_pod_placement })] : [],
+    var.addon_placement_enabled ? [yamlencode({ singleBinary = local.addon_store_placement })] : [],
     local.loki_resilience_values,
     var.loki_helm_values,
   )
 
   # Loki reads AWS credentials on startup through the Pod Identity Agent, and
-  # writes to a bucket that must already exist.
+  # writes to a bucket that must already exist. A volume layout change must
+  # remove the old StatefulSet first.
   depends_on = [
     helm_release.lb_controller,
     aws_eks_pod_identity_association.loki,
     module.loki_bucket,
+    helm_release.loki_volume_migration,
   ]
 }

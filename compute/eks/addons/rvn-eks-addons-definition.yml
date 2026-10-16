@@ -5,7 +5,7 @@ definition:
   description: Selectable add-ons for an existing EKS cluster.
 release:
   version: 0.21.0
-  description: "Keep the cluster add-ons running through node pressure, consolidation and node failures: controllers run two replicas behind disruption budgets, add-ons take priority over applications, Prometheus is sized for its real memory use, and Karpenter replaces failed nodes and no longer launches nodes under 8 GiB."
+  description: "Keep the cluster add-ons running through node pressure, consolidation and node failures: Prometheus runs two copies that each hold every sample, the metrics, logs and traces stores get dedicated On-Demand nodes, Loki keeps its write-ahead log on a volume, controllers run two replicas behind disruption budgets, add-ons take priority over applications, and Karpenter replaces failed nodes and no longer launches nodes under 8 GiB."
 module:
   inputs:
     - id: cluster

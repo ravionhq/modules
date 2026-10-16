@@ -278,3 +278,137 @@ run "disabled_resilience_leaves_the_charts_alone" {
     error_message = "With resilience off, Prometheus must keep its chart defaults."
   }
 }
+
+################################################################################
+# Prometheus high availability
+################################################################################
+
+run "prometheus_runs_two_replicas_each_with_every_sample" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.statefulSet.enabled == true && yamldecode(helm_release.prometheus[0].values[0]).server.replicaCount == 2
+    error_message = "Prometheus must run two replicas, each with its own volume."
+  }
+  assert {
+    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.podDisruptionBudget == { enabled = true, maxUnavailable = 1 }
+    error_message = "A drain must leave one Prometheus replica serving."
+  }
+  assert {
+    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.global.external_labels == { cluster = "test-cluster", prometheus_replica = "$${POD_NAME}" }
+    error_message = "Each replica must label its series with its own name, so Thanos can deduplicate them."
+  }
+  assert {
+    condition     = contains(yamldecode(helm_release.prometheus[0].values[0]).server.env, { name = "POD_NAME", valueFrom = { fieldRef = { fieldPath = "metadata.name" } } })
+    error_message = "The replica label is expanded from the pod's own name."
+  }
+  assert {
+    condition = [for name, exporter in local.otel_metrics_exporters : exporter.endpoint if startswith(name, "prometheusremotewrite/in_cluster")] == [
+      "http://ravion-prometheus-server-0.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write",
+      "http://ravion-prometheus-server-1.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write",
+    ]
+    error_message = "The collectors must write every sample to every replica; through the Service each would hold only part of the data."
+  }
+  assert {
+    condition     = one([for d in helm_release.thanos[0].values : yamldecode(d) if can(yamldecode(d).replicaLabel)]).replicaLabel == "prometheus_replica"
+    error_message = "Thanos must merge the two replicas' copies of each series into one."
+  }
+}
+
+run "prometheus_stays_single_without_thanos_to_merge_replicas" {
+  command = plan
+
+  variables {
+    metrics_prometheus = { s3_storage_enabled = false }
+  }
+
+  assert {
+    condition     = !can(yamldecode(helm_release.prometheus[0].values[0]).server.statefulSet) && yamldecode(helm_release.prometheus[0].values[0]).server.global.external_labels == { cluster = "test-cluster" }
+    error_message = "Readers query Prometheus directly without Thanos, and two replicas would answer differently."
+  }
+  assert {
+    condition     = [for name, exporter in local.otel_metrics_exporters : exporter.endpoint if startswith(name, "prometheusremotewrite/in_cluster")] == ["http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090/api/v1/write"]
+    error_message = "A single replica is written through its Service."
+  }
+}
+
+################################################################################
+# Dedicated nodes for the stateful add-ons
+################################################################################
+
+run "stores_run_on_their_own_on_demand_nodes" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.karpenter_default_node_pool[0].values[0]).statefulPool.enabled == true
+    error_message = "Karpenter must offer a NodePool for the stateful add-ons."
+  }
+  assert {
+    condition = alltrue([
+      for placement in [
+        one([for d in helm_release.prometheus[0].values : yamldecode(d).server if can(yamldecode(d).server.affinity)]),
+        one([for d in helm_release.loki[0].values : yamldecode(d).singleBinary if can(yamldecode(d).singleBinary.affinity)]),
+        one([for d in helm_release.tempo[0].values : yamldecode(d) if can(yamldecode(d).affinity)]),
+        one([for d in helm_release.thanos[0].values : yamldecode(d).compactor if can(yamldecode(d).compactor.affinity)]),
+      ] : placement == local.addon_stateful_placement
+    ])
+    error_message = "Prometheus, Loki, Tempo and the Thanos compactor must run on the stateful add-on nodes."
+  }
+  assert {
+    condition     = local.addon_stateful_placement.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms == [{ matchExpressions = [{ key = "karpenter.sh/nodepool", operator = "In", values = ["addon-stateful"] }] }]
+    error_message = "The stores must require the stateful NodePool, not merely prefer it."
+  }
+  assert {
+    condition     = contains(local.addon_stateful_placement.tolerations, { key = "ravion.com/addon-stateful", operator = "Exists", effect = "NoSchedule" })
+    error_message = "The stores must tolerate the taint that keeps everything else off those nodes."
+  }
+}
+
+run "without_karpenter_stores_keep_the_shared_placement" {
+  command = plan
+
+  variables {
+    karpenter_enabled = false
+  }
+
+  assert {
+    condition     = contains(helm_release.prometheus[0].values, yamlencode({ server = local.addon_pod_placement }))
+    error_message = "Without Karpenter there is no stateful NodePool to require."
+  }
+}
+
+################################################################################
+# Loki keeps its write-ahead log on a volume
+################################################################################
+
+run "loki_keeps_its_wal_on_a_volume" {
+  command = plan
+
+  variables {
+    ebs_csi_driver_enabled = true
+    # Needs the cluster's Kubernetes version, which the mock does not report.
+    statefulset_volume_expansion_enabled = false
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.persistence.enabled == true
+    error_message = "With a StorageClass available, Loki's write-ahead log must survive a restart."
+  }
+  assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet == { name = "ravion-loki", namespace = "ravion-operator" }
+    error_message = "The switch from an ephemeral volume needs the StatefulSet recreated; a migration release must do it."
+  }
+  assert {
+    condition     = one([for d in helm_release.loki[0].values : yamldecode(d).singleBinary if can(yamldecode(d).singleBinary.podAnnotations["ravion.com/volume-layout"])]).podAnnotations["ravion.com/volume-layout"] == local.loki_volume_layout
+    error_message = "Loki must be upgraded whenever the migration recreates its StatefulSet, or it would be left without one."
+  }
+}
+
+run "loki_stays_ephemeral_without_a_storage_class" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.persistence.enabled == false
+    error_message = "Without a StorageClass a PVC would never bind."
+  }
+}

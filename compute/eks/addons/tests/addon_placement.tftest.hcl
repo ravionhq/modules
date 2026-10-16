@@ -142,6 +142,8 @@ run "every_release_carries_the_placement" {
     traces_destinations                  = [{ destination = "xray" }, { destination = "tempo" }]
     grafana_enabled                      = true
     aws_load_balancer_controller_enabled = true
+    # The stores' own nodes are covered in addon_resilience.tftest.hcl.
+    addon_stateful_node_pool_enabled = false
   }
 
   # Each release must carry a document with the placement at the path its

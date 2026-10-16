@@ -50,7 +50,7 @@ resource "helm_release" "prometheus" {
         # Pins the Prometheus ingestion Service; Thanos has a separate query URL.
         fullnameOverride = local.prometheus_release_name
 
-        server = {
+        server = merge({
           # The receiver is off by default, and without it every remote write
           # from the collector is a 404.
           # The query limits keep one query (KEDA, Grafana and Thanos all fan
@@ -68,8 +68,13 @@ resource "helm_release" "prometheus" {
           # Keep the existing Deployment/PVC addresses on upgrade. Disabling
           # local compaction above lets Thanos compact uploaded blocks safely.
           sidecarContainers = local.thanos_enabled ? { thanos = local.thanos_sidecar } : {}
+          # A replica's own name, expanded by Prometheus from POD_NAME, is what
+          # lets Thanos tell two copies of a series apart and merge them.
           global = {
-            external_labels = { cluster = var.cluster_name }
+            external_labels = merge(
+              { cluster = var.cluster_name },
+              local.prometheus_ha ? { prometheus_replica = "$${POD_NAME}" } : {},
+            )
           }
 
           retention = "${local.prometheus_config.retention_days}d"
@@ -91,7 +96,32 @@ resource "helm_release" "prometheus" {
           ingress = {
             enabled = false
           }
-        }
+          }, { for key, value in {
+            # Each replica gets its own volume and every sample (see
+            # prometheus_remote_write_endpoints), so either can be lost while
+            # the other serves. Parallel starts both at once after an outage.
+            statefulSet  = { enabled = true, podManagementPolicy = "Parallel" }
+            replicaCount = local.prometheus_replicas
+            env = [{
+              name      = "POD_NAME"
+              valueFrom = { fieldRef = { fieldPath = "metadata.name" } }
+            }]
+            podDisruptionBudget = { enabled = true, maxUnavailable = 1 }
+            # Never two replicas on one node; across zones when the cluster has
+            # them, so a zone outage leaves one.
+            podAntiAffinity            = "hard"
+            podAntiAffinityTopologyKey = "kubernetes.io/hostname"
+            topologySpreadConstraints = [{
+              maxSkew           = 1
+              topologyKey       = "topology.kubernetes.io/zone"
+              whenUnsatisfiable = "ScheduleAnyway"
+              labelSelector = { matchLabels = {
+                "app.kubernetes.io/name"      = "prometheus"
+                "app.kubernetes.io/instance"  = local.prometheus_release_name
+                "app.kubernetes.io/component" = "server"
+              } }
+            }]
+        } : key => value if local.prometheus_ha })
 
         serviceAccounts = {
           server = { create = true, name = local.prometheus_service_account }
@@ -117,7 +147,7 @@ resource "helm_release" "prometheus" {
         "kube-state-metrics"       = { enabled = false }
       }),
     ],
-    var.addon_placement_enabled ? [yamlencode({ server = local.addon_pod_placement })] : [],
+    var.addon_placement_enabled ? [yamlencode({ server = local.addon_store_placement })] : [],
     local.prometheus_resilience_values,
     var.prometheus_helm_values,
   )

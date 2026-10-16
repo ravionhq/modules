@@ -148,6 +148,9 @@ shape. Liveness and readiness are on by default; startup is off.
 | `spotBurst.pollingInterval` | int | `30` | KEDA polling interval in seconds; minimum `1`. |
 | `spotBurst.cooldownPeriod` | int | `300` | KEDA cooldown in seconds; minimum `0`. |
 | `spotBurst.triggers` | list | `[]` | Required when enabled. If `minReplicas` is zero, a trigger must work at zero Spot replicas; CPU or memory alone cannot wake it. |
+| `spotBurst.fallback.enabled` | bool | `true` | When KEDA cannot read the triggers' metrics (for example while Prometheus is down), keep every running Spot pod and never fewer than `fallback.replicas`, instead of freezing at the current count. Not rendered for CPU, memory or `Utilization` triggers, which KEDA does not support it for. |
+| `spotBurst.fallback.failureThreshold` | int | `3` | Consecutive failed metric reads before the fallback applies; minimum `1`. |
+| `spotBurst.fallback.replicas` | int or null | `null` | Spot pods kept at least while metrics fail; `null` means `maxReplicas`, and values above it are capped at it. |
 
 When `spotBurst.minReplicas` is zero, choose a zero-independent signal, such as external queue depth or shared ingress demand, and set thresholds with the fixed baseline's capacity in mind so already-served baseline work does not cause unnecessary Spot scaling. Configure any trigger authentication separately: referenced `TriggerAuthentication`, `ClusterTriggerAuthentication`, and Kubernetes Secrets must already exist. Do not put credential values in trigger metadata; the add-ons module grants no metric-source permissions.
 

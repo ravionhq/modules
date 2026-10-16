@@ -1,10 +1,12 @@
-# What the add-ons module renders with addon_resilience_enabled.
+# What the add-ons module renders with addon_resilience_enabled, two Prometheus
+# replicas and the stateful add-on NodePool.
 objstoreConfig: |
   type: S3
   config:
     bucket: example-metrics
     endpoint: s3.us-east-2.amazonaws.com
 priorityClassName: system-cluster-critical
+replicaLabel: prometheus_replica
 query:
   replicas: 2
 store:
@@ -12,3 +14,15 @@ store:
 compactor:
   podAnnotations:
     karpenter.sh/do-not-disrupt: "true"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: In
+                values: [addon-stateful]
+  tolerations:
+    - key: ravion.com/addon-stateful
+      operator: Exists
+      effect: NoSchedule

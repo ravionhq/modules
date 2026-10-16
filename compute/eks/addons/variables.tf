@@ -1387,8 +1387,26 @@ variable "loki_resources" {
 
 variable "loki_persistence_enabled" {
   type        = bool
-  description = "Give Loki a PersistentVolumeClaim for its write-ahead log and index cache. Off by default because it needs a working StorageClass - on a Ravion cluster that means ebs_csi_driver_enabled - and an unschedulable PVC is a worse first run than an ephemeral one. With it off, chunks still land in S3; what is lost on a restart is the few minutes of logs not yet flushed."
-  default     = false
+  description = "Give Loki a PersistentVolumeClaim for its write-ahead log and index cache, so a restart loses no logs. Null (the default) turns it on whenever the module's gp3 StorageClass exists (ebs_csi_driver_enabled), and off otherwise, since a PVC with no StorageClass never binds. With it off, chunks still land in S3; what is lost on a restart is the few minutes of logs not yet flushed. Switching an existing Loki recreates its StatefulSet (the pod keeps running until the new one replaces it)."
+  default     = null
+}
+
+variable "prometheus_replicas" {
+  type        = number
+  description = "Prometheus server replicas when Thanos is on (metrics_prometheus.s3_storage_enabled). Each receives every sample and has its own volume, so one can fail, restart or move while the other serves; Thanos merges their copies. Each replica costs prometheus_resources. Without Thanos, readers query Prometheus directly and a single replica runs. Changing an existing single Prometheus to more than one replaces its Deployment with a StatefulSet, losing up to two hours of local samples not yet uploaded to S3."
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.prometheus_replicas >= 1 && var.prometheus_replicas <= 3 && floor(var.prometheus_replicas) == var.prometheus_replicas
+    error_message = "The prometheus_replicas must be a whole number from 1 to 3."
+  }
+}
+
+variable "addon_stateful_node_pool_enabled" {
+  type        = bool
+  description = "Run Prometheus, Loki, Tempo and the Thanos compactor on a dedicated Karpenter NodePool of On-Demand nodes with at least 16 GiB, tainted so nothing else lands there. Needs Karpenter with its default NodePool and addon_placement_enabled; ignored otherwise."
+  default     = true
   nullable    = false
 }
 

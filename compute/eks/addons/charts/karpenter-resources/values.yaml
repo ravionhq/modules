@@ -34,3 +34,16 @@ nodePool:
 spotWarm:
   # Zero disables the static Spot NodePool.
   minInstances: 0
+
+# A NodePool for the add-on stores alone (Prometheus, Loki, Tempo, the Thanos
+# compactor), which require it by name and tolerate its taint.
+statefulPool:
+  enabled: false
+  name: addon-stateful
+  taintKey: ravion.com/addon-stateful
+  instanceCategories: ["m", "r"]
+  # A Prometheus replica requests 7Gi; 16 GiB leaves room for it and the
+  # node's daemons.
+  minInstanceMemoryMiB: 16384
+  cpuLimit: 64
+  consolidateAfter: 1h

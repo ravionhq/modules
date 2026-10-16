@@ -85,8 +85,8 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-addons` | EKS Add-ons | v0.21.0 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v0.3.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v0.8.1 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.8.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.11.0 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.9.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v0.12.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
 | `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |

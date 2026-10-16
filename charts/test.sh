@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -39,7 +39,7 @@ done
 # module carries its own charts and they are tested from here too.
 chart_path() {
   case "$1" in
-    karpenter-resources | warm-capacity | ebs-storage | thanos) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    karpenter-resources | warm-capacity | ebs-storage | thanos | statefulset-volume-migration) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -206,6 +206,26 @@ test_spot_burst_chart() {
     --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"serverAddress":"http://example.invalid:9090","query":"vector(0)","threshold":"1","activationThreshold":"0","ignoreNullValues":"false"},"metricType":"Utilization"}]')"
   assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering" \
     "Utilization" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].metricType')"
+
+  # When KEDA cannot read its metrics (Prometheus down in ravion-prod), the
+  # pool must never shrink, and is topped up to a safe floor: the maximum
+  # unless a smaller fallback is configured.
+  assert_eq "${chart}: an unreadable metric keeps the pool and tops it up to the maximum" \
+    "3 8 currentReplicasIfHigher" \
+    "$(q "${burst}" "${scaled} | [.spec.fallback.failureThreshold, .spec.fallback.replicas, .spec.fallback.behavior] | join(\" \")")"
+  assert_eq "${chart}: a configured fallback floor is used" \
+    "4" "$(q "$(render "${chart}" fallback-floor --values "${values}" --set spotBurst.fallback.replicas=4)" "${scaled} | .spec.fallback.replicas")"
+  assert_eq "${chart}: a fallback floor above the maximum is capped at it" \
+    "8" "$(q "$(render "${chart}" fallback-capped --values "${values}" --set spotBurst.fallback.replicas=50)" "${scaled} | .spec.fallback.replicas")"
+  assert_eq "${chart}: fallback can be turned off" \
+    "false" "$(q "$(render "${chart}" fallback-off --values "${values}" --set spotBurst.fallback.enabled=false)" "${scaled} | .spec | has(\"fallback\")")"
+  # KEDA refuses a fallback on CPU and memory scalers and on Utilization
+  # targets, so those keep their behaviour rather than failing the deploy.
+  assert_eq "${chart}: no fallback with a Utilization trigger" \
+    "false" "$(q "${utilization}" "${scaled} | .spec | has(\"fallback\")")"
+  assert_eq "${chart}: no fallback with a CPU trigger" \
+    "false" "$(q "$(render "${chart}" fallback-cpu --values "${values}" --set spotBurst.minReplicas=1 \
+      --set-json 'spotBurst.triggers=[{"type":"cpu","metadata":{"value":"80"}}]')" "${scaled} | .spec | has(\"fallback\")")"
   assert_eq "${chart}: baseline and Spot pods use the same image" \
     "1" \
     "$(q "${burst}" "[.[] | select(.kind == \"Deployment\") | .spec.template.spec.containers[0].image] | unique | length")"
@@ -926,6 +946,21 @@ test_karpenter_resources() {
     "0" "$(q "${floorless}" "[${default_pool} | .spec.template.spec.requirements[] | select(.key == \"karpenter.k8s.aws/instance-memory\")] | length")"
   assert_eq "${chart}: the static pool has no memory floor" \
     "0" "$(q "${positive}" "[${static} | .spec.template.spec.requirements[] | select(.key == \"karpenter.k8s.aws/instance-memory\")] | length")"
+
+  # The add-on stores get On-Demand nodes of their own, large enough for a
+  # Prometheus replica, tainted so nothing else lands there, and only
+  # consolidated once empty.
+  local stateful stateful_pool
+  stateful="$(render "${chart}" stateful --values "$(chart_path "${chart}")/ci/default-values.yaml" --set statefulPool.enabled=true)"
+  stateful_pool='.[] | select(.kind == "NodePool") | select(.metadata.name == "addon-stateful")'
+  assert_eq "${chart}: no stateful pool unless enabled" \
+    "0" "$(q "${default}" "[.[] | select(.kind == \"NodePool\") | select(.metadata.name == \"addon-stateful\")] | length")"
+  assert_eq "${chart}: the stateful pool is On-Demand with at least 16 GiB" \
+    "on-demand Gt 16383" "$(q "${stateful}" "${stateful_pool} | .spec.template.spec.requirements[] | select(.key == \"karpenter.sh/capacity-type\") | .values[0]") $(q "${stateful}" "${stateful_pool} | .spec.template.spec.requirements[] | select(.key == \"karpenter.k8s.aws/instance-memory\") | .operator + \" \" + .values[0]")"
+  assert_eq "${chart}: the stateful pool is tainted for the stores alone" \
+    "ravion.com/addon-stateful NoSchedule" "$(q "${stateful}" "${stateful_pool} | .spec.template.spec.taints[0] | .key + \" \" + .effect")"
+  assert_eq "${chart}: the stateful pool only consolidates empty nodes" \
+    "WhenEmpty" "$(q "${stateful}" "${stateful_pool} | .spec.disruption.consolidationPolicy")"
 }
 
 ################################################################################
@@ -954,6 +989,43 @@ test_thanos() {
     "system-cluster-critical system-cluster-critical system-cluster-critical" "$(q "${resilient}" '[.[] | select(.kind == "Deployment" or .kind == "StatefulSet") | .spec.template.spec.priorityClassName] | join(" ")')"
   assert_eq "${chart}: the singleton compactor is never moved by Karpenter" \
     "1 true" "$(q "${resilient}" '.[] | select(.kind == "StatefulSet") | .spec.replicas') $(q "${resilient}" '.[] | select(.kind == "StatefulSet") | .spec.template.metadata.annotations."karpenter.sh/do-not-disrupt"')"
+
+  # With two Prometheus replicas Query must reach every sidecar and merge
+  # their copies of each series.
+  local query_args='.[] | select(.kind == "Deployment" and .metadata.name == "test-release-query") | .spec.template.spec.containers[0].args'
+  assert_eq "${chart}: Query reaches every sidecar and store through headless Services" \
+    "None None" "$(q "${resilient}" '.[] | select(.kind == "Service" and .metadata.name == "test-release-sidecar-headless") | .spec.clusterIP') $(q "${resilient}" '.[] | select(.kind == "Service" and .metadata.name == "test-release-store-headless") | .spec.clusterIP')"
+  assert_eq "${chart}: Query discovers the headless endpoints" \
+    "2" "$(q "${resilient}" "[${query_args}[] | select(test(\"^--endpoint=dns\\\\+test-release-(sidecar|store)-headless\\\\.\"))] | length")"
+  assert_eq "${chart}: Query merges Prometheus replicas by their label" \
+    "1 0" "$(q "${resilient}" "[${query_args}[] | select(. == \"--query.replica-label=prometheus_replica\")] | length") $(q "${default}" "[${query_args}[] | select(test(\"replica-label\"))] | length")"
+  assert_eq "${chart}: the compactor can be placed apart from Query and Store" \
+    "addon-stateful none" "$(q "${resilient}" '.[] | select(.kind == "StatefulSet") | .spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]') $(q "${resilient}" '.[] | select(.kind == "Deployment" and .metadata.name == "test-release-query") | .spec.template.spec.affinity.nodeAffinity // "none"')"
+}
+
+################################################################################
+# statefulset-volume-migration (compute/eks/addons)
+################################################################################
+
+test_statefulset_volume_migration() {
+  local chart="statefulset-volume-migration"
+  local default job
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  job='.[] | select(.kind == "Job")'
+
+  assert_eq "${chart}: the Job orphans the StatefulSet so its pod keeps serving" \
+    "delete statefulset ravion-loki --namespace=ravion-operator --cascade=orphan --ignore-not-found --wait" \
+    "$(q "${default}" "${job} | .spec.template.spec.containers[0].args | join(\" \")")"
+  assert_eq "${chart}: the Job runs after every install and upgrade of the release" \
+    "post-install,post-upgrade" "$(q "${default}" "${job} | .metadata.annotations.\"helm.sh/hook\"")"
+  assert_eq "${chart}: the Job may read and delete that one StatefulSet only" \
+    "statefulsets ravion-loki delete,get" \
+    "$(q "${default}" '.[] | select(.kind == "Role") | .rules[0] | .resources[0] + " " + .resourceNames[0] + " " + (.verbs | sort | join(","))')"
+  if helm template test-release "$(chart_path "${chart}")" >/dev/null 2>&1; then
+    fail "${chart}: a missing target is rejected" "helm template failure" "helm template succeeded"
+  else
+    pass "${chart}: a missing target is rejected"
+  fi
 }
 
 ################################################################################
@@ -1042,6 +1114,7 @@ for chart in "${CHARTS[@]}"; do
     warm-capacity) test_warm_capacity ;;
     ebs-storage) test_ebs_storage ;;
     thanos) test_thanos ;;
+    statefulset-volume-migration) test_statefulset_volume_migration ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

@@ -47,11 +47,25 @@ Placement keeps the add-ons off Spot; `addon_resilience_enabled` (the default) k
 
 - **Priority.** Controllers and stores run at `system-cluster-critical`, per-node agents (Alloy, the logs collector) at `system-node-critical`, so under pressure applications are evicted and preempted first. The logs collector also tolerates every taint, like Alloy.
 - **Replicas and budgets.** KEDA (operator, metrics apiserver, webhooks), cert-manager (controller, webhook, cainjector), External Secrets (controller with leader election, webhook, cert controller) and Thanos Query and Store run two replicas, prefer distinct nodes, and keep one through any drain (`minAvailable: 1`). The load balancer controller keeps one through a drain. Collectors and kube-state-metrics stay single replicas: two would duplicate series.
-- **Single-replica stores.** Prometheus, Loki, Tempo and the Thanos compactor carry `karpenter.sh/do-not-disrupt`, so consolidation never moves them mid-write.
+- **Stores.** Prometheus, Loki, Tempo and the Thanos compactor carry `karpenter.sh/do-not-disrupt`, so consolidation never moves them mid-write.
 - **Sizing.** Prometheus requests `prometheus_resources` (7Gi, limit 10Gi), has ten minutes to replay its WAL before liveness applies, bounds local retention at four fifths of its volume, and limits per-query samples and time. The remote-write exporter retries for ten minutes across a Prometheus restart. Controllers, webhooks, Grafana, kube-state-metrics and the Karpenter controller request what they use.
 - **Nodes.** Karpenter's `nodeRepair` gate replaces nodes that stay NotReady, and the default NodePool launches nothing below `karpenter_default_node_pool.min_instance_memory_mib` (8 GiB; 0 removes the floor).
 
 Each release gets this as its own values document after the placement and ahead of its caller Helm values, so a caller document can replace any of it; set `addon_resilience_enabled = false` before supplying your own replicas, budgets or priority classes.
+
+### Highly available Prometheus
+
+With Thanos on (`metrics_prometheus.s3_storage_enabled`, the default), Prometheus runs `prometheus_replicas` (2) replicas as a StatefulSet, each with its own volume. Nothing is dropped and nothing is split:
+
+- every writer (the metrics collector, the OTLP collector, Tempo's metrics generator) sends every sample to every replica by its pod address, rather than through the load-balanced Service, which would leave each replica with part of the data;
+- each replica labels its series `prometheus_replica=<pod name>`, and Thanos Query merges the copies into one answer, reaching every replica's sidecar through a headless Service;
+- the replicas never share a node, prefer different zones, and a drain takes at most one (`maxUnavailable: 1`). One replica can crash, restart, replay its WAL or move while the other serves dashboards, Ravion and KEDA.
+
+Each replica requests `prometheus_resources`, so two double that cost, and both upload their blocks to S3. Without Thanos, readers query Prometheus directly and a single replica runs, since two would answer differently. Moving an existing single Prometheus to two replaces its Deployment and volume with a StatefulSet: up to two hours of local samples not yet uploaded to S3 are lost once; S3 history is untouched.
+
+### Nodes for the stores
+
+With `addon_stateful_node_pool_enabled` (the default, when Karpenter and its default NodePool are on), Prometheus, Loki, Tempo and the Thanos compactor require a dedicated `addon-stateful` Karpenter NodePool: On-Demand, `m` and `r` instances of at least 16 GiB, tainted `ravion.com/addon-stateful=true:NoSchedule` so applications never compete with them for memory, and consolidated only once empty. Volumes are zonal, and Karpenter launches each store's node in its volume's zone. The pool costs at least one node, typically two with Prometheus' replicas on separate nodes.
 
 When installed together, Helm releases that create Services wait for the AWS
 Load Balancer Controller to become ready. This prevents its admission webhook
@@ -381,7 +395,9 @@ Two mechanisms, and they are not redundant:
 
 Loki runs in **single-binary mode**: every target in one StatefulSet replica, with the memcached chunk and result caches, the gateway, the canary and the bundled MinIO all off. A simple-scalable deployment is three workloads plus two memcached tiers before it stores a byte, which is the wrong shape for a cluster running twenty services. `loki_helm_values` is the documented escape hatch for larger ones.
 
-`loki_persistence_enabled` is **off** by default. Loki's chunks are in S3 either way; what the local volume holds is the write-ahead log, the compactor's working directory, and the index cache. With persistence off the module mounts an `emptyDir` at `/var/loki` sized by `loki_persistence_size` — necessary, not cosmetic, because the chart only mounts that path when persistence is on and the container runs with a read-only root filesystem. Turning persistence on needs a working `StorageClass`, which on a Ravion cluster means `ebs_csi_driver_enabled`; an unschedulable PVC is a worse first run than an ephemeral volume, hence the default.
+`loki_persistence_enabled` defaults to **on whenever the module's gp3 StorageClass exists** (`ebs_csi_driver_enabled`), and off otherwise, since a PVC with no StorageClass never binds. Loki's chunks are in S3 either way; what the local volume holds is the write-ahead log, the compactor's working directory, and the index cache, so with a volume a restart loses no logs. With persistence off the module mounts an `emptyDir` at `/var/loki` sized by `loki_persistence_size` — necessary, not cosmetic, because the chart only mounts that path when persistence is on and the container runs with a read-only root filesystem.
+
+A StatefulSet's volume layout cannot change in place, so switching an existing Loki between the two runs a small `loki-volume-migration` release first: its Job deletes the Loki StatefulSet with `--cascade=orphan`, leaving the pod serving, and the Loki release recreates it with the new layout in the same apply and replaces the pod. Logs not yet flushed from the old emptyDir are lost once, as on any restart.
 
 #### CloudWatch is a provider, not a mode
 
@@ -733,6 +749,7 @@ failed during initialization have no provider resources to migrate.
 | system_node_labels | Labels identifying the system node group. Add-ons prefer it; HA coordinators on distinct nodes are pinned to it. Ignored when system_node_count is 0. Empty sets no preference. | `map(string)` | `{}` | no |
 | addon_placement_enabled | Require On-Demand capacity for add-on controllers and stores, prefer the system node group, and tolerate `CriticalAddonsOnly`. | `bool` | `true` | no |
 | addon_resilience_enabled | Priority classes, two-replica controllers behind disruption budgets, do-not-disrupt stores, sized requests and Karpenter node repair (see Add-on resilience). | `bool` | `true` | no |
+| addon_stateful_node_pool_enabled | Run Prometheus, Loki, Tempo and the Thanos compactor on a dedicated, tainted On-Demand NodePool of ≥16 GiB nodes (see Nodes for the stores). Needs Karpenter with its default NodePool and add-on placement. | `bool` | `true` | no |
 | kubectl_image | kubectl image (`repository:tag`) for the `kube-dns` patch Jobs and the volume resizer. | `string` | `registry.k8s.io/kubectl:v1.36.4` | no |
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
@@ -790,7 +807,8 @@ failed during initialization have no provider resources to migrate.
 | logs_splunk | `{ hec_url, hec_token_secret_arn, index }`. | `object` | `{}` | no |
 | metrics_prometheus | `{ retention_days, storage_size, storage_class, endpoint, s3_storage_enabled, s3_bucket_name, s3_retention_days }`: 15 days locally, 50Gi, the managed `gp3` class or the cluster default, and Thanos history in S3 for 365 days. `endpoint` points at a Prometheus you already run and skips every managed metrics store. | `object` | `{}` | no |
 | prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.33.0"` / `[]` | no |
-| prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for the Prometheus server; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 7Gi, limit 10Gi | no |
+| prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each Prometheus server replica; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 7Gi, limit 10Gi | no |
+| prometheus_replicas | Prometheus replicas when Thanos is on, each receiving every sample (see Highly available Prometheus); 1 without Thanos. 1–3. | `number` | `2` | no |
 | logs_otlp / metrics_otlp | `{ endpoint, headers_secret_arn }`. The secret holds the value of an `Authorization` header. | `object` | `{}` | no |
 | metrics_amp | `{ workspace_id, region, alias }`. Falls back to the flat `amp_workspace_id` / `amp_region` / `amp_alias`. | `object` | `{}` | no |
 | metrics_cloudwatch | `{ enhanced_observability_enabled, application_signals_enabled, application_signals_namespaces, addon_version, addon_configuration_values }`. Auto-Monitor stays off unless Application Signals is enabled with no namespace list. | `object` | `{}` | no |
@@ -826,7 +844,7 @@ failed during initialization have no provider resources to migrate.
 | loki_chart_version | grafana/loki chart version. | `string` | `"7.3.0"` | no |
 | loki_service_account | Loki's service account; the Pod Identity association binds to this name. | `string` | `"ravion-loki"` | no |
 | loki_resources | Loki requests and limits. | `object` | requests `200m`/`512Mi`, limit `1Gi` | no |
-| loki_persistence_enabled | Give Loki a PVC. Off by default — it needs a working StorageClass (`ebs_csi_driver_enabled`); an `emptyDir` is mounted at `/var/loki` instead. | `bool` | `false` | no |
+| loki_persistence_enabled | Give Loki a PVC. Null turns it on whenever the gp3 StorageClass exists (`ebs_csi_driver_enabled`); off mounts an `emptyDir` at `/var/loki`. Switching recreates the StatefulSet. | `bool` | `null` | no |
 | loki_persistence_size | Size of Loki's local working volume — PVC size when persistence is on, `emptyDir` size limit when off. | `string` | `"10Gi"` | no |
 | loki_helm_values | Extra YAML docs merged into the Loki chart values. | `list(string)` | `[]` | no |
 | alloy_chart_version | grafana/alloy chart version. | `string` | `"1.12.1"` | no |

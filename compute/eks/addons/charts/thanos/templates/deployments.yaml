@@ -50,8 +50,12 @@ spec:
             - {{ $component }}
             - --http-address=0.0.0.0:10902
             {{- if eq $component "query" }}
-            - --endpoint=dns+{{ $.Release.Name }}-sidecar.{{ $.Release.Namespace }}.svc.cluster.local:10901
-            - --endpoint=dns+{{ $.Release.Name }}-store.{{ $.Release.Namespace }}.svc.cluster.local:10901
+            - --endpoint=dns+{{ $.Release.Name }}-sidecar-headless.{{ $.Release.Namespace }}.svc.cluster.local:10901
+            - --endpoint=dns+{{ $.Release.Name }}-store-headless.{{ $.Release.Namespace }}.svc.cluster.local:10901
+            {{- with $.Values.replicaLabel }}
+            # Prometheus replicas each hold every series; merge their copies.
+            - --query.replica-label={{ . }}
+            {{- end }}
             {{- else }}
             - --grpc-address=0.0.0.0:10901
             - --objstore.config-file=/etc/thanos/bucket.yaml

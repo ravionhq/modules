@@ -23,6 +23,10 @@ Internal chart installed by `compute/eks/addons/thanos.tf`. It connects to the T
 | `query.replicas`, `store.replicas` | `1` | Above one, replicas prefer distinct nodes and each component gets a `minAvailable: 1` PodDisruptionBudget. The parent module sets 2 with `addon_resilience_enabled` |
 | `priorityClassName` | empty | Applied to every component; the parent module sets `system-cluster-critical` |
 | `compactor.podAnnotations` | empty | Compactor pod annotations; the parent module sets `karpenter.sh/do-not-disrupt` |
+| `compactor.affinity`, `compactor.tolerations` | empty (the top-level values) | Compactor placement, apart from Query and Store; the parent module pins it to the stateful add-on NodePool |
+| `replicaLabel` | empty | External label telling Prometheus replicas apart; when set, Query merges their copies of each series (`--query.replica-label`). The parent module sets `prometheus_replica` with more than one Prometheus replica |
+
+Query reaches the Prometheus sidecars and the Store Gateways through headless Services (`<release>-sidecar-headless`, `<release>-store-headless`), so it holds a connection to every replica rather than one per ClusterIP.
 
 Tune these through `thanos_helm_values`. Retained StatefulSet PVCs are not deleted on chart uninstall. S3 history lifecycle is controlled separately by the parent Terraform module.
 

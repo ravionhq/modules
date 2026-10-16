@@ -1,0 +1,25 @@
+# A StatefulSet's volumeClaimTemplates are immutable, so the release that owns
+# it cannot switch between an emptyDir and a PersistentVolumeClaim in place.
+# This chart's Job deletes the StatefulSet with --cascade=orphan after every
+# install or upgrade of this release; its pods keep running until the owning
+# release recreates the StatefulSet and replaces them. The caller upgrades this
+# release only when the owner's volume layout changes, and upgrades the owner
+# right after it.
+
+# -- The StatefulSet to delete. Missing is fine (a first install).
+statefulSet:
+  name: ""
+  namespace: ""
+
+# -- The volume layout the owner is moving to. Informational: it names the Job.
+persistent: false
+
+# -- kubectl image the Job runs. Pinned; override for clusters that must pull
+# from a private mirror.
+image:
+  repository: registry.k8s.io/kubectl
+  tag: v1.36.4
+  pullPolicy: IfNotPresent
+
+# -- Give up after this many failed attempts and fail the release.
+backoffLimit: 3

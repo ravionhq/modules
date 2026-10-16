@@ -192,7 +192,7 @@ run "xray_without_amp_writes_traces_only" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster", "prometheusremotewrite/in_cluster_1"]
     error_message = "Workload metrics must go to the in-cluster Prometheus"
   }
 }
@@ -482,8 +482,8 @@ run "tempo_metrics_generator_writes_to_the_in_cluster_prometheus" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.enabled == true && yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0].url == "http://ravion-prometheus-server.ravion-operator.svc.cluster.local:9090/api/v1/write" && !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0]), "sigv4")
-    error_message = "The generator must remote-write to the in-cluster Prometheus, unsigned"
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.enabled == true && [for target in yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write : target.url] == ["http://ravion-prometheus-server-0.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write", "http://ravion-prometheus-server-1.ravion-prometheus-server-headless.ravion-operator.svc.cluster.local:9090/api/v1/write"] && !contains(keys(yamldecode(helm_release.tempo[0].values[0]).tempo.metricsGenerator.storage.remote_write[0]), "sigv4")
+    error_message = "The generator must remote-write to every in-cluster Prometheus replica, unsigned"
   }
 
   assert {
@@ -785,7 +785,7 @@ run "traces_only_vendors_stay_out_of_the_metrics_pipeline" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.metrics.exporters == ["prometheusremotewrite/in_cluster", "prometheusremotewrite/in_cluster_1"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_http/new_relic"]
     error_message = "A traces destination must not receive metrics"
   }
 }
