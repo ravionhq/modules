@@ -492,6 +492,14 @@ run "loki_keeps_its_wal_on_a_volume" {
     error_message = "The switch from an ephemeral volume needs the StatefulSet recreated; a migration release must do it."
   }
   assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).flushUrl == "http://ravion-loki.ravion-operator.svc.cluster.local:3100/flush"
+    error_message = "Loki must flush what it holds in memory before the migration removes its pod."
+  }
+  assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).busyboxImage == { repository = "public.ecr.aws/docker/library/busybox", tag = "1.37.0-musl" }
+    error_message = "The migration Job runs a script, and the kubectl image has no shell; it needs the module's busybox image."
+  }
+  assert {
     condition     = one([for d in helm_release.loki[0].values : yamldecode(d).singleBinary if can(yamldecode(d).singleBinary.podAnnotations["ravion.com/volume-layout"])]).podAnnotations["ravion.com/volume-layout"] == local.loki_volume_layout
     error_message = "Loki must be upgraded whenever the migration recreates its StatefulSet, or it would be left without one."
   }

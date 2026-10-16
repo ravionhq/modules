@@ -108,6 +108,14 @@ resource "helm_release" "alloy" {
           # for CriticalAddonsOnly) run Karpenter, CoreDNS and the Operator
           # coordinators. The EKS node agents tolerate everything the same way.
           tolerations = [{ operator = "Exists" }]
+
+          # A quarter of the nodes at a time. The chart's default of one node
+          # at a time takes about half a minute per node, so on a dozen nodes a
+          # rollout outlasts Helm's wait and fails the apply.
+          updateStrategy = {
+            type          = "RollingUpdate"
+            rollingUpdate = { maxUnavailable = "25%" }
+          }
         }
 
         alloy = {

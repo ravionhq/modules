@@ -1009,18 +1009,31 @@ test_thanos() {
 
 test_statefulset_volume_migration() {
   local chart="statefulset-volume-migration"
-  local default job
+  local default job ctr role
   default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
   job='.[] | select(.kind == "Job")'
+  ctr="${job} | .spec.template.spec.containers[0]"
+  role='.[] | select(.kind == "Role")'
 
-  assert_eq "${chart}: the Job orphans the StatefulSet so its pod keeps serving" \
-    "delete statefulset ravion-loki --namespace=ravion-operator --cascade=orphan --ignore-not-found --wait" \
-    "$(q "${default}" "${job} | .spec.template.spec.containers[0].args | join(\" \")")"
+  assert_eq "${chart}: the Job runs the migration script with a busybox shell" \
+    "registry.k8s.io/kubectl:v1.36.4 /tools/sh /scripts/migrate.sh public.ecr.aws/docker/library/busybox:1.37.0-musl" \
+    "$(q "${default}" "${ctr} | .image") $(q "${default}" "${ctr} | .command | join(\" \")") $(q "${default}" "${job} | .spec.template.spec.initContainers[0].image")"
+  assert_eq "${chart}: the Job runs the chart's own script" \
+    "$(cat "$(chart_path "${chart}")/files/migrate.sh")" \
+    "$(q "${default}" '.[] | select(.kind == "ConfigMap") | .data["migrate.sh"]')"
+  assert_eq "${chart}: the Job targets the StatefulSet, its layout and the store's flush endpoint" \
+    "ravion-loki ravion-operator true http://ravion-loki.ravion-operator.svc.cluster.local:3100/flush" \
+    "$(q "${default}" "${ctr} | .env | map(select(.name == \"STATEFULSET\" or .name == \"NAMESPACE\" or .name == \"PERSISTENT\" or .name == \"FLUSH_URL\")) | map(.value) | join(\" \")")"
   assert_eq "${chart}: the Job runs after every install and upgrade of the release" \
     "post-install,post-upgrade" "$(q "${default}" "${job} | .metadata.annotations.\"helm.sh/hook\"")"
-  assert_eq "${chart}: the Job may read and delete that one StatefulSet only" \
+  assert_eq "${chart}: the Job may read and delete that one StatefulSet" \
     "statefulsets ravion-loki delete,get" \
-    "$(q "${default}" '.[] | select(.kind == "Role") | .rules[0] | .resources[0] + " " + .resourceNames[0] + " " + (.verbs | sort | join(","))')"
+    "$(q "${default}" "${role} | .rules[0] | .resources[0] + \" \" + .resourceNames[0] + \" \" + (.verbs | sort | join(\",\"))")"
+  assert_eq "${chart}: and only that StatefulSet's pods, by ordinal" \
+    "pods ravion-loki-0,ravion-loki-1,ravion-loki-2 delete,get" \
+    "$(q "${default}" "${role} | .rules[1] | .resources[0] + \" \" + (.resourceNames | join(\",\")) + \" \" + (.verbs | sort | join(\",\"))")"
+  assert_eq "${chart}: the Job can neither list nor watch" \
+    "0" "$(q "${default}" "[${role} | .rules[].verbs[] | select(. == \"list\" or . == \"watch\")] | length")"
   if helm template test-release "$(chart_path "${chart}")" >/dev/null 2>&1; then
     fail "${chart}: a missing target is rejected" "helm template failure" "helm template succeeded"
   else
