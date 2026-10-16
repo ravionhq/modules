@@ -61,3 +61,6 @@ jobs:
       # anti-affinity the module writes.
       - name: Test Mimir replica placement
         run: python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_mimir_chart_placement.py' -v
+
+      - name: Test the StatefulSet volume migration script
+        run: python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_statefulset_volume_migration.py' -v

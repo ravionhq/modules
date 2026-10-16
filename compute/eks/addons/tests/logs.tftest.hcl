@@ -148,6 +148,13 @@ run "logs_enabled_creates_bucket_loki_and_alloy" {
     error_message = "logs_enabled must install both Loki and Alloy"
   }
 
+  # One node at a time takes about half a minute per node, so on a dozen
+  # nodes a rollout outlasts Helm's wait and fails the apply.
+  assert {
+    condition     = yamldecode(helm_release.alloy[0].values[0]).controller.updateStrategy == { type = "RollingUpdate", rollingUpdate = { maxUnavailable = "25%" } }
+    error_message = "Alloy must roll out a quarter of the nodes at a time, so an upgrade finishes in a few waves whatever the cluster size."
+  }
+
   # In-cluster only: the endpoint is a ClusterIP Service URL, which is what
   # makes Ravion Operator's tunnel the sole route to it.
   assert {

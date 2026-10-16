@@ -1,24 +1,47 @@
 # A StatefulSet's volumeClaimTemplates are immutable, so the release that owns
 # it cannot switch between an emptyDir and a PersistentVolumeClaim in place.
-# This chart's Job deletes the StatefulSet with --cascade=orphan after every
-# install or upgrade of this release; its pods keep running until the owning
-# release recreates the StatefulSet and replaces them. The caller upgrades this
-# release only when the owner's volume layout changes, and upgrades the owner
-# right after it.
+# This chart's Job runs after every install or upgrade of this release (see
+# files/migrate.sh):
+#   - when the StatefulSet's layout differs from `persistent`, it deletes the
+#     StatefulSet together with its pods, and the owning release, upgraded
+#     right after this one, recreates both on the new volumes;
+#   - when the layout already matches, it replaces only pods that do not mount
+#     their claims (left by chart 0.1.0, which orphaned them);
+#   - otherwise it changes nothing.
+# Pods are never orphaned: a recreated StatefulSet that adopts a pod without
+# its claim cannot add the claim in place and never replaces the pod.
 
-# -- The StatefulSet to delete. Missing is fine (a first install).
+# -- The StatefulSet to migrate. Missing is fine (a first install).
 statefulSet:
   name: ""
   namespace: ""
+  # -- Highest replica count the Job may need to handle. The Role names each
+  # pod it may delete, <name>-0 to <name>-(maxReplicas - 1).
+  maxReplicas: 3
 
-# -- The volume layout the owner is moving to. Informational: it names the Job.
+# -- The volume layout the owner is moving to: true for PersistentVolumeClaims,
+# false for none.
 persistent: false
 
-# -- kubectl image the Job runs. Pinned; override for clusters that must pull
-# from a private mirror.
+# -- POSTed before any pod is removed, so the store writes what it holds in
+# memory to object storage (Loki: http://<service>:3100/flush). Empty skips it.
+flushUrl: ""
+
+# -- How long each delete may wait for the pods to go.
+deleteTimeout: 4m
+
+# -- kubectl image the Job runs. It has no shell, so busybox supplies one.
+# Pinned; override for clusters that must pull from a private mirror.
 image:
   repository: registry.k8s.io/kubectl
   tag: v1.36.4
+  pullPolicy: IfNotPresent
+
+# -- Statically linked busybox, copied into the Job's pod by an init
+# container to provide sh and wget.
+busyboxImage:
+  repository: public.ecr.aws/docker/library/busybox
+  tag: 1.37.0-musl
   pullPolicy: IfNotPresent
 
 # -- Give up after this many failed attempts and fail the release.

@@ -2,3 +2,4 @@ statefulSet:
   name: ravion-loki
   namespace: ravion-operator
 persistent: true
+flushUrl: http://ravion-loki.ravion-operator.svc.cluster.local:3100/flush
