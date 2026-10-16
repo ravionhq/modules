@@ -66,6 +66,7 @@ locals {
     [local.grafana_cloud_logs_query_url != null ? local.grafana_cloud_logs_query_url : ""],
     [local.grafana_cloud_metrics_query_url != null ? local.grafana_cloud_metrics_query_url : ""],
     [local.prometheus_endpoint != null ? local.prometheus_endpoint : ""],
+    [local.mimir_endpoint != null ? local.mimir_endpoint : ""],
   ))
 
   ravion_operator_proxy_credentials = concat(

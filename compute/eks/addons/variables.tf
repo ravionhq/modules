@@ -1662,16 +1662,16 @@ variable "logs_providers" {
 
 variable "metrics_providers" {
   type        = list(string)
-  description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
+  description = "Where workload metrics go. Any combination of: amp (Amazon Managed Prometheus, renders in Ravion), prometheus (in-cluster Prometheus with Thanos, renders through Ravion Operator), mimir (in-cluster Grafana Mimir for large clusters, renders through Ravion Operator), cloudwatch (Container Insights, renders in Ravion), grafana_cloud, datadog, new_relic, otlp. An empty list turns metrics off entirely."
   default     = ["prometheus"]
   nullable    = false
 
   validation {
     condition = alltrue([
       for provider in var.metrics_providers :
-      contains(["amp", "prometheus", "cloudwatch", "grafana_cloud", "datadog", "new_relic", "otlp"], provider)
+      contains(["amp", "prometheus", "mimir", "cloudwatch", "grafana_cloud", "datadog", "new_relic", "otlp"], provider)
     ])
-    error_message = "Each metrics_providers entry must be one of: amp, prometheus, cloudwatch, grafana_cloud, datadog, new_relic, otlp."
+    error_message = "Each metrics_providers entry must be one of: amp, prometheus, mimir, cloudwatch, grafana_cloud, datadog, new_relic, otlp."
   }
 }
 
@@ -1971,6 +1971,33 @@ variable "metrics_prometheus" {
   }
 }
 
+variable "metrics_mimir" {
+  type = object({
+    retention_days = optional(number)
+    s3_bucket_name = optional(string)
+    storage_class  = optional(string)
+    zones          = optional(list(string))
+  })
+  description = "In-cluster Grafana Mimir, for clusters that outgrow one Prometheus: three copies of every sample, history in S3 (365-day retention), storage_class for its volumes (managed gp3 or the cluster default). zones names three or more availability zones to keep a copy of every sample in each, adding Grafana's rollout-operator; empty keeps copies on separate nodes, spread across zones where it can. An existing bucket must be dedicated, in the cluster region, and allow the generated Pod Identity role."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = var.metrics_mimir.retention_days == null ? true : var.metrics_mimir.retention_days >= 1 && floor(var.metrics_mimir.retention_days) == var.metrics_mimir.retention_days
+    error_message = "metrics_mimir.retention_days must be a positive whole number of days."
+  }
+
+  validation {
+    condition     = try(trimspace(var.metrics_mimir.s3_bucket_name), "") == "" || can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", trimspace(var.metrics_mimir.s3_bucket_name)))
+    error_message = "metrics_mimir.s3_bucket_name must be a valid 3-63 character lowercase S3 bucket name, or null or blank to create one."
+  }
+
+  validation {
+    condition     = length(coalesce(var.metrics_mimir.zones, [])) == 0 || length(distinct(var.metrics_mimir.zones)) >= 3
+    error_message = "metrics_mimir.zones must name at least three distinct availability zones, or none: each zone holds one of the three copies of every sample."
+  }
+}
+
 variable "metrics_grafana_cloud" {
   type = object({
     url              = optional(string)
@@ -2103,6 +2130,42 @@ variable "prometheus_resources" {
 variable "prometheus_helm_values" {
   type        = list(string)
   description = "Extra YAML documents merged into the prometheus chart values, after the values this module derives (later entries win). The route to alerting rules, extra scrape jobs, or a private image registry."
+  default     = []
+  nullable    = false
+}
+
+################################################################################
+# In-cluster Mimir
+################################################################################
+
+variable "mimir_chart_version" {
+  type        = string
+  description = "Version of the grafana/mimir-distributed Helm chart installed for the mimir metrics provider. Needs Kubernetes 1.32 or later."
+  default     = "6.2.0"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.mimir_chart_version))
+    error_message = "The mimir_chart_version must be a semantic version like '6.2.0' (no leading 'v')."
+  }
+}
+
+variable "mimir_ingester_resources" {
+  type = object({
+    requests = object({ cpu = string, memory = string })
+    limits   = object({ memory = string })
+  })
+  description = "CPU and memory for each of the three Mimir ingesters, which hold recent samples in memory: each holds a copy of every series, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. Applied when addon_resilience_enabled is true."
+  default = {
+    requests = { cpu = "1", memory = "6Gi" }
+    limits   = { memory = "6Gi" }
+  }
+  nullable = false
+}
+
+variable "mimir_helm_values" {
+  type        = list(string)
+  description = "Extra YAML documents merged into the mimir-distributed chart values, after the values this module derives (later entries win). The route to more ingesters, caches, per-component resources, or a private image registry."
   default     = []
   nullable    = false
 }

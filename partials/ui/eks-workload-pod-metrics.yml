@@ -63,7 +63,7 @@
 - id: cpu
   name: CPU usage
   type: line
-  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
   source:
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
@@ -99,7 +99,7 @@
 - id: memory
   name: Memory working set
   type: line
-  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
   source:
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
@@ -134,7 +134,7 @@
 - id: restarts
   name: Container restarts
   type: line
-  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
   source:
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
@@ -173,7 +173,7 @@
 - id: network_rx
   name: Network in
   type: line
-  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
   source:
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
@@ -209,7 +209,7 @@
 - id: network_tx
   name: Network out
   type: line
-  enabled: << module.input.metrics_rendering_providers != nil && "prometheus" in module.input.metrics_rendering_providers >>
+  enabled: << module.input.metrics_rendering_providers != nil && ("prometheus" in module.input.metrics_rendering_providers || "mimir" in module.input.metrics_rendering_providers) >>
   source:
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>

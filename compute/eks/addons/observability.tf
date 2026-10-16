@@ -40,7 +40,7 @@ locals {
   # Selected members of the rendering lists, in fallback order. Empty when the
   # signal is off, which is what the tabs read as "turned off for this cluster".
   logs_rendering_providers    = tolist([for provider in ["loki", "cloudwatch"] : provider if contains(local.logs_providers, provider)])
-  metrics_rendering_providers = tolist([for provider in ["amp", "prometheus", "cloudwatch"] : provider if contains(local.metrics_providers, provider)])
+  metrics_rendering_providers = tolist([for provider in ["amp", "prometheus", "mimir", "cloudwatch"] : provider if contains(local.metrics_providers, provider)])
 
   logs_on    = length(local.logs_providers) > 0
   metrics_on = length(local.metrics_providers) > 0
@@ -50,6 +50,7 @@ locals {
   loki_enabled                  = contains(local.logs_providers, "loki")
   amp_enabled                   = contains(local.metrics_providers, "amp")
   prometheus_enabled            = contains(local.metrics_providers, "prometheus")
+  mimir_enabled                 = contains(local.metrics_providers, "mimir")
   logs_cloudwatch_enabled       = contains(local.logs_providers, "cloudwatch")
   metrics_cloudwatch_enabled    = contains(local.metrics_providers, "cloudwatch")
   cloudwatch_addon_enabled      = local.logs_cloudwatch_enabled || local.metrics_cloudwatch_enabled
@@ -234,6 +235,11 @@ locals {
   ) : null
 
   prometheus_remote_write_endpoint = local.prometheus_enabled ? "${local.prometheus_write_endpoint}/api/v1/write" : null
+
+  # The in-cluster Prometheus-compatible query URL Ravion and its service
+  # modules chart from: Prometheus first, so a cluster moving to Mimir keeps
+  # its history in view until Prometheus is deselected.
+  metrics_query_endpoint = local.prometheus_endpoint != null ? local.prometheus_endpoint : local.mimir_endpoint
 
   # Replicas need Thanos to merge their copies of each series; without it,
   # readers query Prometheus directly and two replicas would answer
