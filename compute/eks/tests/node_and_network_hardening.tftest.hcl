@@ -196,3 +196,89 @@ run "network_policy_enforcement_off" {
     error_message = "Turning enforcement off must not write an enableNetworkPolicy document to the CNI add-on."
   }
 }
+
+run "cni_warm_ip_targets_join_the_generated_document" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                       = "test-cluster"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+    # Direct submodule use: an administrator is registered by the caller.
+    cluster_admin_access_managed_externally = true
+    vpc_cni_warm_ip_target                  = 2
+    vpc_cni_minimum_ip_target               = 10
+  }
+  assert {
+    condition = jsondecode(aws_eks_addon.vpc_cni.configuration_values) == {
+      enableNetworkPolicy = "true"
+      env = {
+        WARM_IP_TARGET    = "2"
+        MINIMUM_IP_TARGET = "10"
+      }
+    }
+    error_message = "Warm and minimum IP targets must reach the CNI as string env vars alongside network policy enforcement."
+  }
+}
+
+run "cni_warm_ip_target_without_network_policy" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                       = "test-cluster"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+    # Direct submodule use: an administrator is registered by the caller.
+    cluster_admin_access_managed_externally = true
+    network_policy_enabled                  = false
+    vpc_cni_warm_ip_target                  = 3
+  }
+  assert {
+    condition     = aws_eks_addon.vpc_cni.configuration_values == "{\"env\":{\"WARM_IP_TARGET\":\"3\"}}"
+    error_message = "A warm IP target alone must produce only the env block."
+  }
+}
+
+run "explicit_cni_configuration_wins_over_warm_ip_targets" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                       = "test-cluster"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+    # Direct submodule use: an administrator is registered by the caller.
+    cluster_admin_access_managed_externally = true
+    vpc_cni_warm_ip_target                  = 2
+    vpc_cni_addon_configuration_values      = "{\"env\":{\"ENABLE_PREFIX_DELEGATION\":\"true\"}}"
+  }
+  assert {
+    condition     = aws_eks_addon.vpc_cni.configuration_values == "{\"env\":{\"ENABLE_PREFIX_DELEGATION\":\"true\"}}"
+    error_message = "An explicit CNI configuration document must still be passed through untouched."
+  }
+}
+
+run "cni_warm_ip_target_rejects_zero" {
+  command = plan
+  module {
+    source = "./modules/eks_cluster"
+  }
+  variables {
+    name                       = "test-cluster"
+    vpc_id                     = "vpc-12345678"
+    subnet_ids                 = ["subnet-0a", "subnet-0b"]
+    secrets_encryption_enabled = false
+    # Direct submodule use: an administrator is registered by the caller.
+    cluster_admin_access_managed_externally = true
+    vpc_cni_warm_ip_target                  = 0
+  }
+  expect_failures = [var.vpc_cni_warm_ip_target]
+}
