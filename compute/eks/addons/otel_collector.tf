@@ -233,9 +233,11 @@ resource "helm_release" "otel_collector" {
     # Not a hard dependency — a missing target is a failed scrape, not a failed
     # collector — but it keeps the first minutes free of scrape errors.
     helm_release.kube_state_metrics,
-    # Remote-writing into a Prometheus that does not exist yet is a retry loop
-    # and a page of errors in the first minutes of a cluster's life.
+    # Remote-writing into a store that does not exist yet is a retry loop and
+    # a page of errors in the first minutes of a cluster's life; its retries
+    # give up after ten minutes, and Mimir may take twenty to install.
     helm_release.prometheus,
+    helm_release.mimir,
     # A vendor credential that is not materialized yet is a pod that never
     # starts, because the env var references a Secret key.
     helm_release.observability_secrets,

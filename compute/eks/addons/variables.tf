@@ -1993,7 +1993,7 @@ variable "metrics_mimir" {
   }
 
   validation {
-    condition     = length(coalesce(var.metrics_mimir.zones, [])) == 0 || length(distinct(var.metrics_mimir.zones)) >= 3
+    condition     = length(coalesce(var.metrics_mimir.zones, [])) == 0 || length(distinct(coalesce(var.metrics_mimir.zones, []))) >= 3
     error_message = "metrics_mimir.zones must name at least three distinct availability zones, or none: each zone holds one of the three copies of every sample."
   }
 }
