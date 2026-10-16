@@ -273,6 +273,28 @@ variable "network_policy_enabled" {
   nullable    = false
 }
 
+variable "vpc_cni_warm_ip_target" {
+  type        = number
+  description = "Spare pod IPs the VPC CNI keeps on each node (WARM_IP_TARGET). When null the CNI default applies: a whole spare ENI per node, which can exhaust small subnets. Ignored when vpc_cni_addon_configuration_values is set."
+  default     = null
+
+  validation {
+    condition     = var.vpc_cni_warm_ip_target == null ? true : (var.vpc_cni_warm_ip_target >= 1 && floor(var.vpc_cni_warm_ip_target) == var.vpc_cni_warm_ip_target)
+    error_message = "vpc_cni_warm_ip_target must be a whole number of at least 1."
+  }
+}
+
+variable "vpc_cni_minimum_ip_target" {
+  type        = number
+  description = "Pod IPs the VPC CNI allocates to each node up front (MINIMUM_IP_TARGET), so most pods start without waiting on an EC2 call. Ignored when vpc_cni_addon_configuration_values is set."
+  default     = null
+
+  validation {
+    condition     = var.vpc_cni_minimum_ip_target == null ? true : (var.vpc_cni_minimum_ip_target >= 0 && floor(var.vpc_cni_minimum_ip_target) == var.vpc_cni_minimum_ip_target)
+    error_message = "vpc_cni_minimum_ip_target must be a whole number of at least 0."
+  }
+}
+
 variable "kube_proxy_addon_version" {
   type        = string
   description = "Pinned version for the kube-proxy add-on. When null, AWS resolves the most recent compatible version."

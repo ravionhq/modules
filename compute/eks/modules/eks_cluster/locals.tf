@@ -53,11 +53,26 @@ locals {
 }
 
 locals {
-  # The CNI add-on schema takes enableNetworkPolicy as a string. An explicit
-  # configuration document wins untouched, matching the other add-ons.
+  # Without a warm IP target the CNI keeps a whole spare ENI of IPs on every
+  # node, used or not. In a small subnet that reserve runs it dry, and pods on
+  # the next node fail to get an address.
+  vpc_cni_env = {
+    for name, value in {
+      WARM_IP_TARGET    = var.vpc_cni_warm_ip_target
+      MINIMUM_IP_TARGET = var.vpc_cni_minimum_ip_target
+    } : name => tostring(value) if value != null
+  }
+
+  # The CNI add-on schema takes enableNetworkPolicy and env values as strings.
+  # An explicit configuration document wins untouched, matching the other
+  # add-ons.
+  vpc_cni_generated_configuration = merge(
+    { for key, value in { enableNetworkPolicy = "true" } : key => value if var.network_policy_enabled },
+    { for key, value in { env = local.vpc_cni_env } : key => value if length(local.vpc_cni_env) > 0 },
+  )
   vpc_cni_addon_configuration_values = (
     var.vpc_cni_addon_configuration_values != null
     ? var.vpc_cni_addon_configuration_values
-    : (var.network_policy_enabled ? jsonencode({ enableNetworkPolicy = "true" }) : null)
+    : (length(local.vpc_cni_generated_configuration) > 0 ? jsonencode(local.vpc_cni_generated_configuration) : null)
   )
 }

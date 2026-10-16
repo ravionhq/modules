@@ -66,6 +66,8 @@ Prefer the [`compute/eks`](../..) composite. This module is nested under
 | vpc_cni_addon_version / kube_proxy_addon_version | Pinned add-on versions. | `string` | `null` | no |
 | vpc_cni_addon_configuration_values / kube_proxy_addon_configuration_values | JSON config overrides. | `string` | `null` | no |
 | network_policy_enabled | Enforce Kubernetes NetworkPolicy through the VPC CNI. | `bool` | `true` | no |
+| vpc_cni_warm_ip_target | Spare pod IPs the VPC CNI keeps per node (`WARM_IP_TARGET`). Null keeps the CNI default of a whole spare ENI per node. Ignored when `vpc_cni_addon_configuration_values` is set. | `number` | `null` | no |
+| vpc_cni_minimum_ip_target | Pod IPs the VPC CNI allocates per node up front (`MINIMUM_IP_TARGET`). Ignored when `vpc_cni_addon_configuration_values` is set. | `number` | `null` | no |
 | pod_identity_agent_enabled | Install eks-pod-identity-agent. | `bool` | `true` | no |
 | pod_identity_agent_addon_version | Pin pod identity agent add-on version. | `string` | `null` | no |
 | aws_load_balancer_controller_pod_identity_creation_enabled | Create the AWS Load Balancer Controller Pod Identity role and association. | `bool` | `true` | no |

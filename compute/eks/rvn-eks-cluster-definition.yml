@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.8.1
-  description: Look up Kubernetes versions with the module's AWS account so the version picker no longer fails with AWS access denied.
+  version: 0.9.0
+  description: Optional warm and minimum pod IP targets for the VPC CNI, so nodes stop reserving a whole spare network interface of IPs and small subnets keep addresses for new pods.
 module:
   inputs:
     - id: network
@@ -358,6 +358,20 @@ module:
       label: Network policy enforcement
       type: boolean
     - collapsible: true
+      description: Spare pod IPs the VPC CNI keeps on each node. Leave blank for the CNI default, a whole spare network interface of IPs per node, which can use up a small subnet and leave new pods without an address.
+      id: vpc_cni_warm_ip_target
+      label: Warm pod IPs per node
+      min: 1
+      placeholder: "2"
+      type: number
+    - collapsible: true
+      description: Pod IPs the VPC CNI allocates to each node up front, so most pods start without waiting for an address. Takes effect with or without warm pod IPs.
+      id: vpc_cni_minimum_ip_target
+      label: Minimum pod IPs per node
+      min: 0
+      placeholder: "10"
+      type: number
+    - collapsible: true
       default: true
       description: Create an IAM role that Ravion Runner step executions assume for Kubernetes API access, registered as an EKS access entry with cluster-admin. Used by the EKS Add-ons module to install Helm charts.
       id: ravion_runner_role_creation_enabled
@@ -518,6 +532,8 @@ module:
         public_access_cidrs: << module.input.endpoint_public_access_cidrs || ["0.0.0.0/0"] >>
         ravion_runner_role_creation_enabled: << module.input.ravion_runner_role_creation_enabled >>
         network_policy_enabled: '<< module.input.network_policy_enabled != nil ? module.input.network_policy_enabled : true >>'
+        vpc_cni_warm_ip_target: << module.input.vpc_cni_warm_ip_target >>
+        vpc_cni_minimum_ip_target: << module.input.vpc_cni_minimum_ip_target >>
         metrics_server_enabled: true
         system_node_group:
           instance_types: << module.input.system_node_instance_types >>

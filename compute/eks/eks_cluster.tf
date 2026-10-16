@@ -38,6 +38,8 @@ module "cluster" {
   vpc_cni_addon_version                 = var.vpc_cni_addon_version
   vpc_cni_addon_configuration_values    = var.vpc_cni_addon_configuration_values
   network_policy_enabled                = var.network_policy_enabled
+  vpc_cni_warm_ip_target                = var.vpc_cni_warm_ip_target
+  vpc_cni_minimum_ip_target             = var.vpc_cni_minimum_ip_target
   kube_proxy_addon_version              = var.kube_proxy_addon_version
   kube_proxy_addon_configuration_values = var.kube_proxy_addon_configuration_values
 
