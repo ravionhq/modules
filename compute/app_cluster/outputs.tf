@@ -1,19 +1,24 @@
 ################################################################################
 # Apps
 #
-# The module definition's apps block hands these to Ravion: the pool that runs
-# the apps, the domain they are served under, and what Ravion launches the
-# router with.
+# The module definition's apps block hands these to Ravion: the domains the
+# apps are served under, the load balancer that serves them, and what Ravion
+# launches the router with.
 ################################################################################
-
-output "execution_environment_id" {
-  description = "The execution environment (ee_*) whose sandbox pool runs the apps."
-  value       = ravion_sandbox_pool.this.id
-}
 
 output "wildcard_domain_name" {
   description = "The apex apps are served under: every app URL is a hostname one label below it."
   value       = ravion_aws_acm_certificate.this.domain_name
+}
+
+output "custom_domain_apexes" {
+  description = "The custom wildcard domains without their *., in the order given: apps are also served one label below each."
+  value       = [for domain in local.custom_domains : trimprefix(domain, "*.")]
+}
+
+output "tls_listener_arn" {
+  description = "The ARN of the TLS listener. Ravion attaches the certificate of each app's own domains to it."
+  value       = aws_lb_listener.tls.arn
 }
 
 output "router_subnet_ids" {
@@ -39,15 +44,6 @@ output "traffic_target_group_arn" {
 output "redirect_target_group_arn" {
   description = "The ARN of the target group the HTTP listener forwards to, which the router answers with a redirect to HTTPS. Ravion registers the router instance in it."
   value       = aws_lb_target_group.redirect.arn
-}
-
-################################################################################
-# Sandbox Hosts
-################################################################################
-
-output "host_security_group_id" {
-  description = "The ID of the sandbox hosts' security group. Allow it in another resource's security group to let the apps reach that resource."
-  value       = aws_security_group.sandbox_hosts.id
 }
 
 ################################################################################

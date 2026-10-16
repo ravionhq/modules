@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
+import YAML from "yaml";
 import { compileDefinitionFile } from "../src/compiler.js";
 
 const repoRoot = resolve(process.cwd(), "../..");
@@ -104,7 +105,19 @@ describe("rvn-app-cluster module definition", () => {
     const definition = await compileDefinitionFile(definitionPath);
     const apps = record(definition.module.apps);
 
-    assert.deepEqual(Object.keys(apps).sort(), ["defaults", "domain", "executionEnvironmentId", "limits", "router"]);
+    assert.deepEqual(Object.keys(apps).sort(), [
+      "awsAccountId",
+      "customDomains",
+      "defaults",
+      "domain",
+      "executionEnvironmentId",
+      "limits",
+      "loadBalancer",
+      "region",
+      "router",
+      "vpcId",
+    ]);
+    assert.deepEqual(Object.keys(record(apps.loadBalancer)).sort(), ["dnsName", "tlsListenerArn", "zoneId"]);
     assert.deepEqual(Object.keys(record(apps.router)).sort(), [
       "instanceProfileName",
       "instanceType",
@@ -128,12 +141,23 @@ describe("rvn-app-cluster module definition", () => {
     }
   });
 
-  it("hands Ravion the stack's pool, domain and router resources", async () => {
+  it("hands Ravion the chosen execution environment, where the cluster runs, its domains, load balancer and router", async () => {
     const definition = await compileDefinitionFile(definitionPath);
     const apps = record(definition.module.apps);
 
-    assert.equal(apps.executionEnvironmentId, "<< module.output.execution_environment_id >>");
+    // The execution environment is the input the user chose, never something
+    // the stack creates: its sandbox pool runs the apps.
+    assert.equal(apps.executionEnvironmentId, "<< module.input.execution_environment_id >>");
+    assert.equal(apps.awsAccountId, "<< module.input.aws_account_id >>");
+    assert.equal(apps.region, "<< module.output.region >>");
+    assert.equal(apps.vpcId, "<< module.input.vpc_id >>");
     assert.equal(apps.domain, "<< module.output.wildcard_domain_name >>");
+    assert.equal(apps.customDomains, "<< module.output.custom_domain_apexes >>");
+    assert.deepEqual(record(apps.loadBalancer), {
+      tlsListenerArn: "<< module.output.tls_listener_arn >>",
+      dnsName: "<< module.output.load_balancer_dns_name >>",
+      zoneId: "<< module.output.load_balancer_zone_id >>",
+    });
     assert.deepEqual(record(apps.router), {
       instanceType: "<< module.input.router_instance_type >>",
       subnetIds: "<< module.output.router_subnet_ids >>",
@@ -220,7 +244,12 @@ describe("rvn-app-cluster module definition", () => {
       assert.ok(outputsFile.includes(`output "${String(output.id)}"`), `expected Terraform output ${String(output.id)}`);
     }
     assert.equal(outputs.find((output) => output.id === "router_subnet_ids")?.type, "string_array");
-    assert.equal(outputs.find((output) => output.id === "host_security_group_id")?.type, "string");
+    assert.equal(outputs.find((output) => output.id === "custom_domain_apexes")?.type, "string_array");
+    assert.equal(outputs.find((output) => output.id === "tls_listener_arn")?.type, "string");
+    for (const id of ["execution_environment_id", "host_security_group_id"]) {
+      assert.equal(declared.has(id), false, `unexpected output ${id}`);
+      assert.equal(outputsFile.includes(`output "${id}"`), false, `unexpected Terraform output ${id}`);
+    }
   });
 
   it("passes every Terraform variable it sets to a variable of the module", async () => {
@@ -233,71 +262,136 @@ describe("rvn-app-cluster module definition", () => {
     }
   });
 
-  it("runs the router and the hosts in the network's private subnets and the load balancer in its public ones", async () => {
+  it("runs the router in the network's private subnets and the load balancer in its public ones", async () => {
     const definition = await compileDefinitionFile(definitionPath);
     const variables = terraformVariables(definition.module);
 
     assert.equal(variables.router_subnet_ids, "<< module.input.private_subnet_ids >>");
-    assert.equal(variables.host_subnet_id, "<< module.input.private_subnet_ids[0] >>");
     assert.equal(variables.public_subnet_ids, "<< module.input.public_subnet_ids >>");
   });
 
-  it("configures the sandbox pool from the hosts section", async () => {
+  it("runs the apps on the sandbox pool of an execution environment the user chooses, the network's by default", async () => {
+    const definition = await compileDefinitionFile(definitionPath);
+    const network = findInput(records(definition.module.inputs), "network");
+    const executionEnvironment = findInput(records(network.mapped_inputs), "execution_environment_id");
+
+    assert.equal(executionEnvironment.label, "Execution environment");
+    assert.equal(executionEnvironment.type, "string");
+    assert.equal(executionEnvironment.values, "$values:ravion/execution_environments");
+    assert.equal(executionEnvironment.default, "<< ref.input.execution_environment_id >>");
+    // The apps' sandboxes live in its pool, and Ravion cannot move them to
+    // another one.
+    assert.equal(executionEnvironment.required, true);
+    assert.equal(executionEnvironment.immutable, true);
+    assert.equal(executionEnvironment.collapsible, undefined);
+    assert.match(String(executionEnvironment.description), /sandbox pool/);
+    // Terraform runs in it too, as in every module.
+    const input = record(record(record(record(definition.module.stack).pipelines).defaults).input);
+    assert.equal(input.execution_environment_id, "<< module.input.execution_environment_id >>");
+  });
+
+  it("keeps the other mapped network inputs as the shared network partial has them", async () => {
+    const definition = await compileDefinitionFile(definitionPath);
+    const network = findInput(records(definition.module.inputs), "network");
+    const partial: unknown = YAML.parse(await readFile(resolve(repoRoot, "partials/templates/network-ref-mapped-inputs.yml"), "utf8"));
+    const withDefaults = new Map([
+      ["$with.aws_account_id_default", "<< ref.input.aws_account_id >>"],
+      ["$with.aws_region_default", "<< ref.input.aws_region >>"],
+      ["$with.private_subnet_ids_default", "<<ref.stack.output.private_subnet_ids>>"],
+      ["$with.public_subnet_ids_default", "<<ref.stack.output.public_subnet_ids>>"],
+      ["$with.vpc_id_default", "<<ref.stack.output.vpc_id>>"],
+    ]);
+    const expected = records(partial)
+      .filter((input) => input.id !== "execution_environment_id")
+      .map((input) => (typeof input.default === "string" && withDefaults.has(input.default) ? { ...input, default: withDefaults.get(input.default) } : input));
+
+    assert.deepEqual(
+      records(network.mapped_inputs).filter((input) => input.id !== "execution_environment_id"),
+      expected,
+    );
+  });
+
+  it("creates no pool, no hosts and no hosts' security group: the execution environment has them", async () => {
+    const definition = await compileDefinitionFile(definitionPath);
+    const files = await terraformFiles();
+    const terraform = [...files.values()].join("\n");
+    const inputIds = new Set(records(definition.module.inputs).map((input) => input.id));
+    const variables = terraformVariables(definition.module);
+
+    assert.equal(files.has("sandbox_pool.tf"), false);
+    assert.equal(terraform.includes("ravion_sandbox_pool"), false);
+    assert.equal(terraform.includes('resource "aws_security_group" "sandbox_hosts"'), false);
+    // The router's way in to the hosts is a rule Ravion adds to the execution
+    // environment's security group while the router runs; the stack adds
+    // ingress rules to its own groups only.
+    for (const match of terraform.matchAll(/resource "aws_vpc_security_group_ingress_rule" "([a-z_]+)"/g)) {
+      assert.ok(["load_balancer", "router"].includes(match[1]), `unexpected ingress rule ${match[1]}`);
+    }
+    for (const name of ["host_subnet_id", "host_instance_types", "host_capacity_types", "host_reserve_policy", "max_hosts"]) {
+      assert.equal(terraform.includes(`variable "${name}"`), false, `unexpected variable ${name}`);
+      assert.equal(name in variables, false, `unexpected Terraform variable ${name}`);
+    }
+    for (const id of ["section_hosts", "host_instance_types", "host_capacity_types", "warm_hosts", "warm_host_count", "warm_host_window_days", "max_hosts"]) {
+      assert.equal(inputIds.has(id), false, `unexpected input ${id}`);
+    }
+  });
+
+  it("serves the apps under custom wildcard domains entered in the Domain section", async () => {
     const definition = await compileDefinitionFile(definitionPath);
     const inputs = records(definition.module.inputs);
     const variables = terraformVariables(definition.module);
+    const ids = inputs.map((input) => input.id);
+    const domains = findInput(inputs, "domains");
 
-    const instanceTypes = findInput(inputs, "host_instance_types");
-    assert.equal(instanceTypes.type, "object_array");
-    assert.deepEqual(instanceTypes.default, []);
-    assert.deepEqual(
-      records(instanceTypes.item_inputs).map((item) => [item.id, item.default]),
-      [
-        ["type", undefined],
-        ["disk_gib", 130],
-        ["disk_iops", 3000],
-        ["disk_throughput_mbps", 125],
-      ],
-    );
-    assert.equal(variables.host_instance_types, "<< module.input.host_instance_types || [] >>");
+    assert.ok(ids.indexOf("domains") > ids.indexOf("section_domain") && ids.indexOf("domains") < ids.indexOf("section_router"));
+    assert.equal(domains.label, "Custom domains");
+    assert.equal(domains.type, "string_array");
+    assert.equal(domains.placeholder, "*.apps.example.com");
+    assert.equal(domains.add_button_label, "Add custom domain");
+    // One certificate covers every custom domain, and it takes at most 10 names.
+    assert.equal(domains.max_length, 10);
+    assert.equal(domains.required, undefined);
+    assert.equal(variables.domains, "<< module.input.domains || [] >>");
 
-    const markets = findInput(inputs, "host_capacity_types");
-    assert.deepEqual(markets.default, ["ON_DEMAND"]);
-    assert.deepEqual(
-      records(markets.values).map((value) => value.value),
-      ["ON_DEMAND", "SPOT"],
-    );
-
-    const warmHosts = findInput(inputs, "warm_hosts");
-    assert.equal(warmHosts.default, "NONE");
-    assert.deepEqual(
-      records(warmHosts.values).map((value) => value.value),
-      ["NONE", "FIXED", "PEAK", "ROLLING_AVERAGE"],
-    );
-    assert.deepEqual(findInput(inputs, "warm_host_count").show_when, { warm_hosts: "FIXED" });
-    assert.deepEqual(findInput(inputs, "warm_host_window_days").show_when, { warm_hosts: ["PEAK", "ROLLING_AVERAGE"] });
-    assert.match(String(variables.host_reserve_policy), /^<< \{"type": module\.input\.warm_hosts \|\| "NONE", /);
-
-    assert.equal(findInput(inputs, "max_hosts").default, 10);
-    assert.equal(variables.max_hosts, "<< module.input.max_hosts >>");
+    const patterns = records(domains.patterns).map((pattern) => new RegExp(String(pattern.pattern)));
+    assert.ok(patterns.length > 0);
+    for (const accepted of ["*.apps.example.com", "*.example.com", "*.a-b.c0.example.org"]) {
+      assert.ok(
+        patterns.every((pattern) => pattern.test(accepted)),
+        `expected ${accepted} to be accepted`,
+      );
+    }
+    for (const refused of ["apps.example.com", "*.com", "*.apps.*.example.com", "*.-apps.example.com", "**.apps.example.com", "*.Apps.example.com", "*.apps.example.com."]) {
+      assert.ok(
+        patterns.some((pattern) => !pattern.test(refused)),
+        `expected ${refused} to be refused`,
+      );
+    }
   });
 
-  it("registers the sandbox pool with the attributes the provider's ravion_sandbox_pool resource takes", async () => {
-    const pool = (await terraformFiles()).get("sandbox_pool.tf") ?? "";
-    const block = pool.slice(pool.indexOf('resource "ravion_sandbox_pool" "this" {'));
-    const attributes = [...block.matchAll(/^ {2}([a-z_]+)\s+=/gm)].map((match) => match[1]);
+  it("needs only the ravion provider's released 0.0.3-rc.1 and the resources it has", async () => {
+    const files = await terraformFiles();
+    const versions = files.get("versions.tf") ?? "";
+    const terraform = [...files.values()].join("\n");
+    const lock = await readFile(resolve(modulePath, ".terraform.lock.hcl"), "utf8");
 
-    assert.deepEqual(attributes.sort(), [
-      "aws_account_id",
-      "capacity_types",
-      "instance_types",
-      "max_hosts",
-      "region",
-      "reserve_policy",
-      "security_group_id",
-      "subnet_id",
-      "vpc_id",
-    ]);
+    assert.match(versions, /source\s+=\s+"providers\.ravion\.com\/ravion\/ravion"/);
+    assert.match(versions, /version\s+=\s+"= 0\.0\.3-rc\.1"/);
+    assert.equal(/dev registry|DEV ONLY|siddharthsuresh/i.test(versions), false);
+
+    // The lock file pins the release with the registry's checksums, which a
+    // Ravion runner on linux_amd64 verifies.
+    const start = lock.indexOf('provider "providers.ravion.com/ravion/ravion" {');
+    assert.ok(start >= 0, "expected the ravion provider in the lock file");
+    const block = lock.slice(start, lock.indexOf("\n}\n", start));
+    assert.match(block, /version\s+=\s+"0\.0\.3-rc\.1"/);
+    assert.match(block, /constraints\s+=\s+"0\.0\.3-rc\.1"/);
+    assert.match(block, /"zh:[0-9a-f]{64}"/);
+
+    // ravion_aws_acm_certificate and ravion_domain are the release's
+    // resources; anything else would need a newer provider.
+    const ravionTypes = new Set([...terraform.matchAll(/(?:resource|data) "(ravion_[a-z_]+)"/g)].map((match) => match[1]));
+    assert.deepEqual([...ravionTypes].sort(), ["ravion_aws_acm_certificate", "ravion_domain"]);
   });
 
   it("leaves the router instance to Ravion: no launch template, Auto Scaling group, instance or image to choose", async () => {
@@ -390,7 +484,7 @@ describe("rvn-app-cluster module definition", () => {
     }
   });
 
-  it("charts the pool's host minutes from the series its hosts publish", async () => {
+  it("charts the execution environment's pool host minutes from the series its hosts publish", async () => {
     const definition = await compileDefinitionFile(definitionPath);
     const metrics = chartsIn(definition.module, "Ravion/SandboxHost");
 
@@ -404,7 +498,7 @@ describe("rvn-app-cluster module definition", () => {
       ],
     );
     for (const chart of metrics) {
-      assert.deepEqual(record(chart.source).dimensions, { ExecutionEnvironmentId: "<< module.output.execution_environment_id >>" });
+      assert.deepEqual(record(chart.source).dimensions, { ExecutionEnvironmentId: "<< module.input.execution_environment_id >>" });
     }
   });
 

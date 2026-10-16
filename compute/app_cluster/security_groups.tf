@@ -61,9 +61,15 @@ resource "aws_vpc_security_group_egress_rule" "load_balancer" {
 #
 # Ravion launches the router instance in this group. In, only the load
 # balancer reaches the router, on the router's three ports; no CIDR does. Out,
-# the router reaches HTTPS (the Ravion API, AWS APIs) and the app port range
-# on the sandbox hosts, so a router cannot be turned against anything else in
-# the network.
+# the router reaches HTTPS (the Ravion API, AWS APIs) and, inside the VPC, the
+# app port range the sandbox hosts serve the apps on, so a router cannot be
+# turned against anything else in the network.
+#
+# The hosts are the execution environment's, in its security group. While the
+# router runs, Ravion adds the rule there that admits this group on the app
+# port range, and removes it when the router stops, before a destroy of this
+# stack: no rule outside the stack ever names the router's group when
+# Terraform deletes it.
 ################################################################################
 
 resource "aws_security_group" "router" {
@@ -113,63 +119,17 @@ resource "aws_vpc_security_group_egress_rule" "router_https" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "router_to_sandbox_hosts" {
-  security_group_id = aws_security_group.router.id
-  description       = "Allow app ports on the sandbox hosts"
+  for_each = local.vpc_cidr_blocks
 
-  ip_protocol                  = "tcp"
-  from_port                    = local.app_port_range.from
-  to_port                      = local.app_port_range.to
-  referenced_security_group_id = aws_security_group.sandbox_hosts.id
+  security_group_id = aws_security_group.router.id
+  description       = "Allow app ports on the sandbox hosts in ${each.value}"
+
+  ip_protocol = "tcp"
+  from_port   = local.app_port_range.from
+  to_port     = local.app_port_range.to
+  cidr_ipv4   = each.value
 
   tags = merge(local.tags, {
     Name = "${local.router_name}-egress-apps"
-  })
-}
-
-################################################################################
-# Sandbox Hosts Security Group
-#
-# Ravion launches the cluster's sandbox hosts in this group (sandbox_pool.tf).
-# In, only the router reaches them, on the app port range. Out, the hosts
-# reach any IPv4 address: they dial Ravion, pull images and packages, and run
-# the apps, which call whatever they call.
-#
-# The router's rule belongs to this stack, so a destroy removes it with the
-# groups instead of leaving a rule that names the router's group behind.
-################################################################################
-
-resource "aws_security_group" "sandbox_hosts" {
-  name        = local.hosts_name
-  description = "App Cluster sandbox hosts for ${var.name}"
-  vpc_id      = var.vpc_id
-
-  tags = merge(local.tags, {
-    Name = local.hosts_name
-  })
-}
-
-resource "aws_vpc_security_group_ingress_rule" "sandbox_hosts_from_router" {
-  security_group_id = aws_security_group.sandbox_hosts.id
-  description       = "ravion app router to sandbox hosts"
-
-  ip_protocol                  = "tcp"
-  from_port                    = local.app_port_range.from
-  to_port                      = local.app_port_range.to
-  referenced_security_group_id = aws_security_group.router.id
-
-  tags = merge(local.tags, {
-    Name = "${local.hosts_name}-from-router"
-  })
-}
-
-resource "aws_vpc_security_group_egress_rule" "sandbox_hosts" {
-  security_group_id = aws_security_group.sandbox_hosts.id
-  description       = "Allow all outbound IPv4 traffic"
-
-  ip_protocol = "-1"
-  cidr_ipv4   = "0.0.0.0/0"
-
-  tags = merge(local.tags, {
-    Name = "${local.hosts_name}-egress"
   })
 }

@@ -1,8 +1,8 @@
 # App Cluster Module
 
-This module creates what the apps of an App Cluster run on and are served through: a sandbox pool whose hosts run each app in its own sandbox, and an internet-facing Network Load Balancer with a Ravion-managed wildcard domain and certificate, in front of a router that forwards each app hostname to its sandbox and wakes a paused app when a request arrives for it.
+This module creates the entry point of an App Cluster: an internet-facing Network Load Balancer with a Ravion-managed wildcard domain and certificate, and any custom wildcard domains, in front of a router that forwards each app hostname to its sandbox and wakes a paused app when a request arrives for it.
 
-Ravion runs the router instance and the sandbox hosts. This module creates everything they run in: the security groups, the router's IAM role and instance profile, the load balancer and its target groups, and the pool's registration. Requests travel from the browser to the load balancer, to the router, to the sandbox host, all inside your AWS account.
+The apps run in sandboxes on the sandbox pool of an existing execution environment in the same VPC, chosen in the module definition, not in this Terraform. Ravion runs the router instance and the pool's hosts. This module creates what the router runs in: its security group, IAM role and instance profile, and the load balancer and its target groups. Requests travel from the browser to the load balancer, to the router, to the sandbox host, all inside your AWS account.
 
 ## What Terraform creates
 
@@ -14,11 +14,10 @@ Ravion runs the router instance and the sandbox hosts. This module creates every
 | Two target groups | Instance targets with the client address preserved and a 30 second deregistration delay, health checked over HTTP on `/healthz`, port 8082. Ravion registers the router instance in both |
 | Wildcard certificate and DNS record | `*.<name>.<apex>` on Ravion's managed apex, where the name is `ravion_domain_name` or, when that is unset, the module instance given id, issued through the `ravion_aws_acm_certificate` resource and pointed at the load balancer |
 | Custom domain certificate and domains | One certificate for every entry of `domains`, attached to the TLS listener beside the wildcard certificate, and one `ravion_domain` per entry pointed at the load balancer. Created only with `domains` |
-| Three security groups | One for the load balancer, one for the router, one for the sandbox hosts |
+| Two security groups | One for the load balancer, one for the router |
 | Router IAM role and instance profile | Lets the router publish its metrics to CloudWatch in the `Ravion/AppRouter` namespace. With `ssm_enabled`, also Session Manager access for operators. Ravion launches the router with the instance profile |
-| Sandbox pool | A `ravion_sandbox_pool`: the execution environment whose sandbox pool runs the apps, in `host_subnet_id` and the sandbox hosts' security group |
 
-The module creates no router instance, launch template or Auto Scaling group. Ravion launches the router in `router_subnet_ids` with the router's security group and instance profile, registers it in both target groups once it holds its routes, and replaces it the same way: the new router is registered before the old one is drained and terminated.
+The module creates no sandbox pool, hosts or hosts' security group: those are the execution environment's. It creates no router instance, launch template or Auto Scaling group either. Ravion launches the router in `router_subnet_ids` with the router's security group and instance profile, registers it in both target groups once it holds its routes, and replaces it the same way: the new router is registered before the old one is drained and terminated.
 
 ## Usage
 
@@ -35,7 +34,6 @@ module "app_cluster" {
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
   router_subnet_ids = module.vpc.private_subnet_ids
-  host_subnet_id    = module.vpc.private_subnet_ids[0]
 
   tags = {
     Environment = "staging"
@@ -43,7 +41,7 @@ module "app_cluster" {
 }
 ```
 
-Choose the hosts and keep one parked and ready:
+Serve the apps under custom wildcard domains as well:
 
 ```hcl
 module "app_cluster" {
@@ -55,44 +53,33 @@ module "app_cluster" {
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
   router_subnet_ids = module.vpc.private_subnet_ids
-  host_subnet_id    = module.vpc.private_subnet_ids[0]
 
-  host_instance_types = [
-    { type = "c8id.4xlarge" },
-    { type = "m8id.4xlarge", disk_gib = 200 },
-  ]
-  host_capacity_types = ["ON_DEMAND", "SPOT"]
-  host_reserve_policy = { type = "FIXED", value = 1 }
-  max_hosts           = 20
+  domains = ["*.apps.example.com"]
 }
 ```
 
 Outside a Ravion pipeline, set `module_instance_id` as above and export `RAVION_BASE_URL` and `RAVION_API_KEY` for the `ravion` provider before applying.
 
-## The sandbox pool
+## The execution environment
 
-`ravion_sandbox_pool` registers an execution environment with a sandbox pool, owned by this module instance. Ravion then sets up the pool's host role, chunk store and launch templates, and launches hosts in `host_subnet_id` and the sandbox hosts' security group when apps need room. The `execution_environment_id` output is its id.
+The apps run on the sandbox pool of an existing execution environment, the module definition's `execution_environment_id` input. It must be an AWS execution environment in the module's AWS account, region and VPC, with a sandbox pool. The pool's settings (instance types, markets, warm hosts, max hosts) are the execution environment's. This Terraform does not read it: the module definition hands it to Ravion in the `apps` block.
 
-| Setting | Variable | Default |
-| --- | --- | --- |
-| Instance types, each with its root volume size, IOPS and throughput | `host_instance_types` | Empty: Ravion chooses from the region's c8id, m8id, r8id, i7i and i7ie types that support nested virtualization |
-| Markets | `host_capacity_types` | `["ON_DEMAND"]`. `ON_DEMAND` is required; `SPOT` adds Spot hosts |
-| Hosts kept parked and ready | `host_reserve_policy` | `NONE`. `FIXED` keeps `value` hosts; `PEAK` and `ROLLING_AVERAGE` follow the last `window_days` of use |
-| Most hosts at once, parked included | `max_hosts` | `10` |
+## Custom domains
 
-Ravion refuses to delete the pool while it runs sandboxes, so destroying a cluster that still has apps fails. Delete the apps first. Once the pool is deleted, the destroy waits, up to 30 minutes, until Ravion has terminated the pool's hosts, so the hosts' security group and subnet are not removed from under them.
+Each entry of `domains` is a wildcard, `*.<domain>`, in a DNS zone you control, at most 10 and each at most 191 characters without its `*.`. One certificate covers all of them and is attached to the TLS listener beside the wildcard certificate, which stays the listener's default; each entry also gets a `ravion_domain` that points it at the load balancer. Add the validation and routing records Ravion provides at your DNS provider. Every app is then also served one label below each entry: `<app>.<domain>` and `<app>-<port name>.<domain>`. Entries under Ravion's managed apex are refused.
+
+An app's own domains, from its `ravion-app.yaml`, are not in this Terraform: Ravion requests their certificates on the TLS listener, `tls_listener_arn`, and points them at the load balancer.
 
 ## Security groups
 
 | Group | Inbound | Outbound |
 | --- | --- | --- |
 | Load balancer | TCP 443 and 80 from `ingress_cidr_blocks` | TCP 8080, 8081 and 8082 to the router's group |
-| Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20999 to the sandbox hosts' group |
-| Sandbox hosts | TCP 20000-20999 from the router's group | Any IPv4 address |
+| Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20999 to each IPv4 range of the VPC |
 
-No CIDR reaches the router or the hosts. The router's outbound HTTPS serves the Ravion API and AWS APIs; a Ravion API on a port other than 443 adds that port. Ports 20000-20999 are where sandbox hosts serve the apps' ports, the last one being the hosts' own health port, and the router can open no other connection inside the VPC.
+No CIDR reaches the router. The router's outbound HTTPS serves the Ravion API and AWS APIs; a Ravion API on a port other than 443 adds that port. Ports 20000-20999 are where sandbox hosts serve the apps' ports, the last one being the hosts' own health port, and the router can open no other connection inside the VPC. The VPC's ranges are read with the `aws_vpc` data source: the primary range and every range associated with it.
 
-The sandbox hosts' rule that admits the router (`ravion app router to sandbox hosts`) belongs to this module, so a destroy removes it with both groups. To let the apps reach a database or another service, allow the `host_security_group_id` output in that resource's security group.
+The hosts are the execution environment's, in its security group. While the router runs, Ravion adds the rule there that admits the router's group on TCP 20000-20999 (`ravion app router <module instance id>`), and removes it when the router stops. A destroy of the cluster stops the router first, so Terraform never deletes the router's group while a rule outside this stack names it. To let the apps reach a database or another service, allow the execution environment's security group in that resource's security group.
 
 ## Session Manager
 
@@ -123,7 +110,7 @@ Every datum carries the `Router` dimension, the cluster's module instance id, al
 
 The router instance's metrics carry the `Router` dimension alone. While Ravion replaces the router, both instances publish under the same `Router`, so the charts show the higher of their CPU and memory shares (`Maximum`) and the sum of their bytes.
 
-The module's definition charts these on the Metrics tab beside the load balancer's `AWS/NetworkELB` metrics and the pool's host minutes from the `BusyHosts` series its hosts publish in `Ravion/SandboxHost`.
+The module's definition charts these on the Metrics tab beside the load balancer's `AWS/NetworkELB` metrics and the execution environment's pool host minutes from the `BusyHosts` series its hosts publish in `Ravion/SandboxHost`.
 
 ## Requirements
 
@@ -131,7 +118,7 @@ The module's definition charts these on the Metrics tab beside the load balancer
 |------|---------|
 | opentofu/terraform | >= 1.10.0 |
 | aws | >= 6.0 |
-| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.4-rc.1, the first release with the `ravion_sandbox_pool` resource, configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
+| ravion (`providers.ravion.com/ravion/ravion`) | = 0.0.3-rc.1, configured from `RAVION_BASE_URL` / `RAVION_API_KEY` |
 
 ## Inputs
 
@@ -139,22 +126,17 @@ The module's definition charts these on the Metrics tab beside the load balancer
 |------|-------------|------|---------|:--------:|
 | name | Name of the load balancer and the prefix of every other resource (1-32 characters) | `string` | n/a | yes |
 | module_instance_id | Ravion module instance id (`minst_*`) of this App Cluster. Injected as `TF_VAR_module_instance_id` inside a stack run | `string` | n/a | yes |
-| vpc_id | VPC of the load balancer, the router and the sandbox hosts | `string` | n/a | yes |
+| vpc_id | VPC of the load balancer and the router. The router reaches TCP 20000-20999 in each of its IPv4 ranges | `string` | n/a | yes |
 | public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
 | router_subnet_ids | Subnets Ravion may launch the router in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
-| host_subnet_id | Subnet Ravion launches the sandbox hosts in. The hosts need outbound internet access | `string` | n/a | yes |
-| host_instance_types | Instance types the pool may launch, each `{ type, disk_gib = 130, disk_iops = 3000, disk_throughput_mbps = 125 }`. Empty lets Ravion choose | `list(object)` | `[]` | no |
-| host_capacity_types | Markets the pool buys hosts in: `ON_DEMAND`, and `SPOT` | `list(string)` | `["ON_DEMAND"]` | no |
-| host_reserve_policy | Hosts kept parked and ready: `{ type = NONE \| FIXED \| PEAK \| ROLLING_AVERAGE, window_days = 7, value = 0 }` | `object` | `{ type = "NONE" }` | no |
-| max_hosts | Most hosts the pool runs at once, parked hosts included (1-100) | `number` | `10` | no |
 | ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
 | ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
 | ssm_enabled | Add Session Manager access to the router's role | `bool` | `true` | no |
 | ravion_api_url | Origin of the Ravion API. A port other than 443 is added to the router's outbound rules. Injected as `TF_VAR_ravion_api_url` inside a stack run | `string` | `null` | no |
 | ravion_domain_name | Name leaf of the wildcard domain: Ravion issues `*.<name>.<apex>`. Null uses the module instance given id | `string` | `null` | no |
 | module_instance_given_id | The module instance's given id, the default leaf of the wildcard domain. Injected as `TF_VAR_module_instance_given_id` inside a stack run | `string` | `null` | no |
-| domains | Custom wildcard domains attached to the load balancer, each `*.<domain>` in a DNS zone you control. At most 10 | `list(string)` | `[]` | no |
-| ravion_aws_account_id | Ravion AWS account record id the certificate is issued in and the pool runs in. Null detects it from the run's AWS credentials | `string` | `null` | no |
+| domains | Custom wildcard domains attached to the load balancer, each `*.<domain>` in a DNS zone you control and at most 191 characters without its `*.`. Apps are also served one label below each. At most 10 | `list(string)` | `[]` | no |
+| ravion_aws_account_id | Ravion AWS account record id the certificates are issued in. Null detects it from the run's AWS credentials | `string` | `null` | no |
 | region | AWS region. Null uses the provider's region | `string` | `null` | no |
 | tags | Tags to assign to all resources | `map(string)` | `{}` | no |
 
@@ -162,14 +144,14 @@ The module's definition charts these on the Metrics tab beside the load balancer
 
 | Name | Description |
 |------|-------------|
-| execution_environment_id | The execution environment (`ee_*`) whose sandbox pool runs the apps |
 | wildcard_domain_name | The apex apps are served under, without `*.` |
+| custom_domain_apexes | The custom wildcard domains without their `*.`, in the order given; apps are also served one label below each |
+| tls_listener_arn | ARN of the TLS listener, where Ravion attaches the certificate of each app's own domains |
 | router_subnet_ids | The subnets Ravion may launch the router in |
 | router_security_group_id | ID of the router's security group |
 | router_instance_profile_name | Name of the router's instance profile; its role has the same name |
 | traffic_target_group_arn | ARN of the target group the TLS listener forwards to |
 | redirect_target_group_arn | ARN of the target group the HTTP listener forwards to |
-| host_security_group_id | ID of the sandbox hosts' security group |
 | certificate_arn | ARN of the wildcard certificate on the TLS listener |
 | custom_domain_names | The custom wildcard domains attached to the load balancer |
 | custom_certificate_arn | ARN of the certificate that covers the custom domains. Null when there are none |
@@ -182,14 +164,13 @@ The module's definition charts these on the Metrics tab beside the load balancer
 | aws_account_id | AWS account ID where the resources are deployed |
 | region | AWS region where the resources are deployed |
 
-The module definition's `apps` block hands `execution_environment_id`, `wildcard_domain_name`, the `router_*` outputs and the two target group ARNs to Ravion.
+The module definition's `apps` block hands `wildcard_domain_name`, `custom_domain_apexes`, `tls_listener_arn`, the load balancer's DNS name and zone, the `router_*` outputs, the two target group ARNs and `region` to Ravion, beside the execution environment, AWS account and VPC from its inputs.
 
 ## Limits
 
 - One router at a time, apart from the overlap while Ravion replaces it.
 - IPv4 only, and an internet-facing load balancer only.
 - HTTP/1.1 between the load balancer and the router. WebSocket upgrades pass through.
-- The sandbox hosts launch in one subnet.
 - The load balancer writes no access logs.
 
 ## Testing

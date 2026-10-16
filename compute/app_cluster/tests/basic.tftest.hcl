@@ -24,6 +24,19 @@ mock_provider "aws" {
     }
   }
 
+  # A VPC with a secondary range, and a range being removed from it.
+  override_data {
+    target = data.aws_vpc.this
+    values = {
+      cidr_block = "10.0.0.0/16"
+      cidr_block_associations = [
+        { association_id = "vpc-cidr-assoc-0a", cidr_block = "10.0.0.0/16", state = "associated" },
+        { association_id = "vpc-cidr-assoc-0b", cidr_block = "10.1.0.0/16", state = "associated" },
+        { association_id = "vpc-cidr-assoc-0c", cidr_block = "10.2.0.0/16", state = "disassociating" },
+      ]
+    }
+  }
+
   override_resource {
     target = aws_lb.this
     values = {
@@ -64,9 +77,9 @@ mock_provider "aws" {
   }
 
   override_resource {
-    target = aws_security_group.sandbox_hosts
+    target = aws_lb_listener.tls
     values = {
-      id = "sg-0cccccccccccccccc"
+      arn = "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/net/apps/1234567890123456/3333333333333333"
     }
   }
 
@@ -88,13 +101,6 @@ mock_provider "ravion" {
       status      = "ISSUED"
     }
   }
-
-  override_resource {
-    target = ravion_sandbox_pool.this
-    values = {
-      id = "ee_test"
-    }
-  }
 }
 
 variables {
@@ -107,7 +113,6 @@ variables {
   vpc_id                = "vpc-12345678"
   public_subnet_ids     = ["subnet-0a", "subnet-0b"]
   router_subnet_ids     = ["subnet-1a", "subnet-1b"]
-  host_subnet_id        = "subnet-1a"
 }
 
 run "load_balancer_terminates_tls_with_the_wildcard_certificate" {
@@ -280,6 +285,11 @@ run "custom_domains_share_one_certificate_on_the_tls_listener" {
     condition     = output.custom_domain_names == tolist(["*.apps.example.com", "*.dev.example.org"])
     error_message = "custom_domain_names must list the custom domains as given"
   }
+
+  assert {
+    condition     = tolist(output.custom_domain_apexes) == tolist(["apps.example.com", "dev.example.org"])
+    error_message = "custom_domain_apexes must list each custom domain without its *., in the order given: apps are served one label below each"
+  }
 }
 
 run "each_custom_domain_points_at_the_load_balancer" {
@@ -313,6 +323,11 @@ run "custom_domains_are_normalized" {
   assert {
     condition     = ravion_aws_acm_certificate.custom[0].domains == toset(["*.apps.example.com"]) && toset(keys(ravion_domain.custom)) == toset(["*.apps.example.com"])
     error_message = "Custom domains must be lowercased, trimmed of whitespace and a trailing dot, and listed once; blank entries must be dropped"
+  }
+
+  assert {
+    condition     = tolist(output.custom_domain_apexes) == tolist(["apps.example.com"])
+    error_message = "custom_domain_apexes must hold the normalized custom domains"
   }
 }
 
@@ -399,13 +414,42 @@ run "router_reaches_the_control_plane_and_the_app_port_range_only" {
   }
 
   assert {
-    condition     = aws_vpc_security_group_egress_rule.router_to_sandbox_hosts.security_group_id == "sg-0bbbbbbbbbbbbbbbb" && aws_vpc_security_group_egress_rule.router_to_sandbox_hosts.referenced_security_group_id == "sg-0cccccccccccccccc" && aws_vpc_security_group_egress_rule.router_to_sandbox_hosts.cidr_ipv4 == null
-    error_message = "Inside the VPC the router must reach the sandbox hosts' security group only"
+    condition     = toset(keys(aws_vpc_security_group_egress_rule.router_to_sandbox_hosts)) == toset(["10.0.0.0/16", "10.1.0.0/16"])
+    error_message = "The router must reach the app port range in every address range associated with the VPC, where the execution environment's hosts run, and in no range being removed"
   }
 
   assert {
-    condition     = aws_vpc_security_group_egress_rule.router_to_sandbox_hosts.ip_protocol == "tcp" && aws_vpc_security_group_egress_rule.router_to_sandbox_hosts.from_port == 20000 && aws_vpc_security_group_egress_rule.router_to_sandbox_hosts.to_port == 20999
-    error_message = "The router must reach the sandbox hosts on TCP 20000-20999, the ports hosts serve apps and their health check on"
+    condition = alltrue([
+      for cidr, rule in aws_vpc_security_group_egress_rule.router_to_sandbox_hosts :
+      rule.security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == cidr && rule.referenced_security_group_id == null && rule.ip_protocol == "tcp" && rule.from_port == 20000 && rule.to_port == 20999
+    ])
+    error_message = "Inside the VPC the router must reach TCP 20000-20999, the ports sandbox hosts serve apps and their health check on, and nothing else"
+  }
+}
+
+run "router_reaches_a_vpc_with_one_range" {
+  command = plan
+
+  override_data {
+    target = data.aws_vpc.this
+    values = {
+      cidr_block              = "172.31.0.0/16"
+      cidr_block_associations = []
+    }
+  }
+
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_egress_rule.router_to_sandbox_hosts)) == toset(["172.31.0.0/16"])
+    error_message = "The router must reach the VPC's primary range"
+  }
+}
+
+run "router_reaches_the_vpc_it_runs_in" {
+  command = plan
+
+  assert {
+    condition     = data.aws_vpc.this.id == "vpc-12345678"
+    error_message = "The router's ranges must be the cluster's VPC's"
   }
 }
 
@@ -437,116 +481,6 @@ run "no_control_plane_url_opens_https_only" {
   assert {
     condition     = toset(keys(aws_vpc_security_group_egress_rule.router_https)) == toset(["443"])
     error_message = "Without a control plane URL the router must reach port 443 alone"
-  }
-}
-
-run "sandbox_hosts_admit_the_router_on_the_app_port_range_only" {
-  command = plan
-
-  assert {
-    condition     = aws_security_group.sandbox_hosts.vpc_id == "vpc-12345678" && aws_security_group.sandbox_hosts.name == "apps-hosts"
-    error_message = "The sandbox hosts' security group must be in the cluster's VPC"
-  }
-
-  assert {
-    condition     = aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.security_group_id == "sg-0cccccccccccccccc" && aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.referenced_security_group_id == "sg-0bbbbbbbbbbbbbbbb"
-    error_message = "The sandbox hosts' rule must sit on the hosts' group and name the router's security group as its source"
-  }
-
-  assert {
-    condition     = aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.cidr_ipv4 == null && aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.cidr_ipv6 == null && aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.prefix_list_id == null
-    error_message = "No CIDR or prefix list may reach the sandbox hosts"
-  }
-
-  assert {
-    condition     = aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.ip_protocol == "tcp" && aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.from_port == 20000 && aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.to_port == 20999
-    error_message = "Sandbox hosts must admit the router on TCP 20000-20999 and nothing else"
-  }
-
-  assert {
-    condition     = aws_vpc_security_group_ingress_rule.sandbox_hosts_from_router.description == "ravion app router to sandbox hosts"
-    error_message = "The router's rule on the sandbox hosts must be described as the ravion app router's"
-  }
-}
-
-run "sandbox_hosts_reach_any_ipv4_address" {
-  command = plan
-
-  assert {
-    condition     = aws_vpc_security_group_egress_rule.sandbox_hosts.security_group_id == "sg-0cccccccccccccccc" && aws_vpc_security_group_egress_rule.sandbox_hosts.ip_protocol == "-1" && aws_vpc_security_group_egress_rule.sandbox_hosts.cidr_ipv4 == "0.0.0.0/0"
-    error_message = "Sandbox hosts must reach Ravion, registries and whatever their apps call"
-  }
-}
-
-run "sandbox_pool_runs_in_the_hosts_subnet_and_security_group" {
-  command = plan
-
-  assert {
-    condition     = ravion_sandbox_pool.this.vpc_id == "vpc-12345678" && ravion_sandbox_pool.this.subnet_id == "subnet-1a" && ravion_sandbox_pool.this.security_group_id == "sg-0cccccccccccccccc"
-    error_message = "The pool must launch its hosts in the host subnet and the sandbox hosts' security group"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.aws_account_id == "aws_testaccount" && ravion_sandbox_pool.this.region == "us-east-2"
-    error_message = "The pool must run in the cluster's account and region"
-  }
-}
-
-run "sandbox_pool_defaults_to_ravions_choice_on_demand_and_no_warm_hosts" {
-  command = plan
-
-  assert {
-    condition     = length(ravion_sandbox_pool.this.instance_types) == 0
-    error_message = "With no instance types the pool must let Ravion choose"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.capacity_types == tolist(["ON_DEMAND"])
-    error_message = "The pool must buy on-demand hosts only by default"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.reserve_policy.type == "NONE" && ravion_sandbox_pool.this.reserve_policy.window_days == 7 && ravion_sandbox_pool.this.reserve_policy.value == 0
-    error_message = "The pool must keep no warm host by default"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.max_hosts == 10
-    error_message = "The pool must run at most 10 hosts by default"
-  }
-}
-
-run "sandbox_pool_takes_its_settings_as_given" {
-  command = plan
-
-  variables {
-    host_instance_types = [
-      { type = "c8id.4xlarge" },
-      { type = "m8i.4xlarge", disk_gib = 200, disk_iops = 6000, disk_throughput_mbps = 250 },
-    ]
-    host_capacity_types = ["ON_DEMAND", "SPOT"]
-    host_reserve_policy = { type = "FIXED", value = 2 }
-    max_hosts           = 25
-  }
-
-  assert {
-    condition     = length(ravion_sandbox_pool.this.instance_types) == 2 && ravion_sandbox_pool.this.instance_types[0].type == "c8id.4xlarge" && ravion_sandbox_pool.this.instance_types[1].type == "m8i.4xlarge"
-    error_message = "The pool must take the instance types in the order given"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.instance_types[0].disk_gib == 130 && ravion_sandbox_pool.this.instance_types[0].disk_iops == 3000 && ravion_sandbox_pool.this.instance_types[0].disk_throughput_mbps == 125
-    error_message = "An instance type without disk settings must get Ravion's default root volume: 130 GiB at gp3 baseline"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.instance_types[1].disk_gib == 200 && ravion_sandbox_pool.this.instance_types[1].disk_iops == 6000 && ravion_sandbox_pool.this.instance_types[1].disk_throughput_mbps == 250
-    error_message = "An instance type's disk settings must be used as given"
-  }
-
-  assert {
-    condition     = ravion_sandbox_pool.this.capacity_types == tolist(["ON_DEMAND", "SPOT"]) && ravion_sandbox_pool.this.reserve_policy.type == "FIXED" && ravion_sandbox_pool.this.reserve_policy.value == 2 && ravion_sandbox_pool.this.max_hosts == 25
-    error_message = "The pool's markets, warm hosts and host cap must be used as given"
   }
 }
 
@@ -610,11 +544,6 @@ run "outputs_feed_the_apps_block" {
   command = plan
 
   assert {
-    condition     = output.execution_environment_id == "ee_test"
-    error_message = "execution_environment_id must be the sandbox pool's execution environment"
-  }
-
-  assert {
     condition     = output.wildcard_domain_name == "apps.example-apex.test"
     error_message = "wildcard_domain_name must be the certificate's apex, without *."
   }
@@ -640,8 +569,13 @@ run "outputs_feed_the_apps_block" {
   }
 
   assert {
-    condition     = output.host_security_group_id == "sg-0cccccccccccccccc"
-    error_message = "host_security_group_id must be the sandbox hosts' security group"
+    condition     = output.tls_listener_arn == "arn:aws:elasticloadbalancing:us-east-2:123456789012:listener/net/apps/1234567890123456/3333333333333333"
+    error_message = "tls_listener_arn must be the TLS listener, where Ravion attaches the certificates of apps' own domains"
+  }
+
+  assert {
+    condition     = length(output.custom_domain_apexes) == 0
+    error_message = "With no custom domains the apps are served under no custom apex"
   }
 }
 

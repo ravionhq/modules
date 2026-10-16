@@ -30,7 +30,7 @@ variable "region" {
 
 variable "module_instance_id" {
   type        = string
-  description = "The Ravion module instance id (minst_*) of this App Cluster. The wildcard certificate and custom domains are allocated to it, and it owns the sandbox pool. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external runs."
+  description = "The Ravion module instance id (minst_*) of this App Cluster. The wildcard certificate and custom domains are allocated to it. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external runs."
 
   validation {
     condition     = can(regex("^minst_[0-9A-Za-z]+$", var.module_instance_id))
@@ -40,7 +40,7 @@ variable "module_instance_id" {
 
 variable "ravion_aws_account_id" {
   type        = string
-  description = "Ravion AWS account record id the wildcard certificate is issued in and the sandbox pool runs in. When null, it is detected from the AWS credentials of the run."
+  description = "Ravion AWS account record id the certificates are issued in. When null, it is detected from the AWS credentials of the run."
   default     = null
 }
 
@@ -78,7 +78,7 @@ variable "module_instance_given_id" {
 
 variable "domains" {
   type        = list(string)
-  description = "Custom wildcard domains attached to the load balancer beside the Ravion wildcard domain. Each entry is *.<domain> in a DNS zone you control. Ravion issues one certificate for all entries and attaches it to the TLS listener; add the DNS records it provides at your DNS provider."
+  description = "Custom wildcard domains attached to the load balancer beside the Ravion wildcard domain. Each entry is *.<domain> in a DNS zone you control, and every app is also served one label below it. Ravion issues one certificate for all entries and attaches it to the TLS listener; add the DNS records it provides at your DNS provider."
   default     = []
 
   validation {
@@ -94,6 +94,16 @@ variable "domains" {
     condition     = length(var.domains) <= 10
     error_message = "The domains list holds at most 10 entries: they share one certificate."
   }
+
+  # The longest app hostname below a custom domain, <app>-<port name>.<domain>,
+  # adds 62 characters to it, and a domain name holds at most 253.
+  validation {
+    condition = alltrue([
+      for domain in var.domains :
+      length(trimprefix(lower(trimsuffix(trimspace(domain), ".")), "*.")) <= 191
+    ])
+    error_message = "Each entry of domains must be at most 191 characters long without its *., so that every app hostname below it is a valid domain name."
+  }
 }
 
 ################################################################################
@@ -102,7 +112,7 @@ variable "domains" {
 
 variable "vpc_id" {
   type        = string
-  description = "The VPC the load balancer, the router and the sandbox hosts run in."
+  description = "The VPC the load balancer and the router run in. The router reaches the app port range, 20000-20999, in every IPv4 range of the VPC, where the execution environment's sandbox hosts run."
 
   validation {
     condition     = can(regex("^vpc-", var.vpc_id))
@@ -127,16 +137,6 @@ variable "router_subnet_ids" {
   validation {
     condition     = length(var.router_subnet_ids) >= 1 && alltrue([for subnet in var.router_subnet_ids : can(regex("^subnet-", subnet))])
     error_message = "The router_subnet_ids must hold at least one subnet ID starting with 'subnet-'."
-  }
-}
-
-variable "host_subnet_id" {
-  type        = string
-  description = "Subnet Ravion launches the sandbox hosts in. Use a private subnet with a NAT gateway: hosts need outbound internet access."
-
-  validation {
-    condition     = can(regex("^subnet-", var.host_subnet_id))
-    error_message = "The host_subnet_id must be a subnet ID starting with 'subnet-'."
   }
 }
 
@@ -170,98 +170,4 @@ variable "ssm_enabled" {
   type        = bool
   description = "Add AWS Systems Manager Session Manager access to the router's IAM role, for operator shell access. When false the role holds only the permission to publish the router's metrics."
   default     = true
-}
-
-################################################################################
-# Sandbox hosts
-################################################################################
-
-variable "host_instance_types" {
-  type = list(object({
-    type                 = string
-    disk_gib             = optional(number, 130)
-    disk_iops            = optional(number, 3000)
-    disk_throughput_mbps = optional(number, 125)
-  }))
-  description = "EC2 instance types the sandbox pool may launch, each with its root volume's size in GiB, provisioned IOPS and throughput in MB/s. Each type must support nested virtualization. Empty lets Ravion choose from the region's c8id, m8id, r8id, i7i and i7ie types."
-  default     = []
-
-  validation {
-    condition     = alltrue([for instance_type in var.host_instance_types : can(regex("^[a-z0-9-]+\\.[a-z0-9]+$", instance_type.type))])
-    error_message = "Every type in host_instance_types must be an EC2 instance type such as c8id.4xlarge."
-  }
-
-  validation {
-    condition     = length(distinct([for instance_type in var.host_instance_types : instance_type.type])) == length(var.host_instance_types)
-    error_message = "Each type in host_instance_types must be listed once."
-  }
-
-  validation {
-    condition     = alltrue([for instance_type in var.host_instance_types : instance_type.disk_gib >= 30 && instance_type.disk_gib <= 16384 && floor(instance_type.disk_gib) == instance_type.disk_gib])
-    error_message = "Every disk_gib in host_instance_types must be a whole number from 30 to 16384."
-  }
-
-  validation {
-    condition     = alltrue([for instance_type in var.host_instance_types : instance_type.disk_iops >= 3000 && instance_type.disk_iops <= 16000 && floor(instance_type.disk_iops) == instance_type.disk_iops])
-    error_message = "Every disk_iops in host_instance_types must be a whole number from 3000 to 16000."
-  }
-
-  validation {
-    condition     = alltrue([for instance_type in var.host_instance_types : instance_type.disk_throughput_mbps >= 125 && instance_type.disk_throughput_mbps <= 1000 && floor(instance_type.disk_throughput_mbps) == instance_type.disk_throughput_mbps])
-    error_message = "Every disk_throughput_mbps in host_instance_types must be a whole number from 125 to 1000."
-  }
-}
-
-variable "host_capacity_types" {
-  type        = list(string)
-  description = "The markets the sandbox pool buys hosts in: ON_DEMAND, and SPOT to also place interruptible sandboxes on Spot hosts, which AWS can reclaim with two minutes' notice."
-  default     = ["ON_DEMAND"]
-
-  validation {
-    condition     = contains(var.host_capacity_types, "ON_DEMAND")
-    error_message = "The host_capacity_types must include ON_DEMAND."
-  }
-
-  validation {
-    condition     = alltrue([for capacity_type in var.host_capacity_types : contains(["ON_DEMAND", "SPOT"], capacity_type)]) && length(distinct(var.host_capacity_types)) == length(var.host_capacity_types)
-    error_message = "The host_capacity_types may hold ON_DEMAND and SPOT, each once."
-  }
-}
-
-variable "host_reserve_policy" {
-  type = object({
-    type        = string
-    window_days = optional(number, 7)
-    value       = optional(number, 0)
-  })
-  description = "How many hosts the sandbox pool keeps parked and ready. NONE keeps none, so a deploy after a quiet period waits for a host to launch. FIXED keeps value hosts. PEAK keeps as many as the busiest minute of the last window_days used, and ROLLING_AVERAGE the mean of their daily peaks."
-  default = {
-    type = "NONE"
-  }
-
-  validation {
-    condition     = contains(["NONE", "FIXED", "PEAK", "ROLLING_AVERAGE"], var.host_reserve_policy.type)
-    error_message = "The host_reserve_policy type must be NONE, FIXED, PEAK or ROLLING_AVERAGE."
-  }
-
-  validation {
-    condition     = var.host_reserve_policy.window_days >= 1 && var.host_reserve_policy.window_days <= 90 && floor(var.host_reserve_policy.window_days) == var.host_reserve_policy.window_days
-    error_message = "The host_reserve_policy window_days must be a whole number from 1 to 90."
-  }
-
-  validation {
-    condition     = var.host_reserve_policy.value >= 0 && floor(var.host_reserve_policy.value) == var.host_reserve_policy.value
-    error_message = "The host_reserve_policy value must be a whole number of hosts, 0 or more."
-  }
-}
-
-variable "max_hosts" {
-  type        = number
-  description = "The most sandbox hosts the pool runs at once, parked hosts included. Apps that find no room once the pool has this many wait for room on them."
-  default     = 10
-
-  validation {
-    condition     = var.max_hosts >= 1 && var.max_hosts <= 100 && floor(var.max_hosts) == var.max_hosts
-    error_message = "The max_hosts must be a whole number from 1 to 100."
-  }
 }

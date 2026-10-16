@@ -13,14 +13,12 @@ terraform {
       version = ">= 6.0"
     }
     # Ravion's own provider, served from Ravion's provider registry. Issues the
-    # wildcard certificate and its DNS record (certificate.tf) and registers
-    # the sandbox pool (sandbox_pool.tf). 0.0.4-rc.1 is the first release with
-    # ravion_sandbox_pool. Pin prereleases explicitly; published packages are
-    # immutable.
-    # DEV ONLY, revert before merge: the dev registry's build of the provider.
+    # wildcard certificate and its DNS record (certificate.tf), and the custom
+    # domains' certificate and domains (ravion_domains.tf). Pin prereleases
+    # explicitly; published packages are immutable.
     ravion = {
-      source  = "provider-cf.siddharthsuresh.dev/ravion/ravion"
-      version = "= 0.0.4-dev.1"
+      source  = "providers.ravion.com/ravion/ravion"
+      version = "= 0.0.3-rc.1"
     }
   }
 }

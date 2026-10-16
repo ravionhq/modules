@@ -15,7 +15,6 @@ locals {
   tags = merge(local.default_tags, var.tags)
 
   router_name = "${var.name}-router"
-  hosts_name  = "${var.name}-hosts"
 
   # Ravion may pass only roles named rvn-app-router-* to the router instance
   # it launches.
@@ -45,6 +44,14 @@ locals {
     from = 20000
     to   = 20999
   }
+
+  # Every IPv4 range of the VPC, the primary one and those associated after
+  # it: the execution environment's hosts may run in a subnet of any of them.
+  # A range being removed from the VPC is left out.
+  vpc_cidr_blocks = toset(concat(
+    [data.aws_vpc.this.cidr_block],
+    [for association in data.aws_vpc.this.cidr_block_associations : association.cidr_block if association.state == "associated"],
+  ))
 
   # Target group names share ELBv2's 32-character limit with the load
   # balancer. Short names stay readable; long names keep a stable hash.

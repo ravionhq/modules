@@ -2,14 +2,21 @@
 #
 # Ids and origins are refused unless they are exactly an id or an origin. A
 # custom domain is a wildcard, because every app gets its own hostname under
-# it. The sandbox pool's settings are held to the bounds Ravion's API holds
-# them to, so a bad value fails the plan instead of the apply.
+# it, and short enough for every app hostname below it to be a domain name.
 
 mock_provider "aws" {
   override_data {
     target = data.aws_partition.current
     values = {
       partition = "aws"
+    }
+  }
+
+  override_data {
+    target = data.aws_vpc.this
+    values = {
+      cidr_block              = "10.0.0.0/16"
+      cidr_block_associations = []
     }
   }
 
@@ -52,7 +59,6 @@ variables {
   vpc_id             = "vpc-12345678"
   public_subnet_ids  = ["subnet-0a", "subnet-0b"]
   router_subnet_ids  = ["subnet-1a", "subnet-1b"]
-  host_subnet_id     = "subnet-1a"
 }
 
 run "plain_http_control_plane_is_refused" {
@@ -135,6 +141,32 @@ run "at_most_ten_custom_domains" {
   expect_failures = [var.domains]
 }
 
+# The longest app hostname, <app>-<exposure>.<domain>, adds 62 characters to
+# the domain, and a domain name holds 253: the domain itself, without its *.,
+# may have 191.
+run "custom_domain_leaves_room_for_app_hostnames" {
+  command = plan
+
+  variables {
+    domains = ["*.${join(".", [for index in range(3) : join("", [for letter in range(63) : "a"])])}.com"]
+  }
+
+  expect_failures = [var.domains]
+}
+
+run "custom_domain_of_191_characters_is_accepted" {
+  command = plan
+
+  variables {
+    domains = ["*.${join(".", [for index in range(2) : join("", [for letter in range(63) : "a"])])}.${join("", [for letter in range(59) : "b"])}.com"]
+  }
+
+  assert {
+    condition     = length(trimprefix(one(var.domains), "*.")) == 191 && length(ravion_domain.custom) == 1
+    error_message = "A custom domain of 191 characters without its *. must be accepted"
+  }
+}
+
 run "name_must_fit_a_load_balancer_name" {
   command = plan
 
@@ -163,134 +195,4 @@ run "router_needs_a_subnet" {
   }
 
   expect_failures = [var.router_subnet_ids]
-}
-
-run "hosts_need_a_subnet" {
-  command = plan
-
-  variables {
-    host_subnet_id = "default"
-  }
-
-  expect_failures = [var.host_subnet_id]
-}
-
-run "host_instance_type_must_be_an_instance_type" {
-  command = plan
-
-  variables {
-    host_instance_types = [{ type = "c8id" }]
-  }
-
-  expect_failures = [var.host_instance_types]
-}
-
-run "host_instance_types_appear_once" {
-  command = plan
-
-  variables {
-    host_instance_types = [{ type = "c8id.4xlarge" }, { type = "c8id.4xlarge", disk_gib = 60 }]
-  }
-
-  expect_failures = [var.host_instance_types]
-}
-
-run "host_disk_holds_the_system" {
-  command = plan
-
-  variables {
-    host_instance_types = [{ type = "c8id.4xlarge", disk_gib = 20 }]
-  }
-
-  expect_failures = [var.host_instance_types]
-}
-
-run "host_disk_iops_start_at_gp3_baseline" {
-  command = plan
-
-  variables {
-    host_instance_types = [{ type = "c8id.4xlarge", disk_iops = 1000 }]
-  }
-
-  expect_failures = [var.host_instance_types]
-}
-
-run "host_disk_throughput_stays_within_gp3" {
-  command = plan
-
-  variables {
-    host_instance_types = [{ type = "c8id.4xlarge", disk_throughput_mbps = 2000 }]
-  }
-
-  expect_failures = [var.host_instance_types]
-}
-
-run "hosts_are_bought_on_demand" {
-  command = plan
-
-  variables {
-    host_capacity_types = ["SPOT"]
-  }
-
-  expect_failures = [var.host_capacity_types]
-}
-
-run "host_markets_are_on_demand_and_spot_only" {
-  command = plan
-
-  variables {
-    host_capacity_types = ["ON_DEMAND", "RESERVED"]
-  }
-
-  expect_failures = [var.host_capacity_types]
-}
-
-run "warm_hosts_policy_must_be_known" {
-  command = plan
-
-  variables {
-    host_reserve_policy = { type = "ALWAYS" }
-  }
-
-  expect_failures = [var.host_reserve_policy]
-}
-
-run "warm_hosts_window_is_at_most_ninety_days" {
-  command = plan
-
-  variables {
-    host_reserve_policy = { type = "PEAK", window_days = 120 }
-  }
-
-  expect_failures = [var.host_reserve_policy]
-}
-
-run "warm_hosts_count_is_not_negative" {
-  command = plan
-
-  variables {
-    host_reserve_policy = { type = "FIXED", value = -1 }
-  }
-
-  expect_failures = [var.host_reserve_policy]
-}
-
-run "max_hosts_is_at_least_one" {
-  command = plan
-
-  variables {
-    max_hosts = 0
-  }
-
-  expect_failures = [var.max_hosts]
-}
-
-run "max_hosts_is_at_most_one_hundred" {
-  command = plan
-
-  variables {
-    max_hosts = 101
-  }
-
-  expect_failures = [var.max_hosts]
 }
