@@ -17,6 +17,14 @@ locals {
   router_name = "${var.name}-router"
   hosts_name  = "${var.name}-hosts"
 
+  # Ravion may pass only roles named rvn-app-router-* to the router instance
+  # it launches.
+  router_role_name = "rvn-app-router-${var.name}"
+
+  # Ravion launches the router with this tag and may register targets only in
+  # target groups that carry it.
+  router_tag_key = "ravion:app-router"
+
   # Ports the router listens on. The load balancer terminates TLS and hands
   # the router plain TCP.
   router_ports = {

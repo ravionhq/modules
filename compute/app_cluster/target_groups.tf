@@ -27,7 +27,8 @@ resource "aws_lb_target_group" "traffic" {
   }
 
   tags = merge(local.tags, {
-    Name = "${var.name}-https"
+    Name                   = "${var.name}-https"
+    (local.router_tag_key) = var.module_instance_id
   })
 
   lifecycle {
@@ -57,7 +58,8 @@ resource "aws_lb_target_group" "redirect" {
   }
 
   tags = merge(local.tags, {
-    Name = "${var.name}-http"
+    Name                   = "${var.name}-http"
+    (local.router_tag_key) = var.module_instance_id
   })
 
   lifecycle {

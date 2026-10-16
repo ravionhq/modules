@@ -73,7 +73,7 @@ mock_provider "aws" {
   override_resource {
     target = aws_iam_instance_profile.router
     values = {
-      arn = "arn:aws:iam::123456789012:instance-profile/apps-router"
+      arn = "arn:aws:iam::123456789012:instance-profile/rvn-app-router-apps"
     }
   }
 }
@@ -168,6 +168,14 @@ run "target_groups_reach_the_router_ports" {
   assert {
     condition     = aws_lb_target_group.traffic.preserve_client_ip == "true" && aws_lb_target_group.redirect.preserve_client_ip == "true"
     error_message = "The router must see the client's address"
+  }
+
+  assert {
+    condition = alltrue([
+      for target_group in [aws_lb_target_group.traffic, aws_lb_target_group.redirect] :
+      target_group.tags["ravion:app-router"] == "minst_test"
+    ])
+    error_message = "Ravion registers the router only in target groups tagged ravion:app-router with the cluster's id"
   }
 
   assert {
@@ -546,7 +554,7 @@ run "router_may_publish_metrics_in_its_namespace_only" {
   command = plan
 
   assert {
-    condition     = aws_iam_instance_profile.router.role == aws_iam_role.router.name && aws_iam_instance_profile.router.name == aws_iam_role.router.name && aws_iam_role.router.name == "apps-router" && aws_iam_role.router.path == "/"
+    condition     = aws_iam_instance_profile.router.role == aws_iam_role.router.name && aws_iam_instance_profile.router.name == aws_iam_role.router.name && aws_iam_role.router.name == "rvn-app-router-apps" && aws_iam_role.router.path == "/"
     error_message = "The router's instance profile must hold its role under the same name, with no path, so the role follows from the profile name"
   }
 
@@ -622,7 +630,7 @@ run "outputs_feed_the_apps_block" {
   }
 
   assert {
-    condition     = output.router_instance_profile_name == "apps-router"
+    condition     = output.router_instance_profile_name == "rvn-app-router-apps"
     error_message = "router_instance_profile_name must name the router's instance profile"
   }
 

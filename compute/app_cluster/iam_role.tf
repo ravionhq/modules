@@ -11,7 +11,7 @@
 ################################################################################
 
 resource "aws_iam_role" "router" {
-  name = local.router_name
+  name = local.router_role_name
   path = "/"
 
   assume_role_policy = jsonencode({
@@ -61,7 +61,7 @@ resource "aws_iam_role_policy_attachment" "router_ssm" {
 }
 
 resource "aws_iam_instance_profile" "router" {
-  name = local.router_name
+  name = local.router_role_name
   role = aws_iam_role.router.name
 
   tags = local.tags
