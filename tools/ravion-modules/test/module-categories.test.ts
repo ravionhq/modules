@@ -46,6 +46,10 @@ describe("module categories", () => {
       getModuleCategoriesForDefinitionType("rvn-eks-worker").map((category) => category.givenId),
       ["worker"],
     );
+    assert.deepEqual(
+      getModuleCategoriesForDefinitionType("rvn-preview").map((category) => category.givenId),
+      ["web-server", "worker"],
+    );
   });
 
   it("groups EKS infrastructure definitions with clusters", () => {

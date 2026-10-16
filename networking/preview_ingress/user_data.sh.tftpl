@@ -1,0 +1,58 @@
+#!/bin/bash
+# Boot script of the preview router instance. Runs once, as root: writes the
+# router's environment and starts the preview router the image carries.
+#
+# The router unit is written and enabled last, so an instance on which any
+# step failed never runs a router. It stays unhealthy behind the load
+# balancer, and its Auto Scaling group replaces it.
+#
+# Nothing here is a secret: the router obtains its credential from Ravion at
+# start and keeps it in memory.
+set -Eeuo pipefail
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+trap 'echo "preview router setup: FAILED at line $LINENO" >&2' ERR
+
+router=/usr/local/bin/preview-router
+
+echo "preview router setup: checking the image's router"
+if [[ ! -x "$router" ]]; then
+	echo "preview router setup: FAILED, the image carries no preview router at $router" >&2
+	exit 1
+fi
+release=$("$router" --version)
+echo "preview router setup: $release"
+
+echo "preview router setup: writing the router's environment"
+install -d -m 0755 /etc/ravion
+install -d -m 0700 /var/lib/ravion/preview-router
+cat > /etc/ravion/preview-router.env <<'ENV'
+RAVION_API_URL=${ravion_api_url}
+RAVION_PREVIEW_ROUTER_MODULE_INSTANCE_ID=${module_instance_id}
+RAVION_PREVIEW_ROUTER_WORK_DIR=/var/lib/ravion/preview-router
+ENV
+
+echo "preview router setup: starting the router"
+cat > /etc/systemd/system/ravion-preview-router.service <<'UNIT'
+[Unit]
+Description=Preview router
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+EnvironmentFile=/etc/ravion/preview-router.env
+ExecStart=/usr/local/bin/preview-router --listen :${router_ports.traffic} --listen-redirect :${router_ports.redirect} --listen-health :${router_ports.health}
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now ravion-preview-router.service
+
+echo "preview router setup: done"

@@ -1,0 +1,425 @@
+global: false
+definition:
+  type: rvn-preview
+  name: Preview
+  description: Preview of a repository's branches. Each branch runs in its own sandbox from shell steps you define, with its HTTP ports served through a preview ingress.
+release:
+  version: 0.1.0
+  description: "Run each branch of a repository as a preview in its own sandbox, with its HTTP ports served through a preview ingress."
+module:
+  inputs:
+    - id: ingress
+      label: Preview ingress
+      type: $ref:rvn-preview-ingress
+      description: Serves the exposed ports of the previews. Needed by a module that exposes a port. Select a preview ingress in this environment.
+      mapped_inputs:
+        - id: ingress_wildcard_domain_name
+          label: Ingress domain
+          type: string
+          description: Base for the previews' Ravion addresses.
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.wildcard_domain_name>>
+        - id: ingress_aws_account_id
+          label: Ingress AWS account
+          type: string
+          description: AWS account of the preview ingress, where its router publishes request metrics.
+          collapsible: true
+          required: false
+          default: << ref.input.aws_account_id >>
+        - id: ingress_region
+          label: Ingress region
+          type: string
+          description: Region of the preview ingress, where its router publishes request metrics.
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.region>>
+      required: false
+    - id: section_source
+      label: Source
+      type: section
+    - id: source_repo
+      label: Git repository
+      type: gitrepo
+      description: Repository whose branches run as previews.
+      required: true
+    - id: source_base_path
+      label: Source base path
+      type: string
+      description: Repository-relative directory the steps run in.
+      default: .
+    - id: pull_request_previews_enabled
+      label: Pull request previews
+      type: boolean
+      description: Deploys a preview for every pull request of the repository and removes it when the pull request is closed.
+      default: false
+    - id: section_run
+      label: Run
+      type: section
+    - id: steps
+      label: Steps
+      type: object_array
+      description: Shell commands run in order in the source base path, on every deploy and every resume. A step that exits non-zero fails the deploy.
+      required: true
+      item_label: Step
+      item_title:
+        fallback: Step
+        template: "{command}"
+      item_inputs:
+        - id: command
+          label: Command
+          type: text
+          placeholder: docker compose up -d --build --wait
+          required: true
+    - id: ports
+      label: Exposed ports
+      type: object_array
+      description: HTTP ports served through the preview ingress, each on its own address per branch. The first is the primary address. Leave empty for an app that serves no HTTP; it needs no preview ingress.
+      item_label: Port
+      item_title:
+        fallback: Port
+        template: "{name}"
+      item_description: "Port {port}"
+      item_inputs:
+        - id: name
+          label: Name
+          type: string
+          description: Unique among this module's ports.
+          required: true
+          default: web
+          patterns:
+            - message: Use 1-60 lowercase letters, numbers, or hyphens, starting and ending with a letter or number.
+              pattern: ^[a-z0-9]([a-z0-9-]{0,58}[a-z0-9])?$
+        - id: port
+          label: Port
+          type: number
+          description: Port the app listens on inside the sandbox.
+          max: 65535
+          min: 1
+          required: true
+        - id: health_check_path
+          label: Health check path
+          type: string
+          description: HTTP path Ravion requests to tell whether the port is ready. Use a lightweight endpoint that does not require authentication.
+          required: true
+          default: /
+          patterns:
+            - message: Use an absolute path, such as /healthz.
+              pattern: ^/
+        - id: ravion_domain_name
+          label: Default Ravion domain
+          type: string
+          description: Used only when no custom domains are set. Leave blank to name the address after the module.
+          prefix: "{branch}-"
+          suffix: ".<< module.input.ingress_wildcard_domain_name >>"
+          required: false
+          patterns:
+            - message: Use 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number.
+              pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+        - add_button_label: Add custom domain
+          description: Replaces the default Ravion domain with a custom domain of the preview ingress. Each branch takes the place of the star. Not served yet, so a deploy of a port that sets one is refused.
+          id: domains
+          label: Custom domains
+          max_length: 1
+          patterns:
+            - message: Use a lowercase wildcard domain, such as *.preview.example.com.
+              pattern: ^\*\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+          placeholder: "*.preview.example.com"
+          type: string_array
+      default: []
+    - id: section_app_config
+      label: Environment variables
+      type: section
+    - id: environment_variables
+      label: Runtime environment variables
+      type: array
+      description: Plain environment variables set for every step, as an array of {name, value} objects. A value can reference another module's output.
+      placeholder: |-
+        - name: LOG_LEVEL
+          value: info
+    - id: section_sandbox_config
+      label: Sandbox config
+      type: section
+    - id: sandbox_execution_environment_id
+      label: Sandbox execution environment
+      type: string
+      description: Execution environment whose sandbox pool runs the previews.
+      required: true
+      values: $values:ravion/execution_environments
+    - id: sandbox_cpu
+      label: Sandbox vCPUs
+      type: number
+      min: 1
+      required: true
+      default: 2
+    - id: sandbox_memory
+      label: Sandbox memory (GiB)
+      type: number
+      min: 1
+      required: true
+      default: 4
+    - id: sandbox_disk
+      label: Sandbox disk (GiB)
+      type: number
+      collapsible: true
+      min: 1
+      required: false
+      default: 20
+    - id: idle_timeout_seconds
+      label: Idle timeout (seconds)
+      type: number
+      description: Seconds without a running command or an open connection before a preview is paused. Use 0 to never pause, or 60 and above. Leave blank for 900, or 14400 for a pull request's preview.
+      collapsible: true
+      max: 86400
+      min: 0
+      required: false
+    - id: retention_seconds
+      label: Retention (seconds)
+      type: number
+      description: Seconds a paused preview is kept before it expires. Leave blank for 86400, or 604800 for a pull request's preview.
+      collapsible: true
+      max: 2592000
+      min: 1
+      required: false
+  preview:
+    source:
+      repo: << module.input.source_repo >>
+      base_path: << module.input.source_base_path || "." >>
+    steps: "<< map(module.input.steps, #.command) >>"
+    expose: >-
+      << map(module.input.ports || [], {"name": #.name, "port": #.port, "health_check_path": #.health_check_path,
+      "ravion_domain_name": #.ravion_domain_name || nil, "domains": #.domains || []}) >>
+    variables: << module.input.environment_variables || [] >>
+    sandbox:
+      executionEnvironmentId: << module.input.sandbox_execution_environment_id >>
+      cpu: << module.input.sandbox_cpu >>
+      memoryMib: << module.input.sandbox_memory * 1024 >>
+      diskGib: << module.input.sandbox_disk >>
+    ingress: << module.input.ingress >>
+    idle: << module.input.idle_timeout_seconds >>
+    retention: << module.input.retention_seconds >>
+    pull_requests: << module.input.pull_request_previews_enabled >>
+  ui:
+    metrics:
+      - id: requests
+        name: Requests
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Requests
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: responses_4xx
+        name: 4xx responses
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses4xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: responses_5xx
+        name: 5xx responses
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses5xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: latency_average
+        name: Latency (avg)
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Latency
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: wakes
+        name: Wakes
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: Wakes
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: wake_duration
+        name: Wake duration (avg)
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: WakeDuration
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+      - id: open_websockets
+        name: Open WebSockets
+        type: line
+        enabled: << module.input.ingress != nil >>
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.ingress_aws_account_id >>
+          region: << module.input.ingress_region >>
+          namespace: Ravion/PreviewRouter
+          name: OpenWebSockets
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.input.ingress >>
+            PreviewModuleInstanceId: << module.id >>
+  readme: |
+    Preview of a repository's branches. Each branch runs in its own sandbox from shell steps you define, with its HTTP ports served through a preview ingress.
+
+    ## Overview
+
+    Use this module to give every branch or pull request of a repository its own running copy of an app. Select a repository and an execution environment, write the steps that start the app, and select a preview ingress for the ports it exposes. For each branch Ravion:
+
+    - Creates a **sandbox** in the execution environment's sandbox pool and loads the branch's source into it.
+    - Runs the **steps** in order in the source base path.
+    - Serves each **exposed port** on its own HTTPS address through the preview ingress.
+    - **Pauses** the sandbox after the idle timeout and resumes it on the next request.
+
+    The module creates no AWS resources. Sandboxes run on the pool's hosts inside your AWS account, and the steps run without AWS credentials.
+
+    Definition source: [ravionhq/modules/compute/preview](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/preview)
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Pull request previews | Every pull request gets an address reviewers can open, updated on each push and removed when the pull request is closed |
+    | Branch previews | `ravion deploy` runs the checked-out branch in its own sandbox |
+    | Workers and jobs | A module with no exposed port runs its steps, serves no address, and needs no preview ingress |
+    | Apps with dependencies | Variables reference the outputs of other modules, such as a database endpoint |
+
+    ## Steps
+
+    Steps are shell commands. Each runs with `sh -eu` in the source base path, in the order listed. A step that exits non-zero fails the deploy.
+
+    Steps run on every deploy and again each time a paused preview resumes. Write them so that running them twice is safe, and start long-running processes in the background, for example with `docker compose up -d --build --wait`.
+
+    Shell text such as `cat <<EOF` works as typed.
+
+    ## Exposed ports and addresses
+
+    Each exposed port gets one HTTPS address per branch, served by the module's preview ingress. A module that exposes a port needs one. The first port in the list is the preview's primary address.
+
+    | Port setting | Address |
+    | --- | --- |
+    | Default Ravion domain | `{branch}-{name}.{ingress domain}`, where the name is the value you enter |
+    | Custom domains | `{branch}.{domain}` for the custom domain `*.{domain}`. Not served yet: a deploy of a port that sets one is refused |
+
+    The ingress domain is the preview ingress's wildcard domain on Ravion's managed apex. A blank Default Ravion domain uses the module ID as the name for the first port, and the module ID followed by the port's name for the others.
+
+    The branch part is the branch name in lowercase, with every run of other characters written as one hyphen. Ravion shortens a first label longer than 63 characters.
+
+    A custom domain is one of the wildcard domains listed under Custom domains on the preview ingress, which holds its certificate and DNS records. Setting a custom domain on a port replaces that port's default Ravion domain. Each port of a module takes a custom domain of its own.
+
+    A deploy is ready once every step has succeeded and every exposed port answers on its health check path.
+
+    A module with no exposed port serves no address and needs no preview ingress. Its deploy is ready once every step has succeeded.
+
+    ## Environment variables
+
+    Runtime environment variables are set for every step. A value can reference another module's output:
+
+    ```yaml
+    - name: DATABASE_HOST
+      value: << modules.db.output.endpoint >>
+    ```
+
+    References are resolved again on every deploy and every resume. Outputs marked sensitive cannot be referenced.
+
+    Ravion sets these variables as well. Names that start with `RAVION_` are reserved:
+
+    | Variable | Value |
+    | --- | --- |
+    | `RAVION_PREVIEW_URL` | Address of the first exposed port |
+    | `RAVION_PREVIEW_URL_<NAME>` | Address of each exposed port, named in upper case with hyphens as underscores |
+    | `RAVION_PREVIEW_BRANCH` | Branch of the preview |
+    | `RAVION_PREVIEW_COMMIT` | Commit the preview runs |
+    | `RAVION_PREVIEW_PULL_REQUEST` | Pull request number, set for a pull request's preview |
+    | `RAVION_PREVIEW_ENV_NAMES` | Names of all variables set for the step, separated by spaces |
+
+    ## Idle pause and retention
+
+    A preview is paused after the idle timeout passes without a running command or an open connection. A request to one of its addresses resumes it: the steps run again and the preview ingress holds the request until the preview runs. A preview with no exposed port resumes on its next deploy.
+
+    A paused preview is kept for the retention period and then expires.
+
+    | Setting | Default | Default for a pull request's preview |
+    | --- | --- | --- |
+    | Idle timeout | 900 seconds | 14400 seconds |
+    | Retention | 86400 seconds | 604800 seconds |
+
+    ## Sandbox
+
+    Sandbox execution environment selects the sandbox pool that runs the previews. The module's preview ingress must list that execution environment's security group under Sandbox host security groups.
+
+    Changes to the steps, ports and variables take effect on the next deploy. Changes to the execution environment and the sandbox sizes apply to sandboxes created afterwards.
+
+    ## Metrics
+
+    The Metrics tab reads the metrics the preview ingress's router publishes to CloudWatch, in the ingress's AWS account and region: requests, 4xx and 5xx responses, average latency, wakes of paused previews and their average duration, and open WebSockets. Each chart covers every branch and every exposed port of this module.
+
+    A module with no preview ingress serves no address and has no metrics.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | --- | --- | --- | --- |
+    | Preview ingress | With exposed ports | - | Existing rvn-preview-ingress module instance in the same environment |
+    | Git repository | Yes | - | Repository whose branches run as previews |
+    | Source base path | No | . | Repository-relative directory the steps run in |
+    | Pull request previews | No | false | Deploy a preview for every pull request of the repository |
+    | Steps | Yes | - | Shell commands that start the app |
+    | Exposed ports | No | [] | HTTP ports served through the preview ingress |
+    | Runtime environment variables | No | [] | Variables set for every step |
+    | Sandbox execution environment | Yes | - | Execution environment whose sandbox pool runs the previews |
+    | Sandbox vCPUs | Yes | 2 | vCPUs of each sandbox |
+    | Sandbox memory (GiB) | Yes | 4 | Memory of each sandbox |
+    | Sandbox disk (GiB) | No | 20 | Disk of each sandbox |
+    | Idle timeout (seconds) | No | 900 | Idle time before a preview is paused; 0 keeps it running |
+    | Retention (seconds) | No | 86400 | Time a paused preview is kept |
+
+    Each exposed port takes:
+
+    | Field | Required | Default | Description |
+    | --- | --- | --- | --- |
+    | Name | Yes | web | Unique name of the port within the module |
+    | Port | Yes | - | Port the app listens on inside the sandbox |
+    | Health check path | Yes | / | HTTP path requested to tell whether the port is ready |
+    | Default Ravion domain | No | {module} | Name of the port's address under the ingress domain |
+    | Custom domains | No | [] | One custom domain of the preview ingress, such as *.preview.example.com |

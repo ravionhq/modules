@@ -1,0 +1,773 @@
+global: false
+definition:
+  type: rvn-preview-ingress
+  name: Preview Ingress
+  description: Entry point for sandbox previews. A Network Load Balancer with a managed wildcard domain and certificate, in front of a router that sends each preview hostname to its sandbox and wakes a paused sandbox on request.
+release:
+  version: 0.1.0
+  description: "Serve sandbox previews under a managed wildcard domain, or under your own wildcard domains, through a Network Load Balancer and a preview router that wakes paused sandboxes on request."
+module:
+  outputs:
+    - id: sandbox_router_id
+      type: string
+      label: Router ID
+      description: The router's identity, which is this module instance's ID.
+    - id: sandbox_router_dns_name
+      type: string
+      label: Load balancer DNS name
+    - id: sandbox_router_zone_id
+      type: string
+      label: Load balancer hosted zone ID
+    - id: sandbox_router_load_balancer_arn
+      type: string
+      label: Load balancer ARN
+    - id: sandbox_router_security_group_id
+      type: string
+      label: Router security group ID
+      description: Sandbox hosts allow preview traffic from this group.
+    - id: sandbox_host_security_group_ids
+      type: string_array
+      label: Sandbox host security group IDs
+      description: The router reaches sandbox hosts in these groups only.
+    - id: wildcard_domain_name
+      type: string
+      label: Wildcard domain
+      description: Every preview is a hostname one label below this domain.
+    - id: certificate_arn
+      type: string
+      label: Certificate ARN
+    - id: custom_domain_names
+      type: string_array
+      label: Custom domains
+      description: Wildcard domains previews can be served under, beside the wildcard domain.
+    - id: custom_certificate_arn
+      type: string
+      label: Custom domains certificate ARN
+    - id: load_balancer_security_group_id
+      type: string
+      label: Load balancer security group ID
+    - id: load_balancer_arn_suffix
+      type: string
+      label: Load balancer ARN suffix
+      description: The LoadBalancer dimension of the load balancer's CloudWatch metrics.
+    - id: traffic_target_group_arn_suffix
+      type: string
+      label: HTTPS target group ARN suffix
+      description: The TargetGroup dimension of the router's health metrics.
+    - id: autoscaling_group_name
+      type: string
+      label: Auto Scaling group name
+    - id: image_id
+      type: string
+      label: Image ID
+      description: The AMI new router instances boot.
+    - id: aws_account_id
+      type: string
+      label: AWS account ID
+    - id: region
+      type: string
+      label: Region
+  inputs:
+    - id: network
+      immutable: true
+      label: VPC network
+      type: $ref:rvn-aws-network
+      description: The network of the sandboxes whose previews this ingress serves.
+      mapped_inputs:
+        - $template: ../../partials/templates/network-ref-mapped-inputs.yml
+          with:
+            aws_account_id_default: << ref.input.aws_account_id >>
+            aws_region_default: << ref.input.aws_region >>
+            execution_environment_default: << ref.input.execution_environment_id >>
+            private_subnet_ids_default: <<ref.stack.output.private_subnet_ids>>
+            public_subnet_ids_default: <<ref.stack.output.public_subnet_ids>>
+            vpc_id_default: <<ref.stack.output.vpc_id>>
+      required: true
+    - id: section_ingress
+      label: Preview ingress
+      type: section
+    - id: name
+      immutable: true
+      label: Name slug
+      type: string
+      description: Name for the load balancer and related resources.
+      required: true
+      default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      patterns:
+        - message: 1-32 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$
+    - id: sandbox_host_security_group_ids
+      label: Sandbox host security groups
+      type: string_array
+      description: Security group of each execution environment whose sandbox pool runs the previews. Each group gets an inbound rule for the router on the preview ports.
+      required: true
+      add_button_label: Add security group
+      placeholder: Select a security group
+      no_options_message: Select a VPC Network, or enter an AWS account, region, and VPC ID, to load security groups.
+      values: $values:aws/security-groups?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&vpcId=<<module.input.vpc_id>>
+    - id: ingress_cidr_blocks
+      label: Ingress IPv4 CIDRs
+      type: string_array
+      description: IPv4 CIDR blocks allowed to open previews. Defaults to public internet access. Use an empty list to allow no ingress.
+      add_button_label: Add CIDR block
+      collapsible: true
+      placeholder: 0.0.0.0/0
+    - id: section_managed_domains
+      label: Managed domains
+      type: section
+    - description: Base for preview addresses; uses the ingress module ID when empty.
+      id: ravion_domain_name
+      label: Preview domain
+      patterns:
+        - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+      required: false
+      suffix: ".<< platform.apex >>"
+      type: string
+    - add_button_label: Add custom domain
+      description: Wildcard domains that previews can use in addition to the preview domain; Ravion manages the certificate. Add the provided DNS records at your DNS provider.
+      id: domains
+      label: Custom domains
+      max_length: 10
+      patterns:
+        - message: Use a lowercase wildcard domain, such as *.preview.example.com.
+          pattern: ^\*\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+      placeholder: "*.preview.example.com"
+      type: string_array
+    - id: section_router
+      label: Router
+      type: section
+    - id: router_enabled
+      label: Router running
+      type: boolean
+      description: Turn off to pause the router. Its instance is terminated and no preview URL answers until it is turned on again. The load balancer, certificate and domains stay.
+      default: true
+    - id: instance_type
+      label: Instance type
+      type: string
+      description: The router's instance type. Ravion publishes the router image for x86_64 instance types.
+      required: true
+      default: t3.micro
+      no_options_message: Select a VPC Network, or enter an AWS account and region, to load available EC2 instance types.
+      values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
+    - id: private_subnet_placement_enabled
+      label: Run in private subnets
+      type: boolean
+      description: Recommended. Requires a NAT gateway for the router's outbound HTTPS. Turn off to run the router in the public subnets with a public IP address. The load balancer always uses the public subnets.
+      default: true
+    - id: ssm_enabled
+      label: Session Manager access
+      type: boolean
+      description: Adds AWS Systems Manager Session Manager access to the router instance's IAM role. Turn off to leave the role with only the permission to publish the router's metrics.
+      default: true
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: networking/preview_ingress
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        domains: << module.input.domains || [] >>
+        ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
+        instance_type: << module.input.instance_type >>
+        module_instance_id: << module.id >>
+        name: << module.input.name >>
+        public_subnet_ids: << module.input.public_subnet_ids >>
+        ravion_aws_account_id: << module.input.aws_account_id >>
+        ravion_domain_name: << module.input.ravion_domain_name >>
+        region: << module.input.aws_region >>
+        router_enabled: << module.input.router_enabled >>
+        router_public_ip_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
+        router_subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
+        sandbox_host_security_groups: '<< map(uniq(module.input.sandbox_host_security_group_ids), {"name": #, "id": #}) >>'
+        ssm_enabled: << module.input.ssm_enabled >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        vpc_id: << module.input.vpc_id >>
+  ui:
+    metrics:
+      - id: requests
+        name: Requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Requests
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_2xx
+        name: 2xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses2xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_3xx
+        name: 3xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses3xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_4xx
+        name: 4xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses4xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_5xx
+        name: 5xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses5xx
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: latency_average
+        name: Latency (avg)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Latency
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: latency_maximum
+        name: Latency (max)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Latency
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: requests_by_hostname
+        name: Requests by hostname
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Requests
+          statistic: Sum
+          group_by: Hostname
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: responses_5xx_by_hostname
+        name: 5xx responses by hostname
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Responses5xx
+          statistic: Sum
+          group_by: Hostname
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: unknown_hostname_requests
+        name: Unknown hostname requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: UnknownHostnameRequests
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: wakes
+        name: Sandbox wakes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Wakes
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: wake_failures
+        name: Sandbox wake failures
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: WakeFailures
+          statistic: Sum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: wake_duration
+        name: Sandbox wake duration (avg)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: WakeDuration
+          statistic: Average
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: held_requests
+        name: Held requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: HeldRequests
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: open_websockets
+        name: Open WebSockets
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: OpenWebSockets
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: routes
+        name: Routes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: Routes
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: control_plane_connected
+        name: Control plane connected
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: ControlPlaneConnected
+          statistic: Minimum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: healthy_routers
+        name: Healthy routers
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: HealthyHostCount
+          statistic: Minimum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+            TargetGroup: << module.output.traffic_target_group_arn_suffix >>
+      - id: unhealthy_routers
+        name: Unhealthy routers
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: UnHealthyHostCount
+          statistic: Maximum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+            TargetGroup: << module.output.traffic_target_group_arn_suffix >>
+      - id: new_connections
+        name: New connections
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: NewFlowCount
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: active_connections
+        name: Active connections
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ActiveFlowCount
+          statistic: Average
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: data_processed
+        name: Data processed
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ProcessedBytes
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: peak_throughput
+        name: Peak throughput
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: PeakBytesPerSecond
+          statistic: Maximum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: capacity_units
+        name: Load balancer capacity units
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ConsumedLCUs
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: client_tls_errors
+        name: Client TLS negotiation errors
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ClientTLSNegotiationErrorCount
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: blocked_connections
+        name: Connections blocked by ingress CIDRs
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: SecurityGroupBlockedFlowCount_Inbound_TCP
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: client_resets
+        name: Resets sent by clients
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_Client_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: router_resets
+        name: Resets sent by the router
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_Target_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: load_balancer_resets
+        name: Resets sent by the load balancer
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_ELB_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: router_cpu
+        name: Router CPU utilization
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: CPUUtilization
+          statistic: Average
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_memory
+        name: Router memory used
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/PreviewRouter
+          name: MemoryUsedMiB
+          statistic: Maximum
+          dimensions:
+            IngressModuleInstanceId: << module.id >>
+      - id: router_cpu_credit_balance
+        name: Router CPU credit balance
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: CPUCreditBalance
+          statistic: Average
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_cpu_credit_usage
+        name: Router CPU credits used
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: CPUCreditUsage
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_network_in
+        name: Router network in
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkIn
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_network_out
+        name: Router network out
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkOut
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_packets_in
+        name: Router packets in
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkPacketsIn
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_packets_out
+        name: Router packets out
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: NetworkPacketsOut
+          statistic: Sum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+      - id: router_status_check_failed
+        name: Router status check failures
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/EC2
+          name: StatusCheckFailed
+          statistic: Maximum
+          dimensions:
+            AutoScalingGroupName: << module.output.autoscaling_group_name >>
+  readme: |
+    Entry point for sandbox previews. A Network Load Balancer with a managed wildcard domain and certificate, in front of a router that sends each preview hostname to its sandbox and wakes a paused sandbox on request.
+
+    ## Overview
+
+    Use this module to serve the previews of your sandboxes from one always-on address in your own VPC. Select a VPC network and Ravion provisions:
+
+    - A **wildcard domain and certificate** on Ravion's managed apex. Every preview is a hostname one label below it.
+    - An internet-facing **Network Load Balancer** that terminates TLS with that certificate.
+    - One **router instance** behind the load balancer, kept running by an Auto Scaling group.
+    - **Security groups** that admit the load balancer's traffic to the router and nothing else, and one rule on each sandbox host security group that admits the router.
+
+    Preview requests go from the browser to the load balancer, to the router, to the sandbox. They stay inside your AWS account.
+
+    Terraform source: [ravionhq/modules/networking/preview_ingress](https://github.com/ravionhq/modules/tree/$local.module_tag/networking/preview_ingress)
+
+    ## How previews are served
+
+    Ravion keeps the router's table of preview hostnames current over a connection the router opens outbound. The router answers each request by its hostname:
+
+    | Preview | What the router does |
+    | --- | --- |
+    | Running | Forwards the request to the sandbox |
+    | Paused | Asks Ravion to resume the sandbox, holds the request, and forwards it once the sandbox runs. A request that outlasts the hold is told to retry |
+    | Unknown hostname | Answers 404 |
+
+    Exposing a port of a sandbox on a hostname under one of this module's wildcard domains routes it through the router. Pausing, resuming and deleting the sandbox update the route.
+
+    ## Domains
+
+    Preview domain names the wildcard domain on Ravion's managed apex. Ravion issues and renews its certificate and publishes its DNS record. Every preview can use a hostname one label below it.
+
+    Custom domains adds wildcard domains from DNS zones you control, such as `*.preview.example.com`. A preview served under one takes a hostname below the wildcard, such as `feature-x.preview.example.com`. Ravion issues one certificate for all custom domains and attaches it to the load balancer beside the managed one.
+
+    Add the DNS records Ravion provides for each custom domain at your DNS provider. The module's Domains tab lists them after the stack run:
+
+    | Record | Purpose |
+    | --- | --- |
+    | Certificate validation | Proves you control the domain. Ravion issues the certificate once this record resolves |
+    | Routing | Points the wildcard at the load balancer |
+
+    Add the records once. Every preview under the wildcard then works without further DNS changes. The stack run finishes without waiting for the records. Previews under a custom domain answer after the certificate is issued and the routing record resolves.
+
+    Custom domains belong to DNS zones you control. Entries under Ravion's managed apex are refused.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Pull request previews | A preview URL keeps working after its sandbox is paused; opening it starts the sandbox again |
+    | Many short-lived previews | Exposing a preview adds a route and creates no load balancer resources |
+    | Previews with a fixed entry point | One load balancer and one wildcard record serve every preview in the network |
+
+    ## Placement and security
+
+    The load balancer is internet-facing in the network's public subnets. Restrict who can open previews with Ingress IPv4 CIDRs.
+
+    The router runs in the private subnets by default and needs a NAT gateway for outbound HTTPS. Turn off Run in private subnets to place it in the public subnets with a public IP address.
+
+    | Security group | Inbound | Outbound |
+    | --- | --- | --- |
+    | Load balancer | TCP 443 and 80 from the ingress CIDRs | The router's three ports |
+    | Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20998 to the sandbox host security groups |
+
+    No CIDR reaches the router. Ports 20000-20998 are where sandbox hosts publish previews.
+
+    Sandbox host security groups lists the security group of each execution environment whose sandbox pool runs the previews. The module adds one inbound rule to each: TCP 20000-20998 from the router's group. The router reaches sandbox hosts in the listed groups only. Destroying the module removes the rules.
+
+    ## Router instance
+
+    The instance boots the newest preview router image Ravion publishes for the instance type's architecture. Its boot script starts the router. The script holds no credential. The router obtains its credential from Ravion at start with the instance's signed identity document, and keeps it in memory.
+
+    The router runs the release its image carries. A newer image Ravion publishes, or a change to the instance type, replaces the instance at the next stack run: the new router is launched first and takes over once it holds its routes and passes its health check, then the old one is drained.
+
+    Turn off Router running to pause the router. Its instance is terminated and no preview URL answers. The load balancer, certificate and domains stay, so turning it on again launches one router and nothing else.
+
+    A stack run succeeds once the router answers its health check behind the load balancer. A router that never turns healthy fails the run after ten minutes; the cause is in the instance's console output.
+
+    The instance role allows the router to publish its metrics to CloudWatch, in the `Ravion/PreviewRouter` namespace only. Session Manager access adds a shell on the instance for operators, through AWS Systems Manager.
+
+    ## Metrics
+
+    The Metrics tab reads CloudWatch in your account:
+
+    - Requests, published by the router every minute: requests, responses by status class, latency average and maximum, requests and 5xx responses per preview hostname, requests for unknown hostnames, sandbox wakes, wake failures and wake duration, requests held during a wake, open WebSockets, routes, and whether the router is connected to Ravion.
+    - Load balancer: healthy and unhealthy routers, new and active connections, data processed, peak throughput, capacity units, client TLS errors, connections the ingress CIDRs block, and resets by side.
+    - Router instance: CPU utilization, memory used by the router, CPU credit balance and use, network bytes and packets, and status check failures. These follow the module instance and its Auto Scaling group, so they continue across a router replacement.
+
+    Each Preview module that serves ports through this ingress charts its own requests, responses, latency, wakes and open WebSockets.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | --- | --- | --- | --- |
+    | VPC network | Yes | - | Existing rvn-aws-network module instance, the network of the sandboxes |
+    | Name slug | Yes | {project}-{env}-{module} | Name for the load balancer, 32 characters max |
+    | Sandbox host security groups | Yes | - | Security groups of the sandbox hosts that run the previews |
+    | Ingress IPv4 CIDRs | No | 0.0.0.0/0 | Sources allowed to open previews |
+    | Preview domain | No | {module} | Base for preview addresses on Ravion's managed apex |
+    | Custom domains | No | [] | Wildcard domains in your own DNS zones, 10 max |
+    | Router running | No | true | Turn off to pause the router |
+    | Instance type | Yes | t3.micro | Router instance type, x86_64 |
+    | Run in private subnets | No | true | Router placement |
+    | Session Manager access | No | true | AWS Systems Manager Session Manager access to the router instance |
+    | Tags | No | Standard Ravion tags | Additional tags applied to resources |
+    | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
+    | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
+    | Ravion Terraform workspace name | No | {project}-{env}-{module} | Override the state backend workspace name |
+
+    ## Design decisions
+
+    - TLS ends at the load balancer with a certificate Ravion issues and renews. The router receives plain HTTP/1.1, and WebSocket upgrades pass through.
+    - Port 80 reaches the router, which redirects to HTTPS. A Network Load Balancer cannot redirect by itself.
+    - One router instance serves all previews. Changes roll out by launching the replacement first; an instance that fails is replaced by its Auto Scaling group.
+    - The load balancer and the router use IPv4.
+    - The load balancer writes no access logs.
+
+    ## Learn more
+
+    - [Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html)
+    - [TLS listeners](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/create-tls-listener.html)
+    - [Security groups for Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-security-groups.html)
+    - [Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html)

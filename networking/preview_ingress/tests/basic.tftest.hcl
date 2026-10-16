@@ -1,0 +1,783 @@
+# Preview ingress module tests. Run from the module root: tofu test
+#
+# Every run is a plan against mocked providers: nothing is created.
+
+mock_provider "aws" {
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
+  override_data {
+    target = data.aws_region.current
+    values = {
+      region = "us-east-2"
+    }
+  }
+
+  override_data {
+    target = data.aws_partition.current
+    values = {
+      partition = "aws"
+    }
+  }
+
+  override_data {
+    target = data.aws_ec2_instance_type.router
+    values = {
+      supported_architectures = ["x86_64"]
+    }
+  }
+
+  override_data {
+    target = data.aws_ami.router
+    values = {
+      id               = "ami-0aaaaaaaaaaaaaaaa"
+      architecture     = "x86_64"
+      root_device_name = "/dev/xvda"
+    }
+  }
+
+  override_resource {
+    target = aws_lb.this
+    values = {
+      arn        = "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/net/previews/1234567890123456"
+      arn_suffix = "net/previews/1234567890123456"
+      dns_name   = "previews-1234567890123456.elb.us-east-2.amazonaws.com"
+      zone_id    = "ZLMOA37VPKANP"
+    }
+  }
+
+  override_resource {
+    target = aws_lb_target_group.traffic
+    values = {
+      arn        = "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/previews-https/1111111111111111"
+      arn_suffix = "targetgroup/previews-https/1111111111111111"
+    }
+  }
+
+  override_resource {
+    target = aws_lb_target_group.redirect
+    values = {
+      arn = "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/previews-http/2222222222222222"
+    }
+  }
+
+  override_resource {
+    target = aws_security_group.load_balancer
+    values = {
+      id = "sg-0aaaaaaaaaaaaaaaa"
+    }
+  }
+
+  override_resource {
+    target = aws_security_group.router
+    values = {
+      id = "sg-0bbbbbbbbbbbbbbbb"
+    }
+  }
+
+  override_resource {
+    target = aws_launch_template.router
+    values = {
+      id             = "lt-0123456789abcdef0"
+      latest_version = 1
+    }
+  }
+
+  override_resource {
+    target = aws_iam_instance_profile.router
+    values = {
+      arn = "arn:aws:iam::123456789012:instance-profile/previews-router"
+    }
+  }
+}
+
+mock_provider "ravion" {
+  override_resource {
+    target = ravion_aws_acm_certificate.this
+    values = {
+      id          = "cert_test"
+      arn         = "arn:aws:acm:us-east-2:123456789012:certificate/99999999-9999-9999-9999-999999999999"
+      domain_name = "previews.example-apex.test"
+      status      = "ISSUED"
+    }
+  }
+}
+
+variables {
+  name                  = "previews"
+  module_instance_id    = "minst_test"
+  ravion_aws_account_id = "aws_testaccount"
+  ravion_domain_name    = "previews"
+  ravion_api_url        = "https://api.example.test"
+  region                = "us-east-2"
+  vpc_id                = "vpc-12345678"
+  public_subnet_ids     = ["subnet-0a", "subnet-0b"]
+  router_subnet_ids     = ["subnet-1a", "subnet-1b"]
+}
+
+run "load_balancer_terminates_tls_with_the_wildcard_certificate" {
+  command = plan
+
+  assert {
+    condition     = aws_lb.this.load_balancer_type == "network" && aws_lb.this.internal == false && aws_lb.this.enable_cross_zone_load_balancing == true
+    error_message = "The entry point must be an internet-facing Network Load Balancer with cross-zone load balancing"
+  }
+
+  assert {
+    condition     = aws_lb.this.subnets == toset(["subnet-0a", "subnet-0b"]) && aws_lb.this.security_groups == toset(["sg-0aaaaaaaaaaaaaaaa"])
+    error_message = "The load balancer must sit in the public subnets behind its own security group"
+  }
+
+  assert {
+    condition     = aws_lb_listener.tls.port == 443 && aws_lb_listener.tls.protocol == "TLS" && aws_lb_listener.tls.certificate_arn == ravion_aws_acm_certificate.this.arn
+    error_message = "The TLS listener on 443 must serve the wildcard certificate as its default certificate"
+  }
+
+  assert {
+    condition     = aws_lb_listener.tls.ssl_policy == "ELBSecurityPolicy-TLS13-1-2-2021-06" && aws_lb_listener.tls.alpn_policy == null
+    error_message = "The TLS listener must use a TLS 1.2+ policy and must not negotiate HTTP/2, which the router is not handed over plain TCP"
+  }
+
+  assert {
+    condition     = aws_lb_listener.tls.default_action[0].type == "forward" && aws_lb_listener.tls.default_action[0].target_group_arn == aws_lb_target_group.traffic.arn
+    error_message = "The TLS listener must forward to the router's traffic port"
+  }
+
+  assert {
+    condition     = aws_lb_listener.http.port == 80 && aws_lb_listener.http.protocol == "TCP" && aws_lb_listener.http.default_action[0].target_group_arn == aws_lb_target_group.redirect.arn
+    error_message = "The TCP listener on 80 must forward to the router's redirect port"
+  }
+}
+
+run "target_groups_reach_the_router_ports" {
+  command = plan
+
+  assert {
+    condition     = aws_lb_target_group.traffic.port == 8080 && aws_lb_target_group.traffic.protocol == "TCP" && aws_lb_target_group.traffic.target_type == "instance"
+    error_message = "Decrypted traffic must reach the router instance on TCP 8080"
+  }
+
+  assert {
+    condition     = aws_lb_target_group.redirect.port == 8081 && aws_lb_target_group.redirect.protocol == "TCP" && aws_lb_target_group.redirect.target_type == "instance"
+    error_message = "Plain HTTP must reach the router instance on TCP 8081"
+  }
+
+  assert {
+    condition = alltrue([
+      for target_group in [aws_lb_target_group.traffic, aws_lb_target_group.redirect] :
+      target_group.health_check[0].protocol == "HTTP" && target_group.health_check[0].port == "8082" && target_group.health_check[0].path == "/healthz" && target_group.health_check[0].matcher == "200"
+    ])
+    error_message = "Both target groups must health check the router over HTTP on /healthz, port 8082"
+  }
+
+  assert {
+    condition     = aws_lb_target_group.traffic.preserve_client_ip == "true" && aws_lb_target_group.redirect.preserve_client_ip == "true"
+    error_message = "The router must see the client's address"
+  }
+
+  assert {
+    condition     = aws_lb_target_group.traffic.name == "previews-https" && aws_lb_target_group.redirect.name == "previews-http"
+    error_message = "Short names must be kept readable in the target group names"
+  }
+}
+
+run "long_names_fit_the_target_group_name_limit" {
+  command = plan
+
+  variables {
+    name = "a-thirty-two-character-name-0001"
+  }
+
+  assert {
+    condition     = length(aws_lb_target_group.traffic.name) <= 32 && length(aws_lb_target_group.redirect.name) <= 32
+    error_message = "Target group names must fit in 32 characters"
+  }
+
+  assert {
+    condition     = aws_lb_target_group.traffic.name != aws_lb_target_group.redirect.name && endswith(aws_lb_target_group.traffic.name, "-https") && endswith(aws_lb_target_group.redirect.name, "-http")
+    error_message = "A shortened name must still tell the two target groups apart"
+  }
+}
+
+run "wildcard_certificate_points_at_the_load_balancer" {
+  command = plan
+
+  assert {
+    condition     = ravion_aws_acm_certificate.this.wildcard == true && ravion_aws_acm_certificate.this.name == "previews"
+    error_message = "The module must issue one wildcard certificate under the domain name leaf"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.this.module_instance_id == "minst_test" && ravion_aws_acm_certificate.this.aws_account_id == "aws_testaccount" && ravion_aws_acm_certificate.this.aws_region == "us-east-2"
+    error_message = "The certificate must carry the module instance, account and region"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.this.target_dns_name == aws_lb.this.dns_name && ravion_aws_acm_certificate.this.target_zone_id == aws_lb.this.zone_id
+    error_message = "The wildcard record must point at the load balancer"
+  }
+}
+
+run "wildcard_domain_defaults_to_the_module_given_id" {
+  command = plan
+
+  variables {
+    ravion_domain_name       = null
+    module_instance_given_id = "ingress"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.this.name == "ingress"
+    error_message = "With no ravion_domain_name the wildcard's name leaf must be the module instance given id"
+  }
+}
+
+run "no_custom_domains_adds_nothing_to_the_listener" {
+  command = plan
+
+  assert {
+    condition     = length(ravion_aws_acm_certificate.custom) == 0 && length(ravion_domain.custom) == 0
+    error_message = "With no custom domains the module must issue no second certificate and allocate no domain"
+  }
+
+  assert {
+    condition     = length(output.custom_domain_names) == 0 && output.custom_certificate_arn == null
+    error_message = "With no custom domains the custom domain outputs must be empty"
+  }
+}
+
+run "custom_domains_share_one_certificate_on_the_tls_listener" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.example.com", "*.pr.example.org"]
+  }
+
+  assert {
+    condition     = length(ravion_aws_acm_certificate.custom) == 1 && ravion_aws_acm_certificate.custom[0].domains == toset(["*.preview.example.com", "*.pr.example.org"])
+    error_message = "Every custom domain must be a name on one certificate"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.custom[0].target_arn == aws_lb_listener.tls.arn
+    error_message = "The custom domains' certificate must be attached to the TLS listener"
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.custom[0].module_instance_id == "minst_test" && ravion_aws_acm_certificate.custom[0].aws_account_id == "aws_testaccount" && ravion_aws_acm_certificate.custom[0].aws_region == "us-east-2"
+    error_message = "The custom domains' certificate must carry the module instance, account and region"
+  }
+
+  assert {
+    condition     = aws_lb_listener.tls.certificate_arn == ravion_aws_acm_certificate.this.arn
+    error_message = "The managed wildcard certificate must stay the TLS listener's default certificate"
+  }
+
+  assert {
+    condition     = output.custom_domain_names == tolist(["*.preview.example.com", "*.pr.example.org"])
+    error_message = "custom_domain_names must list the custom domains as given"
+  }
+}
+
+run "each_custom_domain_points_at_the_load_balancer" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.example.com", "*.pr.example.org"]
+  }
+
+  assert {
+    condition     = toset(keys(ravion_domain.custom)) == toset(["*.preview.example.com", "*.pr.example.org"])
+    error_message = "Each custom domain must get exactly one domain allocation"
+  }
+
+  assert {
+    condition = alltrue([
+      for domain, allocation in ravion_domain.custom :
+      allocation.name == domain && allocation.module_instance_id == "minst_test" && allocation.target_dns_name == aws_lb.this.dns_name && allocation.target_zone_id == aws_lb.this.zone_id && allocation.parent_domain_name == null
+    ])
+    error_message = "Each custom domain must be allocated to this module instance and routed to the load balancer"
+  }
+}
+
+run "custom_domains_are_normalized" {
+  command = plan
+
+  variables {
+    domains = [" *.Preview.Example.com. ", "*.preview.example.com", ""]
+  }
+
+  assert {
+    condition     = ravion_aws_acm_certificate.custom[0].domains == toset(["*.preview.example.com"]) && toset(keys(ravion_domain.custom)) == toset(["*.preview.example.com"])
+    error_message = "Custom domains must be lowercased, trimmed of whitespace and a trailing dot, and listed once; blank entries must be dropped"
+  }
+}
+
+run "custom_domain_under_the_ravion_apex_is_refused" {
+  command = plan
+
+  variables {
+    domains = ["*.team.example-apex.test"]
+  }
+
+  expect_failures = [ravion_aws_acm_certificate.custom]
+}
+
+run "custom_domain_on_the_managed_wildcard_itself_is_refused" {
+  command = plan
+
+  variables {
+    domains = ["*.preview.example.com", "*.previews.example-apex.test"]
+  }
+
+  expect_failures = [ravion_aws_acm_certificate.custom]
+}
+
+run "load_balancer_security_group_admits_the_listeners_only" {
+  command = plan
+
+  variables {
+    ingress_cidr_blocks = ["203.0.113.0/24", "198.51.100.0/24"]
+  }
+
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.load_balancer) == 4
+    error_message = "Each allowed CIDR must get exactly one rule per listener"
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_vpc_security_group_ingress_rule.load_balancer :
+      rule.security_group_id == "sg-0aaaaaaaaaaaaaaaa" && rule.ip_protocol == "tcp" && rule.from_port == rule.to_port && contains([80, 443], rule.from_port) && contains(["203.0.113.0/24", "198.51.100.0/24"], rule.cidr_ipv4)
+    ])
+    error_message = "The load balancer must accept only TCP 443 and 80 from the allowed CIDRs"
+  }
+
+  assert {
+    condition     = length(aws_vpc_security_group_egress_rule.load_balancer) == 3
+    error_message = "The load balancer must have one egress rule per router port"
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_vpc_security_group_egress_rule.load_balancer :
+      rule.security_group_id == "sg-0aaaaaaaaaaaaaaaa" && rule.referenced_security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == null && rule.ip_protocol == "tcp" && rule.from_port == rule.to_port && contains([8080, 8081, 8082], rule.from_port)
+    ])
+    error_message = "The load balancer must reach only the router's three ports"
+  }
+}
+
+run "empty_ingress_list_closes_the_load_balancer" {
+  command = plan
+
+  variables {
+    ingress_cidr_blocks = []
+  }
+
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.load_balancer) == 0
+    error_message = "An empty CIDR list must create no ingress rules"
+  }
+}
+
+run "router_accepts_traffic_from_the_load_balancer_only" {
+  command = plan
+
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.router) == 3
+    error_message = "The router must have exactly one ingress rule per port it listens on"
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_vpc_security_group_ingress_rule.router :
+      rule.security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.referenced_security_group_id == "sg-0aaaaaaaaaaaaaaaa" && rule.cidr_ipv4 == null && rule.cidr_ipv6 == null && rule.prefix_list_id == null
+    ])
+    error_message = "Every router ingress rule must name the load balancer's security group as its only source"
+  }
+
+  assert {
+    condition     = toset([for rule in aws_vpc_security_group_ingress_rule.router : rule.from_port]) == toset([8080, 8081, 8082]) && alltrue([for rule in aws_vpc_security_group_ingress_rule.router : rule.from_port == rule.to_port && rule.ip_protocol == "tcp"])
+    error_message = "The router must accept TCP 8080, 8081 and 8082 and nothing else"
+  }
+}
+
+run "router_reaches_the_control_plane_and_the_preview_port_range_only" {
+  command = plan
+
+  variables {
+    sandbox_host_security_groups = [
+      { name = "pool_a", id = "sg-0cccccccccccccccc" },
+      { name = "pool_b", id = "sg-0dddddddddddddddd" },
+    ]
+  }
+
+  assert {
+    condition     = length(aws_vpc_security_group_egress_rule.router_https) == 1 && aws_vpc_security_group_egress_rule.router_https["443"].from_port == 443 && aws_vpc_security_group_egress_rule.router_https["443"].to_port == 443 && aws_vpc_security_group_egress_rule.router_https["443"].ip_protocol == "tcp" && aws_vpc_security_group_egress_rule.router_https["443"].cidr_ipv4 == "0.0.0.0/0"
+    error_message = "The router's only route out of the VPC must be HTTPS"
+  }
+
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_egress_rule.router_previews)) == toset(["pool_a", "pool_b"])
+    error_message = "The preview port range must be opened to each sandbox host group and to no other destination"
+  }
+
+  assert {
+    condition = alltrue([
+      for key, rule in aws_vpc_security_group_egress_rule.router_previews :
+      rule.security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.referenced_security_group_id == { pool_a = "sg-0cccccccccccccccc", pool_b = "sg-0dddddddddddddddd" }[key] && rule.cidr_ipv4 == null && rule.ip_protocol == "tcp" && rule.from_port == 20000 && rule.to_port == 20998
+    ])
+    error_message = "Inside the VPC the router must reach TCP 20000-20998 on the sandbox host groups only"
+  }
+}
+
+run "control_plane_on_another_port_gets_its_own_egress_rule" {
+  command = plan
+
+  variables {
+    ravion_api_url = "https://control.example.test:8443"
+  }
+
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_egress_rule.router_https)) == toset(["443", "8443"])
+    error_message = "A control plane on another port must be reachable, beside 443 for AWS APIs"
+  }
+
+  assert {
+    condition     = aws_vpc_security_group_egress_rule.router_https["8443"].from_port == 8443 && aws_vpc_security_group_egress_rule.router_https["8443"].to_port == 8443
+    error_message = "The extra rule must open the control plane's port only"
+  }
+}
+
+run "no_sandbox_host_groups_adds_no_rule" {
+  command = plan
+
+  assert {
+    condition     = length(aws_vpc_security_group_ingress_rule.sandbox_hosts) == 0
+    error_message = "With no sandbox host security groups the module must add no rule to any other group"
+  }
+
+  assert {
+    condition     = length(aws_vpc_security_group_egress_rule.router_previews) == 0
+    error_message = "With no sandbox host security groups the router must reach no preview port"
+  }
+
+  assert {
+    condition     = length(output.sandbox_host_security_group_ids) == 0
+    error_message = "sandbox_host_security_group_ids must be empty when no group is given"
+  }
+}
+
+run "sandbox_hosts_admit_the_router_on_the_preview_port_range" {
+  command = plan
+
+  variables {
+    sandbox_host_security_groups = [
+      { name = "pool_b", id = "sg-0dddddddddddddddd" },
+      { name = "pool_a", id = "sg-0cccccccccccccccc" },
+    ]
+  }
+
+  assert {
+    condition     = toset(keys(aws_vpc_security_group_ingress_rule.sandbox_hosts)) == toset(["pool_a", "pool_b"])
+    error_message = "Each sandbox host security group must get exactly one rule, named by its key"
+  }
+
+  assert {
+    condition = alltrue([
+      for key, rule in aws_vpc_security_group_ingress_rule.sandbox_hosts :
+      rule.security_group_id == { pool_a = "sg-0cccccccccccccccc", pool_b = "sg-0dddddddddddddddd" }[key] && rule.referenced_security_group_id == "sg-0bbbbbbbbbbbbbbbb" && rule.cidr_ipv4 == null && rule.cidr_ipv6 == null && rule.prefix_list_id == null
+    ])
+    error_message = "Each rule must sit on the sandbox hosts' group and name the router's security group as its only source"
+  }
+
+  assert {
+    condition = alltrue([
+      for rule in aws_vpc_security_group_ingress_rule.sandbox_hosts :
+      rule.ip_protocol == "tcp" && rule.from_port == 20000 && rule.to_port == 20998
+    ])
+    error_message = "Sandbox hosts must admit the router on TCP 20000-20998, the range the router may reach, and nothing else"
+  }
+
+  assert {
+    condition     = output.sandbox_host_security_group_ids == tolist(["sg-0cccccccccccccccc", "sg-0dddddddddddddddd"])
+    error_message = "sandbox_host_security_group_ids must list each group that admits the router once, in a stable order"
+  }
+}
+
+run "one_router_instance_is_tagged_for_enrollment" {
+  command = plan
+
+  assert {
+    condition     = aws_autoscaling_group.router.min_size == 1 && aws_autoscaling_group.router.max_size == 1 && aws_autoscaling_group.router.desired_capacity == 1
+    error_message = "The group must keep exactly one router instance"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.target_group_arns == toset([aws_lb_target_group.traffic.arn, aws_lb_target_group.redirect.arn])
+    error_message = "The instance must be registered with both target groups"
+  }
+
+  assert {
+    condition     = one([for tag in aws_autoscaling_group.router.tag : tag if tag.key == "ravion:preview-router"]).value == "minst_test" && one([for tag in aws_autoscaling_group.router.tag : tag if tag.key == "ravion:preview-router"]).propagate_at_launch == true
+    error_message = "The group must propagate the ravion:preview-router tag with the module instance id"
+  }
+
+  assert {
+    condition     = one([for spec in aws_launch_template.router.tag_specifications : spec if spec.resource_type == "instance"]).tags["ravion:preview-router"] == "minst_test"
+    error_message = "The instance must carry the ravion:preview-router tag from the moment it launches"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.vpc_zone_identifier == toset(["subnet-1a", "subnet-1b"])
+    error_message = "The router must launch in the router subnets"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.health_check_type == "ELB" && aws_autoscaling_group.router.wait_for_elb_capacity == 1
+    error_message = "A router that never turns healthy behind the load balancer must be replaced, and must fail the apply that launched it"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.instance_refresh[0].strategy == "Rolling"
+    error_message = "A changed launch template must replace the running router"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.instance_refresh[0].preferences[0].min_healthy_percentage == 100 && aws_autoscaling_group.router.instance_refresh[0].preferences[0].max_healthy_percentage == 200
+    error_message = "A changed launch template must launch the new router before the old one is drained"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.instance_maintenance_policy[0].min_healthy_percentage == 100 && aws_autoscaling_group.router.instance_maintenance_policy[0].max_healthy_percentage == 200
+    error_message = "Any replacement of the router must launch the new one first"
+  }
+}
+
+run "launch_template_is_locked_down" {
+  command = plan
+
+  assert {
+    condition     = aws_launch_template.router.metadata_options[0].http_tokens == "required" && aws_launch_template.router.metadata_options[0].http_endpoint == "enabled" && aws_launch_template.router.metadata_options[0].http_put_response_hop_limit == 1
+    error_message = "The instance must require IMDSv2"
+  }
+
+  assert {
+    condition     = aws_launch_template.router.network_interfaces[0].security_groups == toset(["sg-0bbbbbbbbbbbbbbbb"]) && aws_launch_template.router.network_interfaces[0].associate_public_ip_address == "false"
+    error_message = "The instance must use the router security group alone and no public address by default"
+  }
+
+  assert {
+    condition     = aws_launch_template.router.block_device_mappings[0].device_name == "/dev/xvda" && aws_launch_template.router.block_device_mappings[0].ebs[0].encrypted == "true"
+    error_message = "The root volume must be encrypted"
+  }
+
+  assert {
+    condition     = aws_launch_template.router.image_id == "ami-0aaaaaaaaaaaaaaaa" && aws_launch_template.router.instance_type == "t3.micro"
+    error_message = "The instance must default to a t3.small from the looked-up image"
+  }
+}
+
+run "user_data_installs_and_starts_the_router" {
+  command = plan
+
+  assert {
+    condition     = startswith(base64decode(aws_launch_template.router.user_data), "#!/bin/bash\n") && strcontains(base64decode(aws_launch_template.router.user_data), "\nset -Eeuo pipefail\n")
+    error_message = "The boot script must stop at the first failing step"
+  }
+
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_API_URL=https://api.example.test\n") && strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_PREVIEW_ROUTER_MODULE_INSTANCE_ID=minst_test\n")
+    error_message = "The boot script must hand the router its control plane and its module instance id"
+  }
+
+  assert {
+    condition     = !strcontains(base64decode(aws_launch_template.router.user_data), "curl")
+    error_message = "The boot script must run the router the image carries and download nothing"
+  }
+
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "ExecStart=/usr/local/bin/preview-router --listen :8080 --listen-redirect :8081 --listen-health :8082\n")
+    error_message = "The unit must start the router on the ports the load balancer targets"
+  }
+
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "systemctl enable --now ravion-preview-router.service")
+    error_message = "The boot script must enable and start the router unit"
+  }
+}
+
+run "overrides_reach_the_instance" {
+  command = plan
+
+  variables {
+    ravion_api_url           = "https://api.staging.example.test"
+    instance_type            = "m7i.large"
+    image_id                 = "ami-0123456789abcdef0"
+    router_public_ip_enabled = true
+  }
+
+  override_data {
+    target = data.aws_ami.router
+    values = {
+      id               = "ami-0123456789abcdef0"
+      architecture     = "x86_64"
+      root_device_name = "/dev/sda1"
+    }
+  }
+
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.router.user_data), "RAVION_API_URL=https://api.staging.example.test\n")
+    error_message = "A control plane override must reach the router's environment"
+  }
+
+  assert {
+    condition     = aws_launch_template.router.image_id == "ami-0123456789abcdef0" && aws_launch_template.router.instance_type == "m7i.large" && aws_launch_template.router.block_device_mappings[0].device_name == "/dev/sda1"
+    error_message = "An explicit image and instance type must be used as given"
+  }
+
+  assert {
+    condition     = aws_launch_template.router.network_interfaces[0].associate_public_ip_address == "true"
+    error_message = "A router in public subnets must be given a public address"
+  }
+}
+
+run "image_and_instance_type_must_share_an_architecture" {
+  command = plan
+
+  variables {
+    instance_type = "t4g.small"
+    image_id      = "ami-0123456789abcdef0"
+  }
+
+  override_data {
+    target = data.aws_ec2_instance_type.router
+    values = {
+      supported_architectures = ["arm64"]
+    }
+  }
+
+  expect_failures = [aws_launch_template.router]
+}
+
+run "router_may_publish_metrics_in_its_namespace_only" {
+  command = plan
+
+  assert {
+    condition     = aws_iam_instance_profile.router.role == aws_iam_role.router.name && aws_launch_template.router.iam_instance_profile[0].arn == aws_iam_instance_profile.router.arn
+    error_message = "The instance must use the module's instance profile"
+  }
+
+  assert {
+    condition     = aws_iam_role_policy.router_metrics.role == aws_iam_role.router.id && length(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement) == 1
+    error_message = "The router's role must hold one inline statement"
+  }
+
+  assert {
+    condition     = one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Effect == "Allow" && one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Action == "cloudwatch:PutMetricData" && one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Resource == "*"
+    error_message = "The statement must allow cloudwatch:PutMetricData, which has no resource-level permissions, and nothing else"
+  }
+
+  assert {
+    condition     = one(jsondecode(aws_iam_role_policy.router_metrics.policy).Statement).Condition == { StringEquals = { "cloudwatch:namespace" = "Ravion/PreviewRouter" } }
+    error_message = "The router must publish metrics only in the Ravion/PreviewRouter namespace"
+  }
+}
+
+run "session_manager_access_adds_the_session_manager_core_policy" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.router_ssm) == 1 && aws_iam_role_policy_attachment.router_ssm[0].role == aws_iam_role.router.name
+    error_message = "Session Manager access must be on by default"
+  }
+
+  assert {
+    condition     = aws_iam_role_policy_attachment.router_ssm[0].policy_arn == "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    error_message = "Session Manager access must attach the Session Manager core policy and no other managed policy"
+  }
+}
+
+run "session_manager_off_leaves_the_metrics_permission_only" {
+  command = plan
+
+  variables {
+    ssm_enabled = false
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy_attachment.router_ssm) == 0
+    error_message = "Turning Session Manager off must attach no managed policy"
+  }
+
+  assert {
+    condition     = aws_launch_template.router.iam_instance_profile[0].arn == aws_iam_instance_profile.router.arn && aws_iam_role_policy.router_metrics.role == aws_iam_role.router.id
+    error_message = "With Session Manager off the router must keep its role, so it can still publish its metrics"
+  }
+}
+
+run "outputs_describe_the_router" {
+  command = plan
+
+  assert {
+    condition     = output.sandbox_router_id == "minst_test"
+    error_message = "sandbox_router_id must be the module instance id"
+  }
+
+  assert {
+    condition     = output.sandbox_router_dns_name == "previews-1234567890123456.elb.us-east-2.amazonaws.com" && output.sandbox_router_zone_id == "ZLMOA37VPKANP"
+    error_message = "The router's DNS name and zone must be the load balancer's"
+  }
+
+  assert {
+    condition     = output.sandbox_router_load_balancer_arn == "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/net/previews/1234567890123456"
+    error_message = "sandbox_router_load_balancer_arn must be the load balancer's ARN"
+  }
+
+  assert {
+    condition     = output.sandbox_router_security_group_id == "sg-0bbbbbbbbbbbbbbbb"
+    error_message = "sandbox_router_security_group_id must be the router instance's security group, not the load balancer's"
+  }
+
+  assert {
+    condition     = output.wildcard_domain_name == "previews.example-apex.test"
+    error_message = "wildcard_domain_name must be the certificate's apex"
+  }
+
+  assert {
+    condition     = output.aws_account_id == "123456789012" && output.region == "us-east-2"
+    error_message = "The account and region outputs must describe where the resources live"
+  }
+
+  assert {
+    condition     = output.load_balancer_arn_suffix == "net/previews/1234567890123456" && output.traffic_target_group_arn_suffix == "targetgroup/previews-https/1111111111111111"
+    error_message = "The load balancer and traffic target group must be named the way their CloudWatch metrics are"
+  }
+}
+
+run "router_can_be_turned_off" {
+  command = plan
+
+  variables {
+    router_enabled = false
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.min_size == 0 && aws_autoscaling_group.router.max_size == 0 && aws_autoscaling_group.router.desired_capacity == 0
+    error_message = "A router turned off must leave the Auto Scaling group with no instance"
+  }
+
+  assert {
+    condition     = aws_autoscaling_group.router.wait_for_elb_capacity == 0
+    error_message = "An apply that turns the router off must not wait for a healthy router"
+  }
+
+  assert {
+    condition     = length(aws_lb.this.subnets) == 2 && aws_launch_template.router.instance_type == "t3.micro"
+    error_message = "Turning the router off must keep the load balancer and launch template, so turning it on again needs no new resources"
+  }
+}

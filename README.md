@@ -26,6 +26,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, default S3-backed Loki logs, Prometheus/Thanos metrics and Tempo traces with optional AMP, X-Ray and vendors, an OTLP receiver, in-cluster Grafana on a shared ALB or a Kubernetes Ingress with Grafana's OAuth sign-in, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI with a default gp3 StorageClass and online StatefulSet volume growth (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, `rvn-eks-cron`, and `rvn-eks-chart` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions with live-alias rollback and Terraform-managed custom aliases   | v1.0.0  |
+| `compute/`    | `preview`         | Preview of a repository's branches: each branch runs in its own sandbox from shell steps, with its HTTP ports served through a preview ingress; a module definition with no Terraform (the `rvn-preview` module definition) | Unreleased |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
 | `database/`   | `planetscale_vitess` | PlanetScale MySQL with saved integrations, organization-specific regions and cluster sizes including Metal NVMe, and short-lived runner credentials, standard Terraform pipeline defaults and shared advanced settings, automatic default-keyspace adoption after creation, in-place resizing, configurable replicas and credential CIDRs, and advanced VTGate/backup controls (includes organization-only `rvn-planetscale-vitess` module definition) | Unreleased |
@@ -39,6 +40,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `networking/` | `alternat`        | Highly available alterNAT NAT instances for any VPC, with route table discovery, automatic per-AZ placement, and failover to an existing or standby NAT gateway (includes `rvn-aws-alternat` module definition) | Unreleased |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
+| `networking/` | `preview_ingress` | Entry point for sandbox previews: a Network Load Balancer with a Ravion-managed wildcard domain and certificate, optional custom wildcard domains, and a rule on each sandbox host security group, in front of one preview router instance that forwards each preview hostname to its sandbox and wakes paused sandboxes on request (includes the `rvn-preview-ingress` module definition) | Unreleased |
 | `networking/` | `route53`         | AWS Route53 hosted zones and records                                   | v1.0.0  |
 | `networking/` | `security-groups` | AWS Security Groups                                                    | v1.0.0  |
 | `networking/` | `vpc`             | AWS VPC with adaptive public and private subnets                       | v1.0.0  |
@@ -90,6 +92,8 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
 | `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |
+| `rvn-preview` | Preview | v0.1.0 | `compute/preview/` |
+| `rvn-preview-ingress` | Preview Ingress | v0.1.0 | `networking/preview_ingress/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |
