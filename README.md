@@ -18,6 +18,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
 | `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
+| `compute/`    | `app_cluster`     | Where apps deployed with `ravion deploy` run: a sandbox pool registered for the cluster with its hosts' security group, and an internet-facing Network Load Balancer with a Ravion-managed wildcard domain and certificate in front of a Ravion-run router, with the router's security group, IAM role and instance profile and the rule that admits it to the hosts (includes `rvn-app-cluster` module definition) | Unreleased |
 | `compute/`    | `autoscaling`     | AWS Auto Scaling groups with optional generated names for safe replacement | v1.0.0  |
 | `compute/`    | `ec2_service`     | Supervised EC2 workloads with opt-in replaceable Auto Scaling groups, configurable rolling deploys, ALB routing, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
@@ -64,6 +65,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | Definition | Name | Version | Module path |
 | ---------- | ---- | ------- | ----------- |
 | `rvn-acm-certificate` | ACM Certificate | v1.1.1 | `security/acm_certificate/` |
+| `rvn-app-cluster` | App Cluster | v0.1.0 | `compute/app_cluster/` |
 | `rvn-aurora` | Aurora Database | v1.5.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.3.0 | `networking/alb/` |
 | `rvn-aws-alternat` | alterNAT | v0.1.2 | `networking/alternat/` |

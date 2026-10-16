@@ -1,0 +1,843 @@
+global: false
+definition:
+  type: rvn-app-cluster
+  name: App Cluster
+  description: Runs the apps you deploy with ravion deploy, each in its own sandbox on hosts in your VPC, and serves them under a managed wildcard domain through a Network Load Balancer and a router that wakes a paused app on request.
+release:
+  version: 0.1.0
+  description: "Run apps deployed with ravion deploy on sandbox hosts in your VPC, served under a managed wildcard domain through a router that wakes paused apps on request."
+module:
+  outputs:
+    - id: execution_environment_id
+      type: string
+      label: Execution environment ID
+      description: The execution environment whose sandbox pool runs the apps.
+    - id: wildcard_domain_name
+      type: string
+      label: Wildcard domain
+      description: Every app address is a hostname one label below this domain.
+    - id: router_subnet_ids
+      type: string_array
+      label: Router subnet IDs
+    - id: router_security_group_id
+      type: string
+      label: Router security group ID
+    - id: router_instance_profile_name
+      type: string
+      label: Router instance profile
+    - id: traffic_target_group_arn
+      type: string
+      label: HTTPS target group ARN
+    - id: redirect_target_group_arn
+      type: string
+      label: HTTP target group ARN
+    - id: host_security_group_id
+      type: string
+      label: Sandbox host security group ID
+      description: Allow this group in a database's or another service's security group to let the apps reach it.
+    - id: certificate_arn
+      type: string
+      label: Certificate ARN
+    - id: custom_domain_names
+      type: string_array
+      label: Custom domains
+    - id: custom_certificate_arn
+      type: string
+      label: Custom domains certificate ARN
+    - id: load_balancer_arn
+      type: string
+      label: Load balancer ARN
+    - id: load_balancer_dns_name
+      type: string
+      label: Load balancer DNS name
+    - id: load_balancer_zone_id
+      type: string
+      label: Load balancer hosted zone ID
+    - id: load_balancer_security_group_id
+      type: string
+      label: Load balancer security group ID
+    - id: load_balancer_arn_suffix
+      type: string
+      label: Load balancer ARN suffix
+      description: The LoadBalancer dimension of the load balancer's CloudWatch metrics.
+    - id: traffic_target_group_arn_suffix
+      type: string
+      label: HTTPS target group ARN suffix
+      description: The TargetGroup dimension of the router's health metrics.
+    - id: aws_account_id
+      type: string
+      label: AWS account ID
+    - id: region
+      type: string
+      label: Region
+  inputs:
+    - id: network
+      immutable: true
+      label: VPC network
+      type: $ref:rvn-aws-network
+      description: The load balancer runs in its public subnets, and the router and the sandbox hosts in its private subnets, which need a NAT gateway.
+      mapped_inputs:
+        - $template: ../../partials/templates/network-ref-mapped-inputs.yml
+          with:
+            aws_account_id_default: << ref.input.aws_account_id >>
+            aws_region_default: << ref.input.aws_region >>
+            execution_environment_default: << ref.input.execution_environment_id >>
+            private_subnet_ids_default: <<ref.stack.output.private_subnet_ids>>
+            public_subnet_ids_default: <<ref.stack.output.public_subnet_ids>>
+            vpc_id_default: <<ref.stack.output.vpc_id>>
+      required: true
+    - id: section_cluster
+      label: Cluster
+      type: section
+    - id: name
+      immutable: true
+      label: Name slug
+      type: string
+      description: Name for the load balancer and related resources.
+      required: true
+      default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      patterns:
+        - message: 1-32 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$
+    - id: section_domain
+      label: Domain
+      type: section
+    - description: Apps are served one label below it, such as my-app.<domain>. Leave blank to use this module's ID.
+      id: ravion_domain_name
+      label: Ravion domain
+      patterns:
+        - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+      required: false
+      suffix: ".<< platform.apex >>"
+      type: string
+    - id: ingress_cidr_blocks
+      label: Allowed source CIDRs
+      type: string_array
+      description: IPv4 ranges that may open the apps. Defaults to public internet access. Use an empty list to allow none.
+      add_button_label: Add CIDR block
+      collapsible: true
+      placeholder: 0.0.0.0/0
+    - id: section_hosts
+      label: Hosts
+      type: section
+    - id: host_instance_types
+      label: Instance types
+      type: object_array
+      description: Types the sandbox pool may launch. Leave empty to let Ravion choose from the region's c8id, m8id, r8id, i7i, and i7ie types.
+      item_label: Instance type
+      item_title:
+        fallback: Instance type
+        template: "{type}"
+      item_description: "{disk_gib} GiB root volume"
+      item_inputs:
+        - id: type
+          label: Instance type
+          type: string
+          description: Must support nested virtualization.
+          required: true
+          no_options_message: Select a VPC Network, or enter an AWS account and region, to load available EC2 instance types.
+          values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
+        - id: disk_gib
+          label: Root volume (GiB)
+          type: number
+          description: Holds the snapshot cache and, on a type without instance store, the running sandboxes.
+          required: true
+          default: 130
+          min: 30
+          max: 16384
+        - id: disk_iops
+          label: Root volume IOPS
+          type: number
+          description: Above 3000 is billed, also while a host is parked.
+          collapsible: true
+          required: true
+          default: 3000
+          min: 3000
+          max: 16000
+        - id: disk_throughput_mbps
+          label: Root volume throughput (MB/s)
+          type: number
+          description: Above 125 is billed, also while a host is parked.
+          collapsible: true
+          required: true
+          default: 125
+          min: 125
+          max: 1000
+      default: []
+    - id: host_capacity_types
+      label: Markets
+      type: string_array
+      description: On-demand is required. Spot adds Spot hosts, which AWS can reclaim with two minutes' notice.
+      required: true
+      default:
+        - ON_DEMAND
+      values:
+        - label: On-demand
+          value: ON_DEMAND
+        - label: Spot
+          value: SPOT
+    - id: warm_hosts
+      label: Warm hosts
+      type: string
+      description: Hosts kept parked and ready. With none, a deploy after a quiet period waits a minute or two for a host to launch.
+      required: true
+      default: NONE
+      values:
+        - label: None
+          value: NONE
+        - label: Fixed number
+          value: FIXED
+        - label: Busiest minute
+          value: PEAK
+        - label: Average daily peak
+          value: ROLLING_AVERAGE
+    - id: warm_host_count
+      label: Warm host count
+      type: number
+      default: 1
+      min: 0
+      show_when:
+        warm_hosts: FIXED
+    - id: warm_host_window_days
+      label: Usage window (days)
+      type: number
+      description: How far back the warm host count is measured.
+      default: 7
+      min: 1
+      max: 90
+      show_when:
+        warm_hosts:
+          - PEAK
+          - ROLLING_AVERAGE
+    - id: max_hosts
+      label: Max hosts
+      type: number
+      description: Parked hosts included. Apps that find no room once the pool has this many wait for room.
+      required: true
+      default: 10
+      min: 1
+      max: 100
+    - id: section_router
+      label: Router
+      type: section
+    - id: router_instance_type
+      label: Router instance type
+      type: string
+      required: true
+      default: t3.micro
+      no_options_message: Select a VPC Network, or enter an AWS account and region, to load available EC2 instance types.
+      values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
+    - id: section_app_defaults
+      label: App defaults
+      type: section
+    - id: app_cpu
+      label: vCPUs
+      type: number
+      description: Used when an app's ravion-app.yaml sets none, as are the other app defaults.
+      required: true
+      default: 2
+      min: 1
+    - id: app_memory
+      label: Memory (GiB)
+      type: number
+      required: true
+      default: 4
+      min: 1
+    - id: app_disk
+      label: Disk (GiB)
+      type: number
+      required: true
+      default: 20
+      min: 1
+    - id: app_idle_timeout
+      label: Idle timeout (minutes)
+      type: number
+      description: Time without a request or a running command before an app is paused. 0 never pauses it.
+      required: true
+      default: 15
+      min: 0
+    - id: section_app_limits
+      label: App limits
+      type: section
+    - id: max_cpu
+      label: Max vCPUs per app
+      type: number
+      description: A deploy asking for more than a limit is refused.
+      required: true
+      default: 8
+      min: 1
+    - id: max_memory
+      label: Max memory per app (GiB)
+      type: number
+      required: true
+      default: 16
+      min: 1
+    - id: max_disk
+      label: Max disk per app (GiB)
+      type: number
+      required: true
+      default: 100
+      min: 1
+    - id: max_idle_timeout
+      label: Max idle timeout (minutes)
+      type: number
+      description: 0 sets no limit, so an app may also ask never to pause.
+      required: true
+      default: 1440
+      min: 0
+    - id: retention_days
+      label: Disk kept while paused (days)
+      type: number
+      description: After it, a paused app's disk is deleted and the app stays stopped until its next deploy.
+      required: true
+      default: 7
+      min: 1
+      max: 30
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: compute/app_cluster
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        host_capacity_types: '<< module.input.host_capacity_types || ["ON_DEMAND"] >>'
+        host_instance_types: << module.input.host_instance_types || [] >>
+        host_reserve_policy: >-
+          << {"type": module.input.warm_hosts || "NONE", "value": module.input.warm_host_count || 0,
+          "window_days": module.input.warm_host_window_days || 7} >>
+        host_subnet_id: << module.input.private_subnet_ids[0] >>
+        ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
+        max_hosts: << module.input.max_hosts >>
+        module_instance_id: << module.id >>
+        name: << module.input.name >>
+        public_subnet_ids: << module.input.public_subnet_ids >>
+        ravion_aws_account_id: << module.input.aws_account_id >>
+        ravion_domain_name: << module.input.ravion_domain_name >>
+        region: << module.input.aws_region >>
+        router_subnet_ids: << module.input.private_subnet_ids >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        vpc_id: << module.input.vpc_id >>
+  apps:
+    executionEnvironmentId: << module.output.execution_environment_id >>
+    domain: << module.output.wildcard_domain_name >>
+    router:
+      instanceType: << module.input.router_instance_type >>
+      subnetIds: << module.output.router_subnet_ids >>
+      securityGroupId: << module.output.router_security_group_id >>
+      instanceProfileName: << module.output.router_instance_profile_name >>
+      trafficTargetGroupArn: << module.output.traffic_target_group_arn >>
+      redirectTargetGroupArn: << module.output.redirect_target_group_arn >>
+    defaults:
+      cpu: << module.input.app_cpu >>
+      memoryMib: << module.input.app_memory * 1024 >>
+      diskGib: << module.input.app_disk >>
+      idleTimeoutSeconds: << module.input.app_idle_timeout * 60 >>
+    limits:
+      cpu: << module.input.max_cpu >>
+      memoryMib: << module.input.max_memory * 1024 >>
+      diskGib: << module.input.max_disk >>
+      idleTimeoutSeconds: << module.input.max_idle_timeout * 60 >>
+      retentionSeconds: << module.input.retention_days * 86400 >>
+  ui:
+    metrics:
+      - id: requests
+        name: Requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Requests
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: responses_2xx
+        name: 2xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Responses2xx
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: responses_3xx
+        name: 3xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Responses3xx
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: responses_4xx
+        name: 4xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Responses4xx
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: responses_5xx
+        name: 5xx responses
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Responses5xx
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: latency_average
+        name: Latency (avg)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Latency
+          statistic: Average
+          dimensions:
+            Router: << module.id >>
+      - id: latency_maximum
+        name: Latency (max)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Latency
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: requests_by_hostname
+        name: Requests by hostname
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Requests
+          statistic: Sum
+          group_by: Hostname
+          dimensions:
+            Router: << module.id >>
+      - id: responses_5xx_by_hostname
+        name: 5xx responses by hostname
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Responses5xx
+          statistic: Sum
+          group_by: Hostname
+          dimensions:
+            Router: << module.id >>
+      - id: unknown_hostname_requests
+        name: Unknown hostname requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: UnknownHostnameRequests
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: wakes
+        name: App wakes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Wakes
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: wake_failures
+        name: App wake failures
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: WakeFailures
+          statistic: Sum
+          dimensions:
+            Router: << module.id >>
+      - id: wake_duration
+        name: App wake duration (avg)
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: WakeDuration
+          statistic: Average
+          dimensions:
+            Router: << module.id >>
+      - id: held_requests
+        name: Held requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: HeldRequests
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: open_websockets
+        name: Open WebSockets
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: OpenWebSockets
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: routes
+        name: Routes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: Routes
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: control_plane_connected
+        name: Control plane connected
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: ControlPlaneConnected
+          statistic: Minimum
+          dimensions:
+            Router: << module.id >>
+      - id: healthy_routers
+        name: Healthy routers
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: HealthyHostCount
+          statistic: Minimum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+            TargetGroup: << module.output.traffic_target_group_arn_suffix >>
+      - id: unhealthy_routers
+        name: Unhealthy routers
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: UnHealthyHostCount
+          statistic: Maximum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+            TargetGroup: << module.output.traffic_target_group_arn_suffix >>
+      - id: new_connections
+        name: New connections
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: NewFlowCount
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: active_connections
+        name: Active connections
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ActiveFlowCount
+          statistic: Average
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: data_processed
+        name: Data processed
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ProcessedBytes
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: peak_throughput
+        name: Peak throughput
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: PeakBytesPerSecond
+          statistic: Maximum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: capacity_units
+        name: Load balancer capacity units
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ConsumedLCUs
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: client_tls_errors
+        name: Client TLS negotiation errors
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: ClientTLSNegotiationErrorCount
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: blocked_connections
+        name: Connections blocked by ingress CIDRs
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: SecurityGroupBlockedFlowCount_Inbound_TCP
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: client_resets
+        name: Resets sent by clients
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_Client_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: router_resets
+        name: Resets sent by the router
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_Target_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: load_balancer_resets
+        name: Resets sent by the load balancer
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: AWS/NetworkELB
+          name: TCP_ELB_Reset_Count
+          statistic: Sum
+          dimensions:
+            LoadBalancer: << module.output.load_balancer_arn_suffix >>
+      - id: router_memory
+        name: Router memory used
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/AppRouter
+          name: MemoryUsedMiB
+          statistic: Maximum
+          dimensions:
+            Router: << module.id >>
+      - id: hosts_running
+        name: Running host minutes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/SandboxHost
+          name: BusyHosts
+          statistic: SampleCount
+          dimensions:
+            ExecutionEnvironmentId: << module.output.execution_environment_id >>
+      - id: hosts_busy
+        name: Busy host minutes
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << module.output.region >>
+          namespace: Ravion/SandboxHost
+          name: BusyHosts
+          statistic: Sum
+          dimensions:
+            ExecutionEnvironmentId: << module.output.execution_environment_id >>
+
+  readme: |
+    Runs the apps you deploy with `ravion deploy`, each in its own sandbox on hosts in your VPC, and serves them under a managed wildcard domain through a Network Load Balancer and a router that wakes a paused app on request.
+
+    ## Overview
+
+    Select a VPC network and Ravion provisions everything the cluster's apps run on:
+
+    - A **sandbox pool** for the cluster. Ravion launches its hosts in the network's private subnets when apps need room, and each app runs in its own sandbox on them.
+    - A **wildcard domain and certificate** on Ravion's managed apex. Every app address is a hostname one label below it.
+    - An internet-facing **Network Load Balancer** that terminates TLS with that certificate.
+    - A **router** behind the load balancer that sends each hostname to its app. Ravion runs the router instance and replaces it with a new one, launched and ready before the old one stops, when a new router release ships.
+    - **Security groups** for the load balancer, the router and the sandbox hosts. Only the router reaches the hosts.
+
+    Requests go from the browser to the load balancer, to the router, to the app's sandbox. They stay inside your AWS account.
+
+    Terraform source: [ravionhq/modules/compute/app_cluster](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/app_cluster)
+
+    ## Deploying apps
+
+    Run `ravion deploy` in an app's folder and choose this cluster. The first deploy of a new name creates the app; later deploys of the same name update it. The Apps tab of this module lists every app.
+
+    | App address | Serves |
+    | --- | --- |
+    | `<app>.<domain>` | The app's first exposed port |
+    | `<app>-<port name>.<domain>` | Each other exposed port |
+
+    An app idle for its idle timeout is paused and its disk saved. A request to a paused app is held while the app wakes, then answered. A paused app's disk is kept for **Disk kept while paused**; after it, the disk is deleted and the app stays stopped until its next deploy.
+
+    ## Hosts
+
+    Instance types lists the types the pool may launch. Leave it empty to let Ravion choose from the region's c8id, m8id, r8id, i7i, and i7ie types that support nested virtualization.
+
+    Warm hosts keeps hosts parked and ready for the next deploy or wake. With none, the first deploy after a quiet period waits a minute or two for a host to launch.
+
+    Max hosts caps the hosts the pool runs at once, parked hosts included.
+
+    ## App defaults and limits
+
+    App defaults are the sizes an app gets when its `ravion-app.yaml` sets none. App limits are the most an app may ask for; a deploy asking for more is refused with the limit in the message.
+
+    ## Reaching other resources
+
+    The sandbox hosts run in the security group in the **Sandbox host security group ID** output. Allow it in a database's or another service's security group to let the apps reach it.
+
+    ## Placement and security
+
+    The load balancer is internet-facing in the network's public subnets. Restrict who can open the apps with Allowed source CIDRs. The router and the sandbox hosts run in the private subnets and need a NAT gateway for outbound traffic.
+
+    | Security group | Inbound | Outbound |
+    | --- | --- | --- |
+    | Load balancer | TCP 443 and 80 from the allowed CIDRs | The router's three ports |
+    | Router | TCP 8080, 8081 and 8082 from the load balancer's group | TCP 443 to any address; TCP 20000-20999 to the sandbox hosts' group |
+    | Sandbox hosts | TCP 20000-20999 from the router's group | Any IPv4 address |
+
+    No CIDR reaches the router or the hosts. The rule that admits the router to the hosts belongs to this module's stack, so destroying the stack removes it.
+
+    The router's instance role allows it to publish its metrics to CloudWatch, in the `Ravion/AppRouter` namespace only, and adds AWS Systems Manager Session Manager access for operators.
+
+    ## Destroying the cluster
+
+    Delete the cluster's apps first: Ravion refuses to delete the sandbox pool while it runs sandboxes, so a destroy with apps fails.
+
+    ## Metrics
+
+    The Metrics tab reads CloudWatch in your account:
+
+    - Router, published every minute: requests, responses by status class, latency average and maximum, requests and 5xx responses per hostname, requests for unknown hostnames, app wakes, wake failures and wake duration, requests held during a wake, open WebSockets, routes, whether the router is connected to Ravion, and the router's memory.
+    - Load balancer: healthy and unhealthy routers, new and active connections, data processed, peak throughput, capacity units, client TLS errors, connections the allowed CIDRs block, and resets by side.
+    - Sandbox pool: host minutes running and busy, from the minute each running host reports.
+
+    Each app's page charts its own sandbox and requests.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | --- | --- | --- | --- |
+    | VPC network | Yes | - | Existing rvn-aws-network module instance |
+    | Name slug | Yes | {project}-{env}-{module} | Name for the load balancer, 32 characters max |
+    | Ravion domain | No | {module} | Base for app addresses on Ravion's managed apex |
+    | Allowed source CIDRs | No | 0.0.0.0/0 | Sources allowed to open the apps |
+    | Instance types | No | Ravion's choice | Host instance types, each with its root volume |
+    | Markets | Yes | On-demand | On-demand, and Spot if wanted |
+    | Warm hosts | Yes | None | Hosts kept parked and ready |
+    | Max hosts | Yes | 10 | Most hosts the pool runs at once |
+    | Router instance type | Yes | t3.micro | Instance type of the router |
+    | vCPUs, memory, disk | Yes | 2, 4 GiB, 20 GiB | App defaults |
+    | Idle timeout | Yes | 15 minutes | App default; 0 never pauses |
+    | Max vCPUs, memory, disk per app | Yes | 8, 16 GiB, 100 GiB | App limits |
+    | Max idle timeout | Yes | 1440 minutes | App limit; 0 sets none |
+    | Disk kept while paused | Yes | 7 days | How long a paused app's disk is kept |
+    | Tags | No | Standard Ravion tags | Additional tags applied to resources |
+    | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
+    | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
+    | Ravion Terraform workspace name | No | {project}-{env}-{module} | Override the state backend workspace name |
+
+    ## Design decisions
+
+    - TLS ends at the load balancer with a certificate Ravion issues and renews. The router receives plain HTTP/1.1, and WebSocket upgrades pass through.
+    - Port 80 reaches the router, which redirects to HTTPS. A Network Load Balancer cannot redirect by itself.
+    - Ravion runs the router instance, so a new router release reaches the cluster without a stack run.
+    - The load balancer, the router and the hosts use IPv4.
+    - The load balancer writes no access logs.
+
+    ## Learn more
+
+    - [Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html)
+    - [TLS listeners](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/create-tls-listener.html)
+    - [Security groups for Network Load Balancers](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-security-groups.html)
