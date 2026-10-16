@@ -96,7 +96,7 @@ locals {
             {
               for key, value in {
                 serviceMap = {
-                  datasourceUid = lookup({ amp = "ravion-amp", prometheus = "ravion-prometheus", mimir = "ravion-mimir" }, coalesce(local.tempo_generator_target, "prometheus"))
+                  datasourceUid = { amp = "ravion-amp", prometheus = "ravion-prometheus", mimir = "ravion-mimir" }[coalesce(local.tempo_generator_target, "prometheus")]
                 }
               } : key => value if local.tempo_generator_enabled
             },
