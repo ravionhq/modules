@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.22.0
-  description: "Add Grafana Mimir as an in-cluster metrics destination for clusters that outgrow one Prometheus: three copies of every sample on separate nodes, optionally one per availability zone, history in its own S3 bucket, no limits that reject metrics, and the same Metrics tab, Grafana and KEDA queries through its Prometheus API. Select it alongside Prometheus to move without losing data, then deselect Prometheus."
+  version: 0.23.0
+  description: "Mimir ingesters drop series from pods that have gone, compacting early once they hold half their memory in series, so rollouts and scale-downs no longer fill them until they are killed for memory. Ingesters and store-gateways now refuse to share a node, as the three copies promise."
 module:
   inputs:
     - id: cluster
