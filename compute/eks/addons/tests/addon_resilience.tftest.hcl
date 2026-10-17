@@ -488,12 +488,39 @@ run "loki_keeps_its_wal_on_a_volume" {
     error_message = "With a StorageClass available, Loki's write-ahead log must survive a restart."
   }
   assert {
-    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet == { name = "ravion-loki", namespace = "ravion-operator" }
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet == { name = "ravion-loki", namespace = "ravion-operator", maxReplicas = 3 }
     error_message = "The switch from an ephemeral volume needs the StatefulSet recreated; a migration release must do it."
+  }
+  assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).flushUrl == "http://ravion-loki.ravion-operator.svc.cluster.local:3100/flush"
+    error_message = "Loki must flush what it holds in memory before the migration removes its pod."
+  }
+  assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).busyboxImage == { repository = "public.ecr.aws/docker/library/busybox", tag = "1.37.0-musl" }
+    error_message = "The migration Job runs a script, and the kubectl image has no shell; it needs the module's busybox image."
   }
   assert {
     condition     = one([for d in helm_release.loki[0].values : yamldecode(d).singleBinary if can(yamldecode(d).singleBinary.podAnnotations["ravion.com/volume-layout"])]).podAnnotations["ravion.com/volume-layout"] == local.loki_volume_layout
     error_message = "Loki must be upgraded whenever the migration recreates its StatefulSet, or it would be left without one."
+  }
+}
+
+# The migration Job's Role names each Loki pod it may read, so it must cover
+# every replica loki_helm_values can ask for, or the Job fails with Forbidden.
+run "loki_volume_migration_covers_replicas_from_loki_helm_values" {
+  command = plan
+
+  variables {
+    loki_helm_values = [
+      yamlencode({ singleBinary = { replicas = 5 } }),
+      yamlencode({ singleBinary = { autoscaling = { enabled = true, maxReplicas = 7 } } }),
+      yamlencode({ loki = { auth_enabled = false } }),
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet.maxReplicas == 7
+    error_message = "The migration Job must be allowed to read every Loki pod loki_helm_values can create."
   }
 }
 
