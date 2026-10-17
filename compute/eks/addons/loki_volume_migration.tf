@@ -19,10 +19,21 @@
 ################################################################################
 
 locals {
+  # The Job's Role names each pod it may read, so it must cover the most
+  # replicas any loki_helm_values document asks for, fixed or autoscaled. The
+  # floor matches the chart's default.
+  loki_volume_migration_max_replicas = max(3, flatten([
+    for doc in var.loki_helm_values : [
+      try(tonumber(yamldecode(doc).singleBinary.replicas), 0),
+      try(tonumber(yamldecode(doc).singleBinary.autoscaling.maxReplicas), 0),
+    ]
+  ])...)
+
   loki_volume_migration_values = {
     statefulSet = {
-      name      = local.loki_release_name
-      namespace = local.logs_namespace
+      name        = local.loki_release_name
+      namespace   = local.logs_namespace
+      maxReplicas = local.loki_volume_migration_max_replicas
     }
     persistent = local.loki_config.persistence_enabled
     flushUrl   = "http://${local.loki_service_host}:3100/flush"
