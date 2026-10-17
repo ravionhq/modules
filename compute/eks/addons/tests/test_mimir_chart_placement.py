@@ -71,6 +71,8 @@ class MimirChartPlacementTest(unittest.TestCase):
                 "helm", "template", RELEASE, "mimir-distributed",
                 "--repo", "https://grafana.github.io/helm-charts", "--version", chart_version(),
                 "--namespace", "ravion-operator", "--values", str(base), "--values", str(placement),
+                # Helm's default is older than the chart's kubeVersion floor.
+                "--kube-version", "1.36.0",
             ], text=True, capture_output=True, timeout=180, env=env)
         if rendered.returncode != 0:
             raise AssertionError(rendered.stderr)
