@@ -165,7 +165,10 @@ jobs:
               tofu -chdir=networking/alternat init -backend=false
               tofu -chdir=networking/alternat test
 
+          # The provider waits 30 seconds after every apply, so this takes minutes.
+          # Pull requests run it only when they touch the module or this workflow.
           - name: PlanetScale Vitess lifecycle
+            paths: database/planetscale_vitess .github/workflows/terraform-static-checks.yml
             run: |
               tofu -chdir=database/planetscale_vitess init -backend=false -input=false -lockfile=readonly
               python3 -m unittest discover -s database/planetscale_vitess/tests -p 'test_*.py' -v
@@ -173,12 +176,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # An entry with paths runs on a pull request only when the pull request
+      # changes one of them. The job still succeeds when skipped, so "Validate
+      # Terraform Modules" passes. Pushes to main always run everything.
+      - name: Check for relevant changes
+        id: changes
+        if: matrix.paths && github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PATHS: ${{ matrix.paths }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          read -ra paths <<<"$PATHS"
+          if git diff --quiet "$BASE_SHA" HEAD -- "${paths[@]}"; then
+            echo "No changes under ${PATHS}; skipping."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Setup OpenTofu
+        if: steps.changes.outputs.skip != 'true'
         uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
         with:
           tofu_version: 1.12.3
 
       - name: Run tests
+        if: steps.changes.outputs.skip != 'true'
         run: |
           set -euo pipefail
           ${{ matrix.run }}
