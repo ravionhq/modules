@@ -2155,7 +2155,7 @@ variable "mimir_ingester_resources" {
     requests = object({ cpu = string, memory = string })
     limits   = object({ memory = string })
   })
-  description = "CPU and memory for each of the three Mimir ingesters, which hold recent samples in memory: each holds a copy of every series, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. Applied when addon_resilience_enabled is true."
+  description = "CPU and memory for each of the three Mimir ingesters, which hold recent samples in memory: each holds a copy of every series, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. The memory limit, in Mi or Gi, also sets when an ingester compacts early to drop series from pods that have gone: half the limit at 8KiB a series. Applied, and early compaction turned on, only when addon_resilience_enabled is true."
   default = {
     requests = { cpu = "1", memory = "6Gi" }
     limits   = { memory = "6Gi" }
