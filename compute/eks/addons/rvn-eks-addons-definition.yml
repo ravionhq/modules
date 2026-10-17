@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.23.0
-  description: "Mimir ingesters drop series from pods that have gone, compacting early once they hold half their memory in series, so rollouts and scale-downs no longer fill them until they are killed for memory. Ingesters and store-gateways now refuse to share a node, as the three copies promise."
+  version: 0.23.2
+  description: "Loki answers log searches whose results pass 4MiB. Its gRPC server kept the 4MiB message default, so a filter over a busy workload's logs failed with \"received message larger than max\"; it now accepts up to 100MiB, the querier's own limit."
 module:
   inputs:
     - id: cluster
