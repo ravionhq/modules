@@ -7,6 +7,9 @@ on:
     paths:
       - 'charts/**'
       - 'compute/eks/addons/charts/**'
+      - 'compute/eks/addons/mimir.tf'
+      - 'compute/eks/addons/variables.tf'
+      - 'compute/eks/addons/tests/test_mimir_chart_placement.py'
       - '.github/workflows/helm-charts.yml'
   push:
     branches:
@@ -14,6 +17,9 @@ on:
     paths:
       - 'charts/**'
       - 'compute/eks/addons/charts/**'
+      - 'compute/eks/addons/mimir.tf'
+      - 'compute/eks/addons/variables.tf'
+      - 'compute/eks/addons/tests/test_mimir_chart_placement.py'
       - '.github/workflows/helm-charts.yml'
 
 permissions:
@@ -49,3 +55,8 @@ jobs:
 
       - name: Test the StatefulSet volume migration script
         run: python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_statefulset_volume_migration.py' -v
+
+      # Renders the pinned mimir-distributed chart, so its pods must match the
+      # anti-affinity the module writes.
+      - name: Test Mimir replica placement
+        run: python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_mimir_chart_placement.py' -v

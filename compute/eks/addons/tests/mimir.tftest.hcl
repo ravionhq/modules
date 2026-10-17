@@ -336,3 +336,113 @@ run "mimir_and_thanos_cannot_share_a_bucket" {
 
   expect_failures = [helm_release.mimir]
 }
+
+# A hostname spread alone let ravion-prod run two of three ingesters on one
+# node: with two nodes up, 2 and 1 is within a skew of one.
+run "ingesters_and_store_gateways_never_share_a_node" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  assert {
+    condition = alltrue([
+      for component, label in { ingester = "ingester", store_gateway = "store-gateway" } :
+      one(yamldecode(helm_release.mimir[0].values[0])[component].affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution).topologyKey == "kubernetes.io/hostname" &&
+      one(yamldecode(helm_release.mimir[0].values[0])[component].affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution).labelSelector.matchLabels == {
+        "app.kubernetes.io/component" = label
+        "app.kubernetes.io/instance"  = "ravion-mimir"
+        "app.kubernetes.io/name"      = "mimir"
+      }
+    ])
+    error_message = "Ingesters and store-gateways must refuse to share a node with another replica of their own component."
+  }
+
+  # Helm deep-merges value files, so the store placement's node affinity
+  # joins the anti-affinity instead of replacing it.
+  assert {
+    condition     = can(yamldecode(helm_release.mimir[0].values[2]).ingester.affinity.nodeAffinity) && !can(yamldecode(helm_release.mimir[0].values[2]).ingester.affinity.podAntiAffinity)
+    error_message = "The store placement document must carry only node affinity, leaving the anti-affinity in place."
+  }
+}
+
+run "zoned_replicas_keep_their_own_affinity" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    metrics_mimir = {
+      zones = ["us-east-2a", "us-east-2b", "us-east-2c"]
+    }
+  }
+
+  assert {
+    condition     = !can(yamldecode(helm_release.mimir[0].values[0]).ingester.affinity) && !can(yamldecode(helm_release.mimir[0].values[0]).store_gateway.affinity)
+    error_message = "Zoned ingesters ignore the component affinity; the anti-affinity must not be set there."
+  }
+}
+
+run "churn_compacts_the_head_early" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  # 6Gi: half of it at 8KiB a series.
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.blocks_storage.tsdb.early_head_compaction_min_in_memory_series == 393216
+    error_message = "The default 6Gi ingester must compact early past 393,216 in-memory series."
+  }
+}
+
+run "early_compaction_follows_the_ingester_memory" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    mimir_ingester_resources = {
+      requests = { cpu = "2", memory = "12Gi" }
+      limits   = { memory = "12Gi" }
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.blocks_storage.tsdb.early_head_compaction_min_in_memory_series == 786432
+    error_message = "A 12Gi ingester must compact early past 786,432 in-memory series."
+  }
+}
+
+run "early_compaction_is_off_for_an_unparsed_memory_limit" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    mimir_ingester_resources = {
+      requests = { cpu = "2", memory = "12G" }
+      limits   = { memory = "12G" }
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.blocks_storage.tsdb.early_head_compaction_min_in_memory_series == 0
+    error_message = "A memory limit the module cannot read must leave early compaction off rather than guess."
+  }
+}
+
+# Without resilience the module does not apply mimir_ingester_resources, so a
+# threshold derived from it would follow a limit no pod has.
+run "early_compaction_needs_the_limit_the_module_applies" {
+  command = plan
+
+  variables {
+    metrics_providers        = ["mimir"]
+    addon_resilience_enabled = false
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.blocks_storage.tsdb.early_head_compaction_min_in_memory_series == 0
+    error_message = "Early compaction must stay off when the module does not set the ingesters' memory limit."
+  }
+}

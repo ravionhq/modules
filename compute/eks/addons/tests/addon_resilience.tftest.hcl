@@ -400,7 +400,7 @@ run "mimir_stores_run_on_the_stateful_nodes_and_the_rest_with_the_add_ons" {
   assert {
     condition = alltrue([
       for component in ["ingester", "store_gateway", "compactor"] :
-      one([for d in helm_release.mimir[0].values : yamldecode(d)[component] if can(yamldecode(d)[component].affinity)]) == local.addon_stateful_placement
+      one([for d in helm_release.mimir[0].values : yamldecode(d)[component] if can(yamldecode(d)[component].affinity.nodeAffinity)]) == local.addon_stateful_placement
     ])
     error_message = "Mimir's ingesters, store-gateways and compactor hold volumes and must run on the stateful add-on nodes."
   }

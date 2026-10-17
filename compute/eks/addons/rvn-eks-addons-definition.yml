@@ -4,7 +4,7 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.22.1
+  version: 0.23.1
   description: "Fix applies that time out on Loki and Alloy. Moving Loki onto a persistent volume now flushes it and replaces its pod, instead of leaving the old pod running on its emptyDir while the apply waits; clusters left that way recover on the next apply. Alloy now updates a quarter of the nodes at a time instead of one, so its rollout finishes within Helm's wait on any cluster size."
 module:
   inputs:
