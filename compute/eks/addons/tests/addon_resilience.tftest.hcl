@@ -488,7 +488,7 @@ run "loki_keeps_its_wal_on_a_volume" {
     error_message = "With a StorageClass available, Loki's write-ahead log must survive a restart."
   }
   assert {
-    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet == { name = "ravion-loki", namespace = "ravion-operator" }
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet == { name = "ravion-loki", namespace = "ravion-operator", maxReplicas = 3 }
     error_message = "The switch from an ephemeral volume needs the StatefulSet recreated; a migration release must do it."
   }
   assert {
@@ -502,6 +502,25 @@ run "loki_keeps_its_wal_on_a_volume" {
   assert {
     condition     = one([for d in helm_release.loki[0].values : yamldecode(d).singleBinary if can(yamldecode(d).singleBinary.podAnnotations["ravion.com/volume-layout"])]).podAnnotations["ravion.com/volume-layout"] == local.loki_volume_layout
     error_message = "Loki must be upgraded whenever the migration recreates its StatefulSet, or it would be left without one."
+  }
+}
+
+# The migration Job's Role names each Loki pod it may read, so it must cover
+# every replica loki_helm_values can ask for, or the Job fails with Forbidden.
+run "loki_volume_migration_covers_replicas_from_loki_helm_values" {
+  command = plan
+
+  variables {
+    loki_helm_values = [
+      yamlencode({ singleBinary = { replicas = 5 } }),
+      yamlencode({ singleBinary = { autoscaling = { enabled = true, maxReplicas = 7 } } }),
+      yamlencode({ loki = { auth_enabled = false } }),
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki_volume_migration[0].values[0]).statefulSet.maxReplicas == 7
+    error_message = "The migration Job must be allowed to read every Loki pod loki_helm_values can create."
   }
 }
 
