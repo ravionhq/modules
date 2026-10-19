@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.4.0
-  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
+  version: 1.5.0
+  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
 module:
   build:
     builder: >-
@@ -29,6 +29,7 @@ module:
       $include: ../../partials/build/git-source.yml
     timeout: 1800
     type: '<< module.input.build_source == "s3_directory" ? "disabled" : "static" >>'
+    watch_paths: << module.input.watch_paths >>
   deploy:
     definition:
       cloudfront_invalidation_paths: << module.input.cloudfront_invalidation_paths >>

@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.5.0
-  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
+  version: 0.6.0
+  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
 module:
   inputs:
     - id: section_cluster
