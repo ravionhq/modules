@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 2.2.0
-  description: "Add opt-in Ravion-managed domains: a shared wildcard certificate and DNS for the cluster, served as the default certificate on the selected ALB HTTPS listener while every BYO certificate stays attached via SNI."
+  version: 2.3.0
+  description: "Ravion-managed domains are checked when the configuration is saved: they require exactly one load balancer, HTTPS on it, and a cluster domain, which defaults to the module ID."
 module:
   inputs:
     - id: network
@@ -112,13 +112,20 @@ module:
       id: use_ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
-    - description: Base for service addresses; uses the cluster module ID when empty.
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_enabled: false
+            private_alb_enabled: false
+          message: Ravion-managed domains require exactly one load balancer.
+    - default: << module.given_id >>
+      description: Base for service addresses.
       id: ravion_cluster_name
       label: Cluster domain
       patterns:
         - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
-      required: false
+      required: true
       show_when:
         use_ravion_managed_domains: true
       suffix: ".<< platform.apex >>"
@@ -310,6 +317,11 @@ module:
       show_when:
         public_alb_enabled: true
       type: boolean
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the public ALB HTTPS listener for SNI.
@@ -374,6 +386,12 @@ module:
       id: private_alb_enabled
       label: Private load balancer
       type: boolean
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_enabled: true
+            private_alb_enabled: true
+          message: Ravion-managed domains require exactly one load balancer.
     - default: false
       description: Enable HTTPS listener on the private ALB.
       id: private_alb_https_enabled
@@ -381,6 +399,12 @@ module:
       show_when:
         private_alb_enabled: true
       type: boolean
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_enabled: false
+            private_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the private ALB HTTPS listener for SNI.

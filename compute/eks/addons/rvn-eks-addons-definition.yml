@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.23.0
-  description: "Mimir ingesters drop series from pods that have gone, compacting early once they hold half their memory in series, so rollouts and scale-downs no longer fill them until they are killed for memory. Ingesters and store-gateways now refuse to share a node, as the three copies promise."
+  version: 0.24.0
+  description: "Ravion-managed domains are checked when the configuration is saved: they require exactly one load balancer, HTTPS on it, and a cluster domain, which defaults to the module ID."
 module:
   inputs:
     - id: cluster
@@ -118,13 +118,20 @@ module:
       id: use_ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
-    - description: Base for service addresses; uses the module ID when empty.
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_creation_enabled: false
+            private_alb_creation_enabled: false
+          message: Ravion-managed domains require exactly one load balancer.
+    - default: << module.given_id >>
+      description: Base for service addresses.
       id: ravion_cluster_name
       label: Cluster domain
       patterns:
         - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
-      required: false
+      required: true
       show_when:
         use_ravion_managed_domains: true
       suffix: ".<< platform.apex >>"
@@ -141,6 +148,11 @@ module:
       show_when:
         public_alb_creation_enabled: true
       type: boolean
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the public ALB HTTPS listener for SNI.
@@ -201,6 +213,12 @@ module:
       id: private_alb_creation_enabled
       label: Private ALB
       type: boolean
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_creation_enabled: true
+            private_alb_creation_enabled: true
+          message: Ravion-managed domains require exactly one load balancer.
     - default: false
       description: Add an HTTPS listener and redirect HTTP requests to it.
       id: private_alb_https_enabled
@@ -208,6 +226,12 @@ module:
       show_when:
         private_alb_creation_enabled: true
       type: boolean
+      validations:
+        - invalid_when:
+            use_ravion_managed_domains: true
+            public_alb_creation_enabled: false
+            private_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the private ALB HTTPS listener for SNI.
