@@ -39,6 +39,8 @@ mock_provider "aws" {
   }
 }
 
+mock_provider "ravion" {}
+
 variables {
   name              = "api"
   region            = "us-east-1"

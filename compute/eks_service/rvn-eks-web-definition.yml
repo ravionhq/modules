@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.10.0
-  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
+  version: 1.11.0
+  description: Add Ravion-managed domains with a default Ravion domain and custom domains with Ravion-issued certificates.
 module:
   inputs:
     - id: section_cluster
@@ -56,6 +56,47 @@ module:
           placeholder: arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/private-eks-alb/73e2d6bc24d8a067/9f8e7d6c5b4a3210
           required: false
           default: <<ref.stack.output.private_alb_https_listener_arn>>
+        - id: ravion_managed_domains_enabled
+          label: Ravion-managed domains
+          type: boolean
+          description: "On: Ravion manages service certificates and listener rules. Off: attach certificates on the cluster and configure listener rules here."
+          collapsible: true
+          default: << ref.stack.output.ravion_managed_domains_enabled || false >>
+        - id: cluster_parent_fqdn
+          label: Cluster domain
+          type: string
+          description: Base for the service's Ravion address.
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.ravion_cluster_domain_fqdn>>
+        - id: public_alb_dns_name
+          immutable: true
+          label: Public ALB DNS name
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.public_alb_dns_name>>
+        - id: public_alb_zone_id
+          immutable: true
+          label: Public ALB hosted zone ID
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.public_alb_zone_id>>
+        - id: private_alb_dns_name
+          immutable: true
+          label: Private ALB DNS name
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.private_alb_dns_name>>
+        - id: private_alb_zone_id
+          immutable: true
+          label: Private ALB hosted zone ID
+          type: string
+          collapsible: true
+          required: false
+          default: <<ref.stack.output.private_alb_zone_id>>
         - $include: ../../partials/inputs/eks-workload-observability-mapped-inputs.yml
         - $include: ../../partials/inputs/eks-workload-spot-burst-mapped-inputs.yml
       required: true
@@ -91,6 +132,47 @@ module:
       show_when:
         load_balancer:
           not: kubernetes_service
+    - id: section_domains
+      label: Domains
+      show_when:
+        ravion_managed_domains_enabled: true
+        load_balancer:
+          not: kubernetes_service
+      type: section
+    - default: true
+      description: Off requires at least one custom domain.
+      id: ravion_domain_enabled
+      label: Default Ravion domain
+      show_when:
+        ravion_managed_domains_enabled: true
+        load_balancer:
+          not: kubernetes_service
+      type: boolean
+    - id: ravion_domain_name
+      label: Subdomain
+      type: string
+      default: << module.given_id >>
+      suffix: ".<< module.input.cluster_parent_fqdn >>"
+      required: false
+      patterns:
+        - message: Use 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+      show_when:
+        ravion_managed_domains_enabled: true
+        ravion_domain_enabled: true
+        load_balancer:
+          not: kubernetes_service
+    - add_button_label: Add custom domain
+      description: Served alongside the default Ravion domain when it is on. Ravion manages certificates and listener rules; add the provided DNS records at your DNS provider.
+      id: domains
+      label: Custom domains
+      max_length: 5
+      placeholder: app.example.com
+      show_when:
+        ravion_managed_domains_enabled: true
+        load_balancer:
+          not: kubernetes_service
+      type: string_array
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
     - id: section_health
@@ -291,6 +373,7 @@ module:
           show_when:
             load_balancer:
               not: kubernetes_service
+            ravion_managed_domains_enabled: false
     - id: ingress_allowed_workloads
       label: Ingress allow-list
       type: string_array
@@ -432,6 +515,23 @@ module:
               module.input.public_alb_http_listener_arn) : (module.input.load_balancer == "private" ?
               (module.input.private_alb_https_listener_arn || module.input.private_alb_http_listener_arn) : nil) >>
             listener_rule_priority: << module.input.listener_rule_priority >>
+            cluster_parent_fqdn: >-
+              << module.input.load_balancer != "kubernetes_service" ? module.input.cluster_parent_fqdn : nil >>
+            ravion_domain_enabled: >-
+              << module.input.ravion_domain_enabled != nil ? module.input.ravion_domain_enabled : true >>
+            ravion_domain_name: << module.input.ravion_domain_name >>
+            domains: << module.input.domains || [] >>
+            cluster_https_listener_arn: >-
+              << module.input.load_balancer == "public" ? module.input.public_alb_https_listener_arn :
+              (module.input.load_balancer == "private" ? module.input.private_alb_https_listener_arn : nil) >>
+            cluster_alb_dns_name: >-
+              << module.input.load_balancer == "public" ? module.input.public_alb_dns_name :
+              (module.input.load_balancer == "private" ? module.input.private_alb_dns_name : nil) >>
+            cluster_alb_zone_id: >-
+              << module.input.load_balancer == "public" ? module.input.public_alb_zone_id :
+              (module.input.load_balancer == "private" ? module.input.private_alb_zone_id : nil) >>
+            ravion_aws_account_id: << module.input.aws_account_id >>
+            ravion_aws_region: << module.input.aws_region >>
             target_group_name: << module.input.target_group_name >>
             listener_rule_conditions: >-
               << (module.input.host_header_values != nil && module.input.host_header_values != [] ?

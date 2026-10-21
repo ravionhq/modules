@@ -92,6 +92,30 @@ output "load_balancer_url" {
 }
 
 ################################################################################
+# Ravion-managed domains
+################################################################################
+
+output "ravion_domain_fqdn" {
+  description = "Primary managed FQDN: the first configured domain, or the default Ravion domain when none remain after normalization. Null when the cluster has no Ravion-managed domains."
+  value       = length(local.effective_domains) > 0 ? local.effective_domains[0] : null
+}
+
+output "ravion_domain_url" {
+  description = "HTTPS URL for the first effective domain."
+  value       = length(local.effective_domains) > 0 ? "https://${local.effective_domains[0]}" : null
+}
+
+output "ravion_domain_fqdns" {
+  description = "Every FQDN this service serves: the custom domains followed by the default Ravion domain when it is on."
+  value       = local.effective_domains
+}
+
+output "ravion_custom_cert_arn" {
+  description = "ACM ARN of the per-service instance cert covering the custom (non-wildcard) domains. Null when there are none."
+  value       = length(local.custom_domains) > 0 ? ravion_aws_acm_certificate.svc[0].arn : null
+}
+
+################################################################################
 # ECR Repository
 ################################################################################
 

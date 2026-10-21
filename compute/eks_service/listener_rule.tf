@@ -9,11 +9,12 @@
 # nothing outside Terraform ever rewrites this rule.
 #
 # Created only when var.listener_arn is set, alongside the target group it
-# forwards to.
+# forwards to, and not when Ravion-managed domains own the routing (see
+# ravion_domains.tf).
 ################################################################################
 
 resource "aws_lb_listener_rule" "this" {
-  count = local.enable_load_balancer ? 1 : 0
+  count = local.enable_load_balancer && !local.ravion_managed ? 1 : 0
 
   listener_arn = var.listener_arn
   priority     = var.listener_rule_priority
