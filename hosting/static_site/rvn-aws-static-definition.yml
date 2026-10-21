@@ -151,7 +151,7 @@ module:
       label: CloudFront settings
       type: section
     - default: false
-      description: "On: Ravion issues the certificate and attaches it to the distribution. Off: bring your own ACM certificate and aliases."
+      description: "On: Ravion issues the certificate and attaches it to the distribution. Off: bring your own ACM certificate and aliases. An existing distribution keeps its setting; to switch, create a new one and move DNS to it."
       id: ravion_managed_domains
       label: Ravion-managed domains
       type: boolean

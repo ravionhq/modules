@@ -322,3 +322,68 @@ run "managed_domains_require_module_instance_id" {
     ravion_domain.this,
   ]
 }
+
+run "apply_managed_distribution" {
+  command = apply
+}
+
+run "managed_distribution_refuses_switch_to_byo" {
+  command = plan
+
+  variables {
+    distributions = {
+      primary = {
+        aliases             = ["www.example.com"]
+        acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-1111-1111-1111-111111111111"
+      }
+    }
+  }
+
+  expect_failures = [
+    aws_cloudfront_distribution.this,
+  ]
+}
+
+run "apply_byo_distribution" {
+  command = apply
+
+  variables {
+    distributions = {
+      site = {}
+    }
+  }
+}
+
+run "byo_distribution_refuses_switch_to_managed" {
+  command = plan
+
+  variables {
+    distributions = {
+      site = {
+        managed_domains = ["www.example.com"]
+      }
+    }
+  }
+
+  expect_failures = [
+    aws_cloudfront_distribution.managed,
+  ]
+}
+
+run "new_distribution_alongside_byo_can_use_managed_domains" {
+  command = plan
+
+  variables {
+    distributions = {
+      site = {}
+      next = {
+        managed_domains = ["www.example.com"]
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_cloudfront_distribution.managed) == 1 && length(aws_cloudfront_distribution.this) == 1
+    error_message = "A new managed distribution is added next to the existing one."
+  }
+}

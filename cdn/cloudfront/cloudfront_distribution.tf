@@ -59,6 +59,21 @@ locals {
   )
 }
 
+# The domain mode each distribution was first applied with. Changing it would
+# move the distribution between the two resources below, deleting it and
+# creating one with a new CloudFront hostname, so the plan refuses instead. To
+# switch, add a distribution in the new mode, move DNS to it, then remove the
+# old one.
+resource "terraform_data" "distribution_domain_mode" {
+  for_each = var.distributions
+
+  input = length(each.value.managed_domains) > 0 ? "managed" : "byo"
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+}
+
 resource "aws_cloudfront_distribution" "this" {
   for_each = local.byo_distributions
 
@@ -224,6 +239,11 @@ resource "aws_cloudfront_distribution" "this" {
     precondition {
       condition     = !local.distribution_viewer_request_conflict
       error_message = "redirect_rules cannot be enabled when a default or ordered cache behavior already has a viewer-request CloudFront Function or Lambda@Edge association."
+    }
+
+    precondition {
+      condition     = terraform_data.distribution_domain_mode[each.key].output == "byo"
+      error_message = "Distribution \"${each.key}\" uses Ravion-managed domains. Switching it to aliases with your own certificate would replace it and change its CloudFront hostname. Add a new distribution with the aliases, move DNS to it, then remove this one."
     }
   }
 }
@@ -392,6 +412,11 @@ resource "aws_cloudfront_distribution" "managed" {
     precondition {
       condition     = !local.distribution_viewer_request_conflict
       error_message = "redirect_rules cannot be enabled when a default or ordered cache behavior already has a viewer-request CloudFront Function or Lambda@Edge association."
+    }
+
+    precondition {
+      condition     = terraform_data.distribution_domain_mode[each.key].output == "managed"
+      error_message = "Distribution \"${each.key}\" uses aliases with your own certificate. Switching it to Ravion-managed domains would replace it and change its CloudFront hostname. Add a new distribution with the managed domains, move DNS to it once its certificate validates, then remove this one."
     }
 
     ignore_changes = [aliases, viewer_certificate]
