@@ -475,7 +475,8 @@ module:
                 load_balancer_security_group_id: >-
                   << module.input.public_alb_routing_enabled ? module.input.public_alb_security_group_id :
                   module.input.private_alb_security_group_id >>
-                cluster_parent_fqdn: << module.input.cluster_parent_fqdn >>
+                cluster_parent_fqdn: >-
+                  << module.input.ravion_managed_domains_enabled == true ? module.input.cluster_parent_fqdn : nil >>
                 ravion_domain_enabled: << module.input.ravion_domain_enabled >>
                 ravion_domain_name: << module.input.ravion_domain_name >>
                 domains: << module.input.domains || [] >>

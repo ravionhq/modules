@@ -58,8 +58,14 @@ variable "distributions" {
     error_message = "A distribution may declare at most 10 managed_domains (one certificate per distribution)."
   }
 
+  # Names are compared as the resources create them: lowercased, trimmed and
+  # without a trailing dot, so WWW.example.com and www.example.com. collide.
   validation {
-    condition     = length(flatten([for k, v in var.distributions : v.managed_domains])) == length(distinct(flatten([for k, v in var.distributions : v.managed_domains])))
+    condition = length(flatten([
+      for k, v in var.distributions : distinct([for d in v.managed_domains : lower(trimsuffix(trimspace(d), "."))])
+      ])) == length(distinct(flatten([
+        for k, v in var.distributions : [for d in v.managed_domains : lower(trimsuffix(trimspace(d), "."))]
+    ])))
     error_message = "Managed domains must be unique across all distributions."
   }
 

@@ -291,6 +291,25 @@ run "managed_domains_reject_more_than_ten" {
   ]
 }
 
+run "managed_domains_reject_same_name_across_distributions" {
+  command = plan
+
+  variables {
+    distributions = {
+      primary = {
+        managed_domains = ["WWW.Example.com"]
+      }
+      secondary = {
+        managed_domains = [" www.example.com. "]
+      }
+    }
+  }
+
+  expect_failures = [
+    var.distributions,
+  ]
+}
+
 run "managed_domains_require_module_instance_id" {
   command = plan
 

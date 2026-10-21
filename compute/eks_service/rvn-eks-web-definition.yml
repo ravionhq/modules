@@ -516,7 +516,8 @@ module:
               (module.input.private_alb_https_listener_arn || module.input.private_alb_http_listener_arn) : nil) >>
             listener_rule_priority: << module.input.listener_rule_priority >>
             cluster_parent_fqdn: >-
-              << module.input.load_balancer != "kubernetes_service" ? module.input.cluster_parent_fqdn : nil >>
+              << module.input.load_balancer != "kubernetes_service" && module.input.ravion_managed_domains_enabled == true ?
+              module.input.cluster_parent_fqdn : nil >>
             ravion_domain_enabled: >-
               << module.input.ravion_domain_enabled != nil ? module.input.ravion_domain_enabled : true >>
             ravion_domain_name: << module.input.ravion_domain_name >>
