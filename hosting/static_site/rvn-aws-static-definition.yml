@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.4.0
-  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
+  version: 1.5.0
+  description: Add Ravion-managed custom domains, where Ravion issues the certificate and attaches it to the distribution once you add the provided DNS records.
 module:
   build:
     builder: >-
@@ -150,9 +150,25 @@ module:
     - id: section_cloudfront
       label: CloudFront settings
       type: section
+    - default: false
+      description: "On: Ravion issues the certificate and attaches it to the distribution. Off: bring your own ACM certificate and aliases."
+      id: ravion_managed_domains
+      label: Ravion-managed domains
+      type: boolean
+    - add_button_label: Add custom domain
+      description: Ravion issues the certificate and attaches it once you add the provided DNS records at your DNS provider.
+      id: domains
+      label: Custom domains
+      max_length: 10
+      placeholder: app.example.com
+      show_when:
+        ravion_managed_domains: true
+      type: string_array
     - description: Required if using domain aliases. The certificate module must be in us-east-1.
       id: distribution_acm_certificate
       label: ACM certificate
+      show_when:
+        ravion_managed_domains: false
       mapped_inputs:
         - default: <<ref.stack.output.certificate_arn>>
           id: distribution_acm_certificate_arn
@@ -165,6 +181,8 @@ module:
       description: Custom domain names like app.example.com. Leave empty to use the default cloudfront.net domain.
       id: distribution_aliases
       label: Domain aliases
+      show_when:
+        ravion_managed_domains: false
       type: string_array
     - default: PriceClass_All
       description: You can reduce edge locations for some cost savings if it becomes an issue.
@@ -624,12 +642,19 @@ module:
         default_version: << module.input.default_version >>
         distributions:
           main:
-            acm_certificate_arn: << module.input.distribution_acm_certificate_arn || nil >>
-            aliases: << module.input.distribution_aliases >>
+            acm_certificate_arn: >-
+              << module.input.ravion_managed_domains == true ? nil : (module.input.distribution_acm_certificate_arn || nil) >>
+            aliases: >-
+              << module.input.ravion_managed_domains == true ? [] : (module.input.distribution_aliases || []) >>
             comment: >-
-              << module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ?
+              << module.input.ravion_managed_domains == true && module.input.domains != nil &&
+              module.input.domains != [] ? module.input.domains[0] :
+              module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ?
               module.input.distribution_aliases[0] : nil >>
+            managed_domains: >-
+              << module.input.ravion_managed_domains == true ? (module.input.domains || []) : [] >>
             enabled: true
+        ravion_aws_account_id: << module.input.aws_account_id >>
         cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
         cloudwatch_alarm_error_rate_threshold: << module.input.cloudwatch_alarm_error_rate_threshold >>
         cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>

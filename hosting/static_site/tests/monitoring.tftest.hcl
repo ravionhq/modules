@@ -2,6 +2,8 @@
 # hosting/static_site - Default error-rate monitoring and configuration tests
 ################################################################################
 
+mock_provider "ravion" {}
+
 mock_provider "aws" {
   override_data {
     target = data.aws_iam_policy_document.hosting_bucket_policy

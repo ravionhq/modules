@@ -3,7 +3,8 @@
 #
 # Composes cdn/cloudfront. All distributions share the same S3 hosting origin
 # and cache behaviors; per-distribution config (aliases, ACM cert, comment)
-# comes from var.distributions and is forwarded as-is.
+# (or managed_domains, whose certificate Ravion attaches) comes from
+# var.distributions and is forwarded as-is.
 #
 # The viewer-request CloudFront Function rewrites every URI to /<version>/...
 # before the cache lookup, so each promoted version produces a fresh cache key
@@ -27,6 +28,9 @@ module "cdn" {
   name = var.name
 
   distributions = var.distributions
+
+  module_instance_id    = var.module_instance_id
+  ravion_aws_account_id = var.ravion_aws_account_id
 
   origins = [
     {
