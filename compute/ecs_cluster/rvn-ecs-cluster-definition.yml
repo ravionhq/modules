@@ -112,8 +112,8 @@ module:
       id: use_ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
-      validations:
-        - invalid_when:
+      invalid_when:
+        - all:
             use_ravion_managed_domains: true
             public_alb_enabled: false
             private_alb_enabled: false
@@ -317,8 +317,8 @@ module:
       show_when:
         public_alb_enabled: true
       type: boolean
-      validations:
-        - invalid_when:
+      invalid_when:
+        - all:
             use_ravion_managed_domains: true
             public_alb_https_enabled: false
           message: Ravion-managed domains require HTTPS on this load balancer.
@@ -386,8 +386,8 @@ module:
       id: private_alb_enabled
       label: Private load balancer
       type: boolean
-      validations:
-        - invalid_when:
+      invalid_when:
+        - all:
             use_ravion_managed_domains: true
             public_alb_enabled: true
             private_alb_enabled: true
@@ -399,8 +399,8 @@ module:
       show_when:
         private_alb_enabled: true
       type: boolean
-      validations:
-        - invalid_when:
+      invalid_when:
+        - all:
             use_ravion_managed_domains: true
             public_alb_enabled: false
             private_alb_https_enabled: false
