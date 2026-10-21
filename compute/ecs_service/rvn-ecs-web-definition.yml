@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.3.0
-  description: "Use custom domains instead of the default Ravion address, with the default as a fallback."
+  version: 2.4.0
+  description: "Serve the default Ravion domain alongside custom domains, and turn it off with the Default Ravion domain toggle."
 module:
   inputs:
     - id: section_cluster
@@ -93,9 +93,15 @@ module:
       show_when:
         ravion_managed_domains_enabled: true
       type: section
-    - id: ravion_domain_name
+    - default: true
+      description: Off requires at least one custom domain.
+      id: ravion_domain_enabled
       label: Default Ravion domain
-      description: Used only when no custom domains are set.
+      show_when:
+        ravion_managed_domains_enabled: true
+      type: boolean
+    - id: ravion_domain_name
+      label: Subdomain
       type: string
       default: << module.given_id >>
       suffix: ".<< module.input.cluster_parent_fqdn >>"
@@ -105,8 +111,9 @@ module:
           pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
       show_when:
         ravion_managed_domains_enabled: true
+        ravion_domain_enabled: true
     - add_button_label: Add custom domain
-      description: Replaces the default Ravion domain; Ravion manages certificates and listener rules. Add the provided DNS records at your DNS provider.
+      description: Served alongside the default Ravion domain when it is on. Ravion manages certificates and listener rules; add the provided DNS records at your DNS provider.
       id: domains
       label: Custom domains
       max_length: 5
@@ -469,6 +476,7 @@ module:
                   << module.input.public_alb_routing_enabled ? module.input.public_alb_security_group_id :
                   module.input.private_alb_security_group_id >>
                 cluster_parent_fqdn: << module.input.cluster_parent_fqdn >>
+                ravion_domain_enabled: << module.input.ravion_domain_enabled >>
                 ravion_domain_name: << module.input.ravion_domain_name >>
                 domains: << module.input.domains || [] >>
                 cluster_https_listener_arn: >-

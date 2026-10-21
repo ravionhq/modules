@@ -989,9 +989,26 @@ variable "ravion_listener_rule_priority" {
   default     = 0
 }
 
+variable "ravion_domain_enabled" {
+  type        = bool
+  description = "Serve the default Ravion domain, <ravion_domain_name>.<cluster apex>, alongside the custom domains."
+  default     = true
+  nullable    = false
+
+  validation {
+    condition = (
+      var.ravion_domain_enabled
+      || var.cluster_parent_fqdn == null
+      || var.cluster_parent_fqdn == ""
+      || length([for d in var.domains : d if trimsuffix(trimspace(d), ".") != ""]) > 0
+    )
+    error_message = "A Ravion-managed service needs at least one domain. Turn on the default Ravion domain or add a custom domain."
+  }
+}
+
 variable "ravion_domain_name" {
   type        = string
-  description = "Subdomain for the fallback Ravion address, used when domains is empty after normalization. Defaults to the module given ID or service name."
+  description = "Subdomain of the default Ravion domain. Defaults to the module given ID or service name."
   default     = null
 
   validation {
@@ -1002,7 +1019,7 @@ variable "ravion_domain_name" {
 
 variable "domains" {
   type        = list(string)
-  description = "Configured domains replace the default Ravion address; an empty list after normalization uses ravion_domain_name. One-label cluster names use the wildcard certificate; other domains share a service certificate (max 10). Native traffic-shift deployments allow at most 5 hostnames."
+  description = "Custom domains, served alongside the default Ravion domain when ravion_domain_enabled is true. One-label cluster names use the wildcard certificate; other domains share a service certificate (max 10). Native traffic-shift deployments allow at most 5 hostnames."
   default     = []
 }
 
