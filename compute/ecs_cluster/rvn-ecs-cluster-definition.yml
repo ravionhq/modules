@@ -395,7 +395,8 @@ module:
         - all:
             private_alb_enabled: true
             name:
-              matches: "^.{28,}$"
+              patterns:
+                - "^.{28,}$"
           message: A private load balancer requires an ECS cluster name of 27 characters or less.
     - default: false
       description: Enable HTTPS listener on the private ALB.
@@ -498,7 +499,8 @@ module:
         - all:
             public_nlb_enabled: true
             name:
-              matches: "^.{25,}$"
+              patterns:
+                - "^.{25,}$"
           message: A public NLB requires an ECS cluster name of 24 characters or less.
     - add_button_label: Add security group ID
       collapsible: true
@@ -561,7 +563,8 @@ module:
         - all:
             private_nlb_enabled: true
             name:
-              matches: "^.{24,}$"
+              patterns:
+                - "^.{24,}$"
           message: A private NLB requires an ECS cluster name of 23 characters or less.
     - add_button_label: Add security group ID
       collapsible: true
