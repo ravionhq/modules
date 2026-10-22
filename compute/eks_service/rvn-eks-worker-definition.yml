@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.13.0
-  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
+  version: 0.13.1
+  description: Show the Spot burst pods' lines in Application logs alongside the On-Demand pods'.
 module:
   inputs:
     - id: section_cluster
