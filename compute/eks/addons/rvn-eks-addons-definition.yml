@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.24.0
-  description: "Ravion-managed domains are checked when the configuration is saved: they require exactly one load balancer, HTTPS on it, and a cluster domain, which defaults to the module ID."
+  version: 0.25.0
+  description: "Large Mimir clusters can give rollouts more time: mimir_helm_timeout_seconds sets how long an apply waits for the Mimir release, so adding ingesters no longer fails the apply mid-rollout."
 module:
   inputs:
     - id: cluster
