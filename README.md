@@ -65,7 +65,6 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | Definition | Name | Version | Module path |
 | ---------- | ---- | ------- | ----------- |
 | `rvn-acm-certificate` | ACM Certificate | v1.1.1 | `security/acm_certificate/` |
-| `rvn-app-cluster` | App Cluster | v0.1.0 | `compute/app_cluster/` |
 | `rvn-aurora` | Aurora Database | v1.5.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.3.0 | `networking/alb/` |
 | `rvn-aws-alternat` | alterNAT | v0.1.2 | `networking/alternat/` |
