@@ -371,6 +371,8 @@ module "aurora" {
 | kms_key_id | KMS key ARN for storage encryption. | `string` | `null` | no |
 | reader_count | Number of reader instances (0-15). | `number` | `1` | no |
 | reader_instance_class | Instance class for readers (defaults to instance_class). | `string` | `null` | no |
+| reader_serverless_v2_scaling | Serverless v2 scaling (min_capacity, max_capacity) for the readers of a provisioned cluster. Generated readers use `db.serverless`; the writer keeps `instance_class`. Conflicts with `serverless_v2_scaling` and `reader_instance_class`. | `object` | `null` | no |
+| reader_promotion_tier | Promotion tier of the first generated reader; each further reader takes the next tier (1-15). | `number` | `1` | no |
 | instances | Map of per-instance configurations (overrides reader_count). | `map(object)` | `{}` | no |
 | serverless_v2_scaling | Serverless v2 scaling configuration (min_capacity, max_capacity). | `object` | `null` | no |
 | promotion_tier | Default failover priority for instances (0-15). | `number` | `null` | no |
@@ -520,6 +522,7 @@ Valid log export types depend on the database engine:
 - **Aurora vs RDS**: Aurora uses a cluster-based architecture (`aws_rds_cluster` + `aws_rds_cluster_instance`) rather than standalone instances (`aws_db_instance`).
 - **Read Replicas**: Aurora supports up to 15 read replicas with automatic failover. Use `reader_count` for homogeneous replicas or `instances` map for heterogeneous configurations.
 - **Serverless v2**: When using `serverless_v2_scaling`, set `instance_class = "db.serverless"`. Capacity scales between `min_capacity` and `max_capacity` ACUs.
+- **Serverless v2 readers behind a provisioned writer**: Set `reader_serverless_v2_scaling` to keep the writer on `instance_class` while readers use `db.serverless`. Aurora keeps a Serverless v2 reader in promotion tier 0 or 1 at least as large as the writer (a provisioned writer's memory, in ACUs), so set `reader_promotion_tier = 2` or higher for a standby that idles at `min_capacity`. Set `max_capacity` to the writer's memory in ACUs (1 ACU is about 2 GiB) so a promoted reader can carry the writer's load.
 - **Global Database**: A global database spans multiple regions. Use `global_cluster_creation_enabled = true` for the primary cluster and `global_cluster_identifier` to join from secondary regions.
 - **Parameter Group Family**: Auto-detected from engine and version if not specified.
 - **Backtrack**: Only supported on Aurora MySQL. Set `backtrack_window` in seconds (max 259200 = 72 hours).

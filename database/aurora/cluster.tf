@@ -80,7 +80,7 @@ resource "aws_rds_cluster" "this" {
 
   # Serverless v2 scaling
   dynamic "serverlessv2_scaling_configuration" {
-    for_each = var.serverless_v2_scaling != null ? [var.serverless_v2_scaling] : []
+    for_each = local.serverless_v2_scaling != null ? [local.serverless_v2_scaling] : []
     content {
       min_capacity = serverlessv2_scaling_configuration.value.min_capacity
       max_capacity = serverlessv2_scaling_configuration.value.max_capacity

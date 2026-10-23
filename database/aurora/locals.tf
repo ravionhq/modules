@@ -71,9 +71,14 @@ locals {
   # Instance map generation
   # If var.instances is non-empty, use it directly
   # Otherwise, generate from instance_class + reader_count
+  # Serverless v2 readers behind a provisioned writer still need the cluster's
+  # scaling configuration; only the readers use db.serverless.
   is_serverless          = var.serverless_v2_scaling != null
+  has_serverless_readers = var.reader_serverless_v2_scaling != null
+  serverless_v2_scaling  = local.is_serverless ? var.serverless_v2_scaling : var.reader_serverless_v2_scaling
   default_instance_class = local.is_serverless ? "db.serverless" : var.instance_class
-  reader_instance_class  = coalesce(var.reader_instance_class, local.default_instance_class)
+  reader_instance_class  = local.has_serverless_readers ? "db.serverless" : coalesce(var.reader_instance_class, local.default_instance_class)
+  first_reader_tier      = coalesce(var.reader_promotion_tier, 1)
 
   generated_instances = merge(
     {
@@ -92,7 +97,7 @@ locals {
         instance_class               = local.reader_instance_class
         availability_zone            = null
         public_access_enabled        = null
-        promotion_tier               = i + 1
+        promotion_tier               = local.first_reader_tier + i
         performance_insights_enabled = null
         monitoring_interval          = null
         tags                         = null

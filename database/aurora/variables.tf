@@ -371,6 +371,51 @@ variable "reader_instance_class" {
   }
 }
 
+variable "reader_serverless_v2_scaling" {
+  description = "Serverless v2 scaling for the readers of a provisioned cluster. When set, generated readers use db.serverless while the writer keeps instance_class. Cannot be combined with serverless_v2_scaling."
+  type = object({
+    min_capacity = number
+    max_capacity = number
+  })
+  default = null
+
+  validation {
+    condition     = var.reader_serverless_v2_scaling == null || (var.reader_serverless_v2_scaling.min_capacity >= 0.5 && var.reader_serverless_v2_scaling.min_capacity <= 256)
+    error_message = "Reader Serverless v2 min_capacity must be between 0.5 and 256 ACUs."
+  }
+
+  validation {
+    condition     = var.reader_serverless_v2_scaling == null || (var.reader_serverless_v2_scaling.max_capacity >= 0.5 && var.reader_serverless_v2_scaling.max_capacity <= 256)
+    error_message = "Reader Serverless v2 max_capacity must be between 0.5 and 256 ACUs."
+  }
+
+  validation {
+    condition     = var.reader_serverless_v2_scaling == null || var.reader_serverless_v2_scaling.min_capacity <= var.reader_serverless_v2_scaling.max_capacity
+    error_message = "Reader Serverless v2 min_capacity must not exceed max_capacity."
+  }
+
+  validation {
+    condition     = var.reader_serverless_v2_scaling == null || var.serverless_v2_scaling == null
+    error_message = "Set serverless_v2_scaling for a Serverless v2 cluster or reader_serverless_v2_scaling for Serverless v2 readers behind a provisioned writer, not both."
+  }
+
+  validation {
+    condition     = var.reader_serverless_v2_scaling == null || var.reader_instance_class == null
+    error_message = "reader_instance_class cannot be set with reader_serverless_v2_scaling; Serverless v2 readers use db.serverless."
+  }
+}
+
+variable "reader_promotion_tier" {
+  description = "Failover priority of the first generated reader; each further reader takes the next tier. Defaults to 1. Aurora keeps a Serverless v2 reader in tier 0 or 1 at least as large as the writer (a provisioned writer's memory, in ACUs); from tier 2 it scales on its own load and is still the failover target when no lower tier exists."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.reader_promotion_tier == null || (var.reader_promotion_tier >= 1 && floor(var.reader_promotion_tier) == var.reader_promotion_tier && var.reader_promotion_tier + var.reader_count - 1 <= 15)
+    error_message = "reader_promotion_tier must be a whole number of at least 1, and the last reader's tier (reader_promotion_tier + reader_count - 1) must not exceed 15."
+  }
+}
+
 variable "instances" {
   description = "Map of instance configurations for full per-instance control. Overrides reader_count when provided."
   type = map(object({

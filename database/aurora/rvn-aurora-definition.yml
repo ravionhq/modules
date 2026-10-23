@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon Aurora cluster. Supports Aurora PostgreSQL and Aurora MySQL with provisioned or Serverless v2 capacity.
 
 release:
-  version: 1.5.0
-  description: Store the master password in a Secrets Manager secret you name, kept out of Terraform state and never rotated automatically.
+  version: 1.6.0
+  description: Run Serverless v2 readers behind a provisioned writer, so a standby can idle at low capacity and scale up when it takes over.
 module:
   inputs:
     - id: network
@@ -443,6 +443,19 @@ module:
       min: 0
       type: number
     - collapsible: true
+      default: provisioned
+      description: Serverless v2 readers idle at their minimum capacity while the writer keeps its instance class.
+      id: reader_capacity_mode
+      label: Reader capacity mode
+      show_when:
+        capacity_mode: provisioned
+      type: string
+      values:
+        - label: Provisioned instances
+          value: provisioned
+        - label: Serverless v2
+          value: serverless_v2
+    - collapsible: true
       description: Reader instance class. Leave blank to use the writer instance class.
       id: reader_instance_class
       label: Reader instance class
@@ -450,7 +463,38 @@ module:
       required: false
       show_when:
         capacity_mode: provisioned
+        reader_capacity_mode: provisioned
       type: string
+    - default: 1
+      description: Must not exceed max reader ACUs.
+      id: reader_serverless_min_capacity
+      label: Min reader capacity (ACUs)
+      max: 256
+      min: 0.5
+      required: true
+      show_when:
+        capacity_mode: provisioned
+        reader_capacity_mode: serverless_v2
+      type: number
+    - default: 4
+      description: Set it to the writer's memory in ACUs (1 ACU is about 2 GiB) so a promoted reader can carry the writer's load.
+      id: reader_serverless_max_capacity
+      label: Max reader capacity (ACUs)
+      max: 256
+      min: 0.5
+      required: true
+      show_when:
+        capacity_mode: provisioned
+        reader_capacity_mode: serverless_v2
+      type: number
+    - collapsible: true
+      description: Tier of the first reader; each further reader takes the next. Defaults to 1. Serverless v2 readers in tier 0 or 1 never scale below the writer, so use 2 or higher for them to idle.
+      id: reader_promotion_tier
+      label: First reader promotion tier
+      max: 15
+      min: 1
+      required: false
+      type: number
     - collapsible: true
       description: Default failover priority for instances. Lower values have higher priority.
       id: promotion_tier
@@ -1211,7 +1255,9 @@ module:
         proxy_tls_requirement_enabled: << module.input.proxy_tls_requirement_enabled >>
         public_access_enabled: << module.input.public_access_enabled >>
         reader_count: << module.input.reader_count >>
-        reader_instance_class: << module.input.reader_instance_class >>
+        reader_instance_class: '<< module.input.capacity_mode == "provisioned" && module.input.reader_capacity_mode == "serverless_v2" ? null : module.input.reader_instance_class >>'
+        reader_promotion_tier: << module.input.reader_promotion_tier >>
+        reader_serverless_v2_scaling: '<< module.input.capacity_mode == "provisioned" && module.input.reader_capacity_mode == "serverless_v2" ? { min_capacity: module.input.reader_serverless_min_capacity, max_capacity: module.input.reader_serverless_max_capacity } : null >>'
         region: << module.input.aws_region >>
         restore_to_point_in_time: '<< module.input.restore_mode == "point_in_time" ? { source_cluster_identifier: module.input.point_in_time_source_cluster_identifier, restore_type: module.input.point_in_time_restore_type, use_latest_restorable_time: module.input.point_in_time_use_latest_restorable_time, restore_to_time: module.input.point_in_time_use_latest_restorable_time ? null : module.input.point_in_time_restore_time } : null >>'
         security_group_creation_enabled: << module.input.security_group_creation_enabled >>
@@ -1451,9 +1497,15 @@ module:
 
     Provisioned capacity uses a fixed DB instance class for the writer and, by default, for readers. Serverless v2 uses Aurora Capacity Units; set the minimum and maximum ACUs to control the scaling range. The module uses `db.serverless` for cluster instances when Serverless v2 is selected.
 
+    A provisioned cluster can also run its readers on Serverless v2 (a mixed-configuration cluster). Set Reader capacity mode to Serverless v2 when the writer needs a fixed instance class but a standby would sit mostly idle: the readers use `db.serverless` within the reader ACU range, and the writer keeps its instance class.
+
     ## Availability and readers
 
-    Reader settings live together in the Readers section. Choose the number of reader instances, an optional separate reader instance class, and an optional default failover promotion tier. Readers default to 0; add at least one reader in another Availability Zone for production failover.
+    Reader settings live together in the Readers section. Choose the number of reader instances, an optional separate reader instance class or Serverless v2 capacity, the first reader's promotion tier, and an optional default failover promotion tier. Readers default to 0; add at least one reader in another Availability Zone for production failover.
+
+    Readers take consecutive promotion tiers starting at First reader promotion tier, which defaults to 1. Aurora keeps a Serverless v2 reader in tier 0 or 1 at least as large as the writer (for a provisioned writer, the writer's memory in ACUs), so it saves nothing over a provisioned standby. From tier 2 a Serverless v2 reader scales on its own load, idles at the minimum, and is still promoted when no reader in a lower tier exists. After a failover it starts at the capacity it was idling at and with a small buffer cache, and scales up in steps that grow with its current capacity, so expect slower queries until it reaches the load's size. Set the max reader capacity to the writer's memory in ACUs so the promoted reader can carry the full load.
+
+    Changing an existing reader between provisioned and Serverless v2 modifies that instance and restarts it. Generated instances keep their names (`writer`, `reader-1`, ...) even after a failover swaps their roles, so check which instance is the current writer first and fail back if needed. Otherwise the change restarts the live writer.
 
     Reader autoscaling can adjust the number of read replicas based on CPU utilization and, optionally, database connections. Configure min and max reader capacity carefully because autoscaling can increase cost.
 
