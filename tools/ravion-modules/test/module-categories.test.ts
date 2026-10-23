@@ -50,7 +50,7 @@ describe("module categories", () => {
 
   it("groups the App Cluster with clusters", () => {
     assert.deepEqual(
-      getModuleCategoriesForDefinitionType("rvn-app-cluster").map((category) => category.givenId),
+      getModuleCategoriesForDefinitionType("rvn-aws-app-cluster").map((category) => category.givenId),
       ["cluster"],
     );
   });

@@ -1,6 +1,6 @@
 global: false
 definition:
-  type: rvn-app-cluster
+  type: rvn-aws-app-cluster
   name: App Cluster
   description: Runs the apps you deploy with ravion deploy, each in its own sandbox on an execution environment's sandbox pool, and serves them under a managed wildcard domain and your own domains through a Network Load Balancer and a router that wakes a paused app on request.
 release:

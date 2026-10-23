@@ -21,11 +21,11 @@ The module creates no sandbox pool, hosts or hosts' security group: those are th
 
 ## Usage
 
-Inside Ravion, create a module instance of `rvn-app-cluster`. The stack run supplies `module_instance_id`, `module_instance_given_id`, `ravion_api_url` and the provider credentials.
+Inside Ravion, create a module instance of `rvn-aws-app-cluster`. The stack run supplies `module_instance_id`, `module_instance_given_id`, `ravion_api_url` and the provider credentials.
 
 ```hcl
 module "app_cluster" {
-  source = "git::https://github.com/ravionhq/modules.git//compute/app_cluster?ref=rvn-app-cluster@0.1.0"
+  source = "git::https://github.com/ravionhq/modules.git//compute/app_cluster?ref=rvn-aws-app-cluster@0.1.0"
 
   name               = "apps"
   module_instance_id = "minst_..."
@@ -45,7 +45,7 @@ Serve the apps under custom wildcard domains as well:
 
 ```hcl
 module "app_cluster" {
-  source = "git::https://github.com/ravionhq/modules.git//compute/app_cluster?ref=rvn-app-cluster@0.1.0"
+  source = "git::https://github.com/ravionhq/modules.git//compute/app_cluster?ref=rvn-aws-app-cluster@0.1.0"
 
   name               = "apps"
   module_instance_id = "minst_..."

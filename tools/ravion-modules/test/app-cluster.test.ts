@@ -7,7 +7,7 @@ import { compileDefinitionFile } from "../src/compiler.js";
 
 const repoRoot = resolve(process.cwd(), "../..");
 const modulePath = resolve(repoRoot, "compute/app_cluster");
-const definitionPath = resolve(modulePath, "rvn-app-cluster-definition.yml");
+const definitionPath = resolve(modulePath, "rvn-aws-app-cluster-definition.yml");
 
 const ROUTER_METRICS_NAMESPACE = "Ravion/AppRouter";
 
@@ -83,11 +83,11 @@ async function terraformFiles(): Promise<Map<string, string>> {
   return new Map(await Promise.all(names.map(async (name) => [name, await readFile(resolve(modulePath, name), "utf8")] as const)));
 }
 
-describe("rvn-app-cluster module definition", () => {
+describe("rvn-aws-app-cluster module definition", () => {
   it("is an unreleased 0.x module with inputs, outputs, a stack, an apps block, charts and a readme", async () => {
     const definition = await compileDefinitionFile(definitionPath);
 
-    assert.equal(definition.type, "rvn-app-cluster");
+    assert.equal(definition.type, "rvn-aws-app-cluster");
     assert.equal(definition.name, "App Cluster");
     assert.equal(definition.global, false);
     assert.match(definition.version, /^0\./);
