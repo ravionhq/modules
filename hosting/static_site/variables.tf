@@ -53,10 +53,11 @@ variable "distributions" {
   type = map(object({
     aliases             = optional(list(string), [])
     acm_certificate_arn = optional(string)
+    managed_domains     = optional(list(string), [])
     comment             = optional(string)
     enabled             = optional(bool, true)
   }))
-  description = "A map of CloudFront distributions to create. Each entry shares the same S3 origin and cache behaviors but has its own aliases and ACM certificate. Defaults to a single 'main' distribution with no aliases (CloudFront default certificate)."
+  description = "A map of CloudFront distributions to create. Each entry shares the same S3 origin and cache behaviors but has its own aliases and ACM certificate, or managed_domains whose certificate Ravion issues and attaches (not combinable with aliases or acm_certificate_arn). Defaults to a single 'main' distribution with no aliases (CloudFront default certificate)."
   default = {
     main = {}
   }
@@ -65,6 +66,28 @@ variable "distributions" {
     condition     = length(var.distributions) > 0
     error_message = "At least one distribution must be specified."
   }
+
+  validation {
+    condition     = alltrue([for k, d in var.distributions : length(d.managed_domains) == 0 || (length(d.aliases) == 0 && d.acm_certificate_arn == null)])
+    error_message = "A distribution cannot set managed_domains together with aliases or acm_certificate_arn. CloudFront serves one viewer certificate."
+  }
+
+  validation {
+    condition     = alltrue([for k, d in var.distributions : length(d.managed_domains) <= 10])
+    error_message = "A distribution may declare at most 10 managed_domains (one certificate per distribution)."
+  }
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns the managed domains and certificates. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external runs. Required when a distribution sets managed_domains."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*) that owns the managed certificates. Required when a distribution sets managed_domains."
+  default     = null
 }
 
 variable "price_class" {

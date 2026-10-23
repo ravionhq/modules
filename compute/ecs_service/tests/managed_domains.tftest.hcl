@@ -135,8 +135,8 @@ run "custom_domain_creates_certificate_domain_and_rule" {
   }
 
   assert {
-    condition     = length(ravion_domain.wildcard) == 0
-    error_message = "An explicit custom domain must replace the default Ravion domain"
+    condition     = length(ravion_domain.wildcard) == 1
+    error_message = "The default Ravion domain must be served alongside the custom domain"
   }
 
   assert {
@@ -145,8 +145,12 @@ run "custom_domain_creates_certificate_domain_and_rule" {
   }
 
   assert {
-    condition     = length(local.ravion_host_headers) == 1 && local.ravion_host_headers[0] == "www.example.com"
-    error_message = "Only the explicitly configured custom domain must be routed"
+    condition = (
+      length(local.ravion_host_headers) == 2
+      && local.ravion_host_headers[0] == "www.example.com"
+      && local.ravion_host_headers[1] == "fallback.cluster.ravion.app"
+    )
+    error_message = "The custom domain and then the default Ravion domain must be routed"
   }
 
   assert {
@@ -170,17 +174,18 @@ run "mixed_domains_share_one_custom_certificate" {
 
   assert {
     condition = (
-      length(local.effective_domains) == 3
+      length(local.effective_domains) == 4
       && local.effective_domains[0] == "api.cluster.ravion.app"
       && local.effective_domains[1] == "www.example.com"
       && local.effective_domains[2] == "api.example.com"
+      && local.effective_domains[3] == "test-service.cluster.ravion.app"
     )
-    error_message = "Explicit domains must be normalized, deduplicated in order, and used without adding the default"
+    error_message = "Explicit domains must be normalized and deduplicated in order, followed by the default Ravion domain"
   }
 
   assert {
-    condition     = length(ravion_domain.wildcard) == 1 && !contains(local.effective_domains, "test-service.cluster.ravion.app")
-    error_message = "Only the explicitly configured wildcard domain must be allocated"
+    condition     = length(ravion_domain.wildcard) == 2
+    error_message = "The explicit wildcard domain and the default Ravion domain must both be allocated"
   }
 
   assert {
@@ -199,7 +204,7 @@ run "mixed_domains_share_one_custom_certificate" {
   }
 }
 
-run "separate_ravion_domain_name_is_fallback" {
+run "ravion_domain_name_names_the_default_domain" {
   command = plan
 
   variables {
@@ -213,12 +218,57 @@ run "separate_ravion_domain_name_is_fallback" {
       && local.effective_domains[0] == "api.cluster.ravion.app"
       && output.ravion_domain_fqdn == "api.cluster.ravion.app"
     )
-    error_message = "The separate Ravion domain input must supply the fallback when no custom domains are set"
+    error_message = "ravion_domain_name must name the default Ravion domain"
   }
 
   assert {
     condition     = length(ravion_domain.wildcard) == 1 && length(ravion_domain.custom) == 0
-    error_message = "The fallback Ravion domain must be managed as the only effective domain"
+    error_message = "The default Ravion domain must ride the cluster wildcard"
+  }
+}
+
+run "default_domain_off_serves_only_custom_domains" {
+  command = plan
+
+  variables {
+    ravion_domain_enabled = false
+    domains               = ["www.example.com"]
+    ravion_aws_account_id = "aws_testaccount"
+  }
+
+  assert {
+    condition     = length(ravion_domain.wildcard) == 0 && length(local.ravion_host_headers) == 1 && local.ravion_host_headers[0] == "www.example.com"
+    error_message = "Turning the default Ravion domain off must serve only the custom domains"
+  }
+}
+
+run "default_domain_off_without_custom_domains_is_rejected" {
+  command = plan
+
+  variables {
+    ravion_domain_enabled = false
+    domains               = [" "]
+  }
+
+  expect_failures = [var.ravion_domain_enabled]
+}
+
+run "default_domain_listed_as_custom_is_served_once" {
+  command = plan
+
+  variables {
+    domains               = ["test-service.cluster.ravion.app", "www.example.com"]
+    ravion_aws_account_id = "aws_testaccount"
+  }
+
+  assert {
+    condition = (
+      length(local.effective_domains) == 2
+      && local.effective_domains[0] == "test-service.cluster.ravion.app"
+      && local.effective_domains[1] == "www.example.com"
+      && length(ravion_domain.wildcard) == 1
+    )
+    error_message = "A default Ravion domain also listed as a custom domain must be served once, in its listed position"
   }
 }
 

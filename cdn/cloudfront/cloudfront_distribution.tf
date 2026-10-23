@@ -1,5 +1,81 @@
-resource "aws_cloudfront_distribution" "this" {
+locals {
+  # A distribution with managed_domains gets its aliases and certificate from
+  # Ravion once DNS validates, so it lives in a resource that ignores both
+  # fields. The rest keep the original aws_cloudfront_distribution.this address.
+  byo_distributions = {
+    for k, v in var.distributions : k => v if length(v.managed_domains) == 0
+  }
+  managed_distributions = {
+    for k, v in var.distributions : k => v if length(v.managed_domains) > 0
+  }
+
+  # Both distribution resources render the blocks below, so they cannot drift.
+  distribution_origins = [
+    for o in var.origins : {
+      origin_id   = o.origin_id
+      domain_name = o.domain_name
+      origin_path = o.origin_path
+
+      origin_access_control_id = o.s3_origin_enabled && var.origin_access_control_creation_enabled ? (
+        o.origin_access_control_id != null ? o.origin_access_control_id : aws_cloudfront_origin_access_control.this[o.origin_id].id
+      ) : o.origin_access_control_id
+
+      custom_origin_configs = o.s3_origin_enabled || o.vpc_origin_enabled ? [] : [{
+        http_port                = o.http_port
+        https_port               = o.https_port
+        origin_protocol_policy   = o.origin_protocol_policy
+        origin_ssl_protocols     = o.origin_ssl_protocols
+        origin_keepalive_timeout = o.origin_keepalive_timeout
+        origin_read_timeout      = o.origin_read_timeout
+      }]
+
+      vpc_origin_configs = o.vpc_origin_enabled ? [{
+        vpc_origin_id            = aws_cloudfront_vpc_origin.this[o.origin_id].id
+        origin_keepalive_timeout = o.origin_keepalive_timeout
+        origin_read_timeout      = o.origin_read_timeout
+      }] : []
+
+      custom_headers = o.custom_headers
+      origin_shields = o.origin_shield != null ? [o.origin_shield] : []
+
+      connection_attempts = o.connection_attempts
+      connection_timeout  = o.connection_timeout
+    }
+  ]
+
+  distribution_default_function_associations = concat(var.default_cache_behavior.function_associations, local.viewer_request_function_associations)
+
+  distribution_ordered_cache_behaviors = [
+    for b in var.ordered_cache_behaviors : merge(b, {
+      function_associations = concat(b.function_associations, local.viewer_request_function_associations)
+    })
+  ]
+
+  distribution_viewer_request_conflict = local.viewer_request_function_enabled && (
+    local.default_viewer_request_function_conflict ||
+    local.default_viewer_request_lambda_conflict ||
+    local.ordered_viewer_request_function_conflict ||
+    local.ordered_viewer_request_lambda_conflict
+  )
+}
+
+# The domain mode each distribution was first applied with. Changing it would
+# move the distribution between the two resources below, deleting it and
+# creating one with a new CloudFront hostname, so the plan refuses instead. To
+# switch, add a distribution in the new mode, move DNS to it, then remove the
+# old one.
+resource "terraform_data" "distribution_domain_mode" {
   for_each = var.distributions
+
+  input = length(each.value.managed_domains) > 0 ? "managed" : "byo"
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+}
+
+resource "aws_cloudfront_distribution" "this" {
+  for_each = local.byo_distributions
 
   enabled             = each.value.enabled
   comment             = each.value.comment != null ? each.value.comment : "${var.name}-${each.key}"
@@ -13,34 +89,31 @@ resource "aws_cloudfront_distribution" "this" {
   web_acl_id          = var.web_acl_id
 
   dynamic "origin" {
-    for_each = var.origins
+    for_each = local.distribution_origins
     content {
-      origin_id   = origin.value.origin_id
-      domain_name = origin.value.domain_name
-      origin_path = origin.value.origin_path
-
-      origin_access_control_id = origin.value.s3_origin_enabled && var.origin_access_control_creation_enabled ? (
-        origin.value.origin_access_control_id != null ? origin.value.origin_access_control_id : aws_cloudfront_origin_access_control.this[origin.value.origin_id].id
-      ) : origin.value.origin_access_control_id
+      origin_id                = origin.value.origin_id
+      domain_name              = origin.value.domain_name
+      origin_path              = origin.value.origin_path
+      origin_access_control_id = origin.value.origin_access_control_id
 
       dynamic "custom_origin_config" {
-        for_each = origin.value.s3_origin_enabled || origin.value.vpc_origin_enabled ? [] : [1]
+        for_each = origin.value.custom_origin_configs
         content {
-          http_port                = origin.value.http_port
-          https_port               = origin.value.https_port
-          origin_protocol_policy   = origin.value.origin_protocol_policy
-          origin_ssl_protocols     = origin.value.origin_ssl_protocols
-          origin_keepalive_timeout = origin.value.origin_keepalive_timeout
-          origin_read_timeout      = origin.value.origin_read_timeout
+          http_port                = custom_origin_config.value.http_port
+          https_port               = custom_origin_config.value.https_port
+          origin_protocol_policy   = custom_origin_config.value.origin_protocol_policy
+          origin_ssl_protocols     = custom_origin_config.value.origin_ssl_protocols
+          origin_keepalive_timeout = custom_origin_config.value.origin_keepalive_timeout
+          origin_read_timeout      = custom_origin_config.value.origin_read_timeout
         }
       }
 
       dynamic "vpc_origin_config" {
-        for_each = origin.value.vpc_origin_enabled ? [1] : []
+        for_each = origin.value.vpc_origin_configs
         content {
-          vpc_origin_id            = aws_cloudfront_vpc_origin.this[origin.value.origin_id].id
-          origin_keepalive_timeout = origin.value.origin_keepalive_timeout
-          origin_read_timeout      = origin.value.origin_read_timeout
+          vpc_origin_id            = vpc_origin_config.value.vpc_origin_id
+          origin_keepalive_timeout = vpc_origin_config.value.origin_keepalive_timeout
+          origin_read_timeout      = vpc_origin_config.value.origin_read_timeout
         }
       }
 
@@ -53,7 +126,7 @@ resource "aws_cloudfront_distribution" "this" {
       }
 
       dynamic "origin_shield" {
-        for_each = origin.value.origin_shield != null ? [origin.value.origin_shield] : []
+        for_each = origin.value.origin_shields
         content {
           enabled              = origin_shield.value.enabled
           origin_shield_region = origin_shield.value.origin_shield_region
@@ -77,7 +150,7 @@ resource "aws_cloudfront_distribution" "this" {
     trusted_key_groups         = var.default_cache_behavior.trusted_key_groups
 
     dynamic "function_association" {
-      for_each = concat(var.default_cache_behavior.function_associations, local.viewer_request_function_associations)
+      for_each = local.distribution_default_function_associations
       content {
         event_type   = function_association.value.event_type
         function_arn = function_association.value.function_arn
@@ -95,7 +168,7 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   dynamic "ordered_cache_behavior" {
-    for_each = var.ordered_cache_behaviors
+    for_each = local.distribution_ordered_cache_behaviors
     content {
       path_pattern               = ordered_cache_behavior.value.path_pattern
       target_origin_id           = ordered_cache_behavior.value.target_origin_id
@@ -109,7 +182,7 @@ resource "aws_cloudfront_distribution" "this" {
       trusted_key_groups         = ordered_cache_behavior.value.trusted_key_groups
 
       dynamic "function_association" {
-        for_each = concat(ordered_cache_behavior.value.function_associations, local.viewer_request_function_associations)
+        for_each = ordered_cache_behavior.value.function_associations
         content {
           event_type   = function_association.value.event_type
           function_arn = function_association.value.function_arn
@@ -164,13 +237,192 @@ resource "aws_cloudfront_distribution" "this" {
 
   lifecycle {
     precondition {
-      condition = !local.viewer_request_function_enabled || !(
-        local.default_viewer_request_function_conflict ||
-        local.default_viewer_request_lambda_conflict ||
-        local.ordered_viewer_request_function_conflict ||
-        local.ordered_viewer_request_lambda_conflict
-      )
+      condition     = !local.distribution_viewer_request_conflict
       error_message = "redirect_rules cannot be enabled when a default or ordered cache behavior already has a viewer-request CloudFront Function or Lambda@Edge association."
     }
+
+    precondition {
+      condition     = terraform_data.distribution_domain_mode[each.key].output == "byo"
+      error_message = "Distribution \"${each.key}\" uses Ravion-managed domains. Switching it to aliases with your own certificate would replace it and change its CloudFront hostname. Add a new distribution with the aliases, move DNS to it, then remove this one."
+    }
   }
+}
+
+# Same as aws_cloudfront_distribution.this, but Ravion attaches the aliases and
+# viewer certificate after DNS validates, so Terraform must not revert them.
+resource "aws_cloudfront_distribution" "managed" {
+  for_each = local.managed_distributions
+
+  enabled             = each.value.enabled
+  comment             = each.value.comment != null ? each.value.comment : "${var.name}-${each.key}"
+  price_class         = var.price_class
+  http_version        = var.http_version
+  is_ipv6_enabled     = var.ipv6_enabled
+  default_root_object = var.default_root_object
+  retain_on_delete    = var.retain_on_delete_enabled
+  wait_for_deployment = var.deployment_wait_enabled
+  aliases             = []
+  web_acl_id          = var.web_acl_id
+
+  dynamic "origin" {
+    for_each = local.distribution_origins
+    content {
+      origin_id                = origin.value.origin_id
+      domain_name              = origin.value.domain_name
+      origin_path              = origin.value.origin_path
+      origin_access_control_id = origin.value.origin_access_control_id
+
+      dynamic "custom_origin_config" {
+        for_each = origin.value.custom_origin_configs
+        content {
+          http_port                = custom_origin_config.value.http_port
+          https_port               = custom_origin_config.value.https_port
+          origin_protocol_policy   = custom_origin_config.value.origin_protocol_policy
+          origin_ssl_protocols     = custom_origin_config.value.origin_ssl_protocols
+          origin_keepalive_timeout = custom_origin_config.value.origin_keepalive_timeout
+          origin_read_timeout      = custom_origin_config.value.origin_read_timeout
+        }
+      }
+
+      dynamic "vpc_origin_config" {
+        for_each = origin.value.vpc_origin_configs
+        content {
+          vpc_origin_id            = vpc_origin_config.value.vpc_origin_id
+          origin_keepalive_timeout = vpc_origin_config.value.origin_keepalive_timeout
+          origin_read_timeout      = vpc_origin_config.value.origin_read_timeout
+        }
+      }
+
+      dynamic "custom_header" {
+        for_each = origin.value.custom_headers
+        content {
+          name  = custom_header.value.name
+          value = custom_header.value.value
+        }
+      }
+
+      dynamic "origin_shield" {
+        for_each = origin.value.origin_shields
+        content {
+          enabled              = origin_shield.value.enabled
+          origin_shield_region = origin_shield.value.origin_shield_region
+        }
+      }
+
+      connection_attempts = origin.value.connection_attempts
+      connection_timeout  = origin.value.connection_timeout
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id           = var.default_cache_behavior.target_origin_id
+    viewer_protocol_policy     = var.default_cache_behavior.viewer_protocol_policy
+    allowed_methods            = var.default_cache_behavior.allowed_methods
+    cached_methods             = var.default_cache_behavior.cached_methods
+    compress                   = var.default_cache_behavior.compression_enabled
+    cache_policy_id            = var.default_cache_behavior.cache_policy_id
+    origin_request_policy_id   = var.default_cache_behavior.origin_request_policy_id
+    response_headers_policy_id = var.default_cache_behavior.response_headers_policy_id
+    trusted_key_groups         = var.default_cache_behavior.trusted_key_groups
+
+    dynamic "function_association" {
+      for_each = local.distribution_default_function_associations
+      content {
+        event_type   = function_association.value.event_type
+        function_arn = function_association.value.function_arn
+      }
+    }
+
+    dynamic "lambda_function_association" {
+      for_each = var.default_cache_behavior.lambda_function_associations
+      content {
+        event_type   = lambda_function_association.value.event_type
+        lambda_arn   = lambda_function_association.value.lambda_arn
+        include_body = lambda_function_association.value.body_inclusion_enabled
+      }
+    }
+  }
+
+  dynamic "ordered_cache_behavior" {
+    for_each = local.distribution_ordered_cache_behaviors
+    content {
+      path_pattern               = ordered_cache_behavior.value.path_pattern
+      target_origin_id           = ordered_cache_behavior.value.target_origin_id
+      viewer_protocol_policy     = ordered_cache_behavior.value.viewer_protocol_policy
+      allowed_methods            = ordered_cache_behavior.value.allowed_methods
+      cached_methods             = ordered_cache_behavior.value.cached_methods
+      compress                   = ordered_cache_behavior.value.compression_enabled
+      cache_policy_id            = ordered_cache_behavior.value.cache_policy_id
+      origin_request_policy_id   = ordered_cache_behavior.value.origin_request_policy_id
+      response_headers_policy_id = ordered_cache_behavior.value.response_headers_policy_id
+      trusted_key_groups         = ordered_cache_behavior.value.trusted_key_groups
+
+      dynamic "function_association" {
+        for_each = ordered_cache_behavior.value.function_associations
+        content {
+          event_type   = function_association.value.event_type
+          function_arn = function_association.value.function_arn
+        }
+      }
+
+      dynamic "lambda_function_association" {
+        for_each = ordered_cache_behavior.value.lambda_function_associations
+        content {
+          event_type   = lambda_function_association.value.event_type
+          lambda_arn   = lambda_function_association.value.lambda_arn
+          include_body = lambda_function_association.value.body_inclusion_enabled
+        }
+      }
+    }
+  }
+
+  dynamic "custom_error_response" {
+    for_each = var.custom_error_responses
+    content {
+      error_code            = custom_error_response.value.error_code
+      response_code         = custom_error_response.value.response_code
+      response_page_path    = custom_error_response.value.response_page_path
+      error_caching_min_ttl = custom_error_response.value.error_caching_min_ttl
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = var.geo_restriction_type
+      locations        = var.geo_restriction_locations
+    }
+  }
+
+  dynamic "logging_config" {
+    for_each = local.s3_logging_enabled ? [1] : []
+    content {
+      bucket          = var.logging_bucket_creation_enabled ? aws_s3_bucket.logging[0].bucket_domain_name : var.logging_bucket_domain_name
+      prefix          = "${var.logging_prefix}${each.key}/"
+      include_cookies = var.logging_cookies_enabled
+    }
+  }
+
+  tags = merge(local.tags, { Name = "${var.name}-${each.key}" })
+
+  lifecycle {
+    precondition {
+      condition     = !local.distribution_viewer_request_conflict
+      error_message = "redirect_rules cannot be enabled when a default or ordered cache behavior already has a viewer-request CloudFront Function or Lambda@Edge association."
+    }
+
+    precondition {
+      condition     = terraform_data.distribution_domain_mode[each.key].output == "managed"
+      error_message = "Distribution \"${each.key}\" uses aliases with your own certificate. Switching it to Ravion-managed domains would replace it and change its CloudFront hostname. Add a new distribution with the managed domains, move DNS to it once its certificate validates, then remove this one."
+    }
+
+    ignore_changes = [aliases, viewer_certificate]
+  }
+}
+
+locals {
+  distributions = merge(aws_cloudfront_distribution.this, aws_cloudfront_distribution.managed)
 }

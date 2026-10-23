@@ -335,7 +335,7 @@ output "cloudwatch_alarm_arns" {
 ################################################################################
 
 output "ravion_domain_fqdn" {
-  description = "Primary managed FQDN: the first configured domain, or the default Ravion domain when none remain after normalization. Null when the cluster has no Ravion-managed domains."
+  description = "Primary managed FQDN: the first custom domain, otherwise the default Ravion domain. Null when the cluster has no Ravion-managed domains."
   value       = length(local.effective_domains) > 0 ? local.effective_domains[0] : null
 }
 

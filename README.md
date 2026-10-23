@@ -18,6 +18,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
 | `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
+| `compute/`    | `app_cluster`     | Where apps deployed with `ravion deploy` are served from, on an existing execution environment's sandbox pool: an internet-facing Network Load Balancer with a Ravion-managed wildcard domain and certificate, and custom wildcard domains, in front of a Ravion-run router, with the router's security group, IAM role and instance profile (includes `rvn-aws-app-cluster` module definition) | Unreleased |
 | `compute/`    | `autoscaling`     | AWS Auto Scaling groups with optional generated names for safe replacement | v1.0.0  |
 | `compute/`    | `ec2_service`     | Supervised EC2 workloads with opt-in replaceable Auto Scaling groups, configurable rolling deploys, ALB routing, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
@@ -74,22 +75,16 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-kms` | AWS KMS Key | v0.2.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.2.1 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.0 | `security/secret/` |
-| `rvn-aws-static` | Static Hosting | v1.5.0 | `hosting/static_site/` |
-| `rvn-cloudfront` | CloudFront CDN | v1.5.1 | `cdn/cloudfront/` |
+| `rvn-aws-static` | Static Hosting | v1.6.0 | `hosting/static_site/` |
+| `rvn-cloudfront` | CloudFront CDN | v1.6.0 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.3.0 | `compute/ec2_service/` |
-| `rvn-ecs-cluster` | ECS Cluster | v2.2.0 | `compute/ecs_cluster/` |
+| `rvn-ecs-cluster` | ECS Cluster | v2.3.1 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v2.4.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.4.0 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.5.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.3.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.23.0 | `compute/eks/addons/` |
-| `rvn-eks-chart` | EKS Helm Chart | v0.3.0 | `compute/eks_service/` |
-| `rvn-eks-cluster` | EKS Cluster | v0.9.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.11.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.14.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.2.0 | `compute/lambda/` |
-| `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |

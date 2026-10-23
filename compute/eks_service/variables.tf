@@ -404,3 +404,95 @@ variable "pod_identity_inline_policies" {
     error_message = "The pod_identity_inline_policies must be an object keyed by policy name."
   }
 }
+
+################################################################################
+# Ravion-managed domains (optional)
+################################################################################
+
+variable "cluster_parent_fqdn" {
+  type        = string
+  description = "Cluster wildcard apex FQDN (pipe from eks_addons.ravion_cluster_domain_fqdn). Set to enable Ravion-managed domains for this service."
+  default     = null
+}
+
+variable "cluster_https_listener_arn" {
+  type        = string
+  description = "Cluster ALB HTTPS listener ARN this service attaches to. Pipe eks_addons.public_alb_https_listener_arn for a public service, or private_alb_https_listener_arn for a private one. Required when cluster_parent_fqdn is set."
+  default     = null
+}
+
+variable "ravion_listener_rule_priority" {
+  type        = number
+  description = "Listener rule priority (1-50000). 0 = auto-derive from sha256(name)."
+  default     = 0
+}
+
+variable "ravion_domain_enabled" {
+  type        = bool
+  description = "Serve the default Ravion domain, <ravion_domain_name>.<cluster apex>, alongside the custom domains."
+  default     = true
+  nullable    = false
+
+  validation {
+    condition = (
+      var.ravion_domain_enabled
+      || var.cluster_parent_fqdn == null
+      || var.cluster_parent_fqdn == ""
+      || length([for d in var.domains : d if trimsuffix(trimspace(d), ".") != ""]) > 0
+    )
+    error_message = "A Ravion-managed service needs at least one domain. Turn on the default Ravion domain or add a custom domain."
+  }
+}
+
+variable "ravion_domain_name" {
+  type        = string
+  description = "Subdomain of the default Ravion domain. Defaults to the module given ID or service name."
+  default     = null
+
+  validation {
+    condition     = var.ravion_domain_name == null || var.ravion_domain_name == "" || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.ravion_domain_name))
+    error_message = "The Ravion subdomain must be 1-63 lowercase letters, numbers, or hyphens, starting and ending with a letter or number."
+  }
+}
+
+variable "domains" {
+  type        = list(string)
+  description = "Custom domains, served alongside the default Ravion domain when ravion_domain_enabled is true. One-label cluster names use the wildcard certificate; other domains share a service certificate (max 10)."
+  default     = []
+}
+
+variable "cluster_alb_dns_name" {
+  type        = string
+  description = "Cluster ALB DNS name for custom-domain routing records — public_alb_dns_name for a public service, private_alb_dns_name for a private one. Must match the ALB whose listener is in cluster_https_listener_arn."
+  default     = null
+}
+
+variable "cluster_alb_zone_id" {
+  type        = string
+  description = "Cluster ALB hosted zone id for custom-domain routing records — public_alb_zone_id for a public service, private_alb_zone_id for a private one. Must match the ALB whose listener is in cluster_https_listener_arn."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*). Required when the domains list includes a custom (non-wildcard) domain."
+  default     = null
+}
+
+variable "module_instance_given_id" {
+  type        = string
+  description = "The module instance's user-facing given id (injected by the runner as TF_VAR_module_instance_given_id). Used as the auto-FQDN leaf under the cluster wildcard."
+  default     = null
+}
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns this service's Ravion-managed domains/certificate. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external/API-key runs. Required when use_ravion_managed_domains = true."
+  default     = null
+}
+
+variable "ravion_aws_region" {
+  type        = string
+  description = "AWS region the per-service cert lives in. Defaults to the module region."
+  default     = null
+}

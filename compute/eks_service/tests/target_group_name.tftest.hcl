@@ -51,6 +51,8 @@ mock_provider "aws" {
   }
 }
 
+mock_provider "ravion" {}
+
 variables {
   name                       = "test-workload"
   region                     = "us-east-1"

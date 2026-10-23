@@ -3,6 +3,8 @@
 ################################################################################
 
 # Mock AWS provider with overridden data sources
+mock_provider "ravion" {}
+
 mock_provider "aws" {
   override_data {
     target = data.aws_caller_identity.current

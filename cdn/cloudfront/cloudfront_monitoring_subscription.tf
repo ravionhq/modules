@@ -1,5 +1,5 @@
 resource "aws_cloudfront_monitoring_subscription" "this" {
-  for_each = var.additional_metrics_enabled ? aws_cloudfront_distribution.this : {}
+  for_each = var.additional_metrics_enabled ? local.distributions : {}
 
   distribution_id = each.value.id
 

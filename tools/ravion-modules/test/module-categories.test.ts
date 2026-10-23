@@ -48,6 +48,13 @@ describe("module categories", () => {
     );
   });
 
+  it("groups the App Cluster with clusters", () => {
+    assert.deepEqual(
+      getModuleCategoriesForDefinitionType("rvn-aws-app-cluster").map((category) => category.givenId),
+      ["cluster"],
+    );
+  });
+
   it("groups EKS infrastructure definitions with clusters", () => {
     for (const definitionType of ["rvn-eks-cluster", "rvn-eks-addons"]) {
       assert.deepEqual(
