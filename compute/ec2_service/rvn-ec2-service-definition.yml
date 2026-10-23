@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 2.2.0
-  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
+  version: 2.3.0
+  description: Pick the branch for a manual deploy from the branches of the deploy repository.
 module:
   inputs:
     - id: network
@@ -828,7 +828,7 @@ module:
           deploy_type: container
       - id: branch
         label: Git branch
-        type: string
+        type: gitbranch
         description: Branch to deploy. Defaults to the repository's default branch.
         required: false
         show_when:
