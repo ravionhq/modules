@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.1.0
-  description: Default new builds to sandbox with 14 vCPU and 28 GiB.
+  version: 2.2.0
+  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -1155,6 +1155,7 @@ module:
       - $include: ../../partials/inputs/build-inputs.yml
     source:
       $include: ../../partials/build/git-source.yml
+    watch_paths: << module.input.watch_paths >>
     builder: >-
       << module.input.lambda_type != "edge" && module.input.package_type == "Image" && module.input.build_source == "dockerfile" ? {type:
       "dockerfile", dockerfile: module.input.dockerfile || "Dockerfile", context:

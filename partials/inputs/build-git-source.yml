@@ -10,3 +10,10 @@
   label: Source base path
   show_when: $with.show_when
   type: string
+- add_button_label: Add path
+  description: Globs from the repository root; prefix ! to exclude. Skips the build and deploy when no matching file changed. Empty always builds.
+  id: watch_paths
+  label: Watch paths
+  placeholder: apps/web/**
+  show_when: $with.show_when
+  type: string_array

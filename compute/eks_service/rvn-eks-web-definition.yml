@@ -4,7 +4,7 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.11.1
+  version: 1.12.1
   description: Show the Spot burst pods' lines in Application logs alongside the On-Demand pods'.
 module:
   inputs:

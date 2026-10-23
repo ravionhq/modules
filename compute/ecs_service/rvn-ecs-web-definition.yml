@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.4.0
-  description: "Serve the default Ravion domain alongside custom domains, and turn it off with the Default Ravion domain toggle."
+  version: 2.5.0
+  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
 module:
   inputs:
     - id: section_cluster

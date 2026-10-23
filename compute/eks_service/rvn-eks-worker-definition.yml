@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.13.1
+  version: 0.14.1
   description: Show the Spot burst pods' lines in Application logs alongside the On-Demand pods'.
 module:
   inputs:
