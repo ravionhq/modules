@@ -221,11 +221,11 @@ run "static_spot_gate_wins_without_discarding_caller_settings" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.karpenter[0].values[1]).settings.featureGates.staticCapacity == false && yamldecode(helm_release.karpenter[0].values[1]).settings.featureGates.nodeRepair == true && yamldecode(helm_release.karpenter[0].values[1]).settings.logLevel == "debug"
+    condition     = yamldecode(helm_release.karpenter[0].values[2]).settings.featureGates.staticCapacity == false && yamldecode(helm_release.karpenter[0].values[2]).settings.featureGates.nodeRepair == true && yamldecode(helm_release.karpenter[0].values[2]).settings.logLevel == "debug"
     error_message = "Caller Karpenter settings must remain in their own Helm values document."
   }
   assert {
-    condition     = yamldecode(helm_release.karpenter[0].values[2]).settings.featureGates.staticCapacity == true
+    condition     = yamldecode(helm_release.karpenter[0].values[3]).settings.featureGates.staticCapacity == true
     error_message = "The module-owned staticCapacity value must be the final Helm override."
   }
 }

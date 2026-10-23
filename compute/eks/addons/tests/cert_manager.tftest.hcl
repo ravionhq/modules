@@ -116,6 +116,8 @@ run "placement_opt_out_drops_cert_manager_tolerations" {
   variables {
     cert_manager_enabled    = true
     addon_placement_enabled = false
+    # Resilience has its own document; leave it out to see placement alone.
+    addon_resilience_enabled = false
   }
 
   assert {
@@ -133,7 +135,7 @@ run "advanced_helm_values_override_cert_manager_defaults" {
   }
 
   assert {
-    condition     = length(helm_release.cert_manager[0].values) == 3 && yamldecode(helm_release.cert_manager[0].values[2]).webhook.replicaCount == 3
+    condition     = length(helm_release.cert_manager[0].values) == 4 && yamldecode(helm_release.cert_manager[0].values[3]).webhook.replicaCount == 3
     error_message = "Advanced cert-manager values must be appended after defaults and take precedence."
   }
 }

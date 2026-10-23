@@ -7,12 +7,13 @@ import { README_TABLE_BEGIN_MARKER, README_TABLE_END_MARKER, ReadmeSyncError, re
 
 const repoRoot = resolve("../..");
 
-test("renders one sorted row per definition with its release version", async () => {
+test("renders one sorted row per globally published definition with its release version", async () => {
   const compiled = await compileAllDefinitions(repoRoot);
   const unpublished = { ...compiled[0], published: false, type: "ravion-disabled-example" };
-  const table = renderModuleDefinitionsTable([...compiled, unpublished], repoRoot);
+  const orgOnly = { ...compiled[0], global: false, type: "rvn-org-only-example" };
+  const table = renderModuleDefinitionsTable([...compiled, unpublished, orgOnly], repoRoot);
   const rows = table.split("\n").slice(2);
-  const published = compiled.filter((definition) => definition.published);
+  const published = compiled.filter((definition) => definition.published && definition.global !== false);
 
   assert.equal(rows.length, published.length);
   const types = rows.map((row) => row.split("|")[1].trim().replaceAll("`", ""));
@@ -26,6 +27,7 @@ test("renders one sorted row per definition with its release version", async () 
   }
   assert.doesNotMatch(table, /`rvn-eks-cron`/);
   assert.doesNotMatch(table, /`ravion-disabled-example`/);
+  assert.doesNotMatch(table, /`rvn-org-only-example`/);
 });
 
 test("replaces only the content between the generated markers", () => {

@@ -68,6 +68,14 @@ class HelmDependenciesTest(unittest.TestCase):
                 pending.extend(self.edges[node] - visited)
         return visited
 
+    def test_metrics_collector_waits_for_the_in_cluster_stores(self):
+        # Its retries give up after ten minutes; a store still installing
+        # past that would lose the first metrics.
+        visited = self.dependencies("helm_release.otel_collector")
+        for store in ("prometheus", "mimir"):
+            with self.subTest(store=store):
+                self.assertIn(f"[root] helm_release.{store} (expand)", visited)
+
     def test_controller_waits_for_crd_adoption_and_upgrade(self):
         self.assertIn(
             "[root] helm_release.lb_controller_crds (expand)",
@@ -85,7 +93,7 @@ class HelmDependenciesTest(unittest.TestCase):
         webhook = "[root] helm_release.lb_controller (expand)"
         for release in (
             "external_secrets", "kube_state_metrics", "loki", "prometheus",
-            "thanos", "tempo", "otlp_collector",
+            "thanos", "mimir", "tempo", "otlp_collector",
             "grafana", "alloy", "otel_collector", "otel_logs_collector",
             "karpenter", "keda", "cert_manager",
         ):

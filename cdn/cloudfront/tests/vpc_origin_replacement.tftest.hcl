@@ -8,6 +8,8 @@
 # own name, so the replacement can exist alongside the VPC origin it replaces.
 ################################################################################
 
+mock_provider "ravion" {}
+
 mock_provider "aws" {
   override_data {
     target = data.aws_caller_identity.current

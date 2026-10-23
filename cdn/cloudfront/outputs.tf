@@ -4,7 +4,7 @@
 
 output "distribution_ids" {
   description = "A map of distribution key to CloudFront distribution ID."
-  value       = { for k, v in aws_cloudfront_distribution.this : k => v.id }
+  value       = { for k, v in local.distributions : k => v.id }
 }
 
 output "cache_policy_id" {
@@ -14,27 +14,27 @@ output "cache_policy_id" {
 
 output "distribution_arns" {
   description = "A map of distribution key to CloudFront distribution ARN."
-  value       = { for k, v in aws_cloudfront_distribution.this : k => v.arn }
+  value       = { for k, v in local.distributions : k => v.arn }
 }
 
 output "distribution_domain_names" {
   description = "A map of distribution key to CloudFront distribution domain name."
-  value       = { for k, v in aws_cloudfront_distribution.this : k => v.domain_name }
+  value       = { for k, v in local.distributions : k => v.domain_name }
 }
 
 output "distribution_hosted_zone_ids" {
   description = "A map of distribution key to CloudFront Route 53 zone ID for alias records."
-  value       = { for k, v in aws_cloudfront_distribution.this : k => v.hosted_zone_id }
+  value       = { for k, v in local.distributions : k => v.hosted_zone_id }
 }
 
 output "distribution_statuses" {
   description = "A map of distribution key to current status of the distribution."
-  value       = { for k, v in aws_cloudfront_distribution.this : k => v.status }
+  value       = { for k, v in local.distributions : k => v.status }
 }
 
 output "distribution_etags" {
   description = "A map of distribution key to current version of the distribution's information."
-  value       = { for k, v in aws_cloudfront_distribution.this : k => v.etag }
+  value       = { for k, v in local.distributions : k => v.etag }
 }
 
 ################################################################################
@@ -53,22 +53,54 @@ output "redirect_function_name" {
 
 output "distribution_id" {
   description = "The ID of the CloudFront distribution when exactly one distribution is created (null otherwise)."
-  value       = length(aws_cloudfront_distribution.this) == 1 ? values(aws_cloudfront_distribution.this)[0].id : null
+  value       = length(local.distributions) == 1 ? values(local.distributions)[0].id : null
 }
 
 output "distribution_arn" {
   description = "The ARN of the CloudFront distribution when exactly one distribution is created (null otherwise)."
-  value       = length(aws_cloudfront_distribution.this) == 1 ? values(aws_cloudfront_distribution.this)[0].arn : null
+  value       = length(local.distributions) == 1 ? values(local.distributions)[0].arn : null
 }
 
 output "distribution_domain_name" {
   description = "The domain name of the CloudFront distribution when exactly one distribution is created (null otherwise)."
-  value       = length(aws_cloudfront_distribution.this) == 1 ? values(aws_cloudfront_distribution.this)[0].domain_name : null
+  value       = length(local.distributions) == 1 ? values(local.distributions)[0].domain_name : null
 }
 
 output "distribution_hosted_zone_id" {
   description = "The Route 53 hosted zone ID of the CloudFront distribution when exactly one distribution is created (null otherwise)."
-  value       = length(aws_cloudfront_distribution.this) == 1 ? values(aws_cloudfront_distribution.this)[0].hosted_zone_id : null
+  value       = length(local.distributions) == 1 ? values(local.distributions)[0].hosted_zone_id : null
+}
+
+################################################################################
+# Ravion-managed domains
+################################################################################
+
+output "managed_certificate_arns" {
+  description = "A map of distribution key to the ARN of the Ravion-issued certificate. Only distributions with managed_domains appear."
+  value       = { for k, v in ravion_aws_acm_certificate.this : k => v.arn }
+}
+
+output "managed_certificate_validation_records" {
+  description = "A map of distribution key to the DNS validation records the customer must add so Ravion can issue the certificate. Only distributions with managed_domains appear."
+  value       = { for k, v in ravion_aws_acm_certificate.this : k => v.validation_records }
+}
+
+output "managed_domain_records" {
+  description = "A map of distribution key to the routing records the customer must add at their DNS provider: each domain points at the distribution's CloudFront domain name."
+  value = {
+    for k, domains in local.managed_domain_names : k => [
+      for d in domains : {
+        name  = d
+        type  = "CNAME"
+        value = local.distributions[k].domain_name
+      }
+    ]
+  }
+}
+
+output "managed_primary_domains" {
+  description = "A map of distribution key to its first managed domain. Only distributions with managed_domains appear."
+  value       = { for k, domains in local.managed_domain_names : k => domains[0] }
 }
 
 ################################################################################

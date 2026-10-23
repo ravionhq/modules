@@ -1,0 +1,5 @@
+apiVersion: v2
+name: statefulset-volume-migration
+description: Delete one StatefulSet with --cascade=orphan, leaving its pods running, so the release that owns it can recreate it with a changed volume layout.
+type: application
+version: 0.1.0

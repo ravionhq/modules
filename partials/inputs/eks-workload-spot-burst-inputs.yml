@@ -68,3 +68,12 @@
     compute_target: on_demand
     spot_burst_enabled: true
   default: 300
+- id: spot_burst_fallback_replicas
+  label: Spot pods when metrics fail
+  type: number
+  description: Minimum Spot pods kept while KEDA cannot read its metrics; running pods are never removed. Empty uses the maximum. Not applied to CPU, memory or Utilization triggers.
+  max: 1000
+  min: 0
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true

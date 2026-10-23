@@ -1,0 +1,4 @@
+statefulSet:
+  name: ravion-loki
+  namespace: ravion-operator
+persistent: true

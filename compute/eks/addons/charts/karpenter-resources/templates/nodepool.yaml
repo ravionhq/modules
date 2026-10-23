@@ -22,6 +22,13 @@ spec:
         - key: karpenter.k8s.aws/instance-generation
           operator: Gt
           values: ["2"]
+        {{- if gt (int .Values.nodePool.minInstanceMemoryMiB) 0 }}
+        # Never the smallest instances: a store that outgrows its request
+        # exhausts them and takes every pod on the node down with it.
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: [{{ sub (int .Values.nodePool.minInstanceMemoryMiB) 1 | quote }}]
+        {{- end }}
       nodeClassRef:
         group: karpenter.k8s.aws
         kind: EC2NodeClass
@@ -66,4 +73,51 @@ spec:
       expireAfter: {{ .Values.nodePool.expireAfter }}
   limits:
     nodes: {{ add (int .Values.spotWarm.minInstances) 1 }}
+{{- end }}
+
+{{- if .Values.statefulPool.enabled }}
+---
+# Nodes for the add-on stores alone. On-Demand, with room for a store's working
+# set, and tainted so applications never compete with them for memory. Only
+# emptied nodes are consolidated: moving a store means replaying its WAL.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ .Values.statefulPool.name }}
+spec:
+  template:
+    spec:
+      requirements:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: {{ .Values.nodePool.architectures | toJson }}
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: {{ .Values.statefulPool.instanceCategories | toJson }}
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+        - key: karpenter.k8s.aws/instance-memory
+          operator: Gt
+          values: [{{ sub (int .Values.statefulPool.minInstanceMemoryMiB) 1 | quote }}]
+      taints:
+        - key: {{ .Values.statefulPool.taintKey }}
+          value: "true"
+          effect: NoSchedule
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ .Values.ec2NodeClass.name }}
+      expireAfter: {{ .Values.nodePool.expireAfter }}
+  limits:
+    cpu: {{ .Values.statefulPool.cpuLimit }}
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: {{ .Values.statefulPool.consolidateAfter }}
 {{- end }}

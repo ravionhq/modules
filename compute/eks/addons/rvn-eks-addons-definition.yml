@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.20.0
-  description: "Optionally install cert-manager to issue and renew TLS certificates inside the cluster."
+  version: 0.24.0
+  description: "Ravion-managed domains are checked when the configuration is saved: they require exactly one load balancer, HTTPS on it, and a cluster domain, which defaults to the module ID."
 module:
   inputs:
     - id: cluster
@@ -118,13 +118,20 @@ module:
       id: use_ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
-    - description: Base for service addresses; uses the module ID when empty.
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_creation_enabled: false
+            private_alb_creation_enabled: false
+          message: Ravion-managed domains require exactly one load balancer.
+    - default: << module.given_id >>
+      description: Base for service addresses.
       id: ravion_cluster_name
       label: Cluster domain
       patterns:
         - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
-      required: false
+      required: true
       show_when:
         use_ravion_managed_domains: true
       suffix: ".<< platform.apex >>"
@@ -141,6 +148,11 @@ module:
       show_when:
         public_alb_creation_enabled: true
       type: boolean
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the public ALB HTTPS listener for SNI.
@@ -201,6 +213,12 @@ module:
       id: private_alb_creation_enabled
       label: Private ALB
       type: boolean
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_creation_enabled: true
+            private_alb_creation_enabled: true
+          message: Ravion-managed domains require exactly one load balancer.
     - default: false
       description: Add an HTTPS listener and redirect HTTP requests to it.
       id: private_alb_https_enabled
@@ -208,6 +226,12 @@ module:
       show_when:
         private_alb_creation_enabled: true
       type: boolean
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_creation_enabled: false
+            private_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the private ALB HTTPS listener for SNI.
@@ -1162,7 +1186,7 @@ module:
     - add_button_label: Add destination
       default:
         - prometheus
-      description: Send metrics to one or more destinations. Ravion queries Amazon Managed Prometheus first, then in-cluster Prometheus and CloudWatch. External destinations each receive a copy.
+      description: Send metrics to one or more destinations. Ravion queries Amazon Managed Prometheus first, then in-cluster Prometheus, in-cluster Mimir and CloudWatch. External destinations each receive a copy. Prometheus suits most clusters; Mimir is for clusters that outgrow one Prometheus, and costs more to run.
       id: metrics_providers
       label: Metrics destinations
       show_when:
@@ -1175,6 +1199,9 @@ module:
         - group_label: Shown in Ravion (fallback)
           label: Prometheus in your cluster
           value: prometheus
+        - group_label: Shown in Ravion (fallback)
+          label: Grafana Mimir in your cluster (large clusters)
+          value: mimir
         - group_label: Shown in Ravion (fallback)
           label: Amazon CloudWatch (Container Insights)
           value: cloudwatch
@@ -1271,6 +1298,43 @@ module:
         metrics_enabled: true
         metrics_providers: prometheus
       type: string
+    - default: 365
+      description: Days of metrics history Mimir keeps in S3.
+      id: mimir_retention_days
+      label: Mimir retention (days)
+      min: 1
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: number
+    - collapsible: true
+      description: Store Mimir's metrics in an existing bucket instead of creating one. It must be dedicated to Mimir on this cluster and in its region; customer-managed KMS grants remain your responsibility.
+      id: mimir_s3_bucket_name
+      label: Existing Mimir bucket
+      placeholder: my-cluster-mimir
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - collapsible: true
+      description: StorageClass of Mimir's volumes. Leave blank for the managed gp3 class, or the cluster default when the EBS CSI driver is off.
+      id: mimir_storage_class
+      label: Mimir storage class
+      placeholder: gp3
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - add_button_label: Add availability zone
+      collapsible: true
+      description: Three or more availability zones to keep one copy of every sample in each, so losing a whole zone loses nothing. Leave empty to keep the three copies on separate nodes, spread across zones where possible. The cluster's nodes must be able to launch in every zone listed.
+      id: mimir_zones
+      label: Mimir availability zones
+      placeholder: us-east-1a
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string_array
     - default: true
       description: Collect enhanced Container Insights metrics for pods and containers.
       id: cloudwatch_enhanced_observability_enabled
@@ -1751,6 +1815,11 @@ module:
           s3_storage_enabled: '<< module.input.prometheus_s3_storage_enabled != nil ? module.input.prometheus_s3_storage_enabled : true >>'
           s3_bucket_name: << module.input.prometheus_s3_bucket_name >>
           s3_retention_days: '<< module.input.prometheus_s3_retention_days != nil ? module.input.prometheus_s3_retention_days : 365 >>'
+        metrics_mimir:
+          retention_days: '<< module.input.mimir_retention_days != nil ? module.input.mimir_retention_days : 365 >>'
+          s3_bucket_name: << module.input.mimir_s3_bucket_name >>
+          storage_class: << module.input.mimir_storage_class >>
+          zones: '<< module.input.mimir_zones != nil ? module.input.mimir_zones : [] >>'
         metrics_cloudwatch:
           enhanced_observability_enabled: '<< module.input.cloudwatch_enhanced_observability_enabled != nil ? module.input.cloudwatch_enhanced_observability_enabled : true >>'
           application_signals_enabled: '<< module.input.cloudwatch_application_signals_enabled != nil ? module.input.cloudwatch_application_signals_enabled : false >>'
@@ -1879,7 +1948,7 @@ module:
       - id: node_cpu
         name: Node CPU usage
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1900,7 +1969,7 @@ module:
       - id: node_cpu_allocatable
         name: Node CPU allocatable
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1921,7 +1990,7 @@ module:
       - id: node_memory
         name: Node memory working set
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1941,7 +2010,7 @@ module:
       - id: nodes_ready
         name: Nodes ready
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1960,7 +2029,7 @@ module:
       - id: pods_running
         name: Pods running
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>
@@ -1979,7 +2048,7 @@ module:
       - id: pods_pending
         name: Pods pending
         type: line
-        enabled: << stack.output.metrics_rendering_providers != nil && "prometheus" in stack.output.metrics_rendering_providers >>
+        enabled: << stack.output.metrics_rendering_providers != nil && ("prometheus" in stack.output.metrics_rendering_providers || "mimir" in stack.output.metrics_rendering_providers) >>
         source:
           type: eks_prometheus
           cluster_arn: << stack.output.cluster_arn >>

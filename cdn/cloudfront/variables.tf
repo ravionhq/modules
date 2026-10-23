@@ -27,10 +27,11 @@ variable "distributions" {
   type = map(object({
     aliases             = optional(list(string), [])
     acm_certificate_arn = optional(string)
+    managed_domains     = optional(list(string), [])
     comment             = optional(string)
     enabled             = optional(bool, true)
   }))
-  description = "A map of CloudFront distributions to create. Each key is a distribution identifier. All distributions share origins, cache behaviors, and other settings."
+  description = "A map of CloudFront distributions to create. Each key is a distribution identifier. All distributions share origins, cache behaviors, and other settings. managed_domains lists custom domains whose certificate Ravion issues and attaches; it cannot be combined with aliases or acm_certificate_arn."
 
   validation {
     condition     = length(var.distributions) > 0
@@ -45,6 +46,27 @@ variable "distributions" {
   validation {
     condition     = alltrue([for k, v in var.distributions : v.acm_certificate_arn == null || can(regex("^arn:aws:acm:", v.acm_certificate_arn))])
     error_message = "The acm_certificate_arn must be a valid ACM certificate ARN."
+  }
+
+  validation {
+    condition     = alltrue([for k, v in var.distributions : length(v.managed_domains) == 0 || (length(v.aliases) == 0 && v.acm_certificate_arn == null)])
+    error_message = "A distribution cannot set managed_domains together with aliases or acm_certificate_arn. CloudFront serves one viewer certificate."
+  }
+
+  validation {
+    condition     = alltrue([for k, v in var.distributions : length(v.managed_domains) <= 10])
+    error_message = "A distribution may declare at most 10 managed_domains (one certificate per distribution)."
+  }
+
+  # Names are compared as the resources create them: lowercased, trimmed and
+  # without a trailing dot, so WWW.example.com and www.example.com. collide.
+  validation {
+    condition = length(flatten([
+      for k, v in var.distributions : distinct([for d in v.managed_domains : lower(trimsuffix(trimspace(d), "."))])
+      ])) == length(distinct(flatten([
+        for k, v in var.distributions : [for d in v.managed_domains : lower(trimsuffix(trimspace(d), "."))]
+    ])))
+    error_message = "Managed domains must be unique across all distributions."
   }
 
   validation {
@@ -582,5 +604,21 @@ variable "origin_access_control_signing_protocol" {
 variable "region" {
   type        = string
   description = "AWS region. When null, the provider's configured region is used."
+  default     = null
+}
+
+################################################################################
+# Ravion-managed domains
+################################################################################
+
+variable "module_instance_id" {
+  type        = string
+  description = "The Ravion module instance id (minst_*) that owns the managed domains and certificates. Injected by the runner as TF_VAR_module_instance_id inside a stack run; set it explicitly for external runs. Required when a distribution sets managed_domains."
+  default     = null
+}
+
+variable "ravion_aws_account_id" {
+  type        = string
+  description = "Ravion AwsAccount row id (aws_*) that owns the managed certificates. Required when a distribution sets managed_domains."
   default     = null
 }
