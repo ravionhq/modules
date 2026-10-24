@@ -230,8 +230,9 @@ resource "helm_release" "mimir" {
   version          = var.mimir_chart_version
   create_namespace = true
   upgrade_install  = true
-  # Three ingesters start one after another, each replaying its WAL.
-  timeout = 1200
+  # Ingesters restart one after another, each replaying its WAL, so the wait
+  # grows with the replica count set through mimir_helm_values.
+  timeout = var.mimir_helm_timeout_seconds
 
   values = concat(
     [yamlencode(local.mimir_values)],

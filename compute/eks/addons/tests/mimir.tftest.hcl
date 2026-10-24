@@ -446,3 +446,43 @@ run "early_compaction_needs_the_limit_the_module_applies" {
     error_message = "Early compaction must stay off when the module does not set the ingesters' memory limit."
   }
 }
+
+# Ingesters restart one at a time, so a cluster that adds ingesters through
+# mimir_helm_values needs a longer wait than the default three do.
+run "mimir_waits_twenty_minutes_by_default" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  assert {
+    condition     = helm_release.mimir[0].timeout == 1200
+    error_message = "The Mimir release must wait 1200 seconds by default, enough for three ingesters to replay their WALs."
+  }
+}
+
+run "mimir_timeout_is_configurable" {
+  command = plan
+
+  variables {
+    metrics_providers          = ["mimir"]
+    mimir_helm_timeout_seconds = 2400
+  }
+
+  assert {
+    condition     = helm_release.mimir[0].timeout == 2400
+    error_message = "mimir_helm_timeout_seconds must set the Mimir release timeout."
+  }
+}
+
+run "mimir_timeout_rejects_values_out_of_range" {
+  command = plan
+
+  variables {
+    metrics_providers          = ["mimir"]
+    mimir_helm_timeout_seconds = 3601
+  }
+
+  expect_failures = [var.mimir_helm_timeout_seconds]
+}
