@@ -23,7 +23,7 @@ variable "cloudtrail_log_retention_days" {
 
 variable "cloudtrail_kms_key_arn" {
   type        = string
-  description = "Optional KMS key ARN. Its policy must allow cloudtrail.amazonaws.com; null uses SSE-S3."
+  description = "Optional KMS key ARN in the runner Region. Its policy must allow cloudtrail.amazonaws.com; null uses SSE-S3."
   default     = null
 
   validation {

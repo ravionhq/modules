@@ -74,7 +74,7 @@ The first copy of management events is free; an existing trail makes this a paid
 
 Current and noncurrent versions expire after the configured retention period (365 days by default); 0 disables expiry. Current-object expiry creates a delete marker before noncurrent expiry applies. Destroy, including disabling CloudTrail, fails while logs or versions remain in the bucket because force deletion is disabled.
 
-A supplied KMS key encrypts trail deliveries and bucket objects. Its key policy must allow cloudtrail.amazonaws.com; this module does not manage that policy.
+A supplied KMS key encrypts trail deliveries and bucket objects. It must be in the runner Region and its key policy must allow cloudtrail.amazonaws.com; this module does not manage that policy.
 
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |

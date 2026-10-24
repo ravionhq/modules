@@ -41,7 +41,7 @@ module:
       label: KMS key ARN
       type: string
       required: false
-      description: Leave blank for SSE-S3. The key policy must allow cloudtrail.amazonaws.com.
+      description: Leave blank for SSE-S3. Use a key in the runner Region whose policy allows cloudtrail.amazonaws.com.
       show_when:
         cloudtrail_enabled: true
     - id: section_protection_plans
@@ -168,7 +168,7 @@ module:
 
     Logs go to a dedicated private S3 bucket with public access blocked, bucket-owner-enforced ownership, versioning, and encryption. Log retention (days) sets lifecycle expiry for current and noncurrent object versions; 365 is the default and 0 keeps them forever. With versioning, current-object expiry makes a version noncurrent, then noncurrent expiry applies.
 
-    Leave KMS key ARN blank for SSE-S3, or supply a key whose policy allows cloudtrail.amazonaws.com to encrypt logs. This module does not manage the key policy.
+    Leave KMS key ARN blank for SSE-S3, or supply a key in the runner Region whose policy allows cloudtrail.amazonaws.com to encrypt logs. This module does not manage the key policy.
 
     The first copy of management events is free; S3 storage and optional KMS usage incur charges. If an existing trail already records these events, this trail is a paid second copy. Turn CloudTrail off if an organization trail already provides coverage.
 
@@ -194,7 +194,7 @@ module:
     | ECR scanning | Basic scan-on-push for all repositories | Always enabled by this module. |
     | CloudTrail | Enabled | One multi-Region management-event trail in the runner Region. |
     | Log retention (days) | 365 | S3 lifecycle expiry; 0 keeps logs forever. |
-    | KMS key ARN | None (SSE-S3) | Optional key whose policy permits CloudTrail encryption. |
+    | KMS key ARN | None (SSE-S3) | Optional runner-Region key whose policy permits CloudTrail encryption. |
     | S3, EKS, malware, RDS, Lambda protection | Enabled | GuardDuty protection plans. |
     | Runtime monitoring | Disabled | Optional workload security agents. |
     | Automated agent management | EKS, ECS Fargate, EC2 | Used when Runtime Monitoring is enabled. |
