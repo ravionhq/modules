@@ -5,7 +5,7 @@ definition:
 
 release:
   version: 1.6.0
-  description: Export PostgreSQL and MySQL diagnostic logs by default for new clusters.
+  description: Export PostgreSQL logs and MySQL error logs by default when log exports are unset.
 module:
   inputs:
     - id: network
@@ -1161,7 +1161,7 @@ module:
         db_parameter_group_name: << module.input.db_parameter_group_name >>
         db_parameters: << module.input.db_parameters >>
         deletion_protection_enabled: << module.input.deletion_protection_enabled >>
-        enabled_cloudwatch_logs_exports: '<< module.input.enabled_cloudwatch_logs_exports != nil ? module.input.enabled_cloudwatch_logs_exports : (module.input.engine == "aurora-postgresql" ? ["postgresql"] : (module.input.engine == "aurora-mysql" ? ["error", "slowquery"] : [])) >>'
+        enabled_cloudwatch_logs_exports: '<< module.input.enabled_cloudwatch_logs_exports != nil ? module.input.enabled_cloudwatch_logs_exports : (module.input.engine == "aurora-postgresql" ? ["postgresql"] : (module.input.engine == "aurora-mysql" ? ["error"] : [])) >>'
         engine: << module.input.engine >>
         engine_version: '<< module.input.engine_minor_version ? (module.input.engine == "aurora-mysql" ? module.input.engine_major_version + ".mysql_aurora." + module.input.engine_minor_version : module.input.engine_major_version + "." + module.input.engine_minor_version) : module.input.engine_major_version >>'
         final_snapshot_creation_enabled: << module.input.final_snapshot_creation_enabled >>
@@ -1514,7 +1514,7 @@ module:
     | Deletion protection | No | true | Helps prevent accidental deletion. |
     | Performance insights | No | true | Enables AWS Performance Insights. |
     | CloudWatch alarms | No | true | Adds CPU, memory, connection, storage capacity, and read/write IOPS alarms. |
-    | CloudWatch log exports | No | Engine-based when unset | PostgreSQL: postgresql; MySQL: error and slowquery; other engines: none. An explicit empty list disables exports. |
+    | CloudWatch log exports | No | Engine-based when unset | PostgreSQL: postgresql; MySQL: error only; other engines: none. An explicit empty list disables exports. Slow-query exports require slow_query_log in the parameter group. |
     | RDS Proxy | No | false | Creates an RDS Proxy connection pool in front of the cluster. |
     | Global database | No | false | Create or join an Aurora global database. |
     | Activity stream | No | false | Enables Database Activity Streams with a required KMS key. |

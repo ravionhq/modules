@@ -5,6 +5,22 @@
 # Target groups and listeners are created by service modules.
 
 # Mock AWS provider with overridden data sources
+run "uppercase_name_log_bucket" {
+  command = plan
+  variables {
+    name                = "MyNLB"
+    access_logs_enabled = true
+  }
+  assert {
+    condition     = aws_s3_bucket.access_logs[0].bucket == "mynlb-nlb-access-logs-123456789012-us-east-1"
+    error_message = "Managed access-log bucket names must be lowercase."
+  }
+  assert {
+    condition     = aws_lb.this.name == "MyNLB"
+    error_message = "The load balancer name must retain its original case."
+  }
+}
+
 mock_provider "aws" {
   override_data {
     target = data.aws_caller_identity.current
@@ -16,8 +32,9 @@ mock_provider "aws" {
   override_data {
     target = data.aws_region.current
     values = {
-      id   = "us-east-1"
-      name = "us-east-1"
+      id     = "us-east-1"
+      name   = "us-east-1"
+      region = "us-east-1"
     }
   }
 

@@ -234,7 +234,7 @@ variable "ipv6_enabled" {
 variable "flow_logs_enabled" {
   type        = bool
   description = "Enable VPC Flow Logs for network traffic monitoring."
-  default     = false
+  default     = true
 }
 
 variable "flow_logs_destination" {

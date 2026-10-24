@@ -36,12 +36,12 @@ describe("compiler", () => {
       const value = assertString(getTerraformVariable(module, "enabled_cloudwatch_logs_exports"));
       assert.ok(value.startsWith("<< module.input.enabled_cloudwatch_logs_exports != nil ? module.input.enabled_cloudwatch_logs_exports : ("));
       assert.ok(value.includes('module.input.engine == "' + engine + '" ? ["postgresql"]'));
-      assert.ok(value.includes('["error", "slowquery"] : []'));
-      assert.doesNotMatch(value, /general|audit|len\(/);
+      assert.ok(value.includes('["error"] : []'));
+      assert.doesNotMatch(value, /general|audit|slowquery|len\(/);
       const evaluate = new Function("module", "nil", "return " + value.slice(3, -3));
       for (const selectedEngine of ["postgres", "mysql", "mariadb", "aurora-postgresql", "aurora-mysql", "sqlserver-ex", "unknown"]) {
         const expected = selectedEngine === engine ? ["postgresql"]
-          : (engine === "postgres" ? ["mysql", "mariadb"] : ["aurora-mysql"]).includes(selectedEngine) ? ["error", "slowquery"] : [];
+          : (engine === "postgres" ? ["mysql", "mariadb"] : ["aurora-mysql"]).includes(selectedEngine) ? ["error"] : [];
         assert.deepEqual(evaluate({ input: { engine: selectedEngine } }, null), expected);
         assert.deepEqual(evaluate({ input: { engine: selectedEngine, enabled_cloudwatch_logs_exports: null } }, null), expected);
         assert.deepEqual(evaluate({ input: { engine: selectedEngine, enabled_cloudwatch_logs_exports: [] } }, null), []);
