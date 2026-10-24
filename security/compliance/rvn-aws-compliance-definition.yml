@@ -162,7 +162,7 @@ module:
 
     Basic scans check operating-system vulnerabilities on new image pushes. They do not provide continuous scanning or automatically scan all images pushed before this configuration was enabled.
 
-    ## Existing resources and ownership
+    ## CloudTrail
 
     CloudTrail is enabled by default and creates exactly one multi-Region trail in the runner Region. It records read and write management events, including global service events, with log file validation. No data events are recorded.
 
@@ -173,6 +173,8 @@ module:
     The first copy of management events is free; S3 storage and optional KMS usage incur charges. If an existing trail already records these events, this trail is a paid second copy. Turn CloudTrail off if an organization trail already provides coverage.
 
     Destroy fails while the bucket contains logs or object versions: force deletion is disabled. Disabling CloudTrail also attempts to remove its bucket, so preserve or explicitly remove retained logs before doing so.
+
+    ## Existing resources and ownership
 
     GuardDuty detectors and ECR scanning configurations are shared by the whole account in each Region. Keep exactly one Terraform owner per account and Region; do not deploy overlapping instances or also manage them from a VPC or service module.
 
