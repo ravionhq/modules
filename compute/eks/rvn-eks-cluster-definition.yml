@@ -139,7 +139,7 @@ module:
       type: number
     - collapsible: true
       default: 2
-      description: Used only by an autoscaler that resizes managed node groups, such as Cluster Autoscaler, which Ravion doesn't install. Karpenter launches its own EC2 nodes, so this usually equals the minimum.
+      description: Upper bound on EC2 nodes in this group. It only grows past the minimum through a manual resize or an autoscaler such as Cluster Autoscaler, which Ravion doesn't install. Karpenter launches its own nodes, so this usually equals the minimum.
       id: system_node_max_nodes
       moved_from:
         - system_node_max_size
@@ -678,9 +678,9 @@ module:
     Every cluster gets a required managed node group that runs cluster components such as CoreDNS and the EKS Add-ons controllers, including Karpenter itself. It defaults to a fixed group of 2 On-demand `t3.medium` nodes. How to size it depends on whether the cluster runs Karpenter:
 
     - **With Karpenter** (EKS Add-ons, on by default): applications can use spare room on this group, and pods that don't fit make Karpenter launch nodes from its NodePools. Keep this group small and fixed. Add the `CriticalAddonsOnly` taint with No schedule to reserve it for add-ons, so applications always run on Karpenter nodes.
-    - **Without Karpenter**: nothing adds EC2 nodes. This group and any additional node groups run at their minimum node count and pods that don't fit stay Pending, so size them for your applications too.
+    - **Without Karpenter**: nothing adds EC2 nodes. This group and any additional node groups stay at their current size (the minimum unless resized) and pods that don't fit stay Pending, so size them for your applications too.
 
-    The minimum node count is also the initial size. The maximum is used only by an autoscaler that resizes managed node groups, such as Cluster Autoscaler, which Ravion doesn't install; Terraform keeps the size it sets within the min/max bounds. Each workload module can use automatic placement or target EC2 On-demand, EC2 Spot, or a dedicated Fargate profile.
+    The minimum node count is also the initial size. The maximum is an enforced upper bound: a manual resize or an autoscaler that resizes managed node groups (such as Cluster Autoscaler, which Ravion doesn't install) can grow the group up to it. Terraform keeps the live size within the min/max bounds, so lowering the maximum below the live count removes nodes on the next apply. Each workload module can use automatic placement or target EC2 On-demand, EC2 Spot, or a dedicated Fargate profile.
 
     ### Additional node groups
 
