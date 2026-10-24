@@ -6,7 +6,7 @@ definition:
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 0.6.0
-  description: Show CPU usage as a percentage of the pods' CPU request.
+  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
 module:
   inputs:
     - id: section_cluster
