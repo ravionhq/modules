@@ -1866,7 +1866,7 @@ module:
           ingress_tls_secret_name: << module.input.grafana_ingress_tls_secret_name >>
           hostname: << module.input.grafana_hostname >>
         grafana_default_role: << module.input.grafana_default_role || "Viewer" >>
-        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [{"provider": "basic"}] >>'
         grafana_environment_variables: '<< module.input.grafana_environment_variables != nil ? module.input.grafana_environment_variables : [] >>'
         grafana_secrets: '<< module.input.grafana_secrets != nil ? module.input.grafana_secrets : [] >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
