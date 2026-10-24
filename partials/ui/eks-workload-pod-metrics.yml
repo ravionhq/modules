@@ -49,6 +49,11 @@
 #     `pod_cpu_utilization` / `pod_memory_utilization` because those two are
 #     percentages of the whole node, which would make the CloudWatch link in
 #     the chain plot a different quantity than the Prometheus links.
+#
+# Prometheus CPU usage is a percentage of the CPU requests for running pods,
+# the same basis as the autoscaler's CPU target. The `container!=""` selector
+# excludes cAdvisor's pod-level cgroup series to avoid double-counting;
+# CloudWatch continues to report CPU in cores.
 - id: cpu
   name: CPU usage
   type: line
@@ -58,8 +63,8 @@
     aws_account_id: << module.input.aws_account_id >>
     region: << module.input.amp_workspace_region >>
     workspace_id: << module.input.amp_workspace_id >>
-    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
-    unit: cores
+    query: '100 * sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+",container!="",container!="POD"}[$__interval])) / sum(kube_pod_container_resource_requests{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+",resource="cpu"} * on(namespace, pod) group_left() (kube_pod_status_phase{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+",phase="Running"} == 1))'
+    unit: Percent
 - id: cpu
   name: CPU usage
   type: line
@@ -68,8 +73,8 @@
     type: eks_prometheus
     cluster_arn: << module.input.cluster_arn >>
     endpoint: << module.input.prometheus_endpoint >>
-    query: 'sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+"}[$__interval]))'
-    unit: cores
+    query: '100 * sum(rate(container_cpu_usage_seconds_total{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+",container!="",container!="POD"}[$__interval])) / sum(kube_pod_container_resource_requests{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+",resource="cpu"} * on(namespace, pod) group_left() (kube_pod_status_phase{namespace="<< module.input.namespace >>",pod=~"<< module.input.name >><< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? "(-spot)?" : "" >>-[a-z0-9]+-[a-z0-9]+",phase="Running"} == 1))'
+    unit: Percent
 - id: cpu
   name: 'CPU usage<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? " (On-Demand)" : "" >>'
   type: line
