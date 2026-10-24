@@ -602,7 +602,7 @@ variable "public_alb_ingress_security_group_ids" {
 variable "public_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the public ALB."
-  default     = false
+  default     = true
 }
 
 variable "public_alb_access_logs_bucket_arn" {
@@ -702,7 +702,7 @@ variable "private_alb_ingress_security_group_ids" {
 variable "private_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the private ALB."
-  default     = false
+  default     = true
 }
 
 variable "private_alb_access_logs_bucket_arn" {

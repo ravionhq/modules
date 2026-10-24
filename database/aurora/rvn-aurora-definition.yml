@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon Aurora cluster. Supports Aurora PostgreSQL and Aurora MySQL with provisioned or Serverless v2 capacity.
 
 release:
-  version: 1.5.0
-  description: Store the master password in a Secrets Manager secret you name, kept out of Terraform state and never rotated automatically.
+  version: 1.6.0
+  description: Export PostgreSQL and MySQL diagnostic logs by default for new clusters.
 module:
   inputs:
     - id: network
@@ -776,6 +776,7 @@ module:
     - add_button_label: Add log type
       collapsible: true
       description: Engine logs exported to CloudWatch. Each enabled log type is shown on the module Logs tab.
+      default: '<< module.input.engine == "aurora-postgresql" ? ["postgresql"] : (module.input.engine == "aurora-mysql" ? ["error", "slowquery"] : []) >>'
       id: enabled_cloudwatch_logs_exports
       label: CloudWatch log exports
       required: false

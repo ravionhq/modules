@@ -7,6 +7,38 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("enables security defaults for new module instances", async () => {
+    const cases: [string, Record<string, unknown>][] = [
+      ["compute/eks/addons/rvn-eks-addons-definition.yml", { public_alb_access_logs_enabled: true, private_alb_access_logs_enabled: true, public_nlb_access_logs_enabled: false, private_nlb_access_logs_enabled: false }],
+      ["compute/ecs_cluster/rvn-ecs-cluster-definition.yml", { public_alb_access_logs_enabled: true, private_alb_access_logs_enabled: true, log_retention_days: 365, public_nlb_access_logs_enabled: false, private_nlb_access_logs_enabled: false }],
+      ["networking/alb/rvn-aws-alb-definition.yml", { access_logs_enabled: true }],
+      ["networking/vpc/rvn-aws-network-definition.yml", { flow_logs_enabled: true }],
+      ["compute/lambda/rvn-lambda-definition.yml", { log_retention_days: 365 }],
+      ["compute/ec2_service/rvn-ec2-service-definition.yml", { log_retention_in_days: 365 }],
+      ["storage/s3/rvn-s3-definition.yml", { versioning_enabled: true, policy_templates: ["deny_insecure_transport"] }],
+    ];
+    for (const [path, defaults] of cases) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      for (const [id, value] of Object.entries(defaults)) {
+        assert.deepEqual(findInput(getModuleInputs(module), id).default, value, path + ":" + id);
+        assert.equal(getTerraformVariable(module, id), "<< module.input." + id + (id === "policy_templates" ? " || []" : "") + " >>");
+      }
+    }
+  });
+
+  it("defaults database exports by engine without enabling general or audit logs", async () => {
+    for (const [path, engine] of [
+      ["database/rds/rvn-rds-definition.yml", "postgres"],
+      ["database/aurora/rvn-aurora-definition.yml", "aurora-postgresql"],
+    ]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      const value = assertString(findInput(getModuleInputs(module), "enabled_cloudwatch_logs_exports").default);
+      assert.ok(value.includes('module.input.engine == "' + engine + '" ? ["postgresql"]'));
+      assert.ok(value.includes('["error", "slowquery"] : []'));
+      assert.doesNotMatch(value, /general|audit|len\(/);
+    }
+  });
+
   it("compiles CloudFront with all methods allowed without changing caching", async () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "cdn", "cloudfront", "rvn-cloudfront-definition.yml"));
     const inputs = getModuleInputs(compiled.module);

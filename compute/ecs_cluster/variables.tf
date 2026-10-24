@@ -467,7 +467,7 @@ variable "public_alb_ingress_security_group_ids" {
 variable "public_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the public ALB."
-  default     = false
+  default     = true
 }
 
 variable "public_alb_access_logs_bucket_arn" {
@@ -567,7 +567,7 @@ variable "private_alb_ingress_security_group_ids" {
 variable "private_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the private ALB."
-  default     = false
+  default     = true
 }
 
 variable "private_alb_access_logs_bucket_arn" {
@@ -710,7 +710,7 @@ variable "private_nlb_elastic_ip_allocation_ids" {
 variable "log_retention_days" {
   type        = number
   description = "Default CloudWatch Logs retention (days) that ECS services in this cluster inherit. Exposed as an output; the cluster itself creates no log groups. 0 retains logs indefinitely."
-  default     = 90
+  default     = 365
   nullable    = false
 
   validation {

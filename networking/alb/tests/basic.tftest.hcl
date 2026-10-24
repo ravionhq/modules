@@ -102,6 +102,11 @@ run "basic_alb_http_only" {
     condition     = var.access_logs_retention_days == 365
     error_message = "access_logs_retention_days should default to 365"
   }
+
+  assert {
+    condition     = var.access_logs_enabled && length(aws_s3_bucket.access_logs) == 1 && aws_s3_bucket_public_access_block.access_logs[0].block_public_policy
+    error_message = "Access logs should default to a private managed bucket"
+  }
 }
 
 # Test 2: Internal ALB

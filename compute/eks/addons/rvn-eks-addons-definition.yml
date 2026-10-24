@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.24.0
-  description: "Ravion-managed domains are checked when the configuration is saved: they require exactly one load balancer, HTTPS on it, and a cluster domain, which defaults to the module ID."
+  version: 0.25.0
+  description: Enable public and private ALB access logs by default for new instances.
 module:
   inputs:
     - id: cluster
@@ -192,7 +192,7 @@ module:
         public_alb_creation_enabled: true
       type: string
     - collapsible: true
-      default: false
+      default: true
       description: Write public ALB request logs to S3.
       id: public_alb_access_logs_enabled
       label: Access logs
@@ -290,7 +290,7 @@ module:
         private_alb_creation_enabled: true
       type: number
     - collapsible: true
-      default: false
+      default: true
       description: Write private ALB request logs to S3.
       id: private_alb_access_logs_enabled
       label: Access logs
