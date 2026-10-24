@@ -754,7 +754,6 @@ module:
       type: section
     - add_button_label: Add log type
       collapsible: true
-      default: '<< module.input.engine == "postgres" ? ["postgresql"] : ((module.input.engine == "mysql" || module.input.engine == "mariadb") ? ["error", "slowquery"] : []) >>'
       id: enabled_cloudwatch_logs_exports
       label: CloudWatch log exports
       placeholder: postgresql
@@ -1109,7 +1108,7 @@ module:
         deletion_protection_enabled: << module.input.deletion_protection_enabled >>
         domain: << module.input.domain >>
         domain_iam_role_name: << module.input.domain_iam_role_name >>
-        enabled_cloudwatch_logs_exports: << module.input.enabled_cloudwatch_logs_exports >>
+        enabled_cloudwatch_logs_exports: '<< module.input.enabled_cloudwatch_logs_exports != nil ? module.input.enabled_cloudwatch_logs_exports : (module.input.engine == "postgres" ? ["postgresql"] : ((module.input.engine == "mysql" || module.input.engine == "mariadb") ? ["error", "slowquery"] : [])) >>'
         engine: << module.input.engine >>
         engine_major_version: << module.input.engine_major_version >>
         engine_minor_version: << module.input.engine_minor_version >>
@@ -1324,6 +1323,7 @@ module:
     | Deletion protection | No | true | Helps prevent accidental deletion. |
     | Performance insights | No | true | Enables AWS Performance Insights. |
     | CloudWatch alarms | No | true | Adds CPU, free storage, connection, and read/write IOPS alarms. |
+    | CloudWatch log exports | No | Engine-based when unset | PostgreSQL: postgresql; MySQL/MariaDB: error and slowquery; other engines: none. An explicit empty list disables exports. |
     | Free storage alarm threshold | No | 5 GiB | Converted to bytes before Terraform runs. |
     | RDS Proxy | No | false | Creates an RDS Proxy connection pool in front of the database. Not available for Oracle engines. |
     | Tags | No | Blank | Merged with Ravion standard tags. |
