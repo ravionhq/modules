@@ -107,10 +107,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # tofu test keeps an AWS provider process alive per run, and this
-          # module's tests peak near 8 GB, so 4 GB runners kill them.
           - name: CloudFront module
-            memory: 8
             run: |
               tofu -chdir=cdn/cloudfront init -backend=false
               tofu -chdir=cdn/cloudfront test
