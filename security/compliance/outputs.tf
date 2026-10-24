@@ -7,6 +7,21 @@ output "regions" {
   value       = sort(var.regions)
 }
 
+output "cloudtrail_arn" {
+  description = "Multi-Region CloudTrail trail ARN, or null when disabled."
+  value       = var.cloudtrail_enabled ? aws_cloudtrail.this[0].arn : null
+}
+
+output "cloudtrail_bucket_name" {
+  description = "CloudTrail audit log bucket name, or null when disabled."
+  value       = var.cloudtrail_enabled ? aws_s3_bucket.cloudtrail[0].id : null
+}
+
+output "cloudtrail_bucket_arn" {
+  description = "CloudTrail audit log bucket ARN, or null when disabled."
+  value       = var.cloudtrail_enabled ? aws_s3_bucket.cloudtrail[0].arn : null
+}
+
 output "detector_ids" {
   description = "Map of Region to GuardDuty detector ID."
   value       = { for region, detector in aws_guardduty_detector.this : region => detector.id }

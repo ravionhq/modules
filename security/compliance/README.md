@@ -1,10 +1,11 @@
 # AWS compliance module
 
-Manages GuardDuty threat detection and registry-wide Basic ECR image scanning on push for one AWS account across a shared list of Regions. Deploy `rvn-aws-compliance` once per account with all required Regions. These settings support threat-detection and vulnerability-scanning controls; application alarms, log retention, and other compliance controls remain in their respective modules.
+Manages GuardDuty threat detection, registry-wide Basic ECR image scanning on push, and a multi-Region CloudTrail audit trail for one AWS account. Deploy `rvn-aws-compliance` once per account with all required Regions.
 
 ## Features
 
 - Registry-wide ECR Basic `SCAN_ON_PUSH` with a `*` filter for all current and future private repositories, including Lambda image repositories.
+- One validated multi-Region CloudTrail management-event trail with private, versioned log storage in the runner Region.
 - One `aws_guardduty_detector` per Region, driven by the AWS provider's per-resource `region` argument (no provider alias per Region).
 - Fails at plan time when a requested Region is not enabled (opted in) for the account.
 - Explicit per-Region protection plans: S3 Protection, EKS Protection, Malware Protection for EC2, RDS Protection, Lambda Protection, and Runtime Monitoring with automated agent management for EKS, ECS Fargate, and EC2.
@@ -67,9 +68,20 @@ The AWS provider 6.x per-resource `region` argument is required. The credentials
 
 ## Inputs
 
+CloudTrail is enabled by default: one multi-Region trail in the provider's runner Region records read/write management events and global service events, with log file validation and no data events. Its dedicated private S3 bucket has versioning, bucket-owner-enforced ownership and SSE-S3 encryption by default.
+
+The first copy of management events is free; an existing trail makes this a paid second copy. Disable CloudTrail when an organization trail already covers the account. S3 storage and optional KMS usage incur charges.
+
+Current and noncurrent versions expire after the configured retention period (365 days by default); 0 disables expiry. Current-object expiry creates a delete marker before noncurrent expiry applies. Destroy, including disabling CloudTrail, fails while logs or versions remain in the bucket because force deletion is disabled.
+
+A supplied KMS key encrypts trail deliveries and bucket objects. Its key policy must allow cloudtrail.amazonaws.com; this module does not manage that policy.
+
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
 | `regions` | AWS Regions where GuardDuty and ECR scan-on-push are enabled. Each must be enabled for the account. | `list(string)` | n/a | yes |
+| `cloudtrail_enabled` | Create one multi-Region management-event trail. | `bool` | `true` | no |
+| `cloudtrail_log_retention_days` | Current and noncurrent log expiry; 0 keeps logs forever. | `number` | `365` | no |
+| `cloudtrail_kms_key_arn` | Optional key whose policy permits CloudTrail encryption; null uses SSE-S3. | `string` | `null` | no |
 | `finding_publishing_frequency` | Export cadence for updated findings: `FIFTEEN_MINUTES`, `ONE_HOUR`, or `SIX_HOURS`. | `string` | `"FIFTEEN_MINUTES"` | no |
 | `s3_protection_enabled` | Enable S3 Protection (`S3_DATA_EVENTS`). | `bool` | `true` | no |
 | `eks_protection_enabled` | Enable EKS Protection (`EKS_AUDIT_LOGS`). | `bool` | `true` | no |
@@ -85,6 +97,9 @@ The AWS provider 6.x per-resource `region` argument is required. The credentials
 | Name | Description |
 | ---- | ----------- |
 | `regions` | Sorted list of Regions covered by GuardDuty and ECR scanning. |
+| `cloudtrail_arn` | Trail ARN, or null when disabled. |
+| `cloudtrail_bucket_name` | Audit log bucket name, or null when disabled. |
+| `cloudtrail_bucket_arn` | Audit log bucket ARN, or null when disabled. |
 | `detector_ids` | Map of Region to detector ID. |
 | `detector_arns` | Map of Region to detector ARN. |
 | `account_id` | AWS account ID where the baseline is managed. |
