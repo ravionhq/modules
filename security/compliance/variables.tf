@@ -4,7 +4,7 @@
 
 variable "cloudtrail_enabled" {
   type        = bool
-  description = "Create a multi-Region management-event trail in the runner Region."
+  description = "Create a single-Region management-event trail in each selected Region."
   default     = true
   nullable    = false
 }
@@ -23,7 +23,7 @@ variable "cloudtrail_log_retention_days" {
 
 variable "cloudtrail_kms_key_arn" {
   type        = string
-  description = "Optional KMS key ARN in the runner Region. Its policy must allow cloudtrail.amazonaws.com; null uses SSE-S3."
+  description = "Optional KMS key ARN in the bucket's runner Region. Its policy must allow cloudtrail.amazonaws.com for every trail; null uses SSE-S3."
   default     = null
 
   validation {
@@ -35,7 +35,7 @@ variable "cloudtrail_kms_key_arn" {
 variable "regions" {
   type        = list(string)
   nullable    = false
-  description = "AWS Regions where GuardDuty and registry-wide Basic ECR scan-on-push are enabled. Every Region must be enabled (opted in) for the account."
+  description = "Regions for GuardDuty, ECR scanning and optional CloudTrail. Include us-east-1 to capture IAM changes. Each Region must be enabled for the account."
 
   validation {
     condition     = length(var.regions) > 0
@@ -137,6 +137,6 @@ variable "runtime_monitoring_automated_agents" {
 
 variable "tags" {
   type        = map(string)
-  description = "A map of additional tags applied to GuardDuty detectors, the CloudTrail trail and its bucket."
+  description = "A map of additional tags applied to GuardDuty detectors, CloudTrail trails and their bucket."
   default     = {}
 }

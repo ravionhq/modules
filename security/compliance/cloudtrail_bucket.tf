@@ -77,7 +77,7 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
         Principal = { Service = "cloudtrail.amazonaws.com" }
         Action    = "s3:GetBucketAcl"
         Resource  = aws_s3_bucket.cloudtrail[0].arn
-        Condition = { StringEquals = { "aws:SourceArn" = local.cloudtrail_arn } }
+        Condition = { StringEquals = { "aws:SourceArn" = values(local.cloudtrail_arns) } }
       },
       {
         Sid       = "CloudTrailWrite"
@@ -87,7 +87,7 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
         Resource  = "${aws_s3_bucket.cloudtrail[0].arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
         Condition = {
           StringEquals = {
-            "aws:SourceArn" = local.cloudtrail_arn
+            "aws:SourceArn" = values(local.cloudtrail_arns)
             "s3:x-amz-acl"  = "bucket-owner-full-control"
           }
         }

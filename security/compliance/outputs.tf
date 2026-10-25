@@ -3,13 +3,13 @@
 ################################################################################
 
 output "regions" {
-  description = "AWS Regions where GuardDuty and registry-wide Basic ECR scan-on-push are enabled."
+  description = "AWS Regions covered by GuardDuty, registry-wide Basic ECR scan-on-push and optional CloudTrail."
   value       = sort(var.regions)
 }
 
-output "cloudtrail_arn" {
-  description = "Multi-Region CloudTrail trail ARN, or null when disabled."
-  value       = var.cloudtrail_enabled ? aws_cloudtrail.this[0].arn : null
+output "cloudtrail_arns" {
+  description = "Map of Region to CloudTrail trail ARN, empty when disabled."
+  value       = { for region, trail in aws_cloudtrail.this : region => trail.arn }
 }
 
 output "cloudtrail_bucket_name" {

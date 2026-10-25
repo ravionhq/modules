@@ -23,20 +23,20 @@ variables {
   regions = ["us-east-1", "eu-west-1"]
 }
 
-run "default_multi_region_trail" {
+run "default_regional_trails" {
   command = plan
 
   assert {
-    condition     = length(aws_cloudtrail.this) == 1 && aws_cloudtrail.this[0].is_multi_region_trail && aws_cloudtrail.this[0].include_global_service_events && aws_cloudtrail.this[0].enable_log_file_validation && aws_cloudtrail.this[0].enable_logging
-    error_message = "Exactly one validated multi-Region trail must record events by default."
+    condition     = toset(keys(aws_cloudtrail.this)) == toset(var.regions) && alltrue([for region, trail in aws_cloudtrail.this : trail.region == region && !trail.is_multi_region_trail && trail.include_global_service_events == (region == "us-east-1") && trail.enable_log_file_validation && trail.enable_logging && trail.tags["Module"] == "security/compliance"])
+    error_message = "Each selected Region must have a validated single-Region trail; only us-east-1 includes global events."
   }
   assert {
-    condition     = one(aws_cloudtrail.this[0].event_selector).read_write_type == "All" && one(aws_cloudtrail.this[0].event_selector).include_management_events && length(one(aws_cloudtrail.this[0].event_selector).data_resource) == 0
+    condition     = alltrue([for trail in aws_cloudtrail.this : one(trail.event_selector).read_write_type == "All" && one(trail.event_selector).include_management_events && length(one(trail.event_selector).data_resource) == 0])
     error_message = "Only read and write management events must be selected."
   }
   assert {
-    condition     = local.cloudtrail_arn == "arn:aws:cloudtrail:us-east-2:123456789012:trail/ravion-compliance"
-    error_message = "The trail must use the runner Region, not the selected compliance Regions."
+    condition     = local.cloudtrail_arns == { "us-east-1" = "arn:aws:cloudtrail:us-east-1:123456789012:trail/ravion-compliance", "eu-west-1" = "arn:aws:cloudtrail:eu-west-1:123456789012:trail/ravion-compliance" } && toset(keys(output.cloudtrail_arns)) == toset(var.regions)
+    error_message = "Trail ARNs and output keys must cover exactly the selected Regions."
   }
   assert {
     condition     = !aws_s3_bucket.cloudtrail[0].force_destroy && aws_s3_bucket.cloudtrail[0].bucket_prefix == "ravion-cloudtrail-123456789012-" && aws_s3_bucket.cloudtrail[0].tags["Module"] == "security/compliance"
@@ -47,7 +47,7 @@ run "default_multi_region_trail" {
     error_message = "Audit logs must remain private and bucket-owner enforced."
   }
   assert {
-    condition     = one(aws_s3_bucket_versioning.cloudtrail[0].versioning_configuration).status == "Enabled" && one(one(aws_s3_bucket_server_side_encryption_configuration.cloudtrail[0].rule).apply_server_side_encryption_by_default).sse_algorithm == "AES256" && aws_cloudtrail.this[0].kms_key_id == null
+    condition     = one(aws_s3_bucket_versioning.cloudtrail[0].versioning_configuration).status == "Enabled" && one(one(aws_s3_bucket_server_side_encryption_configuration.cloudtrail[0].rule).apply_server_side_encryption_by_default).sse_algorithm == "AES256" && alltrue([for trail in aws_cloudtrail.this : trail.kms_key_id == null])
     error_message = "Versioning and SSE-S3 must be enabled by default."
   }
   assert {
@@ -55,7 +55,7 @@ run "default_multi_region_trail" {
     error_message = "Current and noncurrent logs must expire after the configured period."
   }
   assert {
-    condition     = jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[0].Condition.StringEquals["aws:SourceArn"] == local.cloudtrail_arn && jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[1].Condition.StringEquals["aws:SourceArn"] == local.cloudtrail_arn && jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[1].Condition.StringEquals["s3:x-amz-acl"] == "bucket-owner-full-control" && jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[2].Condition.Bool["aws:SecureTransport"] == "false"
+    condition     = toset(jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[0].Condition.StringEquals["aws:SourceArn"]) == toset(values(local.cloudtrail_arns)) && toset(jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[1].Condition.StringEquals["aws:SourceArn"]) == toset(values(local.cloudtrail_arns)) && jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[1].Condition.StringEquals["s3:x-amz-acl"] == "bucket-owner-full-control" && jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement[2].Condition.Bool["aws:SecureTransport"] == "false"
     error_message = "Delivery must be scoped to this trail, require ownership ACLs and deny insecure transport."
   }
 }
@@ -70,8 +70,19 @@ run "disabled_creates_no_cloudtrail_resources" {
     error_message = "Disabling CloudTrail must create no trail or storage resources."
   }
   assert {
-    condition     = output.cloudtrail_arn == null && output.cloudtrail_bucket_name == null && output.cloudtrail_bucket_arn == null
-    error_message = "CloudTrail outputs must be null when disabled."
+    condition     = length(output.cloudtrail_arns) == 0 && output.cloudtrail_bucket_name == null && output.cloudtrail_bucket_arn == null
+    error_message = "Trail ARNs must be empty and bucket outputs null when disabled."
+  }
+}
+
+run "without_us_east_1" {
+  command = plan
+  variables {
+    regions = ["eu-west-1"]
+  }
+  assert {
+    condition     = length(aws_cloudtrail.this) == 1 && !aws_cloudtrail.this["eu-west-1"].include_global_service_events && length(aws_s3_bucket.cloudtrail) == 1 && !contains(keys(aws_cloudtrail.this), "us-east-1")
+    error_message = "Only selected Regions must receive trails; us-east-1 must not be added automatically."
   }
 }
 
@@ -93,7 +104,7 @@ run "custom_retention_and_kms" {
     cloudtrail_kms_key_arn        = "arn:aws:kms:us-east-2:123456789012:key/11111111-2222-3333-4444-555555555555"
   }
   assert {
-    condition     = aws_cloudtrail.this[0].kms_key_id == var.cloudtrail_kms_key_arn && one(one(aws_s3_bucket_server_side_encryption_configuration.cloudtrail[0].rule).apply_server_side_encryption_by_default).kms_master_key_id == var.cloudtrail_kms_key_arn && one(one(aws_s3_bucket_server_side_encryption_configuration.cloudtrail[0].rule).apply_server_side_encryption_by_default).sse_algorithm == "aws:kms"
+    condition     = alltrue([for trail in aws_cloudtrail.this : trail.kms_key_id == var.cloudtrail_kms_key_arn]) && one(one(aws_s3_bucket_server_side_encryption_configuration.cloudtrail[0].rule).apply_server_side_encryption_by_default).kms_master_key_id == var.cloudtrail_kms_key_arn && one(one(aws_s3_bucket_server_side_encryption_configuration.cloudtrail[0].rule).apply_server_side_encryption_by_default).sse_algorithm == "aws:kms"
     error_message = "The provided key must encrypt both trail deliveries and bucket objects."
   }
   assert {

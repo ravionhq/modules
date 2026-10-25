@@ -1,11 +1,11 @@
 # AWS compliance module
 
-Manages GuardDuty threat detection, registry-wide Basic ECR image scanning on push, and a multi-Region CloudTrail audit trail for one AWS account. Deploy `rvn-aws-compliance` once per account with all required Regions.
+Manages GuardDuty threat detection, registry-wide Basic ECR image scanning on push, and regional CloudTrail audit trails for one AWS account. Deploy `rvn-aws-compliance` once per account with all required Regions. The Regions list controls all three services; the runner Region hosts the shared log bucket.
 
 ## Features
 
 - Registry-wide ECR Basic `SCAN_ON_PUSH` with a `*` filter for all current and future private repositories, including Lambda image repositories.
-- One validated multi-Region CloudTrail management-event trail with private, versioned log storage in the runner Region.
+- One validated single-Region CloudTrail management-event trail per selected Region, sharing private, versioned log storage in the runner Region.
 - One `aws_guardduty_detector` per Region, driven by the AWS provider's per-resource `region` argument (no provider alias per Region).
 - Fails at plan time when a requested Region is not enabled (opted in) for the account.
 - Explicit per-Region protection plans: S3 Protection, EKS Protection, Malware Protection for EC2, RDS Protection, Lambda Protection, and Runtime Monitoring with automated agent management for EKS, ECS Fargate, and EC2.
@@ -68,20 +68,22 @@ The AWS provider 6.x per-resource `region` argument is required. The credentials
 
 ## Inputs
 
-CloudTrail is enabled by default: one multi-Region trail in the provider's runner Region records read/write management events and global service events, with log file validation and no data events. Its dedicated private S3 bucket has versioning, bucket-owner-enforced ownership and SSE-S3 encryption by default.
+CloudTrail is enabled by default: a single-Region trail in each selected Region records read/write management events with log file validation and no data events. The dedicated shared S3 bucket stays in the runner Region, with versioning, bucket-owner-enforced ownership and SSE-S3 encryption by default.
 
-The first copy of management events is free; an existing trail makes this a paid second copy. Disable CloudTrail when an organization trail already covers the account. S3 storage and optional KMS usage incur charges.
+Include us-east-1 in Regions to capture IAM changes and other global service events (CloudFront and the STS global endpoint). Only that trail includes global service events; us-east-1 is never added automatically. STS regional-endpoint events are recorded in their respective Regions.
+
+The first copy of management events per Region is free; an existing trail recording those events makes this a paid additional copy in that Region. Disable CloudTrail when an organization trail already provides coverage. S3 storage and optional KMS usage incur charges.
 
 Current and noncurrent versions expire after the configured retention period (365 days by default); 0 disables expiry. Current-object expiry creates a delete marker before noncurrent expiry applies. Destroy, including disabling CloudTrail, fails while logs or versions remain in the bucket because force deletion is disabled.
 
-A supplied KMS key encrypts trail deliveries and bucket objects. It must be in the runner Region and its key policy must allow cloudtrail.amazonaws.com; this module does not manage that policy.
+A supplied KMS key encrypts trail deliveries and bucket objects. It must be in the bucket's runner Region, even for trails in other Regions. Its key policy must allow cloudtrail.amazonaws.com for every selected trail; this module does not manage that policy.
 
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
-| `regions` | AWS Regions where GuardDuty and ECR scan-on-push are enabled. Each must be enabled for the account. | `list(string)` | n/a | yes |
-| `cloudtrail_enabled` | Create one multi-Region management-event trail. | `bool` | `true` | no |
+| `regions` | Regions for GuardDuty, ECR scanning and CloudTrail. Include us-east-1 for IAM changes. Each must be enabled for the account. | `list(string)` | n/a | yes |
+| `cloudtrail_enabled` | Create a single-Region management-event trail in each selected Region. | `bool` | `true` | no |
 | `cloudtrail_log_retention_days` | Current and noncurrent log expiry; 0 keeps logs forever. | `number` | `365` | no |
-| `cloudtrail_kms_key_arn` | Optional key whose policy permits CloudTrail encryption; null uses SSE-S3. | `string` | `null` | no |
+| `cloudtrail_kms_key_arn` | Key in the bucket's runner Region whose policy permits encryption for every trail; null uses SSE-S3. | `string` | `null` | no |
 | `finding_publishing_frequency` | Export cadence for updated findings: `FIFTEEN_MINUTES`, `ONE_HOUR`, or `SIX_HOURS`. | `string` | `"FIFTEEN_MINUTES"` | no |
 | `s3_protection_enabled` | Enable S3 Protection (`S3_DATA_EVENTS`). | `bool` | `true` | no |
 | `eks_protection_enabled` | Enable EKS Protection (`EKS_AUDIT_LOGS`). | `bool` | `true` | no |
@@ -96,8 +98,8 @@ A supplied KMS key encrypts trail deliveries and bucket objects. It must be in t
 
 | Name | Description |
 | ---- | ----------- |
-| `regions` | Sorted list of Regions covered by GuardDuty and ECR scanning. |
-| `cloudtrail_arn` | Trail ARN, or null when disabled. |
+| `regions` | Sorted list of Regions covered by GuardDuty, ECR scanning and optional CloudTrail. |
+| `cloudtrail_arns` | Map of Region to trail ARN, empty when disabled. |
 | `cloudtrail_bucket_name` | Audit log bucket name, or null when disabled. |
 | `cloudtrail_bucket_arn` | Audit log bucket ARN, or null when disabled. |
 | `detector_ids` | Map of Region to detector ID. |
