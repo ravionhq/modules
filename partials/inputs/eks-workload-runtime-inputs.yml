@@ -1,6 +1,16 @@
 - id: section_app_config
   label: Environment variables
   type: section
+# Build-time variables reach the builder only; the pod never sees them. They sit
+# here with the runtime variables so every environment variable is in one
+# section, as on ECS.
+- $merge:
+    - ./build-environment-variables.yml
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- $include: ./dockerfile-env-injection.yml
 - id: environment_variables
   label: Runtime environment variables
   type: array

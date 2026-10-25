@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.7.2
-  description: 'Section and field names now match ECS: Container resources, IAM roles and policies, and Stop timeout.'
+  version: 0.7.3
+  description: 'Build environment variables and Dockerfile injection now sit in Environment variables with the runtime variables, as on ECS.'
 module:
   inputs:
     - id: section_cluster

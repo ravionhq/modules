@@ -437,6 +437,21 @@ describe("compiler", () => {
     }
   });
 
+  it("puts every EKS workload environment variable in the Environment variables section, as on ECS", async () => {
+    for (const name of ["web", "worker", "cron"]) {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const sectionOf = new Map<string, string>();
+      let section = "";
+      for (const input of getModuleInputs(compiled.module)) {
+        if (input.type === "section") section = String(input.id);
+        else sectionOf.set(String(input.id), section);
+      }
+      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets"]) {
+        assert.equal(sectionOf.get(id), "section_app_config", `rvn-eks-${name} ${id}`);
+      }
+    }
+  });
+
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
