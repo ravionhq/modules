@@ -18,7 +18,6 @@
 - id: spot_burst_min_replicas
   label: Minimum Spot pods
   type: number
-  description: Lower bound for replicas in the KEDA-managed Spot pool.
   max: 1000
   min: 0
   show_when:
@@ -28,7 +27,6 @@
 - id: spot_burst_max_replicas
   label: Maximum Spot pods
   type: number
-  description: Upper limit for pods in the KEDA-scaled Spot pool.
   max: 1000
   min: 1
   show_when:
@@ -53,7 +51,7 @@
 - id: spot_burst_polling_interval
   label: Polling interval (secs)
   type: number
-  description: Seconds between KEDA trigger checks.
+  collapsible: true
   min: 1
   show_when:
     compute_target: on_demand
@@ -62,6 +60,7 @@
 - id: spot_burst_cooldown_period
   label: Cooldown period (secs)
   type: number
+  collapsible: true
   description: Seconds KEDA waits after the last active trigger before scaling the Spot pool down.
   min: 0
   show_when:
@@ -71,6 +70,7 @@
 - id: spot_burst_fallback_replicas
   label: Spot pods when metrics fail
   type: number
+  collapsible: true
   description: Minimum Spot pods kept while KEDA cannot read its metrics; running pods are never removed. Empty uses the maximum. Not applied to CPU, memory or Utilization triggers.
   max: 1000
   min: 0

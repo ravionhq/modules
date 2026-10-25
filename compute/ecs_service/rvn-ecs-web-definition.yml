@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.5.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 2.5.1
+  description: Shorter build field descriptions, a Dockerfile section name that matches the build source, a distinct Railpack start command label, and rarely changed build settings collapsed.
 module:
   inputs:
     - id: section_cluster

@@ -465,6 +465,21 @@ describe("compiler", () => {
     }
   });
 
+  it("sets PORT from container port on EKS web, before user variables so a user PORT wins", async () => {
+    const helmEnv = async (name: string) => {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const deploy = compiled.module.deploy as { definition: { values: { env: unknown } } };
+      return deploy.definition.values.env;
+    };
+    assert.equal(
+      await helmEnv("web"),
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>',
+    );
+    for (const name of ["worker", "cron"]) {
+      assert.equal(await helmEnv(name), "<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>");
+    }
+  });
+
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
@@ -1520,8 +1535,8 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "source_repo").description,
-        "Repository containing the application source for Dockerfile or Railpack builds.",
-        `${definition.type} should include shared Git source guidance`,
+        undefined,
+        `${definition.type} should not repeat the Git repository label in a description`,
       );
       const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
       assert.deepEqual(
@@ -1587,11 +1602,11 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "railpack_install_cmd").description,
-        "Optional dependency installation command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
       assert.equal(
         findInput(inputs, "railpack_build_cmd").description,
-        "Optional application build command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
     }
   });

@@ -60,7 +60,8 @@
     show_when:
       build_source: railpack
 - id: railpack_start_cmd
-  label: Start command
+  label: Railpack start command
+  description: Blank uses Railpack's detected command.
   type: string
   placeholder: Railpack default
   show_when:
