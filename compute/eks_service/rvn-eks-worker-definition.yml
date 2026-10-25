@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.14.1
-  description: Show the Spot burst pods' lines in Application logs alongside the On-Demand pods'.
+  version: 0.14.2
+  description: Show CPU usage as a percentage of the pods' CPU request.
 module:
   inputs:
     - id: section_cluster
@@ -378,7 +378,7 @@ module:
 
     Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out. Two things differ on the CloudWatch link of the chain, and are worth knowing before you read a number off it:
 
-    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the worker's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **CPU uses different units by provider.** Prometheus shows usage as a percentage of the running pods' CPU requests, matching the autoscaler's CPU target; CloudWatch reports cores. Other Prometheus charts sum across pods; CloudWatch averages across them.
     - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
 
     Replicas available and desired have no CloudWatch equivalent. Container Insights' nearest metric counts pods behind a Kubernetes Service, and a worker renders no Service, so with CloudWatch as the only metrics provider those two charts are empty while the pod charts still work.
