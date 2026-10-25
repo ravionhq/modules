@@ -4,7 +4,7 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.25.0
+  version: 0.26.0
   description: Enable public and private ALB access logs by default for new instances.
 module:
   inputs:
@@ -993,15 +993,8 @@ module:
     - id: section_grafana_sign_in
       label: Grafana sign-in
       type: section
-    - default: true
-      description: Grafana's built-in sign-in for local users, including the generated admin. Turning it off removes the login form and password access to the API, so only the providers below can sign in.
-      id: grafana_login_form_enabled
-      label: Username and password
-      show_when:
-        grafana_enabled: true
-      type: boolean
     - default: Viewer
-      description: Grafana role an account gets the first time it signs in through a provider, unless the provider's role mapping says otherwise.
+      description: Grafana role an account gets the first time it signs in through an OAuth provider, unless the provider's role mapping says otherwise.
       id: grafana_default_role
       label: Role for new accounts
       show_when:
@@ -1014,16 +1007,21 @@ module:
           value: Editor
         - label: Admin
           value: Admin
-    - description: Grafana's OAuth providers people can sign in with, each a button on Grafana's sign-in page. Google, GitHub and gitlab.com need allowed domains, organizations, teams or groups, since anyone with an account there could otherwise sign in.
+    - default:
+        - provider: basic
+      description: How people sign in to Grafana. Without Username and password there is no login form and no password works, including the generated admin's. Google, GitHub and gitlab.com need allowed domains, organizations, teams or groups, since anyone with an account there could otherwise sign in.
       id: grafana_auth_providers
       item_description: Client ID {client_id}
       item_inputs:
-        - description: Which of Grafana's OAuth providers this is.
+        - description: Username and password, or one of Grafana's OAuth providers.
           id: provider
           label: Provider
           required: true
           type: string
           values:
+            - description: Grafana's login form for local users, including the generated admin
+              label: Username and password
+              value: basic
             - label: Google
               value: google
             - label: GitHub
@@ -1047,11 +1045,17 @@ module:
         - description: Client ID of the OAuth application. Leave blank when Secrets below gives it as GF_AUTH_<PROVIDER>_CLIENT_ID. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.
           id: client_id
           label: Client ID
+          show_when:
+            provider:
+              not: basic
           type: string
         - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value. Leave blank when Secrets below gives it as GF_AUTH_<PROVIDER>_CLIENT_SECRET.
           id: client_secret_arn
           label: Client secret ARN
           placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-oauth-client-secret
+          show_when:
+            provider:
+              not: basic
           type: string
         - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
           id: tenant_id
@@ -1094,12 +1098,18 @@ module:
           id: scopes
           label: Scopes
           placeholder: openid email profile
+          show_when:
+            provider:
+              not: basic
           type: string
         - add_button_label: Add domain
           description: Email domains whose accounts can sign in. For Google, your Google Workspace domains.
           id: allowed_domains
           label: Allowed domains
           placeholder: example.com
+          show_when:
+            provider:
+              not: basic
           type: string_array
         - add_button_label: Add organization
           description: GitHub organizations, Entra ID tenant IDs, or the provider's organizations whose members can sign in.
@@ -1142,13 +1152,18 @@ module:
           placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
           show_when:
             provider:
-              not: azuread
+              not:
+                - azuread
+                - basic
           type: string
         - collapsible: true
           default: {}
           description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
           id: settings
           label: Other Grafana settings
+          show_when:
+            provider:
+              not: basic
           type: object
       item_label: Sign-in provider
       item_title:
@@ -1850,10 +1865,8 @@ module:
           ingress_annotations: '<< module.input.grafana_ingress_annotations != nil ? module.input.grafana_ingress_annotations : {} >>'
           ingress_tls_secret_name: << module.input.grafana_ingress_tls_secret_name >>
           hostname: << module.input.grafana_hostname >>
-        grafana_auth:
-          login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
-          default_role: << module.input.grafana_default_role || "Viewer" >>
-        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_default_role: << module.input.grafana_default_role || "Viewer" >>
+        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [{"provider": "basic"}] >>'
         grafana_environment_variables: '<< module.input.grafana_environment_variables != nil ? module.input.grafana_environment_variables : [] >>'
         grafana_secrets: '<< module.input.grafana_secrets != nil ? module.input.grafana_secrets : [] >>'
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
@@ -2126,7 +2139,7 @@ module:
     - **Shared load balancer** routes the hostname on the HTTPS listener of the shared private or public ALB. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. Point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
     - **Kubernetes Ingress** gives Grafana an Ingress for the hostname with TLS, served by the controller of the ingress class you name, with any annotations it needs. With the Tailscale Kubernetes operator's `tailscale` class and a `<name>.<tailnet>.ts.net` hostname, Grafana becomes one device on the tailnet with a Let's Encrypt certificate, and nothing else in the VPC is reachable through it. Install the class's controller first: the AWS Load Balancer Controller refuses an Ingress whose class does not exist yet.
 
-    **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI.
+    **Grafana sign-in** is Grafana's own: a list of sign-in providers, username and password for local users (the default) and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Without username and password, Grafana has no login form and accepts no password, including the generated admin's. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI.
 
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus when selected, then Prometheus through Thanos, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
@@ -2276,8 +2289,7 @@ module:
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to the selected logs, metrics and traces stores |
     | Access                 | No       | `false`              | Grafana over HTTPS at a hostname, on the private (default) or public ALB, or through a Kubernetes Ingress |
-    | Username and password  | No       | `true`               | Grafana's built-in sign-in; off leaves only the providers |
-    | Sign-in providers      | No       | None                 | Any of Google, GitHub, GitLab, Microsoft Entra ID, Okta and generic OAuth |
+    | Sign-in providers      | No       | Username and password | Username and password, and any of Google, GitHub, GitLab, Microsoft Entra ID, Okta and generic OAuth |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |

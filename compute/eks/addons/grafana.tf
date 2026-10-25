@@ -240,8 +240,8 @@ resource "helm_release" "grafana" {
     }
 
     precondition {
-      condition     = var.grafana_auth.login_form_enabled || length(local.grafana_auth_entries) > 0
-      error_message = "Grafana would have no way to sign in: grafana_auth.login_form_enabled is false and grafana_auth_providers is empty."
+      condition     = length(local.grafana_auth_entries) > 0
+      error_message = "Grafana would have no way to sign in: grafana_auth_providers is empty. Add basic for username and password, or an OAuth provider."
     }
 
     precondition {
