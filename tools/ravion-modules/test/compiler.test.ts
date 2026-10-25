@@ -1492,8 +1492,8 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "source_repo").description,
-        "Repository containing the application source for Dockerfile or Railpack builds.",
-        `${definition.type} should include shared Git source guidance`,
+        undefined,
+        `${definition.type} should not repeat the Git repository label in a description`,
       );
       const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
       assert.deepEqual(
@@ -1559,11 +1559,11 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "railpack_install_cmd").description,
-        "Optional dependency installation command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
       assert.equal(
         findInput(inputs, "railpack_build_cmd").description,
-        "Optional application build command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
     }
   });

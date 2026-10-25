@@ -3,7 +3,7 @@
   show_when: $with.show_when
   type: section
 - collapsible: true
-  description: Optional Railpack version to use for the build. Leave blank to use the Ravion default.
+  description: Blank uses the Ravion default.
   id: railpack_version
   label: Railpack version
   patterns:
@@ -14,13 +14,13 @@
   type: string
 - id: railpack_install_cmd
   label: Install command
-  description: Optional dependency installation command. Leave blank to use Railpack detection.
+  description: Blank uses Railpack's detected command.
   placeholder: Railpack default
   show_when: $with.show_when
   type: string
 - id: railpack_build_cmd
   label: Build command
-  description: Optional application build command. Leave blank to use Railpack detection.
+  description: Blank uses Railpack's detected command.
   placeholder: Railpack default
   show_when: $with.show_when
   type: string

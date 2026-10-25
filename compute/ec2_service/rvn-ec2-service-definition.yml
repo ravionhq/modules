@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 2.3.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 2.3.1
+  description: Shorter build field descriptions, a Dockerfile section name that matches the build source, a distinct Railpack start command label, and rarely changed build settings collapsed.
 module:
   inputs:
     - id: network
@@ -149,7 +149,7 @@ module:
           deploy_type: container
           build_source: railpack
     - id: railpack_start_cmd
-      label: Start command
+      label: Railpack start command
       type: string
       description: Optional start command embedded in the Railpack-built image. Leave blank to use Railpack detection.
       placeholder: Railpack default

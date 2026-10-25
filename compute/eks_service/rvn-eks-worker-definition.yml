@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.15.1
+  version: 0.15.2
   description: 'Section and field names now match ECS: Container resources, Autoscaling, IAM roles and policies, Networking and deployment, and Stop timeout.'
 module:
   inputs:
