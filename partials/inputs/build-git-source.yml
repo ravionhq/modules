@@ -3,8 +3,7 @@
   required: true
   show_when: $with.show_when
   type: gitrepo
-- collapsible: true
-  default: .
+- default: .
   id: source_base_path
   label: Source base path
   show_when: $with.show_when

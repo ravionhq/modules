@@ -422,6 +422,21 @@ describe("compiler", () => {
     }
   });
 
+  it("sets PORT from container port on EKS web, before user variables so a user PORT wins", async () => {
+    const helmEnv = async (name: string) => {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const deploy = compiled.module.deploy as { definition: { values: { env: unknown } } };
+      return deploy.definition.values.env;
+    };
+    assert.equal(
+      await helmEnv("web"),
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>',
+    );
+    for (const name of ["worker", "cron"]) {
+      assert.equal(await helmEnv(name), "<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>");
+    }
+  });
+
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
@@ -877,7 +892,6 @@ describe("compiler", () => {
       {
         path: ["compute", "eks", "addons", "rvn-eks-addons-definition.yml"],
         sectionIds: [
-          "section_ravion_operator",
           "section_alb",
           "section_nlb",
           "section_karpenter",

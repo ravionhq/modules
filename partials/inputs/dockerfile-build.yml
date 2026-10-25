@@ -8,8 +8,7 @@
   placeholder: Dockerfile
   show_when: $with.show_when
   type: string
-- collapsible: true
-  description: Relative to the source base path.
+- description: Relative to the source base path.
   id: dockerfile_context
   label: Docker build context path
   placeholder: .
