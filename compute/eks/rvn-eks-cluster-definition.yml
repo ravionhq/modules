@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.9.1
-  description: Explain how default capacity works with and without Karpenter.
+  version: 0.9.2
+  description: Clearer cluster form, with API endpoint, pod networking and access in their own sections and shorter descriptions.
 module:
   inputs:
     - id: network
@@ -67,7 +67,7 @@ module:
       label: EKS cluster
       type: section
     - default: <<project.given_id>>-<<environment.given_id>>
-      description: Name and prefix for related resources.
+      description: Also prefixes related resources.
       id: name
       immutable: true
       label: EKS cluster name
@@ -77,14 +77,14 @@ module:
       required: true
       type: string
     - default: $values:first
-      description: Kubernetes version for the EKS cluster.
       id: kubernetes_version
       label: Kubernetes version
       min_current_value: true
       required: true
       type: string
       values: $values:aws/eks-versions?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
-    - default: true
+    - collapsible: true
+      default: true
       description: Destroy and replacement plans fail until this is turned off.
       id: deletion_protection_enabled
       label: Deletion protection
@@ -149,7 +149,7 @@ module:
     - collapsible: true
       description: Root EBS volume size for default capacity nodes. Leave blank for the AMI default.
       id: system_node_disk_size
-      label: Disk size (GB)
+      label: Disk size (GiB)
       min: 20
       placeholder: "20"
       type: number
@@ -207,34 +207,32 @@ module:
           type: string_array
           values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
         - default: 1
-          description: Minimum nodes in this managed node group. Set it high enough to leave spare capacity for workloads and rolling node updates.
+          description: Leave room for workloads and rolling node updates.
           id: min_size
           label: Minimum nodes
           min: 0
           required: true
           type: number
         - default: 3
-          description: Maximum nodes in this managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
+          description: Too low and pods stay pending at peak or during rolling node updates.
           id: max_size
           label: Maximum nodes
           min: 1
           required: true
           type: number
         - collapsible: true
-          description: Root EBS volume size for nodes. Leave blank for the AMI default.
+          description: Leave blank for the AMI default.
           id: disk_size
-          label: Root volume size (GB)
+          label: Disk size (GiB)
           min: 20
           type: number
         - collapsible: true
           default: {}
-          description: Kubernetes labels applied to nodes in this group.
           id: labels
           label: Node labels
           type: keyvalue
         - collapsible: true
           default: []
-          description: Kubernetes taints that restrict which pods can use this group.
           id: taints
           item_inputs:
             - id: key
@@ -285,8 +283,7 @@ module:
         - description: Namespaces whose pods run on this profile. At least one selector is required.
           id: selectors
           item_inputs:
-            - description: Kubernetes namespace matched by this selector.
-              id: namespace
+            - id: namespace
               label: Namespace
               placeholder: my-namespace
               required: true
@@ -331,15 +328,15 @@ module:
       required: false
       type: object_map
     - id: section_access
-      label: Cluster access
+      label: API endpoint
       type: section
-    - default: true
-      description: Allow access to the Kubernetes API server from inside the VPC.
+    - collapsible: true
+      default: true
       id: endpoint_private_access_enabled
       label: Private endpoint access
       type: boolean
-    - default: false
-      description: Allow access to the Kubernetes API server from the public internet.
+    - collapsible: true
+      default: false
       id: endpoint_public_access_enabled
       label: Public endpoint access
       type: boolean
@@ -351,6 +348,9 @@ module:
       show_when:
         endpoint_public_access_enabled: true
       type: string_array
+    - id: section_pod_networking
+      label: Pod networking
+      type: section
     - collapsible: true
       default: true
       description: Enforce Kubernetes NetworkPolicy objects through the VPC CNI. Needed for the ingress allow-list on EKS Web services; without it every NetworkPolicy in the cluster is ignored.
@@ -371,6 +371,9 @@ module:
       min: 0
       placeholder: "10"
       type: number
+    - id: section_cluster_access
+      label: Access
+      type: section
     - collapsible: true
       default: true
       description: Create an IAM role that Ravion Runner step executions assume for Kubernetes API access, registered as an EKS access entry with cluster-admin. Used by the EKS Add-ons module to install Helm charts.
@@ -382,8 +385,7 @@ module:
       description: IAM principals that need cluster access. Ravion deploys use the Ravion Runner role, and the principal that creates the cluster receives no permanent access, so add an entry for the role your operators use.
       id: access_entries
       item_inputs:
-        - description: IAM role or user granted access to the cluster.
-          id: principal_arn
+        - id: principal_arn
           label: IAM principal ARN
           placeholder: arn:aws:iam::123456789012:role/PlatformAdmins
           required: true
@@ -425,8 +427,7 @@ module:
           description: EKS access policies granted to this principal, such as cluster admin or namespace-scoped admin.
           id: policy_associations
           item_inputs:
-            - description: ARN of the EKS access policy to grant.
-              id: policy_arn
+            - id: policy_arn
               label: Policy ARN
               placeholder: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
               required: true
@@ -443,7 +444,6 @@ module:
                 - label: Selected namespaces
                   value: namespace
             - add_button_label: Add namespace
-              description: Namespaces the policy applies to.
               id: access_scope_namespaces
               label: Namespaces
               placeholder: my-namespace
@@ -483,6 +483,7 @@ module:
       label: Observability
       type: section
     - add_button_label: Add log type
+      collapsible: true
       default:
         - api
         - audit
@@ -504,7 +505,6 @@ module:
           value: scheduler
     - collapsible: true
       default: 365
-      description: Retention in days for the control plane CloudWatch log group.
       id: control_plane_log_retention_days
       label: Log retention (days)
       min: 1
