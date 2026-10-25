@@ -821,23 +821,6 @@ variable "private_nlb_access_logs_bucket_arn" {
   }
 }
 
-variable "private_nlb_elastic_ips_enabled" {
-  type        = bool
-  description = "Enable static IP addresses for the private NLB using Elastic IPs."
-  default     = false
-}
-
-variable "private_nlb_elastic_ip_allocation_ids" {
-  type        = list(string)
-  description = "A list of Elastic IP allocation IDs for the private NLB, one per subnet."
-  default     = []
-
-  validation {
-    condition     = alltrue([for eip in var.private_nlb_elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])
-    error_message = "All private_nlb_elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
-  }
-}
-
 variable "karpenter_default_node_pool" {
   type = object({
     capacity_types       = optional(list(string), ["on-demand", "spot"])

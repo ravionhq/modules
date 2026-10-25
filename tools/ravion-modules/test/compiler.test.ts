@@ -487,8 +487,8 @@ describe("compiler", () => {
     assert.equal(additionalNodeGroupFields.some((input) => input.id === "min_nodes" || input.id === "max_nodes"), false);
     assert.equal(additionalMinSize.label, "Minimum nodes");
     assert.equal(additionalMaxSize.label, "Maximum nodes");
-    assert.match(String(additionalMinSize.description), /spare capacity/);
-    assert.match(String(additionalMaxSize.description), /pods can remain pending/);
+    assert.match(String(additionalMinSize.description), /rolling node updates/);
+    assert.match(String(additionalMaxSize.description), /pods stay pending/);
     assert.equal(clusterInputs.some((input) => input.id === "system_node_min_size" || input.id === "system_node_max_size"), false);
     const systemNodeMinNodes = findInput(clusterInputs, "system_node_min_nodes");
     const systemNodeMaxNodes = findInput(clusterInputs, "system_node_max_nodes");
@@ -920,7 +920,6 @@ describe("compiler", () => {
       {
         path: ["compute", "eks", "addons", "rvn-eks-addons-definition.yml"],
         sectionIds: [
-          "section_ravion_operator",
           "section_alb",
           "section_nlb",
           "section_karpenter",

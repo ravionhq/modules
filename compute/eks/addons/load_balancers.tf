@@ -206,10 +206,6 @@ module "private_nlb" {
   access_logs_enabled        = var.private_nlb_access_logs_enabled
   access_logs_bucket_arn     = var.private_nlb_access_logs_bucket_arn
   access_logs_retention_days = var.load_balancer_access_logs_retention_days
-
-  # Elastic IPs
-  elastic_ips_enabled       = var.private_nlb_elastic_ips_enabled
-  elastic_ip_allocation_ids = var.private_nlb_elastic_ip_allocation_ids
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cluster_from_private_nlb" {
