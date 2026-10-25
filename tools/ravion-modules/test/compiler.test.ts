@@ -492,7 +492,7 @@ describe("compiler", () => {
     }
     assert.equal(clusterInputs.some((input) => input.id === "section_system_nodes"), false);
     assert.equal(clusterInputs.some((input) => input.id === "section_application_capacity"), false);
-    assert.match(String(findInput(clusterInputs, "section_capacity").description), /0\.5 vCPU and 1 GiB/);
+    assert.match(String(findInput(clusterInputs, "section_capacity").description), /Without Karpenter, nothing adds nodes/);
     assert.ok(clusterInputs.findIndex((input) => input.id === "section_capacity") < clusterInputs.findIndex((input) => input.id === "system_node_capacity_type"));
     assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_capacity_type") < clusterInputs.findIndex((input) => input.id === "system_node_instance_types"));
     assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_disk_size") < clusterInputs.findIndex((input) => input.id === "node_groups"));

@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.9.0
-  description: Optional warm and minimum pod IP targets for the VPC CNI, so nodes stop reserving a whole spare network interface of IPs and small subnets keep addresses for new pods.
+  version: 0.9.1
+  description: Explain how default capacity works with and without Karpenter.
 module:
   inputs:
     - id: network
@@ -103,7 +103,7 @@ module:
       show_when:
         secrets_encryption_enabled: true
       type: string
-    - description: Reserve roughly 0.5 vCPU and 1 GiB of node capacity as a starting allowance for baseline cluster services such as CoreDNS, networking agents, and Ravion add-ons. The EKS control plane itself runs on AWS-managed infrastructure.
+    - description: Always-on nodes for cluster add-ons such as CoreDNS, Karpenter, and Ravion add-ons, which need roughly 0.5 vCPU and 1 GiB. With Karpenter (EKS Add-ons), applications that don't fit here get their own Karpenter nodes, so keep this group small. Without Karpenter, nothing adds nodes, so size this group and any additional node groups for your applications too.
       id: section_capacity
       label: Default capacity
       type: section
@@ -130,7 +130,7 @@ module:
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
     - collapsible: true
       default: 2
-      description: Minimum EC2 nodes in the default managed node group, which runs the cluster add-ons. Two keeps them highly available.
+      description: EC2 nodes this group always runs. Two keeps the cluster add-ons highly available.
       id: system_node_min_nodes
       moved_from:
         - system_node_min_size
@@ -139,7 +139,7 @@ module:
       type: number
     - collapsible: true
       default: 2
-      description: Maximum EC2 nodes in the default managed node group. Defaults to the minimum, a fixed group; application workloads scale on Karpenter capacity.
+      description: Upper bound on EC2 nodes in this group. It only grows past the minimum through a manual resize or an autoscaler such as Cluster Autoscaler, which Ravion doesn't install. Karpenter launches its own nodes, so this usually equals the minimum.
       id: system_node_max_nodes
       moved_from:
         - system_node_max_size
@@ -155,7 +155,7 @@ module:
       type: number
     - collapsible: true
       default: []
-      description: Keep pods without a matching toleration off this group. EKS Add-ons tolerate CriticalAddonsOnly, so that taint with No schedule reserves the group for them.
+      description: Keep pods without a matching toleration off this group. EKS Add-ons tolerate CriticalAddonsOnly, so that taint with No schedule reserves the group for them and sends applications to Karpenter or additional node groups.
       id: system_node_taints
       item_inputs:
         - id: key
@@ -675,7 +675,12 @@ module:
 
     ### Default capacity
 
-    Every cluster gets a required managed node group that provides default compute for cluster components such as CoreDNS, add-ons, and workloads without stricter placement. It defaults to 2-4 On-demand `t3.medium` nodes. Its settings are collapsed by default so teams using Karpenter can keep the recommended baseline without extra configuration. The minimum node count is also used as the initial size; after creation, the running node count is managed by Kubernetes autoscalers, and Terraform only enforces the min/max bounds. Each workload module can use automatic placement or target EC2 On-demand, EC2 Spot, or a dedicated Fargate profile.
+    Every cluster gets a required managed node group that runs cluster components such as CoreDNS and the EKS Add-ons controllers, including Karpenter itself. It defaults to a fixed group of 2 On-demand `t3.medium` nodes. How to size it depends on whether the cluster runs Karpenter:
+
+    - **With Karpenter** (EKS Add-ons, on by default): applications can use spare room on this group, and pods that don't fit make Karpenter launch nodes from its NodePools. Keep this group small and fixed. Add the `CriticalAddonsOnly` taint with No schedule to reserve it for add-ons, so applications always run on Karpenter nodes.
+    - **Without Karpenter**: nothing adds EC2 nodes. This group and any additional node groups stay at their current size (the minimum unless resized) and pods that don't fit stay Pending, so size them for your applications too.
+
+    The minimum node count is also the initial size. The maximum is an enforced upper bound: a manual resize or an autoscaler that resizes managed node groups (such as Cluster Autoscaler, which Ravion doesn't install) can grow the group up to it. Terraform keeps the live size within the min/max bounds, so lowering the maximum below the live count removes nodes on the next apply. Each workload module can use automatic placement or target EC2 On-demand, EC2 Spot, or a dedicated Fargate profile.
 
     ### Additional node groups
 
@@ -739,7 +744,7 @@ module:
     | Private endpoint access| No       | `true`               | Reach the API server from inside the VPC               |
     | Public endpoint access | No       | `false`              | Expose the API server to the internet                  |
     | Ravion Runner role     | No       | `true`               | Assumable IAM role with cluster-admin access entry     |
-    | Default capacity       | No       | 2-4 `t3.medium`      | Capacity type, instance types, size bounds, and disk size   |
+    | Default capacity       | No       | 2 `t3.medium`        | Capacity type, instance types, size bounds, and disk size   |
     | Additional node groups | No       | -                    | Structured On-demand or Spot managed node groups       |
     | Fargate profiles       | No       | -                    | Serverless compute for selected namespaces             |
     | Access entries         | No       | -                    | Extra IAM principals with cluster access and policies  |

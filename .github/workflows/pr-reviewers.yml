@@ -21,7 +21,7 @@ jobs:
     concurrency:
       group: pr-reviewers-request-${{ github.event.pull_request.number || 'sweep' }}
       cancel-in-progress: false
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=1/memory=2/id=${{ github.run_id }}-pr-reviewers-request/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/id=${{ github.run_id }}-pr-reviewers-request/interruptible=true
     steps:
       # Metadata only: never check out or execute code from the PR head.
       - name: Request review from the session creator
