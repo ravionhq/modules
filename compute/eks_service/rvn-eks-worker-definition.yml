@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.15.0
-  description: 'Clearer form: a Deployments section, IAM policies open once Create IAM role is on, and shorter descriptions.'
+  version: 0.15.1
+  description: 'Section and field names now match ECS: Container resources, Autoscaling, IAM roles and policies, Networking and deployment, and Stop timeout.'
 module:
   inputs:
     - id: section_cluster
@@ -37,7 +37,7 @@ module:
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
     - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
     - id: section_scaling
-      label: Scaling
+      label: Autoscaling
       type: section
     - id: autoscaling_enabled
       label: Autoscaling
@@ -101,8 +101,10 @@ module:
           not: true
       default: 1
     - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - id: section_deployments
-      label: Deployments
+      label: Networking and deployment
       type: section
     - id: rollout_max_surge_percent
       label: Maximum rollout surge (%)
@@ -113,7 +115,7 @@ module:
       min: 1
       default: 100
     - id: termination_grace_period_seconds
-      label: Shutdown grace period (secs)
+      label: Stop timeout (secs)
       type: number
       description: Seconds a pod has to finish in-flight work after SIGTERM before it is killed. Raise this for workers with long-running jobs.
       collapsible: true
@@ -136,8 +138,6 @@ module:
       default: 1
       show_when:
         pod_disruption_budget_enabled: true
-    - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
-    - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -346,7 +346,7 @@ module:
 
     The Spot Deployment reuses the same image and pod configuration, so review duplicate job processing and idempotency before enabling it; no application code or configuration is migrated automatically. Each active Spot pod and the KEDA controllers add cost, and Spot capacity may be interrupted or unavailable. A new Spot Deployment starts at the configured minimum. On Helm upgrades, its live replica count is preserved unless below that minimum; counts above the maximum are left for KEDA to reconcile. Offline renders show the configured minimum, and the deployment identity needs permission to read Deployments in the namespace. When the minimum is zero, no Spot image is exercised until KEDA activates it; verify readiness separately in staging. Validate permissions, trigger behavior, and scaling before production.
 
-    **Shutdown grace period (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
+    **Stop timeout (secs)** is the window a pod gets after SIGTERM to finish in-flight work before it is killed. The default of 30 seconds suits short tasks. Raise it to at least the length of your longest job, or a rollout will kill work mid-flight.
 
     ### Zone placement
 
@@ -433,7 +433,7 @@ module:
     | Polling interval (secs) | No | 30 | KEDA trigger polling interval |
     | Cooldown period (secs) | No | 300 | Delay before KEDA scales Spot replicas down |
     | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
-    | Shutdown grace period (secs) | No | 30 | Drain window after SIGTERM |
+    | Stop timeout (secs) | No | 30 | Drain window after SIGTERM |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
     | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |

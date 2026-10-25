@@ -4,8 +4,8 @@ definition:
   name: EKS Helm Chart
   description: Install any Helm chart from an HTTP Helm repository, an OCI registry or a Git repository onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.3.1
-  description: Labels the name field Release name, explains how secret references in values are stored, and opens IAM policies once Create IAM role is on.
+  version: 0.3.2
+  description: 'The AWS permissions section is now IAM roles and policies, matching ECS and the other EKS modules.'
 module:
   inputs:
     - id: section_cluster
@@ -168,7 +168,7 @@ module:
           }
         }
     - id: section_iam
-      label: AWS permissions
+      label: IAM roles and policies
       type: section
     - description: Gives chart pods short-lived AWS credentials through EKS Pod Identity. Leave off if the chart calls no AWS APIs.
       id: pod_identity_role_creation_enabled
@@ -386,7 +386,7 @@ module:
 
     Helm stores every value in the release, including the values read this way, and `helm get values` shows them. Use references for settings kept out of your repository, such as an OAuth client ID. For a credential the workload uses, reference a Kubernetes Secret that the chart can read, for example one created by the External Secrets Operator.
 
-    ## AWS permissions
+    ## IAM roles and policies
 
     **Create IAM role** creates an IAM role and binds it through EKS Pod Identity to a ServiceAccount in the release namespace. Set **ServiceAccount name** to the ServiceAccount the chart creates. This is usually the release name, but check the chart's `serviceAccount.name` value. The role's trust policy only accepts pods in this cluster and account.
 
