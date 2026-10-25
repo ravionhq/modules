@@ -829,6 +829,7 @@ failed during initialization have no provider resources to migrate.
 | metrics_mimir | `{ retention_days, s3_bucket_name, storage_class, zones }`: 365 days of history, a created bucket, the managed `gp3` class or the cluster default, and no zone pinning. `zones` takes three or more availability zones, one copy of every sample in each. | `object` | `{}` | no |
 | mimir_chart_version / mimir_helm_values | grafana/mimir-distributed chart version and value overrides: more ingesters, caches, per-component resources. | `string` / `list(string)` | `"6.2.0"` / `[]` | no |
 | mimir_ingester_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each of the three ingesters. Applied with `addon_resilience_enabled`. | `object` | 1 / 6Gi, limit 6Gi | no |
+| mimir_helm_timeout_seconds | Seconds an apply waits for the Mimir release. Ingesters restart one at a time, each replaying its WAL; allow about 300 seconds per ingester when `mimir_helm_values` adds more. 300-3600. | `number` | `1200` | no |
 | prometheus_replicas | Prometheus replicas when Thanos is on, each receiving every sample (see Highly available Prometheus); 1 without Thanos. 1–3. | `number` | `2` | no |
 | logs_otlp / metrics_otlp | `{ endpoint, headers_secret_arn }`. The secret holds the value of an `Authorization` header. | `object` | `{}` | no |
 | metrics_amp | `{ workspace_id, region, alias }`. Falls back to the flat `amp_workspace_id` / `amp_region` / `amp_alias`. | `object` | `{}` | no |

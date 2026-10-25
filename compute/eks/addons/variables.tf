@@ -2170,6 +2170,18 @@ variable "mimir_helm_values" {
   nullable    = false
 }
 
+variable "mimir_helm_timeout_seconds" {
+  type        = number
+  description = "Seconds an apply waits for the Mimir release to become ready. Ingesters restart one at a time, each replaying its WAL (about two minutes), so raise it when mimir_helm_values adds ingesters: about 300 seconds per ingester plus headroom. Kubernetes keeps rolling after a timeout, but the apply fails."
+  default     = 1200
+  nullable    = false
+
+  validation {
+    condition     = var.mimir_helm_timeout_seconds >= 300 && var.mimir_helm_timeout_seconds <= 3600 && floor(var.mimir_helm_timeout_seconds) == var.mimir_helm_timeout_seconds
+    error_message = "mimir_helm_timeout_seconds must be a whole number of seconds between 300 and 3600."
+  }
+}
+
 variable "karpenter_interruption_queue_alarm_creation_enabled" {
   type        = bool
   description = "Create a CloudWatch message-age alarm for the Karpenter interruption queue."
