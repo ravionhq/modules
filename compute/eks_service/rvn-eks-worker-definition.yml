@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.14.2
-  description: Show CPU usage as a percentage of the pods' CPU request.
+  version: 0.15.0
+  description: 'Clearer form: a Deployments section, IAM policies open once Create IAM role is on, and shorter descriptions.'
 module:
   inputs:
     - id: section_cluster
@@ -31,6 +31,7 @@ module:
       type: section
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
+        name_label: Service name
         name_description: Name for the Helm release and the Kubernetes objects it creates.
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
@@ -89,10 +90,9 @@ module:
         autoscaling_enabled: true
         spot_burst_enabled:
           not: true
-    - id: replica_count
-      label: Pods
+    - label: Desired pods
+      id: replica_count
       type: number
-      description: Number of worker pods to run when autoscaling is disabled.
       max: 1000
       min: 0
       show_when:
@@ -101,6 +101,9 @@ module:
           not: true
       default: 1
     - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
+    - id: section_deployments
+      label: Deployments
+      type: section
     - id: rollout_max_surge_percent
       label: Maximum rollout surge (%)
       type: number

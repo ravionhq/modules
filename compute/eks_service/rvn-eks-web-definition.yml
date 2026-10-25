@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.12.3
-  description: Clearer wording for the cluster-only load balancer option.
+  version: 1.13.0
+  description: 'Ravion now sets `PORT` from Container port, as on ECS. Clearer form: Health checks, Startup and liveness, Network access and Deployments sections, IAM policies open once Create IAM role is on, and shorter descriptions.'
 module:
   inputs:
     - id: section_cluster
@@ -105,6 +105,7 @@ module:
       type: section
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
+        name_label: Service name
         name_description: Name for the Helm release, Kubernetes objects, target group, and listener rule.
     - id: load_balancer
       label: Load balancer
@@ -119,10 +120,10 @@ module:
           value: private
         - label: Cluster only (no load balancer)
           value: kubernetes_service
-    - id: target_group_name
+    - description: Blank derives it from the service name. Set it if that name is already taken in this account and region.
+      id: target_group_name
       label: Target group name
       type: string
-      description: Name for the load balancer target group. Leave blank to derive it from the service name. Set it when another service in the VPC already owns that name, since target group names are unique per region.
       placeholder: my-service-eks-tg
       collapsible: true
       required: false
@@ -175,20 +176,20 @@ module:
       type: string_array
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
-    - id: section_health
-      label: Application endpoint
+    - label: Health checks
+      id: section_health
       type: section
-    - id: container_port
+    - description: Port the application listens on, also set as `PORT`. The Kubernetes Service and the target group use it.
+      id: container_port
       immutable: true
       label: Container port
       type: number
-      description: Port the application listens on. The Kubernetes Service and the load balancer target group both use it.
       max: 65535
       min: 1
       required: true
       default: 8080
-    - id: health_check_path
-      label: Traffic health path
+    - label: Health check path
+      id: health_check_path
       type: string
       description: Unauthenticated endpoint that succeeds when the app can receive requests. Kubernetes readiness and the load balancer both use this path.
       required: true
@@ -217,8 +218,8 @@ module:
       max: 120
       min: 2
       default: 4
-    - id: probe_initial_delay_seconds
-      label: Health check initial delay (secs)
+    - label: Initial delay (secs)
+      id: probe_initial_delay_seconds
       type: number
       description: Seconds Kubernetes waits after the container starts or the startup check succeeds before checking traffic readiness or liveness.
       collapsible: true
@@ -249,6 +250,9 @@ module:
       max: 10
       min: 2
       default: 2
+    - id: section_probes
+      label: Startup and liveness
+      type: section
     - id: startup_probe_enabled
       label: Enforce startup timeout
       type: boolean
@@ -268,7 +272,7 @@ module:
     - id: startup_probe_path
       label: Startup health path
       type: string
-      description: Endpoint used while the app starts. Leave blank to use the liveness path when set, otherwise the traffic health path.
+      description: Endpoint used while the app starts. Leave blank to use the liveness path when set, otherwise the health check path.
       collapsible: true
       required: false
       show_when:
@@ -282,7 +286,7 @@ module:
     - id: liveness_probe_path
       label: Liveness health path
       type: string
-      description: Lightweight endpoint that confirms the app process is responsive. Avoid database or external-service checks. Leave blank to use the traffic health path.
+      description: Lightweight endpoint that confirms the app process is responsive. Avoid database or external-service checks. Leave blank to use the health check path.
       collapsible: true
       required: false
       show_when:
@@ -293,10 +297,10 @@ module:
       show_when:
         load_balancer:
           not: kubernetes_service
-    - id: load_balancer_readiness_gate_enabled
+    - description: Keep old pods serving until new ones pass load balancer health checks.
+      id: load_balancer_readiness_gate_enabled
       label: Wait for load balancer health
       type: boolean
-      description: Count a pod as ready only once the load balancer controller reports it healthy in the target group, so a rolling update keeps old pods serving until replacements receive traffic. Registration timing depends on controller and target state; initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval.
       collapsible: true
       default: true
       show_when:
@@ -374,10 +378,13 @@ module:
             load_balancer:
               not: kubernetes_service
             ravion_managed_domains_enabled: false
-    - id: ingress_allowed_workloads
+    - id: section_network_access
+      label: Network access
+      type: section
+    - description: EKS services in this namespace allowed to call this one. Set it and every other pod is blocked; the load balancer is always allowed.
+      id: ingress_allowed_workloads
       label: Ingress allow-list
       type: string_array
-      description: Names of other EKS services in this namespace that may call this service. When set, a NetworkPolicy denies every other pod in the cluster; traffic from the shared load balancer is always allowed. Leave empty to accept traffic from any pod. Callers are matched by pod label, so this separates services that share a namespace and trust its deployers; keep separately trusted teams in separate namespaces.
       add_button_label: Add service
       placeholder: api
       collapsible: true
@@ -438,10 +445,9 @@ module:
         autoscaling_enabled: true
         spot_burst_enabled:
           not: true
-    - id: replica_count
-      label: Pods
+    - label: Desired pods
+      id: replica_count
       type: number
-      description: Number of pods to run when autoscaling is disabled.
       max: 1000
       min: 0
       show_when:
@@ -450,6 +456,9 @@ module:
           not: true
       default: 2
     - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
+    - id: section_deployments
+      label: Deployments
+      type: section
     - id: rollout_max_surge_percent
       label: Maximum rollout surge (%)
       type: number
@@ -466,10 +475,10 @@ module:
       max: 3600
       min: 0
       default: 30
-    - id: pre_stop_sleep_seconds
+    - description: Seconds a stopping pod keeps serving before SIGTERM, so the load balancer stops sending it new connections first. 0 turns it off. Must be less than the shutdown grace period.
+      id: pre_stop_sleep_seconds
       label: Pre-stop delay (secs)
       type: number
-      description: Seconds a stopping pod keeps running before it receives SIGTERM, so the load balancer stops sending it new connections first. 0 disables the delay. Must be less than the shutdown grace period. Skipped on Kubernetes older than 1.30, which lacks the preStop sleep action.
       collapsible: true
       max: 3599
       min: 0
@@ -577,6 +586,7 @@ module:
             $merge:
               - ../../partials/deploy/eks-workload-helm-values-common.yml
               - containerPort: << module.input.container_port >>
+                env: '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>'
                 service:
                   port: << module.input.container_port >>
                 probes:
@@ -853,23 +863,23 @@ module:
 
     Route traffic with **Domain host rules**, **Path rules**, or both. If both are empty, Ravion creates a default `/*` path rule so the listener rule has a valid condition. Use **Listener rule priority** only when you need a specific rule order; otherwise AWS assigns the next available priority.
 
-    **Traffic health path** is the main application-health setting. It should be a lightweight, unauthenticated endpoint that succeeds only when the app can receive requests. Ravion uses it for both Kubernetes traffic readiness and the load balancer health check, so users configure that decision once even though both systems enforce it.
+    **Health check path** is the main application-health setting. It should be a lightweight, unauthenticated endpoint that succeeds only when the app can receive requests. Ravion uses it for both Kubernetes traffic readiness and the load balancer health check, so users configure that decision once even though both systems enforce it.
 
-    | Application endpoint | Default | Description |
-    | -------------------- | ------- | ----------- |
-    | Container port | 8080 | Port the application listens on; used by the Service and the target group |
-    | Traffic health path | / | Endpoint shared by Kubernetes readiness and the load balancer |
+    | Health checks | Default | Description |
+    | ------------- | ------- | ----------- |
+    | Container port | 8080 | Port the application listens on, also set as `PORT`; used by the Service and the target group |
+    | Health check path | / | Endpoint shared by Kubernetes readiness and the load balancer |
     | Success codes | 200-399 | Status codes treated as healthy |
     | Interval (secs) | 5 | Seconds between load balancer checks |
     | Timeout (secs) | 4 | Seconds to wait for a response; must be lower than the interval |
     | Healthy threshold | 2 | Successful checks before a target is healthy |
     | Unhealthy threshold | 2 | Failed checks before a target is unhealthy |
     | Readiness check interval (secs) | 1 | Seconds between Kubernetes readiness checks; a pod leaves traffic after about 30 seconds of failed checks |
-    | Health check initial delay (secs) | 0 | Seconds before the first readiness or liveness check |
+    | Initial delay (secs) | 0 | Seconds before the first readiness or liveness check |
 
     **Startup and recovery** are optional and independent. Enable **Enforce startup timeout** to restart a container that never finishes starting; its **Maximum startup time** defaults to 150 seconds. A bad startup path or a timeout shorter than the app's real boot time causes a restart loop. Enable **Restart unresponsive containers** to restart a process that remains running but stops answering. Processes that exit are restarted automatically even when this setting is off.
 
-    The startup check can use its own **Startup health path**. When blank, it uses the liveness path if one is configured, otherwise the traffic health path. The optional **Liveness health path** should only confirm that the process itself is responsive; do not include database or external-service checks, because an outage in a dependency should not restart every pod.
+    The startup check can use its own **Startup health path**. When blank, it uses the liveness path if one is configured, otherwise the health check path. The optional **Liveness health path** should only confirm that the process itself is responsive; do not include database or external-service checks, because an outage in a dependency should not restart every pod.
 
     | Traffic behavior | Default | Description |
     | ---------------- | ------- | ----------- |
@@ -1037,16 +1047,16 @@ module:
     | Start command | No | [] | Overrides the image entrypoint |
     | Start command arguments | No | [] | Overrides the image default arguments |
     | Container port | Yes | 8080 | Port the application listens on |
-    | Traffic health path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
+    | Health check path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
     | Readiness check interval (secs) | No | 1 | Kubernetes readiness period; about 30 seconds of failed checks remove a pod from traffic |
-    | Health check initial delay (secs) | No | 0 | Delay before the first readiness or liveness check |
+    | Initial delay (secs) | No | 0 | Delay before the first readiness or liveness check |
     | Success codes | Yes | 200-399 | Health check status code matcher |
     | Sticky sessions | No | false | Keep repeat requests on the same pod |
     | Enforce startup timeout | No | false | Restart an app that does not finish starting in time |
     | Maximum startup time (secs) | No | 150 | Startup time allowed before restarting the container |
-    | Startup health path | No | Traffic or liveness path | Optional endpoint used while the app starts |
+    | Startup health path | No | Health check or liveness path | Optional endpoint used while the app starts |
     | Restart unresponsive containers | No | false | Restart a process that remains running but stops answering |
-    | Liveness health path | No | Traffic health path | Optional process-only health endpoint |
+    | Liveness health path | No | Health check path | Optional process-only health endpoint |
     | Domain host rules | No | - | Hostnames such as app.example.com or *.example.com |
     | Path rules | No | - | Path patterns such as /*, /api/*, or /app/* |
     | Listener rule priority | No | Auto | Explicit ALB rule order |
