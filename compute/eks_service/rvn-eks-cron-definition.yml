@@ -386,7 +386,7 @@ module:
 
     Logs and pod charts cover every run of the job, because both match on the pods the CronJob creates rather than on any one Job object. Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out. Two things differ on the CloudWatch link of the chain:
 
-    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the run's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **CPU uses different units by provider.** Prometheus shows usage as a percentage of the running pods' CPU requests, matching the autoscaler's CPU target; CloudWatch reports cores. Other Prometheus charts sum across pods; CloudWatch averages across them.
     - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
 
     **Runs succeeded** and **Runs failed** are Prometheus-only. Container Insights reports on running pods and never on Job completion, so it has no metric that says a run finished, let alone whether it worked. With CloudWatch as the only metrics provider those two charts are empty while the pod charts still work - so if run outcomes matter to you, keep a Prometheus provider selected.

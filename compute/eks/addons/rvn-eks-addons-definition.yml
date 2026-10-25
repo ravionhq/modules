@@ -622,7 +622,7 @@ module:
     - id: cert_manager_enabled
       label: cert-manager
       type: boolean
-      description: Issue and renew TLS certificates in the cluster; Issuers and Certificates are configured separately.
+      description: "Issues certificates as Kubernetes Secrets for TLS that ends inside the cluster, such as an nginx ingress or mTLS. Not needed for load balancer HTTPS: Ravion-managed domains and ACM certificates cover that. Define Issuers and Certificates with your workloads."
       default: false
     - id: cert_manager_namespace
       label: cert-manager namespace
@@ -2093,7 +2093,7 @@ module:
 
     ## Certificates
 
-    **cert-manager** is optional and off by default. Enabling it installs the controller, webhook, CA injector and CRDs in **cert-manager namespace**. Components default to On-Demand EC2 placement so certificates keep renewing through Spot interruptions. It creates no Issuers or Certificates; define those alongside the workloads that use them.
+    **cert-manager** is optional and off by default. It is for TLS that ends inside the cluster, such as an nginx ingress, mTLS between pods, or charts that need webhook certificates. HTTPS on the shared load balancers doesn't use it: Ravion-managed domains and ACM certificates terminate TLS at the ALB. Enabling it installs the controller, webhook, CA injector and CRDs in **cert-manager namespace**. Components default to On-Demand EC2 placement so certificates keep renewing through Spot interruptions. It creates no Issuers or Certificates; define those alongside the workloads that use them.
 
     The CRDs are kept when cert-manager is turned off, because deleting them would delete every Certificate and Issuer in the cluster and the Secrets they own. Check for an existing cert-manager installation before enabling: a cluster can run only one.
 
