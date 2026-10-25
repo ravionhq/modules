@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.12.1
-  description: Show the Spot burst pods' lines in Application logs alongside the On-Demand pods'.
+  version: 1.12.2
+  description: Show CPU usage as a percentage of the pods' CPU request.
 module:
   inputs:
     - id: section_cluster
@@ -1000,7 +1000,7 @@ module:
 
     Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out, plus replicas available and desired. Two things differ on the CloudWatch link of the chain, and are worth knowing before you read a number off it:
 
-    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the workload's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **CPU uses different units by provider.** Prometheus shows usage as a percentage of the running pods' CPU requests, matching the autoscaler's CPU target; CloudWatch reports cores. Other Prometheus charts sum across pods; CloudWatch averages across them.
     - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
 
     Replicas available falls back to Container Insights' running-pod count for this module's Kubernetes Service. Replicas desired has no CloudWatch equivalent, so with CloudWatch as the only metrics provider that one chart is empty.
