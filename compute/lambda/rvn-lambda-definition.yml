@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.2.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 2.2.1
+  description: Shorter build field descriptions, a Dockerfile section name that matches the build source, a distinct Railpack start command label, and rarely changed build settings collapsed.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

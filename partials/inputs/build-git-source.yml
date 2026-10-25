@@ -1,16 +1,16 @@
 - id: source_repo
   label: Git repository
-  description: Repository containing the application source for Dockerfile or Railpack builds.
   required: true
   show_when: $with.show_when
   type: gitrepo
-- default: .
-  description: Repository-relative source and build root.
+- collapsible: true
+  default: .
   id: source_base_path
   label: Source base path
   show_when: $with.show_when
   type: string
 - add_button_label: Add path
+  collapsible: true
   description: Globs from the repository root; prefix ! to exclude. Skips the build and deploy when no matching file changed. Empty always builds.
   id: watch_paths
   label: Watch paths

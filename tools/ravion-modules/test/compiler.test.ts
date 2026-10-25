@@ -1478,8 +1478,8 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "source_repo").description,
-        "Repository containing the application source for Dockerfile or Railpack builds.",
-        `${definition.type} should include shared Git source guidance`,
+        undefined,
+        `${definition.type} should not repeat the Git repository label in a description`,
       );
       const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
       assert.deepEqual(

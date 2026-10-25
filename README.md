@@ -75,16 +75,16 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-kms` | AWS KMS Key | v0.2.0 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.2.1 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.0 | `security/secret/` |
-| `rvn-aws-static` | Static Hosting | v1.6.0 | `hosting/static_site/` |
+| `rvn-aws-static` | Static Hosting | v1.6.1 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.6.0 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v2.3.0 | `compute/ec2_service/` |
+| `rvn-ec2-service` | EC2 Service | v2.3.1 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.3.1 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v2.4.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.5.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v2.3.0 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v2.4.1 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.5.1 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v2.3.1 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v2.2.0 | `compute/lambda/` |
+| `rvn-lambda` | Lambda Function | v2.2.1 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |

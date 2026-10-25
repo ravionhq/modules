@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.6.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 0.6.1
+  description: Shorter build field descriptions, a Dockerfile section name that matches the build source, a distinct Railpack start command label, and rarely changed build settings collapsed.
 module:
   inputs:
     - id: section_cluster

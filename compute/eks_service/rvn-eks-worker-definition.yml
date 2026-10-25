@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.14.2
-  description: Show CPU usage as a percentage of the pods' CPU request.
+  version: 0.14.3
+  description: Shorter build field descriptions, a Dockerfile section name that matches the build source, a distinct Railpack start command label, and rarely changed build settings collapsed.
 module:
   inputs:
     - id: section_cluster
