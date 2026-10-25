@@ -149,7 +149,7 @@ module:
           deploy_type: container
           build_source: railpack
     - id: railpack_start_cmd
-      label: Start command
+      label: Railpack start command
       type: string
       description: Optional start command embedded in the Railpack-built image. Leave blank to use Railpack detection.
       placeholder: Railpack default
