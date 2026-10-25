@@ -1,5 +1,5 @@
 - id: section_task
-  label: Container resources
+  label: Resources
   type: section
 - id: capacity_provider
   label: Capacity provider
@@ -82,7 +82,7 @@
     - message: Enter a vCPU value, such as 0.5, 1, or 2.
       pattern: ^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$
 - id: task_memory
-  label: App memory in GB
+  label: App memory (GB)
   type: string
   description: Memory reserved for each app task on EC2 capacity. Leave at least 0.5 GB unreserved on each EC2 instance for the ECS agent and system processes.
   placeholder: "1"

@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.4.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 2.5.0
+  description: Section and field names now match EKS (Resources, Scaling, AWS permissions, Shutdown grace period), and Build environment variables sit in Build config instead of runtime Environment variables.
 module:
   inputs:
     - id: section_cluster
@@ -170,8 +170,8 @@ module:
         - 192.168.0.0/16
       show_when:
         public_nlb_service_enabled: false
-    - id: section_health
-      label: Health check
+    - label: Health checks
+      id: section_health
       type: section
     - id: health_check_protocol
       label: Health check protocol
@@ -596,7 +596,7 @@ module:
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
 
-    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
+    Shutdown grace period (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 
@@ -671,7 +671,7 @@ module:
     | App size                         | No       | 2 vCPU, 4 GB             | Fargate task CPU and memory                      |
     | App ephemeral storage (GiB)      | No       | 20                       | Fargate task ephemeral storage                   |
     | App vCPU                         | Yes*     | 1.5                      | Required for EC2 capacity                        |
-    | App memory in GB                 | Yes*     | 3.5                      | Required for EC2 capacity                        |
+    | App memory (GB)                  | Yes*     | 3.5                      | Required for EC2 capacity                        |
     | CPU architecture                 | No       | X86_64                   | x86_64 compatibility or ARM64 cost optimization  |
     | ECS exec                         | No       | false                    | Enable ECS Exec for debugging containers         |
     | Autoscaling                      | No       | true                     | Enable CPU and optional memory target tracking   |

@@ -67,7 +67,7 @@
     firelens_enabled: true
   default: []
 - id: section_iam
-  label: IAM roles and policies
+  label: AWS permissions
   type: section
 - id: execution_role_arn
   label: Execution role ARN override
@@ -122,7 +122,7 @@
   type: section
   description: Configure deployment rollout limits, task network access, and sidecars.
 - id: deployment_minimum_healthy_percent
-  label: Minimum healthy percent
+  label: Minimum healthy tasks during deploy (%)
   type: number
   description: Minimum percentage of desired tasks that must stay healthy during rolling deployments. Keep 100 for zero-downtime deploys. Lower it only when the cluster does not have enough spare capacity to start replacement tasks first, since lowering it can reduce availability during deploys.
   collapsible: true
@@ -130,7 +130,7 @@
   min: 0
   default: 100
 - id: deployment_maximum_percent
-  label: Maximum percent
+  label: Maximum tasks during deploy (%)
   type: number
   description: Maximum temporary task count during rolling deployments. Keep 200 for fast replacement capacity. Lower it when cluster capacity, IP availability, or burst cost should limit how many extra tasks ECS can start.
   collapsible: true
@@ -138,7 +138,7 @@
   min: 100
   default: 200
 - id: stop_timeout
-  label: Stop timeout (secs)
+  label: Shutdown grace period (secs)
   type: number
   description: Seconds ECS waits after sending SIGTERM to the app container before forcing it to stop with SIGKILL. Raise it so in-flight requests or jobs can finish during deploys and scale-in. Fargate allows 2-120 secs.
   collapsible: true

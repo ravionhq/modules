@@ -1,5 +1,5 @@
 - id: section_scaling
-  label: Autoscaling
+  label: Scaling
   type: section
 - id: auto_scaling_enabled
   label: Autoscaling

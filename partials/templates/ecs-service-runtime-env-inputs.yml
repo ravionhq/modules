@@ -1,8 +1,6 @@
 - id: section_app_config
   label: Environment variables
   type: section
-- $include: ../inputs/build-environment-variables.yml
-- $include: ../inputs/dockerfile-env-injection.yml
 - id: environment_variables
   label: Runtime environment variables
   type: array
@@ -13,7 +11,7 @@
 - id: secrets
   label: Runtime secrets
   type: array
-  description: Secrets injected into the ECS task at runtime, as an array of objects with `name` and `value_from` keys (snake_case, not `valueFrom`). value_from is an SSM Parameter Store or Secrets Manager ARN.
+  description: '`{name, value_from}` with a Secrets Manager or SSM Parameter Store ARN (snake_case `value_from`). ECS resolves it when the task starts; Ravion never reads the value.'
   placeholder: |-
     - name: DATABASE_URL
       value_from: arn:aws:ssm:us-east-1:123456789012:parameter/my-app/database-url

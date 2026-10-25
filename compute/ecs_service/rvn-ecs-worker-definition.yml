@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.3.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 2.4.0
+  description: Section and field names now match EKS (Resources, Scaling, AWS permissions, Shutdown grace period), and Build environment variables sit in Build config instead of runtime Environment variables.
 module:
   inputs:
     - id: section_cluster
@@ -236,7 +236,7 @@ module:
     | Custom metric scaling policies | No | [] | Queue/backlog-oriented target tracking policies |
     | Runtime environment variables | No | - | Environment variables passed to the worker container |
     | Runtime secrets | No | - | Secrets injected from SSM Parameter Store or Secrets Manager |
-    | Stop timeout (secs) | No | 30 | Seconds between SIGTERM and SIGKILL when a worker task stops; Fargate allows up to 120 |
+    | Shutdown grace period (secs) | No | 30 | Seconds between SIGTERM and SIGKILL when a worker task stops; Fargate allows up to 120 |
     | Sidecars | No | [] | Additional containers in the worker task |
     | EFS file system | No | false | Mount an EFS file system into the worker container |
     | EFS mount path | Yes* | /mnt/efs | Worker container path for the referenced file system |

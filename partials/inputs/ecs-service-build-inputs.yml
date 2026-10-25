@@ -25,6 +25,12 @@
       build_source:
         - dockerfile
         - railpack
+- $merge:
+    - ./build-environment-variables.yml
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
 - id: image_repository
   label: Image repository
   type: string
@@ -58,6 +64,7 @@
   with:
     show_when:
       build_source: dockerfile
+- $include: ./dockerfile-env-injection.yml
 - $template: ./railpack.yml
   with:
     show_when:

@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.5.0
-  description: "Add watch paths, so pipeline runs skip the build and deploy when no watched file changed."
+  version: 2.6.0
+  description: New services default to container port 8080, which non-root containers can bind. Section and field names now match EKS (Resources, Scaling, AWS permissions, Shutdown grace period), and Build environment variables sit in Build config instead of runtime Environment variables. Sticky sessions and target group settings have their own Traffic behavior section.
 module:
   inputs:
     - id: section_cluster
@@ -122,8 +122,8 @@ module:
         ravion_managed_domains_enabled: true
       type: string_array
     - $include: ../../partials/inputs/ecs-service-build-inputs.yml
-    - id: section_deployment
-      label: Deployment
+    - label: Deployments
+      id: section_deployment
       type: section
     - id: deployment_strategy
       label: Deployment strategy
@@ -261,18 +261,18 @@ module:
         - stage: POST_TEST_TRAFFIC_SHIFT
           timeout_in_minutes: 1440
           timeout_action: ROLLBACK
-    - id: section_health
-      label: Health check
+    - label: Health checks
+      id: section_health
       type: section
-    - id: container_port
+    - description: Port the web container listens on, also set as `PORT`.
+      default: 8080
+      id: container_port
       immutable: true
       label: Container port
       type: number
-      description: Port the web container listens on.
       max: 65535
       min: 1
       required: true
-      default: 80
     - id: health_check_path
       label: Health check path
       type: string
@@ -326,6 +326,9 @@ module:
       collapsible: true
       min: 0
       default: 0
+    - id: section_traffic_behavior
+      label: Traffic behavior
+      type: section
     - id: target_group_deregistration_delay
       label: Deregistration delay (secs)
       type: number
@@ -785,7 +788,7 @@ module:
 
     | Field                            | Default | Description                                                    |
     | -------------------------------- | ------- | -------------------------------------------------------------- |
-    | Container port                   | 80      | Port the container listens on; PORT is added automatically     |
+    | Container port                   | 8080    | Port the container listens on; PORT is added automatically     |
     | Health check path                | /       | Lightweight HTTP endpoint the load balancer checks             |
     | Success codes                    | 200-399 | Status codes treated as healthy                                |
     | Interval (secs)                  | 5       | Seconds between checks                                         |
@@ -836,7 +839,7 @@ module:
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
 
-    Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
+    Shutdown grace period (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
 
     Use Build environment variables for values needed during image builds. Values can be plain strings or references loaded from Parameter Store or Secrets Manager. For Dockerfile builds, enable Inject environment variables in Dockerfile to pass those values as Docker build arguments.
 
@@ -952,7 +955,7 @@ module:
     | Railpack version                | No       | Ravion default             | Optional version for Railpack builds               |
     | Image repository                | Yes*     | nginx                      | Required for image registry deployments            |
     | Start command                   | No       | []                         | Command arguments that override an image default CMD |
-    | Container port                  | Yes      | 80                         | Port exposed by the app container                  |
+    | Container port                  | Yes      | 8080                       | Port exposed by the app container                  |
     | Health check path               | Yes      | /                          | HTTP path used by the target group health check    |
     | Deregistration delay (secs)     | No       | 300                        | Drain window for a task that is deregistering      |
     | Sticky sessions                 | No       | true                       | Keep clients on the same task, and on the same traffic-shift target group when enabled |
@@ -962,7 +965,7 @@ module:
     | App size                        | No       | 2 vCPU, 4 GB               | Fargate task CPU and memory                        |
     | App ephemeral storage (GiB)     | No       | 20                         | Fargate task ephemeral storage                     |
     | App vCPU                        | Yes*     | 1.5                        | Required for EC2 capacity                          |
-    | App memory in GB                | Yes*     | 3.5                        | Required for EC2 capacity                          |
+    | App memory (GB)                 | Yes*     | 3.5                        | Required for EC2 capacity                          |
     | CPU architecture                | No       | X86_64                     | x86_64 compatibility or ARM64 cost optimization    |
     | ECS exec                        | No       | false                      | Enable ECS Exec for debugging containers           |
     | Run pre-deploy command          | No       | false                      | Enable a task before each deployment               |

@@ -79,9 +79,9 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-cloudfront` | CloudFront CDN | v1.6.0 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.3.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.3.1 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v2.4.0 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.5.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v2.3.0 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v2.5.0 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.6.0 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v2.4.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
 | `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.2.0 | `compute/lambda/` |
