@@ -919,7 +919,7 @@ failed during initialization have no provider resources to migrate.
 | public_nlb_creation_enabled / private_nlb_creation_enabled | Create a shared public / private NLB. | `bool` | `false` | no |
 | *_nlb_cross_zone_load_balancing_enabled | NLB cross-zone load balancing. | `bool` | `false` | no |
 | *_nlb_security_group_ids | Additional security groups on the NLB. | `list(string)` | `[]` | no |
-| *_nlb_elastic_ips_enabled / *_nlb_elastic_ip_allocation_ids | Static Elastic IPs for the NLB, one allocation per subnet. | `bool` / `list(string)` | `false` / `[]` | no |
+| public_nlb_elastic_ips_enabled / public_nlb_elastic_ip_allocation_ids | Static Elastic IPs for the public NLB, one allocation per public subnet. | `bool` / `list(string)` | `false` / `[]` | no |
 | *_nlb_access_logs_enabled / *_nlb_access_logs_bucket_arn | NLB access logging toggle and existing bucket. | `bool` / `string` | `false` / `null` | no |
 
 ## Outputs

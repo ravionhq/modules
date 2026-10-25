@@ -1378,7 +1378,7 @@ module:
       id: section_grafana
       label: Grafana
       type: section
-    - description: Grafana with data sources for the selected logs, metrics and traces destinations. Without Access, reach it with a port-forward.
+    - description: Grafana with data sources for the in-cluster Loki, Prometheus, Mimir and Tempo stores and Amazon Managed Prometheus. Without Access, reach it with a port-forward.
       default: false
       id: grafana_enabled
       label: In-cluster Grafana
