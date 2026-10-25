@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.12.2
-  description: Show CPU usage as a percentage of the pods' CPU request.
+  version: 1.12.3
+  description: Clearer wording for the cluster-only load balancer option.
 module:
   inputs:
     - id: section_cluster
@@ -109,7 +109,7 @@ module:
     - id: load_balancer
       label: Load balancer
       type: string
-      description: How traffic reaches the service. Public and private use the shared ALBs the EKS Add-ons module owns. Kubernetes service creates no target group or listener rule, so the service is reachable only from inside the cluster through its Service name.
+      description: Public and private use the shared ALBs from EKS Add-ons. Cluster only is reachable just from other pods, at `<service name>.<namespace>`.
       required: true
       default: public
       values:
@@ -117,7 +117,7 @@ module:
           value: public
         - label: Private ALB
           value: private
-        - label: Kubernetes service (no load balancer)
+        - label: Cluster only (no load balancer)
           value: kubernetes_service
     - id: target_group_name
       label: Target group name
@@ -847,7 +847,7 @@ module:
 
     The EKS cluster reference supplies the AWS account, region, VPC, cluster ARN, cluster endpoint, certificate authority data, and the Ravion Runner role the deploy assumes to reach the Kubernetes API. The EKS add-ons reference supplies the shared ALB listeners.
 
-    Set **Load balancer** to **Public ALB** when the service should be reachable from the internet, or **Private ALB** for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP. Choose **Kubernetes service** for a service that should not sit behind any load balancer: no target group or listener rule is created and other workloads reach it only through its in-cluster Service name.
+    Set **Load balancer** to **Public ALB** when the service should be reachable from the internet, or **Private ALB** for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP. Choose **Cluster only** for an internal service that only other pods call: no target group or listener rule is created, and pods reach it at `<service name>.<namespace>`.
 
     ## Routing, readiness, and recovery
 
