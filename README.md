@@ -27,6 +27,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, default S3-backed Loki logs, Prometheus/Thanos metrics and Tempo traces with optional AMP, X-Ray and vendors, an OTLP receiver, in-cluster Grafana on a shared ALB or a Kubernetes Ingress with Grafana's OAuth sign-in, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI with a default gp3 StorageClass and online StatefulSet volume growth (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, `rvn-eks-cron`, and `rvn-eks-chart` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions with live-alias rollback and Terraform-managed custom aliases   | v1.0.0  |
+| `containers/` | `ecr`             | Private ECR repositories with scan on push, default image cleanup, optional KMS encryption, and cross-account pull/push access (includes the `rvn-aws-ecr` module definition) | v0.1.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
 | `database/`   | `planetscale_vitess` | PlanetScale MySQL with saved integrations, organization-specific regions and cluster sizes including Metal NVMe, and short-lived runner credentials, standard Terraform pipeline defaults and shared advanced settings, automatic default-keyspace adoption after creation, in-place resizing, configurable replicas and credential CIDRs, and advanced VTGate/backup controls (includes organization-only `rvn-planetscale-vitess` module definition) | Unreleased |
@@ -70,6 +71,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-alternat` | alterNAT | v0.1.3 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.3.2 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v0.2.1 | `security/compliance/` |
+| `rvn-aws-ecr` | AWS ECR Repository | v0.1.0 | `containers/ecr/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.2 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.1.2 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.2.1 | `security/kms/` |

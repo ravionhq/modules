@@ -31,6 +31,7 @@ const MODULE_CATEGORIES = new Set([
   "cache",
   "cdn",
   "compute",
+  "containers",
   "database",
   "hosting",
   "kubernetes",

@@ -66,6 +66,13 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     definitionTypes: ["rvn-efs", "rvn-s3"],
   },
   {
+    givenId: "container-registry",
+    name: "Container registry",
+    description: "For private container images that services and CI pipelines push and pull.",
+    sortOrder: 85,
+    definitionTypes: ["rvn-aws-ecr"],
+  },
+  {
     givenId: "cluster",
     name: "Cluster",
     description: "For services that share container capacity, load balancers, and placement configuration.",

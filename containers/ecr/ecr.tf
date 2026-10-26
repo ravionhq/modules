@@ -3,6 +3,7 @@
 ################################################################################
 
 resource "aws_ecr_repository" "this" {
+  region               = var.region
   name                 = var.name
   image_tag_mutability = var.image_tag_mutability
   force_delete         = var.force_delete_enabled
@@ -35,6 +36,7 @@ resource "aws_ecr_repository" "this" {
 resource "aws_ecr_lifecycle_policy" "this" {
   count = local.create_lifecycle_policy ? 1 : 0
 
+  region     = var.region
   repository = aws_ecr_repository.this.name
   policy     = local.effective_lifecycle_policy
 }
@@ -46,6 +48,7 @@ resource "aws_ecr_lifecycle_policy" "this" {
 resource "aws_ecr_repository_policy" "this" {
   count = local.create_repository_policy ? 1 : 0
 
+  region     = var.region
   repository = aws_ecr_repository.this.name
   policy     = local.effective_repository_policy
 }

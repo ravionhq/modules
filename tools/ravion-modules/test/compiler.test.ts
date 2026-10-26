@@ -1011,6 +1011,53 @@ describe("compiler", () => {
     }
   });
 
+  it("compiles ECR defaults and validates repository names and principal ARNs", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "containers", "ecr", "rvn-aws-ecr-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+
+    assert.equal(
+      getTerraformVariable(compiled.module, "untagged_image_expiry_days"),
+      "<< module.input.untagged_image_expiry_days != nil ? module.input.untagged_image_expiry_days : 14 >>",
+    );
+    assert.equal(
+      getTerraformVariable(compiled.module, "max_tagged_image_count"),
+      "<< module.input.max_tagged_image_count != nil ? module.input.max_tagged_image_count : 100 >>",
+    );
+
+    const nameInput = findInput(inputs, "name");
+    assert.ok(Array.isArray(nameInput.patterns), "name.patterns should be an array");
+    const namePatterns = nameInput.patterns.map((validation, index) =>
+      new RegExp(assertString(assertRecord(validation, `name.patterns[${index}]`).pattern)),
+    );
+
+    for (const name of ["api", "team/api", "my.app_v2-x"]) {
+      assert.ok(namePatterns.every((pattern) => pattern.test(name)), `name should accept ${name}`);
+    }
+    for (const name of ["API", "-api", "api/", "a"]) {
+      assert.ok(namePatterns.some((pattern) => !pattern.test(name)), `name should reject ${name}`);
+    }
+
+    const principalInput = findInput(inputs, "allowed_pull_principal_arns");
+    assert.ok(Array.isArray(principalInput.patterns), "allowed_pull_principal_arns.patterns should be an array");
+    assert.equal(principalInput.patterns.length, 1);
+    const principalValidation = assertRecord(principalInput.patterns[0], "allowed_pull_principal_arns.patterns[0]");
+    const principalPattern = new RegExp(assertString(principalValidation.pattern));
+    const validArns = [
+      "arn:aws:iam::123456789012:root",
+      "arn:aws-us-gov:iam::123456789012:role/team/application",
+      "arn:aws-cn:iam::123456789012:user/developer",
+    ];
+    const invalidArns = [
+      "arn:aws:iam::",
+      "arn:aws:iam::12345678901:root",
+      "arn:aws:iam::123456789012:role/",
+      "arn:aws:iam::123456789012:group/developers",
+    ];
+
+    for (const arn of validArns) assert.match(arn, principalPattern, `principal ARN should accept ${arn}`);
+    for (const arn of invalidArns) assert.doesNotMatch(arn, principalPattern, `principal ARN should reject ${arn}`);
+  });
+
   it("fails when a local token remains after compilation", async () => {
     await assert.rejects(
       compileDefinitionFile(join(fixturesDir, "invalid-local-token.yml")),
