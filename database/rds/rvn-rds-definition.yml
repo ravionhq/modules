@@ -4,8 +4,8 @@ definition:
   description: Creates and manages an Amazon RDS database. Supports PostgreSQL, MySQL, MariaDB, Oracle, and SQL Server engines.
 
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.4.1
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: network

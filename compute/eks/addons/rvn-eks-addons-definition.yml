@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.26.0
-  description: Removes the private NLB Elastic IP option, which AWS only supports on internet-facing NLBs. Clearer add-ons form, with the name at the top, Grafana after the telemetry it displays, rarely changed settings collapsed and shorter descriptions.
+  version: 0.26.1
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: cluster

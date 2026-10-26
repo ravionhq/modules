@@ -4,8 +4,8 @@ definition:
   name: EKS Helm Chart
   description: Install any Helm chart from an HTTP Helm repository, an OCI registry or a Git repository onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.3.2
-  description: 'The AWS permissions section is now IAM roles and policies, matching ECS and the other EKS modules.'
+  version: 0.3.3
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: section_cluster

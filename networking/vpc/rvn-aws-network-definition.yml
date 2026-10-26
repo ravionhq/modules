@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.2.1
-  description: Turning on NAT gateway high availability no longer cuts off private subnets while the new NAT gateways are created.
+  version: 1.2.2
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

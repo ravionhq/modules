@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.6.0
-  description: Add Ravion-managed custom domains, where Ravion issues the certificate and attaches it to the distribution once you add the provided DNS records.
+  version: 1.6.1
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

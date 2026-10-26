@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.2.1
-  description: Shorter build field descriptions, a Dockerfile section name that matches the build source, a distinct Railpack start command label, and rarely changed build settings collapsed.
+  version: 2.2.2
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

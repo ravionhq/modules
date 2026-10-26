@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.9.2
-  description: Clearer cluster form, with API endpoint, pod networking and access in their own sections and shorter descriptions.
+  version: 0.9.3
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: network
