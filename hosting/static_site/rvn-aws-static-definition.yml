@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.6.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 1.7.0
+  description: Link every custom domain or domain alias from the Links section of its overview page.
 module:
   build:
     builder: >-
@@ -499,7 +499,7 @@ module:
 
     The first domain alias is used as the CloudFront distribution comment. The distribution is always created enabled.
 
-    The module UI links to the site's primary domain: the first domain alias when aliases are configured, otherwise the default cloudfront.net domain.
+    The module UI links to every custom domain or domain alias, or to the default cloudfront.net domain when none are set.
 
     Price class controls the CloudFront edge location footprint. PriceClass_All uses all edge locations. PriceClass_200 and PriceClass_100 can reduce edge coverage for cost-sensitive workloads.
 
@@ -696,9 +696,9 @@ module:
       >>
     links: |-
       <<
-      stack.output.primary_domain ?
-      [{"name": stack.output.primary_domain, "href": "https://" + stack.output.primary_domain}] :
-      []
+      stack.output.domains != nil && stack.output.domains != [] ?
+      map(stack.output.domains, {"name": #, "href": "https://" + #}) :
+      (stack.output.primary_domain ? [{"name": stack.output.primary_domain, "href": "https://" + stack.output.primary_domain}] : [])
       >>
     metrics:
       - id: requests

@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.5.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.6.0
+  description: Link every domain the module serves from the Links section of its overview page.
 module:
   inputs:
     - id: section_cluster
@@ -621,6 +621,11 @@ module:
         "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
         #.entry_point, "working_directory": #.working_directory}) : []) >>
   ui:
+    links: |-
+      <<
+      stack.output.ravion_domain_fqdns != nil && stack.output.ravion_domain_fqdns != [] ?
+      map(stack.output.ravion_domain_fqdns, {"name": #, "href": "https://" + #}) : []
+      >>
     logs:
       - id: ecs_service_logs
         name: ECS service logs

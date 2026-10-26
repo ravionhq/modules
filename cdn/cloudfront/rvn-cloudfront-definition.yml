@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.6.1
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 1.7.0
+  description: Link every custom domain or domain alias from the Links section of its overview page.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -799,8 +799,10 @@ module:
       >>
     links: |-
       <<
-      (stack.output.distribution_domain_name ? [{"name": "CloudFront domain", "href": "https://" + stack.output.distribution_domain_name}] : []) +
-      (module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ? [{"name": module.input.distribution_aliases[0], "href": "https://" + module.input.distribution_aliases[0]}] : [])
+      (stack.output.distribution_domains != nil && stack.output.distribution_domains.main != nil &&
+      stack.output.distribution_domains.main != [] ?
+      map(stack.output.distribution_domains.main, {"name": #, "href": "https://" + #}) : []) +
+      (stack.output.distribution_domain_name ? [{"name": "CloudFront domain", "href": "https://" + stack.output.distribution_domain_name}] : [])
       >>
     metrics: |-
       <<

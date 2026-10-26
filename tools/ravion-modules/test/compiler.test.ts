@@ -1409,6 +1409,29 @@ describe("compiler", () => {
     assert.match(links, /stack\.output\.alb_dns_name/);
   });
 
+  it("compiles UI links for every module domain", async () => {
+    const [ecsWeb, eksWeb, cloudfront, staticSite] = await Promise.all([
+      compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-web-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "cdn", "cloudfront", "rvn-cloudfront-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "hosting", "static_site", "rvn-aws-static-definition.yml")),
+    ]);
+
+    const ecsLinks = assertString(assertRecord(ecsWeb.module.ui, "ECS web module.ui").links);
+    const eksLinks = assertString(assertRecord(eksWeb.module.ui, "EKS web module.ui").links);
+    const cloudfrontLinks = assertString(assertRecord(cloudfront.module.ui, "CloudFront module.ui").links);
+    const staticSiteLinks = assertString(assertRecord(staticSite.module.ui, "static-site module.ui").links);
+
+    assert.match(ecsLinks, /stack\.output\.ravion_domain_fqdns/);
+    assert.match(eksLinks, /stack\.output\.ravion_domain_fqdns/);
+    assert.match(cloudfrontLinks, /stack\.output\.distribution_domains\.main/);
+    assert.match(cloudfrontLinks, /stack\.output\.distribution_domain_name/);
+    assert.doesNotMatch(cloudfrontLinks, /module\.input\.(managed_domains|distribution_aliases)/);
+    assert.match(staticSiteLinks, /stack\.output\.domains/);
+    assert.match(staticSiteLinks, /stack\.output\.primary_domain/);
+    assert.doesNotMatch(staticSiteLinks, /module\.input\.(domains|distribution_aliases)/);
+  });
+
   it("compiles EC2 service load balancer source choices", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "ec2_service", "rvn-ec2-service-definition.yml"),

@@ -649,6 +649,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | distribution_ids | A map of distribution key to CloudFront distribution ID. |
 | distribution_arns | A map of distribution key to CloudFront distribution ARN. |
 | distribution_domain_names | A map of distribution key to CloudFront distribution domain name. |
+| distribution_domains | A map of distribution key to normalized managed domains or aliases served by each distribution. |
 | distribution_hosted_zone_ids | A map of distribution key to Route 53 zone ID for alias records. |
 | distribution_statuses | A map of distribution key to current distribution status. |
 | distribution_etags | A map of distribution key to current distribution ETag. |

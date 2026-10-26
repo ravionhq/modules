@@ -475,6 +475,7 @@ No external apply-time tools required.
 | cloudfront_distribution_arns_map | Map of distribution key -> distribution ARN. |
 | cloudfront_distribution_arns | List of all CloudFront distribution ARNs. |
 | distribution_domain_names | Map of distribution key -> CloudFront domain name. |
+| domains | Normalized viewer domains for the primary distribution. |
 | distribution_hosted_zone_ids | Map of distribution key -> Route53 zone ID for alias records. |
 | primary_domain | Primary viewer-facing domain of the primary distribution: first managed domain or alias if configured, otherwise the CloudFront domain name. |
 | distribution_primary_domains | Map of distribution key -> primary domain (first managed domain or alias, else CloudFront domain). |

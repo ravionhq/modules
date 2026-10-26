@@ -8,6 +8,11 @@ locals {
   managed_distributions = {
     for k, v in var.distributions : k => v if length(v.managed_domains) > 0
   }
+  distribution_alias_names = {
+    for k, v in var.distributions : k => distinct([
+      for alias in v.aliases : lower(trimsuffix(trimspace(alias), "."))
+    ])
+  }
 
   # Both distribution resources render the blocks below, so they cannot drift.
   distribution_origins = [
@@ -85,7 +90,7 @@ resource "aws_cloudfront_distribution" "this" {
   default_root_object = var.default_root_object
   retain_on_delete    = var.retain_on_delete_enabled
   wait_for_deployment = var.deployment_wait_enabled
-  aliases             = each.value.aliases
+  aliases             = local.distribution_alias_names[each.key]
   web_acl_id          = var.web_acl_id
 
   dynamic "origin" {
