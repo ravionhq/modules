@@ -32,7 +32,7 @@ locals {
       },
       {
         rulePriority = 2
-        description  = "Keep only the last ${var.max_tagged_image_count} images (tagged or untagged)"
+        description  = "Keep only the last ${var.max_tagged_image_count} tagged images"
         selection = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
