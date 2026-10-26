@@ -31,9 +31,9 @@ module "ecr" {
 | `encryption_type` | The encryption type for the repository. AES256 uses AWS-managed keys; KMS uses a customer-managed KMS key. | `string` | `"AES256"` | no |
 | `kms_key_arn` | The ARN of the KMS key to use when encryption_type is KMS. If null with KMS, an AWS-managed KMS key is used. | `string` | `null` | no |
 | `lifecycle_policy` | A raw JSON lifecycle policy document. If set, takes precedence over the built-in lifecycle rules below. | `string` | `null` | no |
-| `default_lifecycle_policy_enabled` | Apply a built-in lifecycle policy that expires untagged images and caps the number of tagged images retained. Ignored if lifecycle_policy is set. | `bool` | `false` | no |
+| `default_lifecycle_policy_enabled` | Apply a built-in lifecycle policy that expires untagged images and caps the number of images retained, tagged or untagged. Ignored if lifecycle_policy is set. | `bool` | `false` | no |
 | `untagged_image_expiry_days` | Number of days after which untagged images are expired. Used only when default_lifecycle_policy_enabled is true. | `number` | `14` | no |
-| `max_tagged_image_count` | Maximum number of tagged images to retain. Older images beyond this count are expired. Used only when default_lifecycle_policy_enabled is true. | `number` | `100` | no |
+| `max_tagged_image_count` | Maximum number of images to retain, tagged or untagged. Older images beyond this count are expired. Used only when default_lifecycle_policy_enabled is true. | `number` | `100` | no |
 | `repository_policy` | A raw JSON repository policy document. If set, takes precedence over allowed_pull_principal_arns and allowed_push_principal_arns. | `string` | `null` | no |
 | `allowed_pull_principal_arns` | A list of IAM principal ARNs granted pull access (read) to the repository. Used to generate a repository policy when repository_policy is null. | `list(string)` | `[]` | no |
 | `allowed_push_principal_arns` | A list of IAM principal ARNs granted push access (read and write) to the repository. Used to generate a repository policy when repository_policy is null. | `list(string)` | `[]` | no |

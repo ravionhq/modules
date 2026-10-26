@@ -54,7 +54,7 @@ run "default_lifecycle_policy" {
       jsondecode(aws_ecr_lifecycle_policy.this[0].policy).rules[1].selection.tagStatus == "any" &&
       jsondecode(aws_ecr_lifecycle_policy.this[0].policy).rules[1].selection.countNumber == 100
     )
-    error_message = "The default policy should keep the newest 100 tagged images."
+    error_message = "The default policy should keep the newest 100 images, tagged or untagged."
   }
 }
 

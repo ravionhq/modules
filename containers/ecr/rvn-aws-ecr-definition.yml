@@ -44,7 +44,7 @@ module:
       label: Image cleanup
       type: section
     - default: true
-      description: Expires old untagged images and keeps only the newest tagged images, which keeps storage costs down.
+      description: Expires untagged images after a set period and limits how many images (tagged or untagged) are retained.
       id: default_lifecycle_policy_enabled
       label: Clean up old images
       type: boolean
@@ -57,9 +57,9 @@ module:
         default_lifecycle_policy_enabled: true
       type: number
     - default: 100
-      description: Older images are expired once the repository holds more than this. Keep it above the number of images you may roll back to.
+      description: Older images are expired once the repository holds more than this, tagged or untagged. Keep it above the number of images you may roll back to.
       id: max_tagged_image_count
-      label: Tagged images to keep
+      label: Images to keep
       min: 1
       required: true
       show_when:
@@ -169,7 +169,7 @@ module:
 
     ## Image cleanup
 
-    Cleanup is enabled by default. The policy expires untagged images after 14 days and keeps the newest 100 tagged images, matching the policy used by ECS and EKS service repositories. Change the two counts to suit your rollback needs.
+    Cleanup is enabled by default. The policy expires untagged images after 14 days and keeps the newest 100 images (tagged or untagged), matching the policy used by ECS and EKS service repositories. Change the two counts to suit your rollback needs.
 
     Raw JSON lifecycle policies are available only through Advanced Terraform variables as `lifecycle_policy`; when set, that policy takes precedence over the built-in rules.
 
@@ -194,7 +194,7 @@ module:
     | Scan images on push | No | `true` | Runs basic ECR scanning on each push. |
     | Clean up old images | No | `true` | Enables the built-in lifecycle policy. |
     | Expire untagged images after (days) | When cleanup is enabled | `14` | Minimum 1 day. |
-    | Tagged images to keep | When cleanup is enabled | `100` | Minimum 1 image. |
+    | Images to keep | When cleanup is enabled | `100` | Minimum 1 image. |
     | Pull principal ARNs | No | Empty list | Principals granted pull access. |
     | Push principal ARNs | No | Empty list | Principals granted push and pull access. |
     | Encryption | Yes | `AES256` | Choose `KMS` for customer-managed KMS encryption. |
@@ -212,7 +212,7 @@ module:
 
     ## Design decisions
 
-    The form defaults to mutable tags, scan on push, and image cleanup. The cleanup defaults preserve recent tagged images while placing a time limit on untagged images.
+    The form defaults to mutable tags, scan on push, and image cleanup. The cleanup defaults preserve recent images while placing a time limit on untagged images.
 
     Encryption type and KMS key ARN cannot be changed after creation because ECR replaces the repository when these settings change. Force deletion is off by default.
 
