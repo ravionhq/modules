@@ -32,6 +32,8 @@ module:
     - id: cloudtrail_regions
       label: CloudTrail regions
       type: string_array
+      collapsible: true
+      add_button_label: Add Region
       required: false
       values: $values:aws/regions
       description: Defaults to all selected Regions. Leave out Regions an existing trail already covers.
@@ -40,6 +42,7 @@ module:
     - id: cloudtrail_log_retention_days
       label: Log retention (days)
       type: number
+      collapsible: true
       default: 365
       min: 0
       description: S3 lifecycle expiry; 0 keeps logs forever.
@@ -48,6 +51,7 @@ module:
     - id: cloudtrail_kms_key_arn
       label: KMS key ARN
       type: string
+      collapsible: true
       required: false
       description: Leave blank for SSE-S3. Use a bucket-Region key whose policy allows cloudtrail.amazonaws.com for every trail.
       show_when:
