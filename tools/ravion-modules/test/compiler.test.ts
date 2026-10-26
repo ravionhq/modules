@@ -193,6 +193,7 @@ describe("compiler", () => {
       "test/ignored/x-definition.yml",
       "partials/ignored/x-definition.yml",
       "charts/ignored/x-definition.yml",
+      "trusted-tools/tools/ravion-modules/test/fixtures/x-definition.yml",
       ".hidden/ignored/x-definition.yml",
     ];
 

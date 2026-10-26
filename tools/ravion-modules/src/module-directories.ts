@@ -5,6 +5,8 @@ export const NON_MODULE_DIRECTORIES = new Set([
   "test",
   "partials",
   "charts",
+  // Module Definitions workflow checks trusted tooling out here.
+  "trusted-tools",
 ]);
 
 export function isModuleDirectory(name: string): boolean {
