@@ -799,10 +799,9 @@ module:
       >>
     links: |-
       <<
-      (module.input.ravion_managed_domains == true && module.input.managed_domains != nil && module.input.managed_domains != [] ?
-      map(module.input.managed_domains, {"name": #, "href": "https://" + #}) : []) +
-      (module.input.ravion_managed_domains != true && module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ?
-      map(module.input.distribution_aliases, {"name": #, "href": "https://" + #}) : []) +
+      (stack.output.distribution_domains != nil && stack.output.distribution_domains.main != nil &&
+      stack.output.distribution_domains.main != [] ?
+      map(stack.output.distribution_domains.main, {"name": #, "href": "https://" + #}) : []) +
       (stack.output.distribution_domain_name ? [{"name": "CloudFront domain", "href": "https://" + stack.output.distribution_domain_name}] : [])
       >>
     metrics: |-

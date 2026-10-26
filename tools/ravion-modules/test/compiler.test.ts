@@ -1381,10 +1381,12 @@ describe("compiler", () => {
 
     assert.match(ecsLinks, /stack\.output\.ravion_domain_fqdns/);
     assert.match(eksLinks, /stack\.output\.ravion_domain_fqdns/);
-    assert.match(cloudfrontLinks, /module\.input\.managed_domains/);
-    assert.match(cloudfrontLinks, /module\.input\.distribution_aliases/);
-    assert.match(staticSiteLinks, /module\.input\.domains/);
-    assert.match(staticSiteLinks, /module\.input\.distribution_aliases/);
+    assert.match(cloudfrontLinks, /stack\.output\.distribution_domains\.main/);
+    assert.match(cloudfrontLinks, /stack\.output\.distribution_domain_name/);
+    assert.doesNotMatch(cloudfrontLinks, /module\.input\.(managed_domains|distribution_aliases)/);
+    assert.match(staticSiteLinks, /stack\.output\.domains/);
+    assert.match(staticSiteLinks, /stack\.output\.primary_domain/);
+    assert.doesNotMatch(staticSiteLinks, /module\.input\.(domains|distribution_aliases)/);
   });
 
   it("compiles EC2 service load balancer source choices", async () => {

@@ -696,11 +696,9 @@ module:
       >>
     links: |-
       <<
-      module.input.ravion_managed_domains == true && module.input.domains != nil && module.input.domains != [] ?
-      map(module.input.domains, {"name": #, "href": "https://" + #}) :
-      module.input.ravion_managed_domains != true && module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ?
-      map(module.input.distribution_aliases, {"name": #, "href": "https://" + #}) :
-      stack.output.primary_domain ? [{"name": stack.output.primary_domain, "href": "https://" + stack.output.primary_domain}] : []
+      stack.output.domains != nil && stack.output.domains != [] ?
+      map(stack.output.domains, {"name": #, "href": "https://" + #}) :
+      (stack.output.primary_domain ? [{"name": stack.output.primary_domain, "href": "https://" + stack.output.primary_domain}] : [])
       >>
     metrics:
       - id: requests
