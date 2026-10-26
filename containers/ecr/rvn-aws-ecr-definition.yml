@@ -69,6 +69,7 @@ module:
       label: Repository access
       type: section
     - add_button_label: Add pull principal
+      collapsible: true
       default: []
       description: Principals in this or other accounts that can pull images. Principals in this account can also be granted access through IAM policies alone.
       id: allowed_pull_principal_arns
@@ -79,6 +80,7 @@ module:
       placeholder: arn:aws:iam::123456789012:role/application
       type: string_array
     - add_button_label: Add push principal
+      collapsible: true
       default: []
       description: Principals that can push and pull images, such as a CI role in another account.
       id: allowed_push_principal_arns
@@ -114,7 +116,8 @@ module:
         encryption_type: KMS
       type: string
     - $include: ../../partials/inputs/misc-section.yml
-    - default: false
+    - collapsible: true
+      default: false
       description: Allow the repository to be deleted even when it contains images. Use with care.
       id: force_delete_enabled
       label: Force delete repository
