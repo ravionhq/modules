@@ -5,7 +5,7 @@ definition:
   description: Selectable add-ons for an existing EKS cluster.
 release:
   version: 0.27.0
-  description: Enable public and private ALB access logs by default for new instances.
+  description: Enable public and private ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: cluster

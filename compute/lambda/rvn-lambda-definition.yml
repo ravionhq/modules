@@ -4,7 +4,7 @@ definition:
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
   version: 2.3.0
-  description: Retain CloudWatch logs for a year by default for new functions.
+  description: Retain CloudWatch logs for a year by default for new functions. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

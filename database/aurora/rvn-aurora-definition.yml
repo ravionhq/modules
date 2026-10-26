@@ -5,7 +5,7 @@ definition:
 
 release:
   version: 1.6.0
-  description: Export PostgreSQL logs and MySQL error logs by default when log exports are unset.
+  description: Export PostgreSQL logs and MySQL error logs by default when log exports are unset. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: network

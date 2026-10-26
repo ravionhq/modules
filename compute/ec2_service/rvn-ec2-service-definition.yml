@@ -4,7 +4,7 @@ definition:
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
   version: 2.4.0
-  description: Retain application logs for a year by default for new services.
+  description: Retain application logs for a year by default for new services. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: network

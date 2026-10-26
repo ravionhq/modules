@@ -4,7 +4,7 @@ definition:
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
   version: 1.3.0
-  description: Enable CloudWatch VPC Flow Logs with year-long retention by default for new networks.
+  description: Enable CloudWatch VPC Flow Logs with year-long retention by default for new networks. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

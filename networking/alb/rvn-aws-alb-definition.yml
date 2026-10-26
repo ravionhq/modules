@@ -4,7 +4,7 @@ definition:
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
   version: 1.4.0
-  description: Enable ALB access logs by default for new instances.
+  description: Enable ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: network

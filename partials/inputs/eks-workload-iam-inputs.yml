@@ -5,7 +5,7 @@
 # for it with no configuration. Shared by rvn-eks-web, rvn-eks-worker, and
 # rvn-eks-cron.
 - id: section_iam
-  label: AWS permissions
+  label: IAM roles and policies
   type: section
 - id: pod_identity_role_creation_enabled
   label: Create IAM role
