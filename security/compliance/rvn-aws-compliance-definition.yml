@@ -128,7 +128,7 @@ module:
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
         cloudtrail_enabled: << module.input.cloudtrail_enabled >>
-        cloudtrail_regions: "<< len(module.input.cloudtrail_regions || []) > 0 ? module.input.cloudtrail_regions : nil >>"
+        cloudtrail_regions: "<< module.input.cloudtrail_regions != nil && len(module.input.cloudtrail_regions) > 0 ? module.input.cloudtrail_regions : nil >>"
         cloudtrail_log_retention_days: "<< module.input.cloudtrail_log_retention_days != nil ? module.input.cloudtrail_log_retention_days : 365 >>"
         cloudtrail_kms_key_arn: << module.input.cloudtrail_kms_key_arn || nil >>
         eks_protection_enabled: << module.input.eks_protection_enabled >>
