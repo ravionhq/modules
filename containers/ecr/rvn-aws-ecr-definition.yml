@@ -1,0 +1,226 @@
+definition:
+  type: rvn-aws-ecr
+  name: AWS ECR Repository
+  description: Creates a private Amazon ECR repository for container images with scan on push, image cleanup, optional KMS encryption, and cross-account access.
+release:
+  version: 1.0.0
+  description: Create a private ECR repository with scan on push, automatic cleanup of old images, optional KMS encryption, and pull or push access for other IAM principals.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $include: ../../partials/inputs/aws-region.yml
+    - id: section_repository
+      label: Repository
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Use slashes to group repositories, such as team/api.
+      id: name
+      immutable: true
+      label: Repository name
+      patterns:
+        - message: Lowercase letters, numbers, and . _ - / separators. Start and end with a letter or number.
+          pattern: ^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*$
+        - message: 2-256 characters.
+          pattern: ^.{2,256}$
+      required: true
+      type: string
+    - default: MUTABLE
+      description: Immutable tags can't be pushed again, so a tag always points at the same image.
+      id: image_tag_mutability
+      label: Image tag mutability
+      required: true
+      type: string
+      values:
+        - label: Mutable
+          value: MUTABLE
+        - label: Immutable
+          value: IMMUTABLE
+    - default: true
+      description: Basic ECR vulnerability scan on every push. Turn off if another scanner covers it.
+      id: image_scan_on_push_enabled
+      label: Scan images on push
+      type: boolean
+    - id: section_image_cleanup
+      label: Image cleanup
+      type: section
+    - default: true
+      description: Expires untagged images after a set period and limits how many images (tagged or untagged) are retained.
+      id: default_lifecycle_policy_enabled
+      label: Clean up old images
+      type: boolean
+    - default: 14
+      id: untagged_image_expiry_days
+      label: Expire untagged images after (days)
+      min: 1
+      required: true
+      show_when:
+        default_lifecycle_policy_enabled: true
+      type: number
+    - default: 100
+      description: Older images are expired once the repository holds more than this, tagged or untagged. Keep it above the number of images you may roll back to.
+      id: max_tagged_image_count
+      label: Images to keep
+      min: 1
+      required: true
+      show_when:
+        default_lifecycle_policy_enabled: true
+      type: number
+    - id: section_access
+      label: Repository access
+      type: section
+    - add_button_label: Add pull principal
+      collapsible: true
+      default: []
+      description: Principals in this or other accounts that can pull images. Principals in this account can also be granted access through IAM policies alone.
+      id: allowed_pull_principal_arns
+      label: Pull principal ARNs
+      patterns:
+        - message: Invalid IAM principal ARN. Use an account root, role, or user ARN with a 12-digit account ID.
+          pattern: "^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$"
+      placeholder: arn:aws:iam::123456789012:role/application
+      type: string_array
+    - add_button_label: Add push principal
+      collapsible: true
+      default: []
+      description: Principals that can push and pull images, such as a CI role in another account.
+      id: allowed_push_principal_arns
+      label: Push principal ARNs
+      patterns:
+        - message: Invalid IAM principal ARN. Use an account root, role, or user ARN with a 12-digit account ID.
+          pattern: "^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:iam::[0-9]{12}:(root|(role|user)/[!-~]*[A-Za-z0-9+=,.@_-])$"
+      placeholder: arn:aws:iam::123456789012:role/ci
+      type: string_array
+    - id: section_encryption
+      label: Encryption
+      type: section
+    - default: AES256
+      id: encryption_type
+      immutable: true
+      label: Encryption
+      required: true
+      type: string
+      values:
+        - label: AES-256 (AWS owned key)
+          value: AES256
+        - label: AWS KMS
+          value: KMS
+    - description: Leave empty to use the AWS managed aws/ecr key.
+      id: kms_key_arn
+      immutable: true
+      label: KMS key ARN
+      patterns:
+        - message: Invalid KMS key ARN.
+          pattern: ^arn:aws(-us-gov|-cn|-iso|-iso-b|-iso-e|-iso-f)?:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$
+      placeholder: arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000000
+      show_when:
+        encryption_type: KMS
+      type: string
+    - $include: ../../partials/inputs/misc-section.yml
+    - collapsible: true
+      default: false
+      description: Allow the repository to be deleted even when it contains images. Use with care.
+      id: force_delete_enabled
+      label: Force delete repository
+      type: boolean
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: containers/ecr
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        allowed_pull_principal_arns: << module.input.allowed_pull_principal_arns || [] >>
+        allowed_push_principal_arns: << module.input.allowed_push_principal_arns || [] >>
+        default_lifecycle_policy_enabled: << module.input.default_lifecycle_policy_enabled >>
+        encryption_type: << module.input.encryption_type >>
+        force_delete_enabled: << module.input.force_delete_enabled >>
+        image_scan_on_push_enabled: << module.input.image_scan_on_push_enabled >>
+        image_tag_mutability: << module.input.image_tag_mutability >>
+        kms_key_arn: '<< module.input.encryption_type == "KMS" && module.input.kms_key_arn ? module.input.kms_key_arn : nil >>'
+        max_tagged_image_count: '<< module.input.max_tagged_image_count != nil ? module.input.max_tagged_image_count : 100 >>'
+        name: << module.input.name >>
+        region: << module.input.aws_region >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        untagged_image_expiry_days: '<< module.input.untagged_image_expiry_days != nil ? module.input.untagged_image_expiry_days : 14 >>'
+  ui:
+    links: |-
+      <<
+      stack.output.aws_account_id && stack.output.region && stack.output.repository_name ?
+      [{"name":"ECR repository","href":"https://" + stack.output.region + ".console.aws.amazon.com/ecr/repositories/private/" + stack.output.aws_account_id + "/" + stack.output.repository_name + "?region=" + stack.output.region}] :
+      []
+      >>
+  readme: |
+    Creates a private Amazon ECR repository for container images with scan on push, image cleanup, optional KMS encryption, and cross-account access.
+
+    ## Overview
+
+    Use this module to keep container images in a private Amazon ECR repository for application services and CI pipelines. Images are scanned on push by default, and the repository can grant selected AWS principals pull or push access.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Store application images | Keep images in a private repository for ECS, EKS, or other container workloads. |
+    | Share images across accounts | Grant selected IAM principals pull or push access to the repository. |
+    | Retain recent builds | Expire old images with the built-in lifecycle policy. |
+
+    ## Image cleanup
+
+    Cleanup is enabled by default. The policy expires untagged images after 14 days and keeps the newest 100 images (tagged or untagged), matching the policy used by ECS and EKS service repositories. Change the two counts to suit your rollback needs.
+
+    Raw JSON lifecycle policies are available only through Advanced Terraform variables as `lifecycle_policy`; when set, that policy takes precedence over the built-in rules.
+
+    ## Repository access
+
+    Pull principal ARNs grant image pull access, while push principal ARNs grant pull and push access. Both lists are empty by default. For principals in the same account, IAM policies can grant access without adding a repository policy.
+
+    Raw JSON repository policies are available only through Advanced Terraform variables as `repository_policy`; when set, that policy takes precedence over the principal lists.
+
+    ## Encryption
+
+    Repositories use AES-256 encryption with an AWS-owned key by default. Choose AWS KMS to use a customer-managed key; leaving KMS key ARN empty uses the AWS-managed `aws/ecr` key. Encryption type and KMS key ARN are immutable because changing either replaces the repository.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | Account where the repository is created. |
+    | Region | Yes | None | AWS Region for the repository. |
+    | Repository name | Yes | Project, environment, and module given IDs | Lowercase name; use slashes to group repositories. Cannot be changed later. |
+    | Image tag mutability | Yes | `MUTABLE` | Choose `IMMUTABLE` to prevent existing tags from being overwritten. |
+    | Scan images on push | No | `true` | Runs basic ECR scanning on each push. |
+    | Clean up old images | No | `true` | Enables the built-in lifecycle policy. |
+    | Expire untagged images after (days) | When cleanup is enabled | `14` | Minimum 1 day. |
+    | Images to keep | When cleanup is enabled | `100` | Minimum 1 image. |
+    | Pull principal ARNs | No | Empty list | Principals granted pull access. |
+    | Push principal ARNs | No | Empty list | Principals granted push and pull access. |
+    | Encryption | Yes | `AES256` | Choose `KMS` for customer-managed KMS encryption. |
+    | KMS key ARN | No | None | Shown for KMS encryption; blank uses the AWS-managed `aws/ecr` key. |
+    | Force delete repository | No | `false` | Allows deleting the repository when it contains images. |
+    | Tags | No | Standard Ravion tags | Additional tags assigned to resources. |
+    | Terraform execution environment | No | None | Optional runner environment override in the selected AWS account. |
+    | OpenTofu version override | No | Environment default | Optional version override for this module. |
+    | Ravion Terraform workspace name | No | Generated from project, environment, module, and stack IDs | Optional state workspace override. |
+    | Include default plan policies | No | `true` | Keeps the default read-only plan policies. |
+    | Terraform plan IAM policies | No | Empty list | Managed policy ARNs attached to the plan runner role. |
+    | Include default apply policies | No | `true` | Keeps the default apply policies. |
+    | Terraform apply IAM policies | No | Empty list | Managed policy ARNs attached to the apply runner role. |
+    | Advanced Terraform variables | No | Empty object | Overrides Terraform variables, including raw JSON lifecycle or repository policies. |
+
+    ## Design decisions
+
+    The form defaults to mutable tags, scan on push, and image cleanup. The cleanup defaults preserve recent images while placing a time limit on untagged images.
+
+    Encryption type and KMS key ARN cannot be changed after creation because ECR replaces the repository when these settings change. Force deletion is off by default.
+
+    ## Learn more
+
+    - [Amazon ECR repositories](https://docs.aws.amazon.com/AmazonECR/latest/userguide/Repositories.html)
+    - [Amazon ECR lifecycle policies](https://docs.aws.amazon.com/AmazonECR/latest/userguide/LifecyclePolicies.html)
+    - [Amazon ECR repository policies](https://docs.aws.amazon.com/AmazonECR/latest/userguide/repository-policies.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/containers/ecr)
