@@ -6,7 +6,7 @@ Creates a private Amazon ECR repository for container images with configurable i
 
 ```hcl
 module "ecr" {
-  source = "git::https://github.com/ravionhq/modules.git//containers/ecr?ref=v0.1.0"
+  source = "git::https://github.com/ravionhq/modules.git//containers/ecr?ref=v1.0.0"
 
   name = "team/api"
 }

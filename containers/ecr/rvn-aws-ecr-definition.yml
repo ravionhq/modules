@@ -3,7 +3,7 @@ definition:
   name: AWS ECR Repository
   description: Creates a private Amazon ECR repository for container images with scan on push, image cleanup, optional KMS encryption, and cross-account access.
 release:
-  version: 0.1.0
+  version: 1.0.0
   description: Create a private ECR repository with scan on push, automatic cleanup of old images, optional KMS encryption, and pull or push access for other IAM principals.
 module:
   inputs:
