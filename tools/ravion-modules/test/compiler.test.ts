@@ -422,6 +422,36 @@ describe("compiler", () => {
     }
   });
 
+  it("sets PORT from container port on EKS web, before user variables so a user PORT wins", async () => {
+    const helmEnv = async (name: string) => {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const deploy = compiled.module.deploy as { definition: { values: { env: unknown } } };
+      return deploy.definition.values.env;
+    };
+    assert.equal(
+      await helmEnv("web"),
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>',
+    );
+    for (const name of ["worker", "cron"]) {
+      assert.equal(await helmEnv(name), "<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>");
+    }
+  });
+
+  it("puts every EKS workload environment variable in the Environment variables section, as on ECS", async () => {
+    for (const name of ["web", "worker", "cron"]) {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const sectionOf = new Map<string, string>();
+      let section = "";
+      for (const input of getModuleInputs(compiled.module)) {
+        if (input.type === "section") section = String(input.id);
+        else sectionOf.set(String(input.id), section);
+      }
+      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets"]) {
+        assert.equal(sectionOf.get(id), "section_app_config", `rvn-eks-${name} ${id}`);
+      }
+    }
+  });
+
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
@@ -444,8 +474,8 @@ describe("compiler", () => {
     assert.equal(additionalNodeGroupFields.some((input) => input.id === "min_nodes" || input.id === "max_nodes"), false);
     assert.equal(additionalMinSize.label, "Minimum nodes");
     assert.equal(additionalMaxSize.label, "Maximum nodes");
-    assert.match(String(additionalMinSize.description), /spare capacity/);
-    assert.match(String(additionalMaxSize.description), /pods can remain pending/);
+    assert.match(String(additionalMinSize.description), /rolling node updates/);
+    assert.match(String(additionalMaxSize.description), /pods stay pending/);
     assert.equal(clusterInputs.some((input) => input.id === "system_node_min_size" || input.id === "system_node_max_size"), false);
     const systemNodeMinNodes = findInput(clusterInputs, "system_node_min_nodes");
     const systemNodeMaxNodes = findInput(clusterInputs, "system_node_max_nodes");
@@ -492,7 +522,7 @@ describe("compiler", () => {
     }
     assert.equal(clusterInputs.some((input) => input.id === "section_system_nodes"), false);
     assert.equal(clusterInputs.some((input) => input.id === "section_application_capacity"), false);
-    assert.match(String(findInput(clusterInputs, "section_capacity").description), /0\.5 vCPU and 1 GiB/);
+    assert.match(String(findInput(clusterInputs, "section_capacity").description), /Without Karpenter, nothing adds nodes/);
     assert.ok(clusterInputs.findIndex((input) => input.id === "section_capacity") < clusterInputs.findIndex((input) => input.id === "system_node_capacity_type"));
     assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_capacity_type") < clusterInputs.findIndex((input) => input.id === "system_node_instance_types"));
     assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_disk_size") < clusterInputs.findIndex((input) => input.id === "node_groups"));
@@ -877,7 +907,6 @@ describe("compiler", () => {
       {
         path: ["compute", "eks", "addons", "rvn-eks-addons-definition.yml"],
         sectionIds: [
-          "section_ravion_operator",
           "section_alb",
           "section_nlb",
           "section_karpenter",
@@ -1478,8 +1507,8 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "source_repo").description,
-        "Repository containing the application source for Dockerfile or Railpack builds.",
-        `${definition.type} should include shared Git source guidance`,
+        undefined,
+        `${definition.type} should not repeat the Git repository label in a description`,
       );
       const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
       assert.deepEqual(
@@ -1545,11 +1574,11 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "railpack_install_cmd").description,
-        "Optional dependency installation command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
       assert.equal(
         findInput(inputs, "railpack_build_cmd").description,
-        "Optional application build command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
     }
   });

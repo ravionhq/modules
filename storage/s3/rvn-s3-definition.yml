@@ -3,8 +3,8 @@ definition:
   name: S3 Bucket
   description: S3 bucket with public access blocking, encryption, versioning, CORS, lifecycle rules, and configurable bucket policies.
 release:
-  version: 2.0.1
-  description: Reuse cached providers on Linux runners.
+  version: 2.0.2
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

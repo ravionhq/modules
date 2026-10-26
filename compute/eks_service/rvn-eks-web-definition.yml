@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.12.1
-  description: Show the Spot burst pods' lines in Application logs alongside the On-Demand pods'.
+  version: 1.13.4
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: section_cluster
@@ -105,11 +105,12 @@ module:
       type: section
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
+        name_label: Service name
         name_description: Name for the Helm release, Kubernetes objects, target group, and listener rule.
     - id: load_balancer
       label: Load balancer
       type: string
-      description: How traffic reaches the service. Public and private use the shared ALBs the EKS Add-ons module owns. Kubernetes service creates no target group or listener rule, so the service is reachable only from inside the cluster through its Service name.
+      description: Public and private use the shared ALBs from EKS Add-ons. Cluster only is reachable just from other pods, at `<service name>.<namespace>`.
       required: true
       default: public
       values:
@@ -117,12 +118,12 @@ module:
           value: public
         - label: Private ALB
           value: private
-        - label: Kubernetes service (no load balancer)
+        - label: Cluster only (no load balancer)
           value: kubernetes_service
-    - id: target_group_name
+    - description: Blank derives it from the service name. Set it if that name is already taken in this account and region.
+      id: target_group_name
       label: Target group name
       type: string
-      description: Name for the load balancer target group. Leave blank to derive it from the service name. Set it when another service in the VPC already owns that name, since target group names are unique per region.
       placeholder: my-service-eks-tg
       collapsible: true
       required: false
@@ -175,20 +176,20 @@ module:
       type: string_array
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
-    - id: section_health
-      label: Application endpoint
+    - label: Health check
+      id: section_health
       type: section
-    - id: container_port
+    - description: Port the application listens on, also set as `PORT`. The Kubernetes Service and the target group use it.
+      id: container_port
       immutable: true
       label: Container port
       type: number
-      description: Port the application listens on. The Kubernetes Service and the load balancer target group both use it.
       max: 65535
       min: 1
       required: true
       default: 8080
-    - id: health_check_path
-      label: Traffic health path
+    - label: Health check path
+      id: health_check_path
       type: string
       description: Unauthenticated endpoint that succeeds when the app can receive requests. Kubernetes readiness and the load balancer both use this path.
       required: true
@@ -217,8 +218,8 @@ module:
       max: 120
       min: 2
       default: 4
-    - id: probe_initial_delay_seconds
-      label: Health check initial delay (secs)
+    - label: Initial delay (secs)
+      id: probe_initial_delay_seconds
       type: number
       description: Seconds Kubernetes waits after the container starts or the startup check succeeds before checking traffic readiness or liveness.
       collapsible: true
@@ -249,54 +250,10 @@ module:
       max: 10
       min: 2
       default: 2
-    - id: startup_probe_enabled
-      label: Enforce startup timeout
-      type: boolean
-      description: Restart the container if the app does not become responsive in time. A bad path or short timeout can cause a restart loop.
-      collapsible: true
-      default: false
-    - id: startup_timeout_seconds
-      label: Maximum startup time (secs)
-      type: number
-      description: Maximum time the app may take to start before Kubernetes restarts it. Rounded up to the next five-second check.
-      collapsible: true
-      max: 1500
-      min: 5
-      show_when:
-        startup_probe_enabled: true
-      default: 150
-    - id: startup_probe_path
-      label: Startup health path
-      type: string
-      description: Endpoint used while the app starts. Leave blank to use the liveness path when set, otherwise the traffic health path.
-      collapsible: true
-      required: false
-      show_when:
-        startup_probe_enabled: true
-    - id: liveness_probe_enabled
-      label: Restart unresponsive containers
-      type: boolean
-      description: Restart a running process that stops responding. A dependency-aware path can restart every pod during an outage.
-      collapsible: true
-      default: false
-    - id: liveness_probe_path
-      label: Liveness health path
-      type: string
-      description: Lightweight endpoint that confirms the app process is responsive. Avoid database or external-service checks. Leave blank to use the traffic health path.
-      collapsible: true
-      required: false
-      show_when:
-        liveness_probe_enabled: true
-    - id: section_traffic_behavior
-      label: Traffic behavior
-      type: section
-      show_when:
-        load_balancer:
-          not: kubernetes_service
-    - id: load_balancer_readiness_gate_enabled
+    - description: Keep old pods serving until new ones pass load balancer health checks.
+      id: load_balancer_readiness_gate_enabled
       label: Wait for load balancer health
       type: boolean
-      description: Count a pod as ready only once the load balancer controller reports it healthy in the target group, so a rolling update keeps old pods serving until replacements receive traffic. Registration timing depends on controller and target state; initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval.
       collapsible: true
       default: true
       show_when:
@@ -367,6 +324,47 @@ module:
         load_balancer:
           not: kubernetes_service
         target_group_stickiness_type: app_cookie
+    - id: section_probes
+      label: Startup and liveness
+      type: section
+    - id: startup_probe_enabled
+      label: Enforce startup timeout
+      type: boolean
+      description: Restart the container if the app does not become responsive in time. A bad path or short timeout can cause a restart loop.
+      collapsible: true
+      default: false
+    - id: startup_timeout_seconds
+      label: Maximum startup time (secs)
+      type: number
+      description: Maximum time the app may take to start before Kubernetes restarts it. Rounded up to the next five-second check.
+      collapsible: true
+      max: 1500
+      min: 5
+      show_when:
+        startup_probe_enabled: true
+      default: 150
+    - id: startup_probe_path
+      label: Startup health path
+      type: string
+      description: Endpoint used while the app starts. Leave blank to use the liveness path when set, otherwise the health check path.
+      collapsible: true
+      required: false
+      show_when:
+        startup_probe_enabled: true
+    - id: liveness_probe_enabled
+      label: Restart unresponsive containers
+      type: boolean
+      description: Restart a running process that stops responding. A dependency-aware path can restart every pod during an outage.
+      collapsible: true
+      default: false
+    - id: liveness_probe_path
+      label: Liveness health path
+      type: string
+      description: Lightweight endpoint that confirms the app process is responsive. Avoid database or external-service checks. Leave blank to use the health check path.
+      collapsible: true
+      required: false
+      show_when:
+        liveness_probe_enabled: true
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
         field_overrides:
@@ -374,18 +372,9 @@ module:
             load_balancer:
               not: kubernetes_service
             ravion_managed_domains_enabled: false
-    - id: ingress_allowed_workloads
-      label: Ingress allow-list
-      type: string_array
-      description: Names of other EKS services in this namespace that may call this service. When set, a NetworkPolicy denies every other pod in the cluster; traffic from the shared load balancer is always allowed. Leave empty to accept traffic from any pod. Callers are matched by pod label, so this separates services that share a namespace and trust its deployers; keep separately trusted teams in separate namespaces.
-      add_button_label: Add service
-      placeholder: api
-      collapsible: true
-      required: false
-      default: null
     - $include: ../../partials/inputs/eks-workload-resource-inputs.yml
     - id: section_scaling
-      label: Scaling
+      label: Autoscaling
       type: section
     - id: autoscaling_enabled
       label: Autoscaling
@@ -438,10 +427,9 @@ module:
         autoscaling_enabled: true
         spot_burst_enabled:
           not: true
-    - id: replica_count
-      label: Pods
+    - label: Desired pods
+      id: replica_count
       type: number
-      description: Number of pods to run when autoscaling is disabled.
       max: 1000
       min: 0
       show_when:
@@ -450,6 +438,11 @@ module:
           not: true
       default: 2
     - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
+    - id: section_deployments
+      label: Networking and deployment
+      type: section
     - id: rollout_max_surge_percent
       label: Maximum rollout surge (%)
       type: number
@@ -459,17 +452,17 @@ module:
       min: 1
       default: 100
     - id: termination_grace_period_seconds
-      label: Shutdown grace period (secs)
+      label: Stop timeout (secs)
       type: number
       description: Seconds a pod has to finish in-flight requests after SIGTERM before it is killed, including the pre-stop delay below. Raise this for services that move long-lived connections such as WebSockets to other pods on shutdown.
       collapsible: true
       max: 3600
       min: 0
       default: 30
-    - id: pre_stop_sleep_seconds
+    - description: Seconds a stopping pod keeps serving before SIGTERM, so the load balancer stops sending it new connections first. 0 turns it off. Must be less than the stop timeout.
+      id: pre_stop_sleep_seconds
       label: Pre-stop delay (secs)
       type: number
-      description: Seconds a stopping pod keeps running before it receives SIGTERM, so the load balancer stops sending it new connections first. 0 disables the delay. Must be less than the shutdown grace period. Skipped on Kubernetes older than 1.30, which lacks the preStop sleep action.
       collapsible: true
       max: 3599
       min: 0
@@ -490,8 +483,15 @@ module:
       default: 1
       show_when:
         pod_disruption_budget_enabled: true
-    - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
-    - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
+    - description: EKS services in this namespace allowed to call this one. Set it and every other pod is blocked; the load balancer is always allowed.
+      id: ingress_allowed_workloads
+      label: Ingress allow-list
+      type: string_array
+      add_button_label: Add service
+      placeholder: api
+      collapsible: true
+      required: false
+      default: null
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -577,6 +577,7 @@ module:
             $merge:
               - ../../partials/deploy/eks-workload-helm-values-common.yml
               - containerPort: << module.input.container_port >>
+                env: '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>'
                 service:
                   port: << module.input.container_port >>
                 probes:
@@ -847,29 +848,29 @@ module:
 
     The EKS cluster reference supplies the AWS account, region, VPC, cluster ARN, cluster endpoint, certificate authority data, and the Ravion Runner role the deploy assumes to reach the Kubernetes API. The EKS add-ons reference supplies the shared ALB listeners.
 
-    Set **Load balancer** to **Public ALB** when the service should be reachable from the internet, or **Private ALB** for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP. Choose **Kubernetes service** for a service that should not sit behind any load balancer: no target group or listener rule is created and other workloads reach it only through its in-cluster Service name.
+    Set **Load balancer** to **Public ALB** when the service should be reachable from the internet, or **Private ALB** for internal services on the shared private ALB. Either way, Ravion prefers the HTTPS listener when the selected ALB has one and falls back to HTTP. Choose **Cluster only** for an internal service that only other pods call: no target group or listener rule is created, and pods reach it at `<service name>.<namespace>`.
 
     ## Routing, readiness, and recovery
 
     Route traffic with **Domain host rules**, **Path rules**, or both. If both are empty, Ravion creates a default `/*` path rule so the listener rule has a valid condition. Use **Listener rule priority** only when you need a specific rule order; otherwise AWS assigns the next available priority.
 
-    **Traffic health path** is the main application-health setting. It should be a lightweight, unauthenticated endpoint that succeeds only when the app can receive requests. Ravion uses it for both Kubernetes traffic readiness and the load balancer health check, so users configure that decision once even though both systems enforce it.
+    **Health check path** is the main application-health setting. It should be a lightweight, unauthenticated endpoint that succeeds only when the app can receive requests. Ravion uses it for both Kubernetes traffic readiness and the load balancer health check, so users configure that decision once even though both systems enforce it.
 
-    | Application endpoint | Default | Description |
-    | -------------------- | ------- | ----------- |
-    | Container port | 8080 | Port the application listens on; used by the Service and the target group |
-    | Traffic health path | / | Endpoint shared by Kubernetes readiness and the load balancer |
+    | Health checks | Default | Description |
+    | ------------- | ------- | ----------- |
+    | Container port | 8080 | Port the application listens on, also set as `PORT`; used by the Service and the target group |
+    | Health check path | / | Endpoint shared by Kubernetes readiness and the load balancer |
     | Success codes | 200-399 | Status codes treated as healthy |
     | Interval (secs) | 5 | Seconds between load balancer checks |
     | Timeout (secs) | 4 | Seconds to wait for a response; must be lower than the interval |
     | Healthy threshold | 2 | Successful checks before a target is healthy |
     | Unhealthy threshold | 2 | Failed checks before a target is unhealthy |
     | Readiness check interval (secs) | 1 | Seconds between Kubernetes readiness checks; a pod leaves traffic after about 30 seconds of failed checks |
-    | Health check initial delay (secs) | 0 | Seconds before the first readiness or liveness check |
+    | Initial delay (secs) | 0 | Seconds before the first readiness or liveness check |
 
     **Startup and recovery** are optional and independent. Enable **Enforce startup timeout** to restart a container that never finishes starting; its **Maximum startup time** defaults to 150 seconds. A bad startup path or a timeout shorter than the app's real boot time causes a restart loop. Enable **Restart unresponsive containers** to restart a process that remains running but stops answering. Processes that exit are restarted automatically even when this setting is off.
 
-    The startup check can use its own **Startup health path**. When blank, it uses the liveness path if one is configured, otherwise the traffic health path. The optional **Liveness health path** should only confirm that the process itself is responsive; do not include database or external-service checks, because an outage in a dependency should not restart every pod.
+    The startup check can use its own **Startup health path**. When blank, it uses the liveness path if one is configured, otherwise the health check path. The optional **Liveness health path** should only confirm that the process itself is responsive; do not include database or external-service checks, because an outage in a dependency should not restart every pod.
 
     | Traffic behavior | Default | Description |
     | ---------------- | ------- | ----------- |
@@ -976,12 +977,12 @@ module:
 
     A pod stops during every rollout, scale-in and node drain. The defaults make that invisible to clients of an ordinary HTTP service: at least two pods, spread across zones and nodes; a 10-second pre-stop delay; a load balancer readiness gate; a disruption budget; and a 30-second grace period. Services that hold long-lived connections, such as WebSockets or streaming responses, usually need a longer grace period to hand clients over to other pods. Four inputs control how a stop happens:
 
-    - **Shutdown grace period** sets how long a pod has after SIGTERM before it is killed. Size it to the longest drain the application performs.
+    - **Stop timeout** sets how long a pod has after SIGTERM before it is killed. Size it to the longest drain the application performs.
     - **Pre-stop delay** keeps the container running and serving for a few seconds before SIGTERM. Removing a pod from the load balancer target group happens asynchronously; without a delay, the application can start shutting down while the load balancer still routes new connections to it. The default is 10 seconds. It uses the Kubernetes native preStop sleep action, so the image needs no shell; on Kubernetes older than 1.30, which lacks the action, no hook is rendered. The delay counts against the grace period and must be shorter than it, or the deploy fails at render time.
     - **Wait for load balancer health** adds the AWS Load Balancer Controller's pod readiness gate, one per target group binding, so a new pod counts as ready only once the target group reports it healthy. A rolling update then keeps old pods serving until their replacements actually receive traffic. The gate is declared on the pod itself, so the namespace needs no injection label; the controller the EKS Add-ons module installs sets the condition. On by default. Registration time depends on controller and target state, and initial registration can succeed after one successful load balancer check rather than healthy threshold multiplied by interval. A pod that never passes the check never becomes ready, so the deploy rolls back.
     - **Disruption budget** renders a PodDisruptionBudget that keeps at least **Minimum available pods** running while nodes are drained, consolidated or upgraded. It is skipped while the minimum pod count (Minimum pods with autoscaling, Pods without) is not above that number, because such a budget allows no evictions and would block every drain. Pods that are not ready can always be evicted, so a crash-looping pod never holds a node. On by default. The budget does not affect rolling updates.
 
-    **Deregistration delay** still applies once the pod leaves the target group: it is how long the load balancer keeps in-flight requests to that pod open. Connections still open when the pod exits are closed regardless, so the effective drain window is the shorter of the deregistration delay and the shutdown grace period.
+    **Deregistration delay** still applies once the pod leaves the target group: it is how long the load balancer keeps in-flight requests to that pod open. Connections still open when the pod exits are closed regardless, so the effective drain window is the shorter of the deregistration delay and the stop timeout.
 
     Deployments collapse: if several are queued, only the newest runs.
 
@@ -1000,7 +1001,7 @@ module:
 
     Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out, plus replicas available and desired. Two things differ on the CloudWatch link of the chain, and are worth knowing before you read a number off it:
 
-    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the workload's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **CPU uses different units by provider.** Prometheus shows usage as a percentage of the running pods' CPU requests, matching the autoscaler's CPU target; CloudWatch reports cores. Other Prometheus charts sum across pods; CloudWatch averages across them.
     - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
 
     Replicas available falls back to Container Insights' running-pod count for this module's Kubernetes Service. Replicas desired has no CloudWatch equivalent, so with CloudWatch as the only metrics provider that one chart is empty.
@@ -1037,16 +1038,16 @@ module:
     | Start command | No | [] | Overrides the image entrypoint |
     | Start command arguments | No | [] | Overrides the image default arguments |
     | Container port | Yes | 8080 | Port the application listens on |
-    | Traffic health path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
+    | Health check path | Yes | / | Endpoint shared by Kubernetes readiness and the load balancer |
     | Readiness check interval (secs) | No | 1 | Kubernetes readiness period; about 30 seconds of failed checks remove a pod from traffic |
-    | Health check initial delay (secs) | No | 0 | Delay before the first readiness or liveness check |
+    | Initial delay (secs) | No | 0 | Delay before the first readiness or liveness check |
     | Success codes | Yes | 200-399 | Health check status code matcher |
     | Sticky sessions | No | false | Keep repeat requests on the same pod |
     | Enforce startup timeout | No | false | Restart an app that does not finish starting in time |
     | Maximum startup time (secs) | No | 150 | Startup time allowed before restarting the container |
-    | Startup health path | No | Traffic or liveness path | Optional endpoint used while the app starts |
+    | Startup health path | No | Health check or liveness path | Optional endpoint used while the app starts |
     | Restart unresponsive containers | No | false | Restart a process that remains running but stops answering |
-    | Liveness health path | No | Traffic health path | Optional process-only health endpoint |
+    | Liveness health path | No | Health check path | Optional process-only health endpoint |
     | Domain host rules | No | - | Hostnames such as app.example.com or *.example.com |
     | Path rules | No | - | Path patterns such as /*, /api/*, or /app/* |
     | Listener rule priority | No | Auto | Explicit ALB rule order |
@@ -1069,7 +1070,7 @@ module:
     | KEDA triggers | Yes (when Spot burst is enabled) | - | If Minimum Spot pods is zero, a trigger must work with zero Spot replicas; CPU or memory alone cannot wake the pool |
     | Polling interval (secs) | No | 30 | KEDA trigger polling interval |
     | Cooldown period (secs) | No | 300 | Delay before KEDA scales Spot replicas down |
-    | Shutdown grace period (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
+    | Stop timeout (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
     | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |
     | Disruption budget | No | true | Render a PodDisruptionBudget limiting voluntary evictions |
     | Minimum available pods | No | 1 | Pods kept running during a node drain when the disruption budget is on |

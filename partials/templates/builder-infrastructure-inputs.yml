@@ -62,7 +62,8 @@
       - $with.show_when
       - build_capacity_type: sandbox
   type: number
-- default: true
+- collapsible: true
+  default: true
   description: Lets the build run on spot hosts and start over if AWS reclaims the host. Turn off if your build commands change anything outside the build, such as running database migrations.
   id: build_interruptible_enabled
   label: Interruptible build

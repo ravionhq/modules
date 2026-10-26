@@ -210,10 +210,7 @@ run "providers_only_turns_off_passwords_everywhere" {
   command = plan
 
   variables {
-    grafana_auth = {
-      login_form_enabled = false
-      default_role       = "Editor"
-    }
+    grafana_default_role = "Editor"
     grafana_auth_providers = [
       {
         provider          = "google"
@@ -230,16 +227,60 @@ run "providers_only_turns_off_passwords_everywhere" {
   }
 }
 
+run "username_and_password_beside_a_provider" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "basic" },
+      {
+        provider          = "google"
+        client_id         = "1234.apps.googleusercontent.com"
+        client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:grafana-google-AbCdEf"
+        allowed_domains   = ["example.com"]
+      },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0])["grafana.ini"].auth == { sigv4_auth_enabled = true } && !contains(keys(yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]), "auth.basic") && yamldecode(helm_release.grafana[0].values[0])["grafana.ini"]["auth.google"].enabled == true
+    error_message = "The basic provider must keep the login form beside Google, and become no [auth.basic] section of its own"
+  }
+}
+
 run "rejects_no_way_to_sign_in" {
   command = plan
 
   variables {
-    grafana_auth = {
-      login_form_enabled = false
-    }
+    grafana_auth_providers = []
   }
 
   expect_failures = [helm_release.grafana]
+}
+
+run "rejects_oauth_settings_on_username_and_password" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "basic", client_id = "1234.apps.googleusercontent.com" },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
+}
+
+run "rejects_username_and_password_twice" {
+  command = plan
+
+  variables {
+    grafana_auth_providers = [
+      { provider = "basic" },
+      { provider = "basic" },
+    ]
+  }
+
+  expect_failures = [var.grafana_auth_providers]
 }
 
 run "rejects_a_provider_without_its_client" {
@@ -342,12 +383,10 @@ run "rejects_unknown_role" {
   command = plan
 
   variables {
-    grafana_auth = {
-      default_role = "Owner"
-    }
+    grafana_default_role = "Owner"
   }
 
-  expect_failures = [var.grafana_auth]
+  expect_failures = [var.grafana_default_role]
 }
 
 run "rejects_provider_secrets_without_external_secrets" {
@@ -397,10 +436,6 @@ run "google_roles_from_workspace_groups" {
   command = plan
 
   variables {
-    grafana_auth = {
-      login_form_enabled = false
-      default_role       = "Viewer"
-    }
     grafana_auth_providers = [
       {
         provider            = "google"

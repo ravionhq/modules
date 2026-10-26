@@ -4,8 +4,8 @@ definition:
   name: EKS Cluster
   description: Production-ready Amazon EKS cluster with default managed capacity, core add-ons, and optional Fargate compute. Extend with the EKS Add-ons module (Karpenter, load balancer controller, EBS CSI, Container Insights).
 release:
-  version: 0.9.0
-  description: Optional warm and minimum pod IP targets for the VPC CNI, so nodes stop reserving a whole spare network interface of IPs and small subnets keep addresses for new pods.
+  version: 0.9.3
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: network
@@ -67,7 +67,7 @@ module:
       label: EKS cluster
       type: section
     - default: <<project.given_id>>-<<environment.given_id>>
-      description: Name and prefix for related resources.
+      description: Also prefixes related resources.
       id: name
       immutable: true
       label: EKS cluster name
@@ -77,14 +77,14 @@ module:
       required: true
       type: string
     - default: $values:first
-      description: Kubernetes version for the EKS cluster.
       id: kubernetes_version
       label: Kubernetes version
       min_current_value: true
       required: true
       type: string
       values: $values:aws/eks-versions?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&currentVersion=<<instance.input.kubernetes_version>>
-    - default: true
+    - collapsible: true
+      default: true
       description: Destroy and replacement plans fail until this is turned off.
       id: deletion_protection_enabled
       label: Deletion protection
@@ -103,7 +103,7 @@ module:
       show_when:
         secrets_encryption_enabled: true
       type: string
-    - description: Reserve roughly 0.5 vCPU and 1 GiB of node capacity as a starting allowance for baseline cluster services such as CoreDNS, networking agents, and Ravion add-ons. The EKS control plane itself runs on AWS-managed infrastructure.
+    - description: Always-on nodes for cluster add-ons such as CoreDNS, Karpenter, and Ravion add-ons, which need roughly 0.5 vCPU and 1 GiB. With Karpenter (EKS Add-ons), applications that don't fit here get their own Karpenter nodes, so keep this group small. Without Karpenter, nothing adds nodes, so size this group and any additional node groups for your applications too.
       id: section_capacity
       label: Default capacity
       type: section
@@ -130,7 +130,7 @@ module:
       values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
     - collapsible: true
       default: 2
-      description: Minimum EC2 nodes in the default managed node group, which runs the cluster add-ons. Two keeps them highly available.
+      description: EC2 nodes this group always runs. Two keeps the cluster add-ons highly available.
       id: system_node_min_nodes
       moved_from:
         - system_node_min_size
@@ -139,7 +139,7 @@ module:
       type: number
     - collapsible: true
       default: 2
-      description: Maximum EC2 nodes in the default managed node group. Defaults to the minimum, a fixed group; application workloads scale on Karpenter capacity.
+      description: Upper bound on EC2 nodes in this group. It only grows past the minimum through a manual resize or an autoscaler such as Cluster Autoscaler, which Ravion doesn't install. Karpenter launches its own nodes, so this usually equals the minimum.
       id: system_node_max_nodes
       moved_from:
         - system_node_max_size
@@ -149,13 +149,13 @@ module:
     - collapsible: true
       description: Root EBS volume size for default capacity nodes. Leave blank for the AMI default.
       id: system_node_disk_size
-      label: Disk size (GB)
+      label: Disk size (GiB)
       min: 20
       placeholder: "20"
       type: number
     - collapsible: true
       default: []
-      description: Keep pods without a matching toleration off this group. EKS Add-ons tolerate CriticalAddonsOnly, so that taint with No schedule reserves the group for them.
+      description: Keep pods without a matching toleration off this group. EKS Add-ons tolerate CriticalAddonsOnly, so that taint with No schedule reserves the group for them and sends applications to Karpenter or additional node groups.
       id: system_node_taints
       item_inputs:
         - id: key
@@ -207,34 +207,32 @@ module:
           type: string_array
           values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
         - default: 1
-          description: Minimum nodes in this managed node group. Set it high enough to leave spare capacity for workloads and rolling node updates.
+          description: Leave room for workloads and rolling node updates.
           id: min_size
           label: Minimum nodes
           min: 0
           required: true
           type: number
         - default: 3
-          description: Maximum nodes in this managed node group. Set it high enough for peak workloads and replacement capacity during rolling node updates, otherwise pods can remain pending.
+          description: Too low and pods stay pending at peak or during rolling node updates.
           id: max_size
           label: Maximum nodes
           min: 1
           required: true
           type: number
         - collapsible: true
-          description: Root EBS volume size for nodes. Leave blank for the AMI default.
+          description: Leave blank for the AMI default.
           id: disk_size
-          label: Root volume size (GB)
+          label: Disk size (GiB)
           min: 20
           type: number
         - collapsible: true
           default: {}
-          description: Kubernetes labels applied to nodes in this group.
           id: labels
           label: Node labels
           type: keyvalue
         - collapsible: true
           default: []
-          description: Kubernetes taints that restrict which pods can use this group.
           id: taints
           item_inputs:
             - id: key
@@ -285,8 +283,7 @@ module:
         - description: Namespaces whose pods run on this profile. At least one selector is required.
           id: selectors
           item_inputs:
-            - description: Kubernetes namespace matched by this selector.
-              id: namespace
+            - id: namespace
               label: Namespace
               placeholder: my-namespace
               required: true
@@ -331,15 +328,15 @@ module:
       required: false
       type: object_map
     - id: section_access
-      label: Cluster access
+      label: API endpoint
       type: section
-    - default: true
-      description: Allow access to the Kubernetes API server from inside the VPC.
+    - collapsible: true
+      default: true
       id: endpoint_private_access_enabled
       label: Private endpoint access
       type: boolean
-    - default: false
-      description: Allow access to the Kubernetes API server from the public internet.
+    - collapsible: true
+      default: false
       id: endpoint_public_access_enabled
       label: Public endpoint access
       type: boolean
@@ -351,6 +348,9 @@ module:
       show_when:
         endpoint_public_access_enabled: true
       type: string_array
+    - id: section_pod_networking
+      label: Pod networking
+      type: section
     - collapsible: true
       default: true
       description: Enforce Kubernetes NetworkPolicy objects through the VPC CNI. Needed for the ingress allow-list on EKS Web services; without it every NetworkPolicy in the cluster is ignored.
@@ -371,6 +371,9 @@ module:
       min: 0
       placeholder: "10"
       type: number
+    - id: section_cluster_access
+      label: Access
+      type: section
     - collapsible: true
       default: true
       description: Create an IAM role that Ravion Runner step executions assume for Kubernetes API access, registered as an EKS access entry with cluster-admin. Used by the EKS Add-ons module to install Helm charts.
@@ -382,8 +385,7 @@ module:
       description: IAM principals that need cluster access. Ravion deploys use the Ravion Runner role, and the principal that creates the cluster receives no permanent access, so add an entry for the role your operators use.
       id: access_entries
       item_inputs:
-        - description: IAM role or user granted access to the cluster.
-          id: principal_arn
+        - id: principal_arn
           label: IAM principal ARN
           placeholder: arn:aws:iam::123456789012:role/PlatformAdmins
           required: true
@@ -425,8 +427,7 @@ module:
           description: EKS access policies granted to this principal, such as cluster admin or namespace-scoped admin.
           id: policy_associations
           item_inputs:
-            - description: ARN of the EKS access policy to grant.
-              id: policy_arn
+            - id: policy_arn
               label: Policy ARN
               placeholder: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
               required: true
@@ -443,7 +444,6 @@ module:
                 - label: Selected namespaces
                   value: namespace
             - add_button_label: Add namespace
-              description: Namespaces the policy applies to.
               id: access_scope_namespaces
               label: Namespaces
               placeholder: my-namespace
@@ -483,6 +483,7 @@ module:
       label: Observability
       type: section
     - add_button_label: Add log type
+      collapsible: true
       default:
         - api
         - audit
@@ -504,7 +505,6 @@ module:
           value: scheduler
     - collapsible: true
       default: 365
-      description: Retention in days for the control plane CloudWatch log group.
       id: control_plane_log_retention_days
       label: Log retention (days)
       min: 1
@@ -675,7 +675,12 @@ module:
 
     ### Default capacity
 
-    Every cluster gets a required managed node group that provides default compute for cluster components such as CoreDNS, add-ons, and workloads without stricter placement. It defaults to 2-4 On-demand `t3.medium` nodes. Its settings are collapsed by default so teams using Karpenter can keep the recommended baseline without extra configuration. The minimum node count is also used as the initial size; after creation, the running node count is managed by Kubernetes autoscalers, and Terraform only enforces the min/max bounds. Each workload module can use automatic placement or target EC2 On-demand, EC2 Spot, or a dedicated Fargate profile.
+    Every cluster gets a required managed node group that runs cluster components such as CoreDNS and the EKS Add-ons controllers, including Karpenter itself. It defaults to a fixed group of 2 On-demand `t3.medium` nodes. How to size it depends on whether the cluster runs Karpenter:
+
+    - **With Karpenter** (EKS Add-ons, on by default): applications can use spare room on this group, and pods that don't fit make Karpenter launch nodes from its NodePools. Keep this group small and fixed. Add the `CriticalAddonsOnly` taint with No schedule to reserve it for add-ons, so applications always run on Karpenter nodes.
+    - **Without Karpenter**: nothing adds EC2 nodes. This group and any additional node groups stay at their current size (the minimum unless resized) and pods that don't fit stay Pending, so size them for your applications too.
+
+    The minimum node count is also the initial size. The maximum is an enforced upper bound: a manual resize or an autoscaler that resizes managed node groups (such as Cluster Autoscaler, which Ravion doesn't install) can grow the group up to it. Terraform keeps the live size within the min/max bounds, so lowering the maximum below the live count removes nodes on the next apply. Each workload module can use automatic placement or target EC2 On-demand, EC2 Spot, or a dedicated Fargate profile.
 
     ### Additional node groups
 
@@ -739,7 +744,7 @@ module:
     | Private endpoint access| No       | `true`               | Reach the API server from inside the VPC               |
     | Public endpoint access | No       | `false`              | Expose the API server to the internet                  |
     | Ravion Runner role     | No       | `true`               | Assumable IAM role with cluster-admin access entry     |
-    | Default capacity       | No       | 2-4 `t3.medium`      | Capacity type, instance types, size bounds, and disk size   |
+    | Default capacity       | No       | 2 `t3.medium`        | Capacity type, instance types, size bounds, and disk size   |
     | Additional node groups | No       | -                    | Structured On-demand or Spot managed node groups       |
     | Fargate profiles       | No       | -                    | Serverless compute for selected namespaces             |
     | Access entries         | No       | -                    | Extra IAM principals with cluster access and policies  |

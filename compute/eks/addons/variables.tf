@@ -821,23 +821,6 @@ variable "private_nlb_access_logs_bucket_arn" {
   }
 }
 
-variable "private_nlb_elastic_ips_enabled" {
-  type        = bool
-  description = "Enable static IP addresses for the private NLB using Elastic IPs."
-  default     = false
-}
-
-variable "private_nlb_elastic_ip_allocation_ids" {
-  type        = list(string)
-  description = "A list of Elastic IP allocation IDs for the private NLB, one per subnet."
-  default     = []
-
-  validation {
-    condition     = alltrue([for eip in var.private_nlb_elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])
-    error_message = "All private_nlb_elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
-  }
-}
-
 variable "karpenter_default_node_pool" {
   type = object({
     capacity_types       = optional(list(string), ["on-demand", "spot"])
@@ -1509,7 +1492,7 @@ variable "grafana_access" {
     ingress_tls_secret_name = optional(string)
     hostname                = optional(string)
   })
-  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. Install that controller before turning this on: the AWS Load Balancer Controller, which this module runs alongside any shared load balancer, refuses an Ingress whose IngressClass does not exist yet. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth and grafana_auth_providers."
+  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. Install that controller before turning this on: the AWS Load Balancer Controller, which this module runs alongside any shared load balancer, refuses an Ingress whose IngressClass does not exist yet. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth_providers."
   default     = {}
   nullable    = false
 
@@ -1524,18 +1507,15 @@ variable "grafana_access" {
   }
 }
 
-variable "grafana_auth" {
-  type = object({
-    login_form_enabled = optional(bool, true)
-    default_role       = optional(string, "Viewer")
-  })
-  description = "Grafana's own sign-in settings. login_form_enabled keeps username and password sign-in for Grafana's local users, including the generated admin; false removes the login form and HTTP basic auth both. default_role is the role an account gets the first time it signs in through a provider (users.auto_assign_org_role): Viewer, Editor or Admin."
-  default     = {}
+variable "grafana_default_role" {
+  type        = string
+  description = "The Grafana role an account gets the first time it signs in through an OAuth provider (users.auto_assign_org_role): Viewer, Editor or Admin."
+  default     = "Viewer"
   nullable    = false
 
   validation {
-    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_auth.default_role)
-    error_message = "The grafana_auth.default_role must be Viewer, Editor or Admin."
+    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_default_role)
+    error_message = "The grafana_default_role must be Viewer, Editor or Admin."
   }
 }
 
@@ -1559,19 +1539,32 @@ variable "grafana_auth_providers" {
     settings              = optional(map(string), {})
   }))
   description = <<-EOT
-    OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    How people sign in to the in-cluster Grafana, one entry per provider. provider is basic or one of Grafana's own OAuth providers: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    - basic is username and password for Grafana's local users, including the generated admin, and takes no other field. Without it, Grafana has no login form and accepts no password, HTTP basic auth included.
+    - Each OAuth entry becomes Grafana's [auth.<provider>] section under Grafana's own key names.
     - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) give the provider its client. Leave either out when grafana_secrets gives it as GF_AUTH_<PROVIDER>_CLIENT_ID or GF_AUTH_<PROVIDER>_CLIENT_SECRET.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
     - settings passes any other key of the section through verbatim.
   EOT
-  default     = []
+  default     = [{ provider = "basic" }]
   nullable    = false
 
   validation {
-    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
-    error_message = "Each grafana_auth_providers entry's provider must be one of: google, github, gitlab, azuread, okta, generic_oauth."
+    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["basic", "google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
+    error_message = "Each grafana_auth_providers entry's provider must be one of: basic, google, github, gitlab, azuread, okta, generic_oauth."
+  }
+
+  validation {
+    condition = alltrue([
+      for entry in var.grafana_auth_providers : entry.provider != "basic" || (
+        alltrue([for value in [entry.name, entry.client_id, entry.client_secret_arn, entry.tenant_id, entry.url, entry.auth_url, entry.token_url, entry.api_url, entry.scopes, entry.role_attribute_path] : try(trimspace(value), "") == ""]) &&
+        alltrue([for values in [entry.allowed_domains, entry.allowed_groups, entry.allowed_organizations, entry.team_ids] : length(values) == 0]) &&
+        length(entry.settings) == 0
+      )
+    ])
+    error_message = "The basic grafana_auth_providers entry is username and password and takes only provider: clients, endpoints, scopes, restrictions, role mapping and settings belong to OAuth providers."
   }
 
   validation {
