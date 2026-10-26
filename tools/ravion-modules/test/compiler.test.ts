@@ -1,7 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { join, resolve } from "node:path";
-import { compileAllDefinitions, CompileError, compileDefinitionFile } from "../src/compiler.js";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import {
+  compileAllDefinitions,
+  CompileError,
+  compileDefinitionFile,
+  findDefinitionFiles,
+} from "../src/compiler.js";
 
 const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
@@ -174,6 +181,28 @@ describe("compiler", () => {
     const compiled = await compileAllDefinitions(join(fixturesDir, "modules"));
 
     assert.deepEqual(compiled.map((definition) => definition.type), ["ravion-aws-cluster", "ravion-aws-vpc"]);
+  });
+
+  it("discovers definitions in new module directories and ignores non-module directories", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "ravion-discovery-"));
+    const definitionPaths = [
+      "newdir/foo/x-definition.yml",
+      "node_modules/ignored/x-definition.yml",
+      "dist/ignored/x-definition.yml",
+      "tools/ignored/x-definition.yml",
+      "test/ignored/x-definition.yml",
+      "partials/ignored/x-definition.yml",
+      "charts/ignored/x-definition.yml",
+      ".hidden/ignored/x-definition.yml",
+    ];
+
+    for (const definitionPath of definitionPaths) {
+      const filePath = join(rootPath, definitionPath);
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, "");
+    }
+
+    assert.deepEqual(await findDefinitionFiles(rootPath), [join(rootPath, "newdir", "foo", "x-definition.yml")]);
   });
 
   it("compiles the RDS storage alarm threshold with a fallback when the input is hidden", async () => {

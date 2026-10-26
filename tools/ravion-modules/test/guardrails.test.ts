@@ -37,6 +37,23 @@ describe("migration guardrails", () => {
     await assert.doesNotReject(runMigrationGuardrails(rootPath));
   });
 
+  it("allows typed colocated definition files in new module directories", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "ravion-new-module-directory-"));
+    await writeDefinition(rootPath, "newdir", "foo", "rvn-new-module");
+
+    await assert.doesNotReject(runMigrationGuardrails(rootPath));
+  });
+
+  it("rejects typed colocated definition files under tools", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "ravion-tools-definition-"));
+    await writeDefinition(rootPath, "tools", "ravion-modules", "rvn-tooling");
+
+    await assert.rejects(
+      runMigrationGuardrails(rootPath),
+      (error) => error instanceof GuardrailError && error.message.includes("rvn-tooling-definition.yml"),
+    );
+  });
+
   it("rejects old colocated definition.yml files", async () => {
     const rootPath = await mkdtemp(join(tmpdir(), "ravion-old-colocated-"));
     await mkdir(join(rootPath, "networking", "vpc"), { recursive: true });

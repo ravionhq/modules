@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import YAML from "yaml";
 import { parseAuthoringDefinitionFile, type AuthoringDefinition } from "./authoring-schema.js";
 import { validateUniqueDefinitionTypes } from "./guardrails.js";
+import { isModuleDirectory } from "./module-directories.js";
 
 export interface CompiledDefinition {
   filePath: string;
@@ -27,22 +28,6 @@ const DIRECTIVE_KEYS = new Set(["$include", "$merge", "$template"]);
 const LOCAL_TOKEN_PATTERN = /\$local\.[A-Za-z0-9_.-]+/g;
 const WITH_TOKEN_PATTERN = /^\$with\.([A-Za-z0-9_.-]+)$/;
 const WITH_TOKEN_LEAK_PATTERN = /\$with\.[A-Za-z0-9_.-]+/;
-const MODULE_CATEGORIES = new Set([
-  "cache",
-  "cdn",
-  "compute",
-  "containers",
-  "database",
-  "hosting",
-  "kubernetes",
-  "messaging",
-  "monitoring",
-  "networking",
-  "security",
-  "stack",
-  "storage",
-]);
-
 interface CompileContext {
   definition: AuthoringDefinition;
   sourceFilePath: string;
@@ -268,8 +253,21 @@ function rejectLeakedCompilerSyntax(value: unknown, filePath: string, yamlPath: 
 
 export async function findDefinitionFiles(rootPath: string): Promise<string[]> {
   const files: string[] = [];
-  for (const category of MODULE_CATEGORIES) {
-    await collectDefinitionFiles(join(rootPath, category), files);
+  let entries;
+  try {
+    entries = await readdir(rootPath, { withFileTypes: true });
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return files;
+    }
+    throw error;
+  }
+
+  const moduleDirectories = entries
+    .filter((entry) => entry.isDirectory() && isModuleDirectory(entry.name))
+    .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  for (const entry of moduleDirectories) {
+    await collectDefinitionFiles(join(rootPath, entry.name), files);
   }
   return files;
 }

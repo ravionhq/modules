@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import YAML from "yaml";
 import type { CompiledDefinition } from "./compiler.js";
+import { isModuleDirectory } from "./module-directories.js";
 
 export class GuardrailError extends Error {
   constructor(message: string) {
@@ -9,22 +10,6 @@ export class GuardrailError extends Error {
     this.name = "GuardrailError";
   }
 }
-
-const MODULE_CATEGORIES = new Set([
-  "cache",
-  "cdn",
-  "compute",
-  "containers",
-  "database",
-  "hosting",
-  "kubernetes",
-  "messaging",
-  "monitoring",
-  "networking",
-  "security",
-  "stack",
-  "storage",
-]);
 
 const EXCLUDED_DIRECTORIES = new Set([".git", "node_modules", "dist"]);
 
@@ -129,8 +114,8 @@ function isAllowedColocatedDefinition(rootPath: string, filePath: string): boole
     return false;
   }
 
-  const [category] = normalizeRelativePath(rootPath, filePath).split("/");
-  return MODULE_CATEGORIES.has(category);
+  const [category, ...modulePath] = normalizeRelativePath(rootPath, filePath).split("/");
+  return modulePath.length > 0 && isModuleDirectory(category);
 }
 
 function isDefinitionFileName(fileName: string): boolean {
