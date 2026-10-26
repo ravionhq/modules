@@ -13,7 +13,7 @@ module:
       label: Repository
       type: section
     - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
-      description: Can't be changed later. Use slashes to group repositories, such as team/api.
+      description: Use slashes to group repositories, such as team/api.
       id: name
       immutable: true
       label: Repository name
@@ -92,7 +92,6 @@ module:
       label: Encryption
       type: section
     - default: AES256
-      description: Can't be changed later.
       id: encryption_type
       immutable: true
       label: Encryption
@@ -103,7 +102,7 @@ module:
           value: AES256
         - label: AWS KMS
           value: KMS
-    - description: Leave empty to use the AWS managed aws/ecr key. Can't be changed later.
+    - description: Leave empty to use the AWS managed aws/ecr key.
       id: kms_key_arn
       immutable: true
       label: KMS key ARN
