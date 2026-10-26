@@ -24,9 +24,14 @@ describe("migration guardrails", () => {
   it("allows typed colocated definition files beside Terraform modules", async () => {
     const rootPath = await mkdtemp(join(tmpdir(), "ravion-colocated-"));
     await mkdir(join(rootPath, "networking", "vpc"), { recursive: true });
+    await mkdir(join(rootPath, "containers", "ecr"), { recursive: true });
     await writeFile(
       join(rootPath, "networking", "vpc", "ravion-aws-vpc-definition.yml"),
       ["definition:", "  type: ravion-aws-vpc", "  name: AWS VPC", "module: {}", ""].join("\n"),
+    );
+    await writeFile(
+      join(rootPath, "containers", "ecr", "rvn-aws-ecr-definition.yml"),
+      ["definition:", "  type: rvn-aws-ecr", "  name: AWS ECR Repository", "module: {}", ""].join("\n"),
     );
 
     await assert.doesNotReject(runMigrationGuardrails(rootPath));

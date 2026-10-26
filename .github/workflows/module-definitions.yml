@@ -96,19 +96,25 @@ jobs:
           sparse-checkout: tools/ravion-modules
           sparse-checkout-cone-mode: true
 
+      # Keep the trusted copy out of the PR checkout so definition discovery doesn't scan it.
+      - name: Move trusted tooling outside the workspace
+        run: |
+          rm -rf "$RUNNER_TEMP/trusted-tools"
+          mv trusted-tools "$RUNNER_TEMP/trusted-tools"
+
       - name: Install trusted tool dependencies
         run: npm ci --ignore-scripts
-        working-directory: trusted-tools/tools/ravion-modules
+        working-directory: ${{ runner.temp }}/trusted-tools/tools/ravion-modules
 
       - name: Build trusted tools
         run: npm run typecheck && ./node_modules/.bin/tsc
-        working-directory: trusted-tools/tools/ravion-modules
+        working-directory: ${{ runner.temp }}/trusted-tools/tools/ravion-modules
 
       - name: Use trusted tools for API calls
         run: |
           rm -rf tools/ravion-modules/dist tools/ravion-modules/node_modules
-          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/dist" tools/ravion-modules/dist
-          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/node_modules" tools/ravion-modules/node_modules
+          ln -s "$RUNNER_TEMP/trusted-tools/tools/ravion-modules/dist" tools/ravion-modules/dist
+          ln -s "$RUNNER_TEMP/trusted-tools/tools/ravion-modules/node_modules" tools/ravion-modules/node_modules
 
       - name: Generate publish dry-run plan
         id: publish_plan
