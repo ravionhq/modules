@@ -490,6 +490,7 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 | Name | Description |
 |------|-------------|
 | ravion_domain_fqdn / ravion_domain_url | Primary managed FQDN (first custom domain, otherwise the default Ravion domain) and its HTTPS URL; null without managed domains |
+| ravion_domain_fqdns | Every FQDN the service serves: custom domains followed by the default Ravion domain when it is on |
 | ravion_custom_cert_arn | ACM ARN of the per-service certificate covering custom domains; null when there are none |
 
 ### Auto Scaling
