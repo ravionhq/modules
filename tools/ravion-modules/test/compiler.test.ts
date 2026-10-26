@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { copyFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -236,7 +236,6 @@ describe("compiler", () => {
       "test/ignored/x-definition.yml",
       "partials/ignored/x-definition.yml",
       "charts/ignored/x-definition.yml",
-      "trusted-tools/tools/ravion-modules/test/fixtures/valid-definition.yml",
       ".hidden/ignored/x-definition.yml",
     ];
 
@@ -247,23 +246,6 @@ describe("compiler", () => {
     }
 
     assert.deepEqual(await findDefinitionFiles(rootPath), [join(rootPath, "newdir", "foo", "x-definition.yml")]);
-  });
-
-  it("ignores duplicate fixture definitions in the trusted tooling checkout when compiling for publish", async () => {
-    const rootPath = await mkdtemp(join(tmpdir(), "ravion-trusted-tooling-"));
-    const definitionPaths = [
-      "networking/vpc/ravion-aws-vpc-definition.yml",
-      "trusted-tools/tools/ravion-modules/test/fixtures/valid-definition.yml",
-      "trusted-tools/tools/ravion-modules/test/fixtures/compile/modules/networking/vpc/ravion-aws-vpc-definition.yml",
-    ];
-    for (const definitionPath of definitionPaths) {
-      const filePath = join(rootPath, definitionPath);
-      await mkdir(dirname(filePath), { recursive: true });
-      await copyFile(join(repoRoot, "tools/ravion-modules/test/fixtures/valid-definition.yml"), filePath);
-    }
-
-    const definitions = await compileAllDefinitions(rootPath);
-    assert.deepEqual(definitions.map((definition) => definition.filePath), [join(rootPath, definitionPaths[0])]);
   });
 
   it("compiles the RDS storage alarm threshold with a fallback when the input is hidden", async () => {

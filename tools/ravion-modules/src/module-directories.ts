@@ -5,7 +5,6 @@ export const NON_MODULE_DIRECTORIES = new Set([
   "test",
   "partials",
   "charts",
-  "trusted-tools",
 ]);
 
 export function isModuleDirectory(name: string): boolean {
