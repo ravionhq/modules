@@ -1,13 +1,14 @@
 locals {
-  cloudtrail_name = "ravion-compliance"
+  cloudtrail_name    = "ravion-compliance"
+  cloudtrail_regions = var.cloudtrail_regions == null ? local.regions : var.cloudtrail_regions
   cloudtrail_arns = {
-    for region in local.regions : region => "arn:${data.aws_partition.current.partition}:cloudtrail:${region}:${data.aws_caller_identity.current.account_id}:trail/${local.cloudtrail_name}"
+    for region in local.cloudtrail_regions : region => "arn:${data.aws_partition.current.partition}:cloudtrail:${region}:${data.aws_caller_identity.current.account_id}:trail/${local.cloudtrail_name}"
     if var.cloudtrail_enabled
   }
 }
 
 resource "aws_cloudtrail" "this" {
-  for_each = var.cloudtrail_enabled ? local.regions : toset([])
+  for_each = var.cloudtrail_enabled ? local.cloudtrail_regions : toset([])
   region   = each.key
 
   name                          = local.cloudtrail_name

@@ -9,6 +9,22 @@ variable "cloudtrail_enabled" {
   nullable    = false
 }
 
+variable "cloudtrail_regions" {
+  type        = set(string)
+  description = "Regions to create trails in, or null for all regions. Omit Regions already covered by another trail."
+  default     = null
+
+  validation {
+    condition     = var.cloudtrail_regions == null ? true : length(var.cloudtrail_regions) > 0
+    error_message = "CloudTrail Regions must be non-empty when set. Set cloudtrail_enabled = false to turn CloudTrail off."
+  }
+
+  validation {
+    condition     = var.cloudtrail_regions == null ? true : length(setsubtract(var.cloudtrail_regions, toset(var.regions))) == 0
+    error_message = "Every CloudTrail Region must also be included in regions."
+  }
+}
+
 variable "cloudtrail_log_retention_days" {
   type        = number
   description = "S3 audit log expiry in days. Set to 0 to keep logs forever."

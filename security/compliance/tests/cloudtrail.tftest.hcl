@@ -86,6 +86,37 @@ run "without_us_east_1" {
   }
 }
 
+run "region_subset" {
+  command = plan
+  variables {
+    cloudtrail_regions = ["eu-west-1", "eu-west-1"]
+  }
+  assert {
+    condition     = toset(keys(aws_cloudtrail.this)) == toset(["eu-west-1"]) && toset(keys(output.cloudtrail_arns)) == toset(["eu-west-1"]) && !aws_cloudtrail.this["eu-west-1"].include_global_service_events
+    error_message = "Only the selected subset must receive trails and output ARNs, without global events outside us-east-1."
+  }
+  assert {
+    condition     = values(local.cloudtrail_arns) == ["arn:aws:cloudtrail:eu-west-1:123456789012:trail/ravion-compliance"] && alltrue([for statement in slice(jsondecode(aws_s3_bucket_policy.cloudtrail[0].policy).Statement, 0, 2) : toset(statement.Condition.StringEquals["aws:SourceArn"]) == toset(["arn:aws:cloudtrail:eu-west-1:123456789012:trail/ravion-compliance"])])
+    error_message = "Both bucket policy delivery statements must authorize exactly the subset's trail ARNs."
+  }
+}
+
+run "reject_region_outside_compliance_regions" {
+  command = plan
+  variables {
+    cloudtrail_regions = ["us-west-2"]
+  }
+  expect_failures = [var.cloudtrail_regions]
+}
+
+run "reject_empty_cloudtrail_regions" {
+  command = plan
+  variables {
+    cloudtrail_regions = []
+  }
+  expect_failures = [var.cloudtrail_regions]
+}
+
 run "keep_forever" {
   command = plan
   variables {

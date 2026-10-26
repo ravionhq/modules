@@ -68,11 +68,11 @@ The AWS provider 6.x per-resource `region` argument is required. The credentials
 
 ## Inputs
 
-CloudTrail is enabled by default: a single-Region trail in each selected Region records read/write management events with log file validation and no data events. The dedicated shared S3 bucket stays in the runner Region, with versioning, bucket-owner-enforced ownership and SSE-S3 encryption by default.
+CloudTrail is enabled by default: a single-Region trail in each selected Region records read/write management events with log file validation and no data events. Set `cloudtrail_regions` to a non-empty subset of `regions` to limit trail creation; null defaults to all Regions. Set `cloudtrail_enabled = false` to disable CloudTrail, rather than passing an empty set. The dedicated shared S3 bucket stays in the runner Region, with versioning, bucket-owner-enforced ownership and SSE-S3 encryption by default.
 
-Include us-east-1 in Regions to capture IAM changes and other global service events (CloudFront and the STS global endpoint). Only that trail includes global service events; us-east-1 is never added automatically. STS regional-endpoint events are recorded in their respective Regions.
+Include us-east-1 in `regions` and, when set, `cloudtrail_regions` to capture IAM changes and other global service events (CloudFront and the STS global endpoint). Only that trail includes global service events; us-east-1 is never added automatically. STS regional-endpoint events are recorded in their respective Regions.
 
-The first copy of management events per Region is free; an existing trail recording those events makes this a paid additional copy in that Region. Disable CloudTrail when an organization trail already provides coverage. S3 storage and optional KMS usage incur charges.
+The first copy of management events per Region is free; an existing trail recording those events makes this a paid additional copy in that Region. Leave already-covered Regions out via `cloudtrail_regions`, or disable CloudTrail when an organization trail already provides full coverage. S3 storage and optional KMS usage incur charges.
 
 Current and noncurrent versions expire after the configured retention period (365 days by default); 0 disables expiry. Current-object expiry creates a delete marker before noncurrent expiry applies. Destroy, including disabling CloudTrail, fails while logs or versions remain in the bucket because force deletion is disabled.
 
@@ -82,6 +82,7 @@ A supplied KMS key encrypts trail deliveries and bucket objects. It must be in t
 | ---- | ----------- | ---- | ------- | :------: |
 | `regions` | Regions for GuardDuty, ECR scanning and CloudTrail. Include us-east-1 for IAM changes. Each must be enabled for the account. | `list(string)` | n/a | yes |
 | `cloudtrail_enabled` | Create a single-Region management-event trail in each selected Region. | `bool` | `true` | no |
+| `cloudtrail_regions` | Optional non-empty subset of `regions` for trails; null defaults to all Regions. | `set(string)` | `null` | no |
 | `cloudtrail_log_retention_days` | Current and noncurrent log expiry; 0 keeps logs forever. | `number` | `365` | no |
 | `cloudtrail_kms_key_arn` | Key in the bucket's runner Region whose policy permits encryption for every trail; null uses SSE-S3. | `string` | `null` | no |
 | `finding_publishing_frequency` | Export cadence for updated findings: `FIFTEEN_MINUTES`, `ONE_HOUR`, or `SIX_HOURS`. | `string` | `"FIFTEEN_MINUTES"` | no |

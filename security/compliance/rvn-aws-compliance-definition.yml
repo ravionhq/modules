@@ -4,7 +4,7 @@ definition:
   description: Manages an AWS compliance baseline with GuardDuty, ECR image scanning, and regional CloudTrail audit trails.
 release:
   version: 0.3.0
-  description: Record management events in each selected Region with CloudTrail trails sharing a private, versioned log bucket and configurable retention.
+  description: Record management events with regional CloudTrail trails and private, versioned log storage; optionally omit Regions already covered by existing trails.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -28,7 +28,15 @@ module:
       label: CloudTrail
       type: boolean
       default: true
-      description: One trail per selected Region. Turn off if an organization trail already covers them.
+      description: Use CloudTrail regions to omit existing coverage, or turn off if all Regions are already covered.
+    - id: cloudtrail_regions
+      label: CloudTrail regions
+      type: string_array
+      required: false
+      values: $values:aws/regions
+      description: Defaults to all selected Regions. Leave out Regions an existing trail already covers.
+      show_when:
+        cloudtrail_enabled: true
     - id: cloudtrail_log_retention_days
       label: Log retention (days)
       type: number
@@ -120,6 +128,7 @@ module:
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
         cloudtrail_enabled: << module.input.cloudtrail_enabled >>
+        cloudtrail_regions: "<< len(module.input.cloudtrail_regions || []) > 0 ? module.input.cloudtrail_regions : nil >>"
         cloudtrail_log_retention_days: "<< module.input.cloudtrail_log_retention_days != nil ? module.input.cloudtrail_log_retention_days : 365 >>"
         cloudtrail_kms_key_arn: << module.input.cloudtrail_kms_key_arn || nil >>
         eks_protection_enabled: << module.input.eks_protection_enabled >>
@@ -148,7 +157,7 @@ module:
 
     Deploy one module for an AWS account and select every Region you want covered. The runner Region controls where Terraform executes and hosts the shared CloudTrail bucket; the Regions list controls GuardDuty, ECR scanning and CloudTrail trails. Every selected Region must already be enabled for the account.
 
-    Each selected Region receives a GuardDuty detector with explicitly managed protection plans, an ECR registry scanning rule covering all existing and future private repositories, and a CloudTrail trail when enabled. Application alarms and application log retention remain in their respective modules.
+    Each selected Region receives a GuardDuty detector with explicitly managed protection plans and an ECR registry scanning rule covering all existing and future private repositories. CloudTrail trails cover all selected Regions by default, or the CloudTrail regions subset when set. Application alarms and application log retention remain in their respective modules.
 
     ## GuardDuty
 
@@ -164,15 +173,15 @@ module:
 
     ## CloudTrail
 
-    CloudTrail is enabled by default and creates one single-Region trail in each selected Region. Each records read and write management events with log file validation and no data events. The trails share one bucket in the runner Region.
+    CloudTrail is enabled by default and creates one single-Region trail in each selected Region. CloudTrail regions optionally limits trails to a non-empty subset of Regions; leave it blank for all selected Regions. Turn CloudTrail off to disable all trails. Each trail records read and write management events with log file validation and no data events. The trails share one bucket in the runner Region.
 
-    Include us-east-1 in Regions to capture IAM changes and other global service events (CloudFront and the STS global endpoint). Only that trail includes global service events; us-east-1 is not added automatically. STS regional-endpoint events are recorded in their respective Regions.
+    Include us-east-1 in Regions and, when set, CloudTrail regions to capture IAM changes and other global service events (CloudFront and the STS global endpoint). Only that trail includes global service events; us-east-1 is not added automatically. STS regional-endpoint events are recorded in their respective Regions.
 
     Logs go to a dedicated private S3 bucket with public access blocked, bucket-owner-enforced ownership, versioning, and encryption. Log retention (days) sets lifecycle expiry for current and noncurrent object versions; 365 is the default and 0 keeps them forever. With versioning, current-object expiry makes a version noncurrent, then noncurrent expiry applies.
 
     Leave KMS key ARN blank for SSE-S3, or supply a key in the bucket's runner Region, even for trails in other Regions. Its policy must allow cloudtrail.amazonaws.com to encrypt logs for every selected trail. This module does not manage the key policy.
 
-    The first copy of management events per Region is free; S3 storage and optional KMS usage incur charges. If an existing trail already records those events in a Region, the additional copy is paid. Turn CloudTrail off if an organization trail already provides coverage.
+    The first copy of management events per Region is free; S3 storage and optional KMS usage incur charges. If an existing trail already records those events in a Region, the additional copy is paid. Leave those Regions out via CloudTrail regions, or turn CloudTrail off if an organization trail already provides full coverage.
 
     Destroy fails while the bucket contains logs or object versions: force deletion is disabled. Disabling CloudTrail also attempts to remove its bucket, so preserve or explicitly remove retained logs before doing so.
 
@@ -195,6 +204,7 @@ module:
     | Regions | Required | Regions covered by GuardDuty, ECR scanning and CloudTrail. Include us-east-1 for IAM changes. |
     | ECR scanning | Basic scan-on-push for all repositories | Always enabled by this module. |
     | CloudTrail | Enabled | One single-Region management-event trail in each selected Region, sharing a runner-Region bucket. |
+    | CloudTrail regions | All selected Regions | Optional subset of Regions; omit Regions already covered by an existing trail. |
     | Log retention (days) | 365 | S3 lifecycle expiry; 0 keeps logs forever. |
     | KMS key ARN | None (SSE-S3) | Key in the bucket's runner Region whose policy permits encryption for every trail. |
     | S3, EKS, malware, RDS, Lambda protection | Enabled | GuardDuty protection plans. |
