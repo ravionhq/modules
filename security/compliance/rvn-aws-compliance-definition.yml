@@ -3,7 +3,7 @@ definition:
   name: AWS Compliance
   description: Manages an AWS compliance baseline with GuardDuty, ECR image scanning, and regional CloudTrail audit trails.
 release:
-  version: 0.3.0
+  version: 1.0.0
   description: Record management events with regional CloudTrail trails and private, versioned log storage; optionally omit Regions already covered by existing trails.
 module:
   inputs:

@@ -70,7 +70,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.3.1 | `networking/alb/` |
 | `rvn-aws-alternat` | alterNAT | v0.1.3 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.3.2 | `compute/ami/` |
-| `rvn-aws-compliance` | AWS Compliance | v0.3.0 | `security/compliance/` |
+| `rvn-aws-compliance` | AWS Compliance | v1.0.0 | `security/compliance/` |
 | `rvn-aws-ecr` | AWS ECR Repository | v1.0.0 | `containers/ecr/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.2 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.1.2 | `security/iam/` |
