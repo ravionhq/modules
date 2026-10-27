@@ -19,6 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/rds v1.93.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.77.1
 	github.com/aws/aws-sdk-go-v2/service/wafv2 v1.58.0
+	github.com/expr-lang/expr v1.17.8
 	github.com/gruntwork-io/terratest v0.47.0
 	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.9.0

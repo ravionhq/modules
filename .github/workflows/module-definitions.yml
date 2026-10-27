@@ -43,6 +43,16 @@ jobs:
         run: npm test
         working-directory: tools/ravion-modules
 
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: test/go.sum
+
+      - name: Test deploy environment expression runtime
+        run: go test -run '^TestDeployEnvironmentVariableAllowlist$' -count=1 ./deploy_env_allowlist
+        working-directory: test
+
       - name: Run migration guardrails
         run: node tools/ravion-modules/dist/src/cli.js guardrails
 
