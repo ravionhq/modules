@@ -97,15 +97,6 @@ mock_provider "aws" {
   }
 
   override_resource {
-    target = module.cdn.aws_cloudfront_distribution.managed
-    values = {
-      arn            = "arn:aws:cloudfront::123456789012:distribution/EMANAGED123"
-      domain_name    = "dmanaged.cloudfront.net"
-      hosted_zone_id = "Z2FDTNDATAQYW2"
-    }
-  }
-
-  override_resource {
     target = module.cdn.aws_cloudwatch_log_group.access_logs
     values = {
       arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/cloudfront/ravion-test-site"
@@ -144,7 +135,7 @@ run "managed_domains_issue_certificate_and_prefer_first_domain" {
   }
 
   assert {
-    condition     = length(module.cdn.managed_domain_records["main"]) == 2 && alltrue([for r in module.cdn.managed_domain_records["main"] : r.type == "CNAME" && r.value == "dmanaged.cloudfront.net"])
+    condition     = length(module.cdn.managed_domain_records["main"]) == 2 && alltrue([for r in module.cdn.managed_domain_records["main"] : r.type == "CNAME" && r.value == "dbyo.cloudfront.net"])
     error_message = "Each managed domain must get a routing record pointing at the distribution."
   }
 

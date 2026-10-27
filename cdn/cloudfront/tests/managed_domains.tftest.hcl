@@ -21,20 +21,10 @@ mock_provider "aws" {
   override_resource {
     target = aws_cloudfront_distribution.this
     values = {
-      arn            = "arn:aws:cloudfront::123456789012:distribution/EBYOEXAMPLE"
-      domain_name    = "dbyo.cloudfront.net"
+      arn            = "arn:aws:cloudfront::123456789012:distribution/EEXAMPLE"
+      domain_name    = "dexample.cloudfront.net"
       hosted_zone_id = "Z2FDTNDATAQYW2"
-      id             = "EBYOEXAMPLE"
-    }
-  }
-
-  override_resource {
-    target = aws_cloudfront_distribution.managed
-    values = {
-      arn            = "arn:aws:cloudfront::123456789012:distribution/EMANAGEDEXAMPLE"
-      domain_name    = "dmanaged.cloudfront.net"
-      hosted_zone_id = "Z2FDTNDATAQYW2"
-      id             = "EMANAGEDEXAMPLE"
+      id             = "EEXAMPLE"
     }
   }
 
@@ -105,7 +95,7 @@ run "managed_domains_create_certificate_and_routing_records" {
   }
 
   assert {
-    condition     = ravion_aws_acm_certificate.this["primary"].target_arn == "arn:aws:cloudfront::123456789012:distribution/EMANAGEDEXAMPLE"
+    condition     = ravion_aws_acm_certificate.this["primary"].target_arn == "arn:aws:cloudfront::123456789012:distribution/EEXAMPLE"
     error_message = "The certificate must target the distribution ARN."
   }
 
@@ -122,7 +112,7 @@ run "managed_domains_create_certificate_and_routing_records" {
   assert {
     condition = alltrue([
       for d in ravion_domain.this :
-      d.target_dns_name == "dmanaged.cloudfront.net" && d.target_zone_id == "Z2FDTNDATAQYW2"
+      d.target_dns_name == "dexample.cloudfront.net" && d.target_zone_id == "Z2FDTNDATAQYW2"
     ])
     error_message = "Routing records must point at the distribution domain name and hosted zone."
   }
@@ -142,27 +132,32 @@ run "managed_distribution_starts_with_default_certificate" {
   command = plan
 
   assert {
-    condition     = length(aws_cloudfront_distribution.managed) == 1 && length(aws_cloudfront_distribution.this) == 0
-    error_message = "A distribution with managed domains must use the managed resource only."
+    condition     = length(aws_cloudfront_distribution.this) == 1
+    error_message = "A distribution with managed domains must use the one distribution resource."
   }
 
   assert {
-    condition     = length(aws_cloudfront_distribution.managed["primary"].aliases) == 0
+    condition     = length(aws_cloudfront_distribution.this["primary"].aliases) == 0
     error_message = "The managed distribution must be created without aliases."
   }
 
   assert {
-    condition     = aws_cloudfront_distribution.managed["primary"].viewer_certificate[0].cloudfront_default_certificate == true
+    condition     = aws_cloudfront_distribution.this["primary"].viewer_certificate[0].cloudfront_default_certificate == true
     error_message = "The managed distribution must start with the default CloudFront certificate."
   }
 
   assert {
-    condition     = output.distribution_arns["primary"] == "arn:aws:cloudfront::123456789012:distribution/EMANAGEDEXAMPLE"
+    condition     = length(ravion_aws_cloudfront_viewer_certificate.this) == 0
+    error_message = "Ravion attaches a managed distribution's certificate, so Terraform must not set one."
+  }
+
+  assert {
+    condition     = output.distribution_arns["primary"] == "arn:aws:cloudfront::123456789012:distribution/EEXAMPLE"
     error_message = "Outputs must read managed distributions."
   }
 }
 
-run "byo_distribution_keeps_original_address" {
+run "byo_distribution_sets_its_own_certificate" {
   command = plan
 
   variables {
@@ -175,13 +170,28 @@ run "byo_distribution_keeps_original_address" {
   }
 
   assert {
-    condition     = length(aws_cloudfront_distribution.this) == 1 && length(aws_cloudfront_distribution.managed) == 0
-    error_message = "A distribution without managed domains must stay at aws_cloudfront_distribution.this."
+    condition     = toset(aws_cloudfront_distribution.this["primary"].aliases) == toset(["www.example.com", "api.example.com"])
+    error_message = "A new BYO distribution must be created with its normalized, deduplicated aliases."
   }
 
   assert {
-    condition     = toset(aws_cloudfront_distribution.this["primary"].aliases) == toset(["www.example.com", "api.example.com"])
-    error_message = "BYO aliases must be normalized and deduplicated."
+    condition     = toset(ravion_aws_cloudfront_viewer_certificate.this["primary"].aliases) == toset(["www.example.com", "api.example.com"])
+    error_message = "The viewer certificate resource must own the normalized BYO aliases."
+  }
+
+  assert {
+    condition     = ravion_aws_cloudfront_viewer_certificate.this["primary"].acm_certificate_arn == "arn:aws:acm:us-east-1:123456789012:certificate/11111111-1111-1111-1111-111111111111"
+    error_message = "The viewer certificate resource must own the BYO certificate."
+  }
+
+  assert {
+    condition     = ravion_aws_cloudfront_viewer_certificate.this["primary"].distribution_id == "EEXAMPLE"
+    error_message = "The viewer certificate resource must target the distribution."
+  }
+
+  assert {
+    condition     = ravion_aws_cloudfront_viewer_certificate.this["primary"].minimum_protocol_version == "TLSv1.2_2021" && ravion_aws_cloudfront_viewer_certificate.this["primary"].ssl_support_method == "sni-only"
+    error_message = "The viewer certificate resource must carry the module's TLS settings."
   }
 
   assert {
@@ -200,7 +210,7 @@ run "byo_distribution_keeps_original_address" {
   }
 }
 
-run "mixed_distributions_split_between_resources" {
+run "mixed_distributions_share_one_resource" {
   command = plan
 
   variables {
@@ -216,13 +226,18 @@ run "mixed_distributions_split_between_resources" {
   }
 
   assert {
-    condition     = length(aws_cloudfront_distribution.this) == 1 && length(aws_cloudfront_distribution.managed) == 1
-    error_message = "Each distribution must land in the resource for its mode."
+    condition     = length(aws_cloudfront_distribution.this) == 2
+    error_message = "Both distributions must live in the one distribution resource."
+  }
+
+  assert {
+    condition     = keys(ravion_aws_cloudfront_viewer_certificate.this) == ["byo"]
+    error_message = "Only the BYO distribution gets a viewer certificate resource."
   }
 
   assert {
     condition     = length(output.distribution_ids) == 2
-    error_message = "Outputs must include distributions from both resources."
+    error_message = "Outputs must include both distributions."
   }
 
   assert {
@@ -246,8 +261,8 @@ run "no_managed_domains_creates_no_ravion_resources" {
   }
 
   assert {
-    condition     = length(aws_cloudfront_distribution.managed) == 0
-    error_message = "Without managed domains the managed resource stays empty."
+    condition     = length(ravion_aws_cloudfront_viewer_certificate.this["primary"].aliases) == 0 && ravion_aws_cloudfront_viewer_certificate.this["primary"].acm_certificate_arn == null
+    error_message = "Without aliases the distribution must serve the default certificate."
   }
 
   assert {
@@ -354,8 +369,8 @@ run "apply_managed_distribution" {
   command = apply
 }
 
-run "managed_distribution_refuses_switch_to_byo" {
-  command = plan
+run "managed_distribution_switches_to_byo_in_place" {
+  command = apply
 
   variables {
     distributions = {
@@ -366,9 +381,20 @@ run "managed_distribution_refuses_switch_to_byo" {
     }
   }
 
-  expect_failures = [
-    aws_cloudfront_distribution.this,
-  ]
+  assert {
+    condition     = keys(aws_cloudfront_distribution.this) == ["primary"]
+    error_message = "The distribution must stay where it is when it leaves managed domains."
+  }
+
+  assert {
+    condition     = toset(ravion_aws_cloudfront_viewer_certificate.this["primary"].aliases) == toset(["www.example.com"]) && ravion_aws_cloudfront_viewer_certificate.this["primary"].distribution_id == "EEXAMPLE"
+    error_message = "The BYO aliases and certificate must be set on the same distribution."
+  }
+
+  assert {
+    condition     = length(ravion_aws_acm_certificate.this) == 0 && length(ravion_domain.this) == 0
+    error_message = "Leaving managed domains must remove the Ravion certificate and routing records."
+  }
 }
 
 run "apply_byo_distribution" {
@@ -381,7 +407,7 @@ run "apply_byo_distribution" {
   }
 }
 
-run "byo_distribution_refuses_switch_to_managed" {
+run "byo_distribution_switches_to_managed_in_place" {
   command = plan
 
   variables {
@@ -392,25 +418,13 @@ run "byo_distribution_refuses_switch_to_managed" {
     }
   }
 
-  expect_failures = [
-    aws_cloudfront_distribution.managed,
-  ]
-}
-
-run "new_distribution_alongside_byo_can_use_managed_domains" {
-  command = plan
-
-  variables {
-    distributions = {
-      site = {}
-      next = {
-        managed_domains = ["www.example.com"]
-      }
-    }
+  assert {
+    condition     = keys(aws_cloudfront_distribution.this) == ["site"] && length(ravion_aws_cloudfront_viewer_certificate.this) == 0
+    error_message = "The distribution must stay where it is and hand its aliases and certificate to Ravion."
   }
 
   assert {
-    condition     = length(aws_cloudfront_distribution.managed) == 1 && length(aws_cloudfront_distribution.this) == 1
-    error_message = "A new managed distribution is added next to the existing one."
+    condition     = ravion_aws_acm_certificate.this["site"].target_arn == "arn:aws:cloudfront::123456789012:distribution/EEXAMPLE"
+    error_message = "The Ravion certificate must attach to the existing distribution."
   }
 }

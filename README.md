@@ -77,8 +77,8 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-kms` | AWS KMS Key | v0.2.1 | `security/kms/` |
 | `rvn-aws-network` | VPC Network | v1.3.0 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.1 | `security/secret/` |
-| `rvn-aws-static` | Static Hosting | v1.7.0 | `hosting/static_site/` |
-| `rvn-cloudfront` | CloudFront CDN | v1.7.0 | `cdn/cloudfront/` |
+| `rvn-aws-static` | Static Hosting | v1.8.0 | `hosting/static_site/` |
+| `rvn-cloudfront` | CloudFront CDN | v1.8.0 | `cdn/cloudfront/` |
 | `rvn-ec2-service` | EC2 Service | v2.4.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.4.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v2.4.2 | `compute/ecs_service/` |

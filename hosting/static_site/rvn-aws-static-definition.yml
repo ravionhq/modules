@@ -3,7 +3,7 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.7.0
+  version: 1.8.0
   description: Link every custom domain or domain alias from the Links section of its overview page.
 module:
   build:
@@ -152,7 +152,7 @@ module:
       label: CloudFront settings
       type: section
     - default: false
-      description: "On: Ravion issues the certificate and attaches it to the distribution. Off: bring your own ACM certificate and aliases. An existing distribution keeps its setting; to switch, create a new one and move DNS to it."
+      description: "On: Ravion issues the certificate and attaches it to the distribution. Off: bring your own ACM certificate and aliases. Changing it keeps the distribution and its CloudFront hostname. The current certificate and aliases serve until the new ones are attached."
       id: ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
