@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.3.0
-  description: Enable CloudWatch VPC Flow Logs with year-long retention by default for new networks. Also fix large-response plans with AWS provider 6.69.1.
+  version: 1.4.0
+  description: Add an optional secondary VPC CIDR with its own public and private subnets in each availability zone, an option to skip private subnets, an option to assign public IPs in public subnets, and inputs for the availability zones and subnet CIDRs.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -31,6 +31,11 @@ module:
       label: VPC CIDR
       required: false
       type: string
+    - description: Adds a public subnet, and a private subnet when private subnets are on, from this block in each availability zone.
+      id: secondary_vpc_cidr
+      label: Secondary VPC CIDR
+      required: false
+      type: string
     - collapsible: true
       description: Leave empty to create up to 3 public/private subnet pairs, capped by the availability zones available in the selected region and AWS account.
       id: subnet_count
@@ -39,6 +44,47 @@ module:
       min: 1
       required: false
       type: number
+    - collapsible: true
+      description: Leave empty to use the first availability zones of the region. The list length must match the subnet pairs.
+      id: availability_zones
+      label: Availability zones
+      required: false
+      type: string_array
+    - default: true
+      description: Turn off for a VPC with only public subnets. The NAT gateway and interface endpoints need private subnets.
+      id: private_subnets_enabled
+      label: Private subnets
+      type: boolean
+    - collapsible: true
+      default: false
+      description: Give instances launched in public subnets a public IPv4 address.
+      id: public_subnet_map_public_ip_on_launch
+      label: Public IPs in public subnets
+      type: boolean
+    - collapsible: true
+      description: Leave empty to use /24 blocks of the VPC CIDR. One per subnet pair.
+      id: public_subnet_cidrs
+      label: Public subnet CIDRs
+      required: false
+      type: string_array
+    - collapsible: true
+      description: Leave empty to use /24 blocks of the VPC CIDR. One per subnet pair.
+      id: private_subnet_cidrs
+      label: Private subnet CIDRs
+      required: false
+      type: string_array
+    - collapsible: true
+      description: Leave empty to use /24 blocks of the secondary VPC CIDR. One per subnet pair.
+      id: secondary_public_subnet_cidrs
+      label: Secondary public subnet CIDRs
+      required: false
+      type: string_array
+    - collapsible: true
+      description: Leave empty to use /24 blocks of the secondary VPC CIDR. One per subnet pair.
+      id: secondary_private_subnet_cidrs
+      label: Secondary private subnet CIDRs
+      required: false
+      type: string_array
     - id: section_nat
       label: NAT gateway
       type: section
@@ -230,7 +276,7 @@ module:
 
     ### Public subnets
 
-    Public subnets have direct internet access via a free Internet Gateway. Resources in public subnets do not receive public IP addresses automatically; attach public IPs explicitly when needed. Use these for:
+    Public subnets have direct internet access via a free Internet Gateway. Resources in public subnets do not receive public IP addresses automatically; attach public IPs explicitly, or turn on **Public IPs in public subnets**. Use these for:
 
     - Load balancers (ALB, NLB)
     - Bastion hosts
@@ -244,6 +290,16 @@ module:
     - RDS databases
     - ElastiCache clusters
     - Lambda functions with VPC access
+
+    Turn off **Private subnets** for a VPC with only public subnets, such as one whose instances all have public IPs. The NAT gateway and interface endpoints need private subnets, so turn those off too.
+
+    ### Secondary CIDR
+
+    Set **Secondary VPC CIDR** to give the VPC a second IPv4 block, for example `100.64.0.0/16` next to `10.0.0.0/16`. The module creates a public subnet, and a private subnet when private subnets are on, from it in each availability zone, on the same route tables as the primary subnets. Interface endpoints stay in the primary private subnets and accept traffic from both blocks.
+
+    ### Subnet CIDRs
+
+    By default each subnet is a `/24` of its CIDR block. Set the subnet CIDR lists, one entry per subnet pair, for larger subnets. Set **Availability zones** with them to pin which zone each entry is created in.
 
     ## NAT Gateway
 
@@ -360,12 +416,20 @@ module:
       base_path: networking/vpc
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        availability_zones: << module.input.availability_zones >>
         flow_logs_enabled: << module.input.flow_logs_enabled >>
         nat_gateway_enabled: << module.input.nat_gateway_enabled >>
         name: << module.input.name >>
         nat_gateway_eip_allocation_ids: << module.input.nat_gateway_eip_allocation_ids >>
         nat_gateway_high_availability_enabled: << module.input.nat_gateway_high_availability_enabled >>
+        private_subnet_cidrs: << module.input.private_subnet_cidrs >>
+        private_subnets_enabled: << module.input.private_subnets_enabled >>
+        public_subnet_cidrs: << module.input.public_subnet_cidrs >>
+        public_subnet_map_public_ip_on_launch: << module.input.public_subnet_map_public_ip_on_launch >>
         region: << module.input.aws_region >>
+        secondary_private_subnet_cidrs: << module.input.secondary_private_subnet_cidrs >>
+        secondary_public_subnet_cidrs: << module.input.secondary_public_subnet_cidrs >>
+        secondary_vpc_cidr: << module.input.secondary_vpc_cidr >>
         subnet_count: << module.input.subnet_count >>
         tags:
           $include: ../stack/ravion-tags.yml

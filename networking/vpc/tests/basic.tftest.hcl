@@ -514,8 +514,8 @@ run "public_subnet_settings" {
   command = plan
 
   assert {
-    condition     = aws_subnet.public[0].map_public_ip_on_launch == true
-    error_message = "Public subnets should auto-assign public IPs"
+    condition     = aws_subnet.public[0].map_public_ip_on_launch == false
+    error_message = "Public subnets should not auto-assign public IPs by default"
   }
 
   assert {
@@ -985,5 +985,295 @@ run "vpc_peering_multiple" {
   assert {
     condition     = length(aws_route.public_vpc_peering) == 2
     error_message = "Should create 1 public peering route per connection"
+  }
+}
+
+# Public subnets assign public IPs on launch when asked to
+run "public_subnet_map_public_ip_on_launch" {
+  command = plan
+
+  variables {
+    public_subnet_map_public_ip_on_launch = true
+    secondary_vpc_cidr                    = "100.64.0.0/16"
+  }
+
+  assert {
+    condition     = alltrue([for subnet in aws_subnet.public : subnet.map_public_ip_on_launch])
+    error_message = "Public subnets should auto-assign public IPs"
+  }
+
+  assert {
+    condition     = alltrue([for subnet in aws_subnet.secondary_public : subnet.map_public_ip_on_launch])
+    error_message = "Secondary public subnets should auto-assign public IPs"
+  }
+
+  assert {
+    condition     = alltrue([for subnet in concat(aws_subnet.private, aws_subnet.secondary_private) : !subnet.map_public_ip_on_launch])
+    error_message = "Private subnets should never auto-assign public IPs"
+  }
+}
+
+# No secondary CIDR by default
+run "secondary_cidr_disabled" {
+  command = plan
+
+  assert {
+    condition     = length(aws_vpc_ipv4_cidr_block_association.secondary) == 0
+    error_message = "Should not associate a secondary CIDR by default"
+  }
+
+  assert {
+    condition     = length(aws_subnet.secondary_public) == 0 && length(aws_subnet.secondary_private) == 0
+    error_message = "Should not create secondary subnets by default"
+  }
+}
+
+# A secondary CIDR adds a public and a private subnet in each availability zone
+run "secondary_cidr" {
+  command = plan
+
+  variables {
+    secondary_vpc_cidr = "100.64.0.0/16"
+  }
+
+  assert {
+    condition     = aws_vpc_ipv4_cidr_block_association.secondary[0].cidr_block == "100.64.0.0/16"
+    error_message = "Should associate the secondary CIDR with the VPC"
+  }
+
+  assert {
+    condition     = length(aws_subnet.secondary_public) == 3 && length(aws_subnet.secondary_private) == 3
+    error_message = "Should create a secondary public and private subnet in each of the 3 AZs"
+  }
+
+  assert {
+    condition     = aws_subnet.secondary_public[0].cidr_block == "100.64.1.0/24" && aws_subnet.secondary_private[0].cidr_block == "100.64.11.0/24"
+    error_message = "Secondary subnets should follow the primary layout inside the secondary CIDR"
+  }
+
+  assert {
+    condition     = aws_subnet.secondary_public[1].availability_zone == "us-east-1b" && aws_subnet.secondary_private[2].availability_zone == "us-east-1c"
+    error_message = "Secondary subnets should use the same AZs as the primary subnets"
+  }
+
+  assert {
+    condition     = length(aws_route_table_association.secondary_public) == 3 && length(aws_route_table_association.secondary_private) == 3
+    error_message = "Secondary subnets should be associated with the public and private route tables"
+  }
+
+  assert {
+    condition     = aws_subnet.secondary_public[0].tags["Tier"] == "public" && aws_subnet.secondary_private[0].tags["Tier"] == "private"
+    error_message = "Secondary subnets should carry the Tier tag"
+  }
+
+  assert {
+    condition     = aws_subnet.secondary_public[0].tags["Name"] == "test-vpc-secondary-public-us-east-1a"
+    error_message = "Secondary subnets should be named after their CIDR and AZ"
+  }
+}
+
+# Secondary subnet CIDRs can be set explicitly
+run "secondary_cidr_custom_subnets" {
+  command = plan
+
+  variables {
+    vpc_cidr                       = "10.0.0.0/16"
+    secondary_vpc_cidr             = "100.64.0.0/16"
+    subnet_count                   = 2
+    availability_zones             = ["us-east-1a", "us-east-1b"]
+    public_subnet_cidrs            = ["10.0.0.0/20", "10.0.16.0/20"]
+    private_subnet_cidrs           = ["10.0.128.0/20", "10.0.144.0/20"]
+    secondary_public_subnet_cidrs  = ["100.64.0.0/20", "100.64.16.0/20"]
+    secondary_private_subnet_cidrs = ["100.64.128.0/20", "100.64.144.0/20"]
+  }
+
+  assert {
+    condition     = aws_subnet.secondary_public[1].cidr_block == "100.64.16.0/20"
+    error_message = "Second secondary public subnet should use the custom CIDR"
+  }
+
+  assert {
+    condition     = aws_subnet.secondary_private[0].cidr_block == "100.64.128.0/20"
+    error_message = "First secondary private subnet should use the custom CIDR"
+  }
+}
+
+# Secondary subnet CIDR lists must match the subnet count
+run "secondary_cidr_custom_subnets_wrong_count" {
+  command = plan
+
+  variables {
+    secondary_vpc_cidr            = "100.64.0.0/16"
+    subnet_count                  = 2
+    secondary_public_subnet_cidrs = ["100.64.0.0/20"]
+  }
+
+  expect_failures = [
+    var.secondary_public_subnet_cidrs,
+  ]
+}
+
+# The secondary CIDR must be a valid IPv4 CIDR block
+run "secondary_cidr_invalid" {
+  command = plan
+
+  variables {
+    secondary_vpc_cidr = "not-a-cidr"
+  }
+
+  expect_failures = [
+    var.secondary_vpc_cidr,
+  ]
+}
+
+# Without private subnets the VPC only has public subnets
+run "private_subnets_disabled" {
+  command = plan
+
+  variables {
+    private_subnets_enabled = false
+    nat_gateway_enabled     = false
+    secondary_vpc_cidr      = "100.64.0.0/16"
+  }
+
+  assert {
+    condition     = length(aws_subnet.public) == 3 && length(aws_subnet.secondary_public) == 3
+    error_message = "Should still create the public subnets"
+  }
+
+  assert {
+    condition     = length(aws_subnet.private) == 0 && length(aws_subnet.secondary_private) == 0
+    error_message = "Should not create private subnets"
+  }
+
+  assert {
+    condition     = length(aws_route_table.private) == 0 && length(aws_route_table_association.private) == 0
+    error_message = "Should not create private route tables"
+  }
+
+  assert {
+    condition     = length(aws_nat_gateway.this) == 0
+    error_message = "Should not create a NAT gateway"
+  }
+}
+
+# Gateway endpoints and peering work without private subnets
+run "private_subnets_disabled_with_gateway_endpoint_and_peering" {
+  command = plan
+
+  variables {
+    private_subnets_enabled         = false
+    nat_gateway_enabled             = false
+    vpc_endpoint_s3_gateway_enabled = true
+    vpc_peering_connections = {
+      shared = {
+        peer_vpc_id      = "vpc-0123456789abcdef0"
+        peer_cidr_blocks = ["172.16.0.0/16"]
+      }
+    }
+  }
+
+  assert {
+    condition     = length(aws_vpc_endpoint.s3[0].route_table_ids) == 1
+    error_message = "The S3 endpoint should only use the public route table"
+  }
+
+  assert {
+    condition     = length(aws_route.private_vpc_peering) == 0
+    error_message = "Should not add peering routes to private route tables that do not exist"
+  }
+}
+
+# A NAT gateway needs private subnets to route
+run "private_subnets_disabled_with_nat_gateway" {
+  command = plan
+
+  variables {
+    private_subnets_enabled = false
+    nat_gateway_enabled     = true
+  }
+
+  expect_failures = [
+    aws_vpc.this,
+  ]
+}
+
+# Interface endpoints live in private subnets
+run "private_subnets_disabled_with_interface_endpoints" {
+  command = plan
+
+  variables {
+    private_subnets_enabled         = false
+    nat_gateway_enabled             = false
+    vpc_endpoint_interface_services = ["ecr.api"]
+  }
+
+  expect_failures = [
+    aws_vpc.this,
+  ]
+}
+
+# The interface endpoint security group admits the secondary CIDR
+run "secondary_cidr_interface_endpoints" {
+  command = plan
+
+  variables {
+    secondary_vpc_cidr              = "100.64.0.0/16"
+    vpc_endpoint_interface_services = ["ecr.api"]
+  }
+
+  assert {
+    condition     = contains(one(aws_security_group.vpc_endpoints[0].ingress).cidr_blocks, "100.64.0.0/16")
+    error_message = "Interface endpoints should accept HTTPS from the secondary CIDR"
+  }
+}
+
+# A secondary CIDR with NAT gateway HA routes each secondary private subnet through its AZ's table
+run "secondary_cidr_nat_gateway_ha" {
+  command = plan
+
+  variables {
+    secondary_vpc_cidr                    = "100.64.0.0/16"
+    nat_gateway_high_availability_enabled = true
+  }
+
+  assert {
+    condition     = length(aws_route_table.private) == 3 && length(aws_route_table_association.secondary_private) == 3
+    error_message = "Each secondary private subnet should be associated with a private route table"
+  }
+}
+
+# Peer return routes cover the secondary CIDR too
+run "secondary_cidr_peer_routes" {
+  command = plan
+
+  variables {
+    secondary_vpc_cidr = "100.64.0.0/16"
+    vpc_peering_connections = {
+      shared = {
+        peer_vpc_id          = "vpc-0123456789abcdef0"
+        peer_cidr_blocks     = ["172.16.0.0/16"]
+        peer_route_table_ids = ["rtb-0123456789abcdef0"]
+      }
+    }
+  }
+
+  assert {
+    condition     = aws_route.peer_vpc_peering_secondary["shared-rtb-0123456789abcdef0"].destination_cidr_block == "100.64.0.0/16"
+    error_message = "Peer route tables should route the secondary CIDR back through the peering"
+  }
+}
+
+# A null availability zone list falls back to the region's zones
+run "availability_zones_null" {
+  command = plan
+
+  variables {
+    availability_zones = null
+  }
+
+  assert {
+    condition     = length(aws_subnet.public) == 3
+    error_message = "Should select the first 3 availability zones"
   }
 }
