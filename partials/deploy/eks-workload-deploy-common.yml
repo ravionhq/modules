@@ -40,3 +40,14 @@ inputs:
       "sha256:" is used as a digest, anything else as a tag. Do not pass a full image URI.
     placeholder: "sha256:... or latest"
     required: true
+  - id: environment_variables
+    label: Environment variables
+    type: array
+    description: >-
+      Plain environment variables to set for this deploy. Only names listed in the module's
+      Deploy-provided environment variables input are applied; others are ignored. Can't replace
+      a runtime variable or secret.
+    placeholder: |-
+      - name: LOG_LEVEL
+        value: info
+    required: false

@@ -505,6 +505,26 @@ describe("compiler", () => {
       const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
       const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
       const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
+      const deployEnvironmentVariables = findInput(
+        getDeployInputs(compiled.module),
+        "environment_variables",
+      );
+      assert.equal(deployEnvironmentVariables.label, "Environment variables");
+      assert.equal(deployEnvironmentVariables.type, "array");
+      assert.equal(deployEnvironmentVariables.required, false);
+      assert.equal(
+        deployEnvironmentVariables.placeholder,
+        "- name: LOG_LEVEL\n  value: info",
+      );
+      assert.equal(
+        deployEnvironmentVariables.description,
+        [
+          "Plain environment variables to set for this deploy.",
+          "Only names listed in the module's",
+          "Deploy-provided environment variables input are applied; others are ignored.",
+          "Can't replace a runtime variable or secret.",
+        ].join(" "),
+      );
       return values.env;
     };
     assert.equal(await helmEnv("worker"), deployEnv);
