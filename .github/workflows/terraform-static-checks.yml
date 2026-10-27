@@ -121,6 +121,8 @@ jobs:
               tofu -chdir=compute/ecs_service test -filter=tests/managed_domains.tftest.hcl
               tofu -chdir=compute/eks/addons init -backend=false
               tofu -chdir=compute/eks/addons test -filter=tests/managed_domains.tftest.hcl
+              tofu -chdir=hosting/static_site init -backend=false
+              tofu -chdir=hosting/static_site test -filter=tests/managed_domains.tftest.hcl
 
           - name: AMI module
             run: |

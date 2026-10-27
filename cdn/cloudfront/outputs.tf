@@ -22,6 +22,17 @@ output "distribution_domain_names" {
   value       = { for k, v in local.distributions : k => v.domain_name }
 }
 
+output "distribution_domains" {
+  description = "A map of distribution key to normalized viewer domains: managed domains when configured, otherwise aliases."
+  value = {
+    for k, v in var.distributions : k => (
+      length(v.managed_domains) > 0
+      ? local.managed_domain_names[k]
+      : local.distribution_alias_names[k]
+    )
+  }
+}
+
 output "distribution_hosted_zone_ids" {
   description = "A map of distribution key to CloudFront Route 53 zone ID for alias records."
   value       = { for k, v in local.distributions : k => v.hosted_zone_id }

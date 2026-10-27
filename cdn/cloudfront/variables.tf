@@ -70,8 +70,12 @@ variable "distributions" {
   }
 
   validation {
-    condition     = length(flatten([for k, v in var.distributions : v.aliases])) == length(distinct(flatten([for k, v in var.distributions : v.aliases])))
-    error_message = "Aliases must be unique across all distributions."
+    condition = length(flatten([
+      for k, v in var.distributions : distinct([for d in v.aliases : lower(trimsuffix(trimspace(d), "."))])
+      ])) == length(distinct(flatten([
+        for k, v in var.distributions : [for d in v.aliases : lower(trimsuffix(trimspace(d), "."))]
+    ])))
+    error_message = "Aliases must be unique across all distributions after normalization."
   }
 }
 

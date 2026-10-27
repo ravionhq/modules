@@ -46,6 +46,11 @@ output "distribution_domain_names" {
   value       = module.cdn.distribution_domain_names
 }
 
+output "domains" {
+  description = "Normalized viewer domains for the primary CloudFront distribution."
+  value       = module.cdn.distribution_domains[local.primary_distribution_key]
+}
+
 output "distribution_hosted_zone_ids" {
   description = "Map of distribution key -> CloudFront Route53 zone ID for alias records."
   value       = module.cdn.distribution_hosted_zone_ids
