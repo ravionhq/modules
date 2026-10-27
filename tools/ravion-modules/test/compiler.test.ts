@@ -495,19 +495,24 @@ describe("compiler", () => {
     }
   });
 
-  it("sets PORT from container port on EKS web, before user variables so a user PORT wins", async () => {
+  it("limits EKS deploy environment variables to allowlisted names without replacing module values", async () => {
+    const deployEnv =
+      "<< (module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {\"name\": #.name, \"value\": string(#.value)}) : []) >>";
     const helmEnv = async (name: string) => {
       const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
-      const deploy = compiled.module.deploy as { definition: { values: { env: unknown } } };
-      return deploy.definition.values.env;
+      const inputs = getModuleInputs(compiled.module);
+      assert.equal(findInput(inputs, "deploy_environment_variable_names").type, "string_array");
+      const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
+      const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
+      const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
+      return values.env;
     };
+    assert.equal(await helmEnv("worker"), deployEnv);
     assert.equal(
       await helmEnv("web"),
-      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>',
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" && #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>',
     );
-    for (const name of ["worker", "cron"]) {
-      assert.equal(await helmEnv(name), "<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>");
-    }
+    assert.equal(await helmEnv("cron"), deployEnv);
   });
 
   it("puts every EKS workload environment variable in the Environment variables section, as on ECS", async () => {
@@ -519,7 +524,7 @@ describe("compiler", () => {
         if (input.type === "section") section = String(input.id);
         else sectionOf.set(String(input.id), section);
       }
-      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets"]) {
+      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets", "deploy_environment_variable_names"]) {
         assert.equal(sectionOf.get(id), "section_app_config", `rvn-eks-${name} ${id}`);
       }
     }

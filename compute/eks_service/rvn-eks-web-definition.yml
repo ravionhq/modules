@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.14.0
-  description: Link every domain the module serves from the Links section of its overview page, above the load balancer link.
+  version: 1.15.0
+  description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
 module:
   inputs:
     - id: section_cluster
@@ -577,7 +577,14 @@ module:
             $merge:
               - ../../partials/deploy/eks-workload-helm-values-common.yml
               - containerPort: << module.input.container_port >>
-                env: '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>'
+                env: >-
+                  << [{"name": "PORT", "value": string(module.input.container_port)}] |
+                  concat(module.input.environment_variables != nil ? module.input.environment_variables : []) |
+                  concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+                  map(filter(deploy.input.environment_variables, #.name != "PORT" &&
+                  #.name in module.input.deploy_environment_variable_names && #.value != nil &&
+                  !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+                  !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>
                 service:
                   port: << module.input.container_port >>
                 probes:
@@ -967,6 +974,8 @@ module:
 
     Use **Runtime environment variables** for plain values, as an array of `{name, value}` objects.
 
+    Use **Deploy-provided environment variables** to allow a pipeline deploy step to set selected plain values. They cannot replace a Runtime environment variable or Runtime secret, and `PORT` is reserved for the web service.
+
     Use **Runtime secrets** for sensitive values, as an array of `{name, value_from}` objects - the same shape as ECS, so a service migrating from ECS Web Server carries its secret configuration unchanged. `value_from` must be a full Secrets Manager or SSM Parameter Store ARN, including the JSON-key extraction suffix when you want a single key out of a JSON secret.
 
     Ravion never reads these values. The ARNs travel to the chart as references, the chart renders an `ExternalSecret`, and the External Secrets Operator materializes the Kubernetes Secret in the cluster. No secret value reaches Ravion, the Helm values document, or the Helm release history.
@@ -1078,6 +1087,7 @@ module:
     | Minimum available pods | No | 1 | Pods kept running during a node drain when the disruption budget is on |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
+    | Deploy-provided environment variables | No | - | Names a pipeline deploy step may set to plain values |
     | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |
     | IAM role name | No | {service}-task | Explicit role name, for a service whose ECS task role already holds the default |
     | IAM policy ARNs | No | [] | Managed policy ARNs attached to the workload role |

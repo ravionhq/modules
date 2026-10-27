@@ -24,3 +24,10 @@
   placeholder: |-
     - name: DATABASE_URL
       value_from: arn:aws:secretsmanager:us-east-1:123456789012:secret:db-AbCdEf:url::
+- id: deploy_environment_variable_names
+  label: Deploy-provided environment variables
+  type: string_array
+  description: Names a pipeline deploy step may set with `input.environment_variables`. Plain values only; can't replace a runtime variable or secret.
+  add_button_label: Add name
+  collapsible: true
+  required: false
