@@ -2,6 +2,22 @@
 # Run with: tofu test
 
 # Mock AWS provider with overridden data sources
+run "uppercase_name_log_bucket" {
+  command = plan
+  variables {
+    name                = "MyALB"
+    access_logs_enabled = true
+  }
+  assert {
+    condition     = aws_s3_bucket.access_logs[0].bucket == "myalb-alb-access-logs-123456789012"
+    error_message = "Managed access-log bucket names must be lowercase."
+  }
+  assert {
+    condition     = aws_lb.this.name == "MyALB"
+    error_message = "The load balancer name must retain its original case."
+  }
+}
+
 mock_provider "aws" {
   override_data {
     target = data.aws_caller_identity.current
@@ -101,6 +117,11 @@ run "basic_alb_http_only" {
   assert {
     condition     = var.access_logs_retention_days == 365
     error_message = "access_logs_retention_days should default to 365"
+  }
+
+  assert {
+    condition     = var.access_logs_enabled && length(aws_s3_bucket.access_logs) == 1 && aws_s3_bucket_public_access_block.access_logs[0].block_public_policy
+    error_message = "Access logs should default to a private managed bucket"
   }
 }
 

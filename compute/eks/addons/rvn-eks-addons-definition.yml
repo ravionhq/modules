@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.26.1
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 0.27.0
+  description: Enable public and private ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: cluster
@@ -190,7 +190,7 @@ module:
         public_alb_creation_enabled: true
       type: string
     - collapsible: true
-      default: false
+      default: true
       id: public_alb_access_logs_enabled
       label: Access logs
       show_when:
@@ -287,7 +287,7 @@ module:
         private_alb_creation_enabled: true
       type: number
     - collapsible: true
-      default: false
+      default: true
       id: private_alb_access_logs_enabled
       label: Access logs
       show_when:

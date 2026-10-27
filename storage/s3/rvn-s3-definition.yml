@@ -3,8 +3,8 @@ definition:
   name: S3 Bucket
   description: S3 bucket with public access blocking, encryption, versioning, CORS, lifecycle rules, and configurable bucket policies.
 release:
-  version: 2.0.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.1.0
+  description: Enable versioning and require secure transport by default for new buckets. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -79,7 +79,7 @@ module:
     - id: section_versioning
       label: Versioning
       type: section
-    - default: false
+    - default: true
       description: Keep multiple versions of objects in the bucket.
       id: versioning_enabled
       label: Versioning
@@ -231,7 +231,7 @@ module:
       label: Bucket policy
       type: section
     - add_button_label: Add policy template
-      default: []
+      default: ["deny_insecure_transport"]
       description: Prebuilt bucket policy statements to add.
       id: policy_templates
       label: Policy templates
@@ -453,11 +453,11 @@ module:
     | Public access block settings | No | true | Four independent controls for ACLs and public bucket policies. |
     | KMS key ID | No | None | Uses SSE-KMS when set; otherwise uses SSE-S3 AES256. |
     | Bucket key | No | true | Applies to SSE-KMS only. |
-    | Versioning | No | false | Keeps multiple versions of objects. |
+    | Versioning | No | true | Keeps multiple versions of objects. |
     | CORS rules | No | Empty list | Browser cross-origin access rules for approved origins and methods. |
     | Lifecycle rules | No | Empty list | Form-based expiration, transition, noncurrent version, and multipart cleanup rules. |
     | Advanced lifecycle rules | No | Empty list | Raw Terraform lifecycle rule shape for tag filters, multiple transitions, and uncommon combinations. |
-    | Policy templates | No | Empty list | Adds common bucket policy statements. |
+    | Policy templates | No | `deny_insecure_transport` | Adds common bucket policy statements. |
     | CloudFront distribution ARNs | No | Empty list | Required when the CloudFront OAC read policy template is selected. |
     | Custom policy JSON | No | None | Additional policy statements merged with templates. |
     | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |

@@ -261,7 +261,7 @@ variable "ingress_security_group_ids" {
 variable "access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the ALB."
-  default     = false
+  default     = true
 }
 
 variable "access_logs_bucket_arn" {

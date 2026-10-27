@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.2.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.3.0
+  description: Retain CloudWatch logs for a year by default for new functions. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -711,7 +711,7 @@ module:
       type: number
       description: Days to retain CloudWatch logs. Use 0 to retain indefinitely.
       collapsible: true
-      default: 30
+      default: 365
       show_when:
         log_group_creation_enabled: true
       values:
@@ -1356,6 +1356,7 @@ module:
     | Networking | Connect to a VPC | No | false | Shows subnet and security group fields |
     | IAM role | Create IAM role | No | true | Use an existing role by turning this off |
     | Logs | Create log group | No | true | Creates /aws/lambda/{function name} by default |
+    | Logs | Log retention days | No | 365 | CloudWatch retention; 0 retains logs indefinitely |
     | Function URL | Enable function URL | No | false | Creates an HTTPS endpoint for direct invokes |
     | IAM permissions | Invoke permissions | No | [] | Allows services or accounts to invoke the function |
     | Event sources and aliases | Event source mappings | No | [] | Connects queues or streams to the function |

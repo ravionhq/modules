@@ -57,6 +57,11 @@ run "basic_vpc" {
   command = plan
 
   assert {
+    condition     = length(aws_flow_log.cloudwatch) == 1 && length(aws_cloudwatch_log_group.flow_logs) == 1 && aws_cloudwatch_log_group.flow_logs[0].retention_in_days == 365
+    error_message = "VPC flow logs must default to CloudWatch with one-year retention."
+  }
+
+  assert {
     condition     = aws_vpc.this.cidr_block == "10.0.0.0/16"
     error_message = "VPC CIDR block should default to 10.0.0.0/16"
   }

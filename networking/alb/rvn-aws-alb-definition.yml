@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.3.1
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 1.4.0
+  description: Enable ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: network
@@ -139,7 +139,7 @@ module:
       label: Access logs
       type: boolean
       description: Write load balancer access logs to S3.
-      default: false
+      default: true
     - id: access_logs_bucket_arn
       label: Access logs bucket ARN
       type: string
