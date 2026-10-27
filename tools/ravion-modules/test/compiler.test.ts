@@ -501,7 +501,9 @@ describe("compiler", () => {
     const helmEnv = async (name: string) => {
       const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
       const inputs = getModuleInputs(compiled.module);
-      assert.equal(findInput(inputs, "deploy_environment_variable_names").type, "string_array");
+      const allowlist = findInput(inputs, "deploy_environment_variable_names");
+      assert.equal(allowlist.type, "string_array");
+      assert.equal(allowlist.add_button_label, "Add env var name");
       const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
       const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
       const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
@@ -533,6 +535,46 @@ describe("compiler", () => {
       '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" && #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>',
     );
     assert.equal(await helmEnv("cron"), deployEnv);
+  });
+
+  it("exposes allowlisted deploy environment variable inputs for ECS services", async () => {
+    for (const name of ["web", "worker", "nlb"]) {
+      const compiled = await compileDefinitionFile(
+        join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`),
+      );
+      const inputs = getModuleInputs(compiled.module);
+      const allowlist = findInput(inputs, "deploy_environment_variable_names");
+      assert.equal(allowlist.label, "Deploy-provided environment variables");
+      assert.equal(allowlist.type, "string_array");
+      assert.equal(allowlist.add_button_label, "Add env var name");
+      assert.equal(allowlist.collapsible, true);
+      assert.equal(allowlist.required, false);
+      assert.equal(
+        allowlist.description,
+        "Names a pipeline deploy step may set with `input.environment_variables` for the primary container. Plain values only; can't replace a runtime variable or secret.",
+      );
+
+      const deployEnvironmentVariables = findInput(
+        getDeployInputs(compiled.module),
+        "environment_variables",
+      );
+      assert.equal(deployEnvironmentVariables.label, "Environment variables");
+      assert.equal(deployEnvironmentVariables.type, "array");
+      assert.equal(deployEnvironmentVariables.required, false);
+      assert.equal(
+        deployEnvironmentVariables.placeholder,
+        "- name: LOG_LEVEL\n  value: info",
+      );
+      assert.equal(
+        deployEnvironmentVariables.description,
+        [
+          "Plain environment variables to set for this deploy.",
+          "Only names listed in the module's",
+          "Deploy-provided environment variables input are applied; others are ignored.",
+          "Can't replace a runtime variable or secret.",
+        ].join(" "),
+      );
+    }
   });
 
   it("puts every EKS workload environment variable in the Environment variables section, as on ECS", async () => {

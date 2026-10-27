@@ -50,7 +50,7 @@ jobs:
           cache-dependency-path: test/go.sum
 
       - name: Test deploy environment expression runtime
-        run: go test -run '^TestDeployEnvironmentVariableAllowlist$' -count=1 ./deploy_env_allowlist
+        run: go test -run '^(TestDeployEnvironmentVariableAllowlist|TestECSDeployEnvironmentVariableAllowlist)$' -count=1 ./deploy_env_allowlist
         working-directory: test
 
       - name: Run migration guardrails

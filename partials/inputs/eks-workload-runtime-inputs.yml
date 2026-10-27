@@ -28,6 +28,6 @@
   label: Deploy-provided environment variables
   type: string_array
   description: Names a pipeline deploy step may set with `input.environment_variables`. Plain values only; can't replace a runtime variable or secret.
-  add_button_label: Add name
+  add_button_label: Add env var name
   collapsible: true
   required: false

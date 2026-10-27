@@ -11,6 +11,17 @@ inputs:
     description: Pass the image tag or digest to deploy. For Dockerfile or Railpack builds, this is resolved in the Ravion-created ECR repository. For Pull from image registry mode, this is resolved in the repository configured on the module. Do not pass a full image URI.
     placeholder: sha256:... or latest or <run-id>-railpack
     required: true
+  - id: environment_variables
+    label: Environment variables
+    type: array
+    description: >-
+      Plain environment variables to set for this deploy. Only names listed in the module's
+      Deploy-provided environment variables input are applied; others are ignored. Can't replace
+      a runtime variable or secret.
+    placeholder: |-
+      - name: LOG_LEVEL
+        value: info
+    required: false
 pre_deploy: >-
   << module.input.pre_deploy_enabled && len(module.input.pre_deploy_command) > 0 ? {"container_overrides": [{"name": stack.output.container_name,
   "command": module.input.pre_deploy_command, "environment": module.input.pre_deploy_environment_variables,

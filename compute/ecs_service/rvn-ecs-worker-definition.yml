@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.3.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.4.0
+  description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
 module:
   inputs:
     - id: section_cluster
@@ -100,7 +100,12 @@ module:
         > 0 ? module.input.image_start_command : nil), "cpu": (module.input.capacity_provider == "ec2" ?
         int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu) * 1024)),
         "depends_on": [{"container_name": "log_router", "condition": "START"}], "environment":
-        (module.input.environment_variables != nil ? module.input.environment_variables : []), "essential": true,
+        ((module.input.environment_variables != nil ? module.input.environment_variables : []) |
+        concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+        map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names &&
+        #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+        !(#.name in map(module.input.secrets ?? [], .name))),
+        {"name": #.name, "value": string(#.value)}) : [])), "essential": true,
         "image": (module.input.build_source == "image_registry" ? (deploy.input.image_ref contains
         "sha256:" ? module.input.image_repository + "@" + deploy.input.image_ref : module.input.image_repository
         + ":" + deploy.input.image_ref) : (deploy.input.image_ref contains "sha256:" ?
@@ -131,8 +136,13 @@ module:
         "enable-ecs-log-metadata": string(module.input.firelens_ecs_metadata_enabled)}}}] : [{"command":
         (len(module.input.image_start_command) > 0 ? module.input.image_start_command : nil), "cpu":
         (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) :
-        int(float(module.input.fargate_size.vcpu) * 1024)), "environment": (module.input.environment_variables != nil ?
-        module.input.environment_variables : []), "essential": true, "image": (module.input.build_source ==
+        int(float(module.input.fargate_size.vcpu) * 1024)), "environment":
+        ((module.input.environment_variables != nil ? module.input.environment_variables : []) |
+        concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+        map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names &&
+        #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+        !(#.name in map(module.input.secrets ?? [], .name))),
+        {"name": #.name, "value": string(#.value)}) : [])), "essential": true, "image": (module.input.build_source ==
         "image_registry" ? (deploy.input.image_ref contains "sha256:" ? module.input.image_repository + "@" +
         deploy.input.image_ref : module.input.image_repository + ":" + deploy.input.image_ref) :
         (deploy.input.image_ref contains "sha256:" ? stack.output.ecr_repository_url + "@" + deploy.input.image_ref :
@@ -219,6 +229,14 @@ module:
 
     The running task alarm uses the Container Insights `RunningTaskCount` metric and stays silent when Container Insights is disabled on the cluster. Every alarm treats missing data as not breaching and must breach for the configured number of consecutive periods before it fires. Add SNS topic ARNs as Alarm actions and OK actions to be notified.
 
+    ## Application configuration
+
+    Use **Runtime environment variables** for plain values, as an array of `{name, value}` objects.
+
+    Use **Deploy-provided environment variables** to allow a pipeline deploy step to set selected plain values. They cannot replace a Runtime environment variable or Runtime secret.
+
+    Use **Runtime secrets** for sensitive values, as an array of `{name, value_from}` objects. `value_from` is an SSM Parameter Store or Secrets Manager ARN.
+
     ## Configuration
 
     | Field | Required | Default | Description |
@@ -236,6 +254,7 @@ module:
     | Custom metric scaling policies | No | [] | Queue/backlog-oriented target tracking policies |
     | Runtime environment variables | No | - | Environment variables passed to the worker container |
     | Runtime secrets | No | - | Secrets injected from SSM Parameter Store or Secrets Manager |
+    | Deploy-provided environment variables | No | - | Names a pipeline deploy step may set to plain values |
     | Stop timeout (secs) | No | 30 | Seconds between SIGTERM and SIGKILL when a worker task stops; Fargate allows up to 120 |
     | Sidecars | No | [] | Additional containers in the worker task |
     | EFS file system | No | false | Mount an EFS file system into the worker container |

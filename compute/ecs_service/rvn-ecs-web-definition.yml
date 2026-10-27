@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.6.0
-  description: Link every domain the module serves from the Links section of its overview page.
+  version: 2.7.0
+  description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
 module:
   inputs:
     - id: section_cluster
@@ -559,8 +559,14 @@ module:
         > 0 ? module.input.image_start_command : nil), "cpu": (module.input.capacity_provider == "ec2" ?
         int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu) * 1024)),
         "depends_on": [{"container_name": "log_router", "condition": "START"}], "environment": ([{name:
-        "PORT", value: string(module.input.container_port)}] | concat(module.input.environment_variables !=
-        nil ? module.input.environment_variables : [])), "essential": true, "image":
+        "PORT", value: string(module.input.container_port)}] |
+        concat(module.input.environment_variables != nil ? module.input.environment_variables : []) |
+        concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+        map(filter(deploy.input.environment_variables, #.name != "PORT" &&
+        #.name in module.input.deploy_environment_variable_names && #.value != nil &&
+        !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+        !(#.name in map(module.input.secrets ?? [], .name))),
+        {"name": #.name, "value": string(#.value)}) : [])), "essential": true, "image":
         (module.input.build_source == "image_registry" ? (deploy.input.image_ref contains
         "sha256:" ? module.input.image_repository + "@" + deploy.input.image_ref :
         module.input.image_repository + ":" + deploy.input.image_ref) : (deploy.input.image_ref contains
@@ -597,7 +603,12 @@ module:
         (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) :
         int(float(module.input.fargate_size.vcpu) * 1024)), "environment": ([{name: "PORT", value:
         string(module.input.container_port)}] | concat(module.input.environment_variables != nil ?
-        module.input.environment_variables : [])), "essential": true, "image": (module.input.build_source ==
+        module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil &&
+        deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" &&
+        #.name in module.input.deploy_environment_variable_names && #.value != nil &&
+        !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+        !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : [])),
+        "essential": true, "image": (module.input.build_source ==
         "image_registry" ? (deploy.input.image_ref contains "sha256:" ?
         module.input.image_repository + "@" + deploy.input.image_ref : module.input.image_repository +
         ":" + deploy.input.image_ref) : (deploy.input.image_ref contains "sha256:" ?
@@ -837,7 +848,9 @@ module:
 
     ## Application configuration
 
-    Use Runtime environment variables for plain container environment values. Ravion also sets PORT from Container port.
+    Use **Runtime environment variables** for plain values, as an array of `{name, value}` objects. Ravion also sets `PORT` from Container port.
+
+    Use **Deploy-provided environment variables** to allow a pipeline deploy step to set selected plain values. They cannot replace a Runtime environment variable or Runtime secret, and `PORT` is reserved for the web service.
 
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
 
@@ -958,6 +971,7 @@ module:
     | Image repository                | Yes*     | nginx                      | Required for image registry deployments            |
     | Start command                   | No       | []                         | Command arguments that override an image default CMD |
     | Container port                  | Yes      | 80                         | Port exposed by the app container                  |
+    | Deploy-provided environment variables | No  | -                          | Names a pipeline deploy step may set to plain values; `PORT` is reserved |
     | Health check path               | Yes      | /                          | HTTP path used by the target group health check    |
     | Deregistration delay (secs)     | No       | 300                        | Drain window for a task that is deregistering      |
     | Sticky sessions                 | No       | true                       | Keep clients on the same task, and on the same traffic-shift target group when enabled |

@@ -17,3 +17,10 @@
   placeholder: |-
     - name: DATABASE_URL
       value_from: arn:aws:ssm:us-east-1:123456789012:parameter/my-app/database-url
+- id: deploy_environment_variable_names
+  label: Deploy-provided environment variables
+  type: string_array
+  description: Names a pipeline deploy step may set with `input.environment_variables` for the primary container. Plain values only; can't replace a runtime variable or secret.
+  add_button_label: Add env var name
+  collapsible: true
+  required: false
