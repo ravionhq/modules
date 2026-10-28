@@ -105,10 +105,40 @@ locals {
     && var.load_balancer_attachment.target_group.stickiness != null
     && var.load_balancer_attachment.target_group.stickiness.enabled
   )
-  # Reuse the target-group cookie duration so a client pinned to the
-  # blue or green group stays pinned for the same window as its
-  # in-group target pinning.
-  alb_group_stickiness_duration = local.alb_group_stickiness_enabled ? var.load_balancer_attachment.target_group.stickiness.cookie_duration : null
+  # Group stickiness is required, but pinning a client to one target
+  # group across a deploy is harmful: ECS cutovers only change weights,
+  # which apply only to requests without the AWSALBTG cookie, and AWS
+  # counts the duration from the client's last request. A client that
+  # polls more often than the duration stays on the old target group
+  # until ECS removes its tasks after the bake, then gets the ALB's 503s.
+  # The default of 1 second (the ELBv2 minimum) effectively disables the
+  # pinning while satisfying ELBv2.
+  alb_group_stickiness_duration = local.alb_group_stickiness_enabled ? var.alb_group_stickiness_duration : null
+
+  # Bake time the group-stickiness duration is checked against (see the
+  # precondition on aws_ecs_service.this). Ravion stacks provision with
+  # deployment_type = rolling and pass the form's traffic-shift bake time
+  # in traffic_shift_bake_time_in_minutes; direct Terraform users get the
+  # check from deployment_type / deployment_strategy_config. Null skips it.
+  alb_group_stickiness_bake_time_in_minutes = (
+    var.traffic_shift_bake_time_in_minutes != null
+    ? var.traffic_shift_bake_time_in_minutes
+    : (local.is_native_traffic_shift ? var.deployment_strategy_config.bake_time_in_minutes : null)
+  )
+  alb_group_stickiness_max_duration = max(1, coalesce(local.alb_group_stickiness_bake_time_in_minutes, 0) * 60)
+
+  # Whether the service has ALB listener rules the deploy manager can
+  # reconcile (BYO rules, or module-created rules for a Ravion-managed
+  # service). False for NLB services and services without a load balancer.
+  alb_listener_rules_present = (
+    local.enable_load_balancer
+    && !local.enable_nlb_listener
+    && (
+      local.ravion_managed
+      ? length(aws_lb_listener_rule.ravion) > 0
+      : length(aws_lb_listener_rule.alb) > 0
+    )
+  )
 
   # Placeholder container name and port
   placeholder_container_name = "app"

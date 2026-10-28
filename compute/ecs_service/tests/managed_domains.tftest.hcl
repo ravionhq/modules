@@ -113,6 +113,39 @@ run "empty_domains_creates_auto_domain_and_listener_rule" {
     condition     = length(aws_lb_listener_rule.alb) == 0
     error_message = "Managed mode must suppress caller-provided listener rules"
   }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 0
+    error_message = "Managed rules without target-group stickiness should export 0 so Ravion turns group stickiness off"
+  }
+}
+
+run "managed_rule_group_stickiness_defaults_to_one_second" {
+  command = plan
+
+  variables {
+    load_balancer_attachment = {
+      target_group = {
+        port     = 80
+        protocol = "HTTP"
+        stickiness = {
+          enabled = true
+          type    = "lb_cookie"
+        }
+      }
+      listener_rules = []
+    }
+  }
+
+  assert {
+    condition     = aws_lb_listener_rule.ravion["0"].action[0].forward[0].stickiness[0].enabled && aws_lb_listener_rule.ravion["0"].action[0].forward[0].stickiness[0].duration == 1
+    error_message = "Managed rules should enable group stickiness with the 1-second default, not the 86400-second target-group cookie duration"
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 1
+    error_message = "Managed rules should export the 1-second group-stickiness duration"
+  }
 }
 
 run "custom_domain_creates_certificate_domain_and_rule" {

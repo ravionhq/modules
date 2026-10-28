@@ -34,7 +34,10 @@ resource "aws_lb_listener_rule" "alb" {
   # When the target groups have target-level stickiness the forward
   # action must carry group-level stickiness or ELBv2 rejects the
   # weighted forward ECS writes during traffic-shift deployments — see
-  # alb_group_stickiness_enabled in locals.tf.
+  # alb_group_stickiness_enabled in locals.tf. The duration only applies
+  # at create time (ignore_changes on action); the deploy manager
+  # reconciles existing rules from the listener_rule_group_stickiness_duration
+  # output.
   action {
     type             = "forward"
     target_group_arn = local.alb_group_stickiness_enabled ? null : aws_lb_target_group.tg_1[0].arn

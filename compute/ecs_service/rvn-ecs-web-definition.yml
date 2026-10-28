@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.6.0
-  description: Link every domain the module serves from the Links section of its overview page.
+  version: 2.7.0
+  description: Stop blue/green, linear, and canary deploys from returning 503s to returning clients after the bake, with a new Deployment stickiness duration setting (default 1 second) that Ravion applies to the listener rules on each deploy.
 module:
   inputs:
     - id: section_cluster
@@ -345,7 +345,7 @@ module:
     - id: target_group_stickiness_enabled
       label: Sticky sessions
       type: boolean
-      description: Enable load balancer cookie stickiness so repeat requests are routed to the same task when possible. When enabled, traffic-shift deployments also keep clients on the first production or alternate target group they reach.
+      description: Keep repeat requests on the same task when possible. Traffic-shift deploys also need group stickiness on the listener rules, set by Deployment stickiness duration.
       collapsible: true
       default: true
     - id: target_group_stickiness_type
@@ -376,6 +376,20 @@ module:
       required: false
       show_when:
         target_group_stickiness_type: app_cookie
+    - id: deployment_group_stickiness_duration
+      label: Deployment stickiness duration (secs)
+      type: number
+      description: How long a client stays on the old or new deployment after its last request. Above 1, clients can stay on the old deployment and get 503s once it is removed after the bake. Can't exceed the bake time.
+      collapsible: true
+      max: 604800
+      min: 1
+      show_when:
+        target_group_stickiness_enabled: true
+        deployment_strategy:
+          - blue_green
+          - linear
+          - canary
+      default: 1
     - $template: ../../partials/templates/alb-listener-rule-inputs.yml
       with:
         # Managed mode discards caller listener rules (the module creates
@@ -438,6 +452,14 @@ module:
                 cloudwatch_alarm_unhealthy_hosts_threshold: << module.input.cloudwatch_alarm_unhealthy_hosts_threshold >>
               - container_port: << module.input.container_port >>
                 health_check_grace_period_seconds: << module.input.health_check_grace_period_seconds >>
+                # Hidden (rolling or no sticky sessions) renders null, which takes the
+                # Terraform default of 1 second.
+                alb_group_stickiness_duration: << module.input.deployment_group_stickiness_duration || nil >>
+                # The stack provisions with deployment_type = rolling, so pass the
+                # traffic-shift bake time for the group-stickiness duration check.
+                traffic_shift_bake_time_in_minutes: >-
+                  << module.input.target_group_stickiness_enabled && module.input.deployment_strategy != "rolling" ?
+                  module.input.deployment_bake_time_in_minutes : nil >>
                 load_balancer_attachment:
                   $template: ../../partials/templates/alb-load-balancer-attachment.yml
                   with:
@@ -551,6 +573,11 @@ module:
           ecs_production_listener_rule_arn: <<stack.output.production_listener_rule_arn>>
           ecs_infrastructure_role_arn: <<stack.output.ecs_infrastructure_role_arn>>
           ecs_test_listener_rule_arn: <<stack.output.test_listener_rule_arn>>
+          # Group stickiness DurationSeconds the deploy manager applies to the
+          # existing production and test listener rules before each deploy
+          # (Terraform ignores rule action changes). N > 0 = on with N seconds,
+          # 0 = off, null = leave the rules alone (NLB or no listener rule).
+          ecs_listener_rule_group_stickiness_duration: <<stack.output.listener_rule_group_stickiness_duration>>
     task_definition:
       $merge:
         - ../../partials/deploy/ecs-service-task-definition-common.yml
@@ -911,13 +938,17 @@ module:
 
     ## Sticky sessions and traffic shifts
 
-    The module definition sets Sticky sessions to true by default. When that setting is enabled, Ravion configures target-group stickiness for the service's production and alternate target groups, so the load balancer keeps repeat requests on the same task when possible. With the default Load balancer cookie stickiness type, the target-level cookie is `AWSALB`; AWS may also set `AWSALBCORS` for CORS support. With Application cookie stickiness, the target-level cookie is the configured Application cookie name, and AWS may also set `AWSALBAPP-*` cookies.
+    Sticky sessions is on by default. Ravion then turns on target-group stickiness for the service's production and alternate target groups, so the load balancer keeps repeat requests on the same task when possible. With the default Load balancer cookie stickiness type, the target-level cookie is `AWSALB`; AWS may also set `AWSALBCORS` for CORS support. With Application cookie stickiness, the target-level cookie is the configured Application cookie name, and AWS may also set `AWSALBAPP-*` cookies. Stickiness cookie duration sets how long these target-level cookies last.
 
-    During Blue/green, Linear, and Canary deployments, Ravion also enables ALB group stickiness on the production and standby listener rule forward actions when Sticky sessions is enabled. A client that first reaches the production target group or the alternate target group keeps using that same group for the stickiness cookie duration, even while the deployment's weighted traffic shift changes for new clients.
+    When target groups are sticky, AWS also requires ALB group stickiness on the listener rules that forward to them, so Ravion turns it on for the production and test listener rules. Group stickiness uses the `AWSALBTG` cookie (and `AWSALBTGCORS` for CORS requests) to keep a client on the target group it reached last. AWS manages that cookie name; Application cookie name applies only to target-level stickiness.
 
-    The ALB group stickiness cookie is `AWSALBTG`. For CORS requests, AWS may also set `AWSALBTGCORS`. Application cookie name applies only to `app_cookie` stickiness inside the selected target group; the ALB group stickiness cookie name is managed by AWS and cannot be changed.
+    Blue/green, Linear, and Canary deployments move traffic by changing the listener rule's target-group weights. The weights apply only to requests without an `AWSALBTG` cookie. A client with the cookie keeps going to the target group the cookie names, and AWS counts the duration from the client's last request, so a client that sends requests more often than the duration (for example, an app polling every 30 seconds) never leaves the old target group. Once the bake time ends, ECS removes the old tasks, and the load balancer answers those clients with 503 errors until the cookie expires.
 
-    To clear stickiness for a browser, open the browser developer tools, go to Application or Storage > Cookies for the service domain, and delete the relevant cookies: `AWSALBTG` and `AWSALBTGCORS` for ALB group stickiness; `AWSALB` and `AWSALBCORS` for the default target-level stickiness; and the configured Application cookie name plus any `AWSALBAPP-*` cookies when Application cookie stickiness is selected. For API clients, remove those cookie names from the cookie jar or stop sending them in the `Cookie` header. The next request can then enter the current traffic split like a new client. If Sticky sessions is turned off, Ravion does not enable target-group stickiness or ALB group stickiness for this behavior.
+    That is why Deployment stickiness duration defaults to 1 second, the shortest duration AWS allows. It meets the AWS requirement without pinning clients across a deploy: repeat requests still reach the same task through target-level stickiness, but any request more than a second after the previous one enters the current traffic split. A higher value keeps clients on the deployment they first reached during the traffic shift, at the cost of 503s for any of them still active when the old tasks are removed. The value can't exceed the bake time, and AWS recommends 5 minutes or less. See [Blue/green deployments with Application Load Balancer](https://aws.amazon.com/blogs/devops/blue-green-deployments-with-application-load-balancer/).
+
+    Ravion applies Deployment stickiness duration to the production and test listener rules before each deploy, so changing it, or turning Sticky sessions off, updates existing rules on the next deploy. With Sticky sessions off, Ravion turns group stickiness off on the rules.
+
+    To clear stickiness for a browser, open the browser developer tools, go to Application or Storage > Cookies for the service domain, and delete the relevant cookies: `AWSALBTG` and `AWSALBTGCORS` for ALB group stickiness; `AWSALB` and `AWSALBCORS` for the default target-level stickiness; and the configured Application cookie name plus any `AWSALBAPP-*` cookies when Application cookie stickiness is selected. For API clients, remove those cookie names from the cookie jar or stop sending them in the `Cookie` header. The next request then enters the current traffic split like a new client.
 
     ## Builder settings
 
@@ -960,7 +991,8 @@ module:
     | Container port                  | Yes      | 80                         | Port exposed by the app container                  |
     | Health check path               | Yes      | /                          | HTTP path used by the target group health check    |
     | Deregistration delay (secs)     | No       | 300                        | Drain window for a task that is deregistering      |
-    | Sticky sessions                 | No       | true                       | Keep clients on the same task, and on the same traffic-shift target group when enabled |
+    | Sticky sessions                 | No       | true                       | Keep clients on the same task when possible        |
+    | Deployment stickiness duration (secs) | No | 1                          | How long a client stays on one deployment during a traffic shift; can't exceed the bake time |
     | Domain host rules               | No       | -                          | Hostnames such as app.example.com or *.example.com |
     | Path rules                      | No       | -                          | Path patterns such as /*, /api/*, or /app/*        |
     | Capacity provider               | Yes      | fargate                    | Primary service capacity provider                  |
