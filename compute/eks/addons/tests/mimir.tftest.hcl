@@ -446,3 +446,68 @@ run "early_compaction_needs_the_limit_the_module_applies" {
     error_message = "Early compaction must stay off when the module does not set the ingesters' memory limit."
   }
 }
+
+run "ingesters_get_a_go_memory_limit_and_store_gateways_room_for_their_heap" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  # 90% of the 6Gi limit, in MiB.
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).ingester if can(yamldecode(d).ingester.resources)]).env == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "Ingesters must get GOMEMLIMIT at 90% of their memory limit."
+  }
+
+  # The chart sets the store-gateways' GOMEMLIMIT to their memory request.
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).store_gateway if can(yamldecode(d).store_gateway.resources)]).resources == { requests = { cpu = "500m", memory = "2Gi" }, limits = { memory = "3Gi" } }
+    error_message = "Store-gateways must request 2Gi, above the heap they hold while serving queries."
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).ingester.replicas == 3 && !can(yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.ingester.instance_limits)
+    error_message = "By default three ingesters run with no series limit."
+  }
+}
+
+run "ingester_count_size_and_series_limit_are_configurable" {
+  command = plan
+
+  variables {
+    metrics_providers         = ["mimir"]
+    mimir_ingester_replicas   = 6
+    mimir_ingester_max_series = 3500000
+    mimir_ingester_resources = {
+      requests = { cpu = "1", memory = "12Gi" }
+      limits   = { memory = "12Gi" }
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).ingester.replicas == 6
+    error_message = "mimir_ingester_replicas must set the ingester count."
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.ingester.instance_limits.max_series == 3500000 && yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.ingester.ring.replication_factor == 3
+    error_message = "mimir_ingester_max_series must reach the ingester's instance limits, beside its ring."
+  }
+
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).ingester if can(yamldecode(d).ingester.resources)]).env == [{ name = "GOMEMLIMIT", value = "11059MiB" }] && yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.blocks_storage.tsdb.early_head_compaction_min_in_memory_series == 786432
+    error_message = "GOMEMLIMIT and the early compaction threshold must follow a 12Gi limit."
+  }
+}
+
+run "rejects_fewer_than_three_ingesters" {
+  command = plan
+
+  variables {
+    metrics_providers       = ["mimir"]
+    mimir_ingester_replicas = 2
+  }
+
+  expect_failures = [var.mimir_ingester_replicas]
+}

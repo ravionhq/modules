@@ -226,8 +226,8 @@ locals {
   grafana_resilience_values = var.addon_resilience_enabled ? [yamlencode({
     priorityClassName = local.addon_critical_priority
     resources = {
-      requests = { cpu = "100m", memory = "256Mi" }
-      limits   = { memory = "512Mi" }
+      requests = { cpu = var.grafana_resources.cpu_request, memory = var.grafana_resources.memory_request }
+      limits   = { memory = var.grafana_resources.memory_limit }
     }
   })] : []
 
@@ -258,9 +258,14 @@ locals {
         priorityClassName = local.addon_critical_priority
         podAnnotations    = local.addon_do_not_disrupt
         resources         = var.mimir_ingester_resources
+        env               = local.mimir_ingester_go_env
       }
-      store_gateway = { priorityClassName = local.addon_critical_priority, podAnnotations = local.addon_do_not_disrupt }
-      compactor     = { priorityClassName = local.addon_critical_priority, podAnnotations = local.addon_do_not_disrupt }
+      store_gateway = {
+        priorityClassName = local.addon_critical_priority
+        podAnnotations    = local.addon_do_not_disrupt
+        resources         = var.mimir_store_gateway_resources
+      }
+      compactor = { priorityClassName = local.addon_critical_priority, podAnnotations = local.addon_do_not_disrupt }
     },
   ))] : []
 

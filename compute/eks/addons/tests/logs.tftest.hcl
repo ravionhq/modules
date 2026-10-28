@@ -573,3 +573,52 @@ run "grafana_with_logs_only_has_one_datasource" {
     error_message = "With no workspace to query there is nothing for the AMP role to grant"
   }
 }
+
+run "loki_gets_a_go_memory_limit_below_its_container_limit" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+    loki_resources = { memory_request = "1Gi", memory_limit = "4Gi" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.resources == { requests = { cpu = "200m", memory = "1Gi" }, limits = { memory = "4Gi" } }
+    error_message = "loki_resources must size the single binary"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.extraEnv == [{ name = "GOMEMLIMIT", value = "3686MiB" }]
+    error_message = "Loki must get GOMEMLIMIT at 90% of its memory limit"
+  }
+}
+
+run "grafana_loads_dashboards_and_alerts_from_its_namespace" {
+  command = plan
+
+  variables {
+    logs_providers  = ["loki"]
+    grafana_enabled = true
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).sidecar.dashboards.enabled && yamldecode(helm_release.grafana[0].values[0]).sidecar.dashboards.label == "grafana_dashboard" && yamldecode(helm_release.grafana[0].values[0]).sidecar.dashboards.folderAnnotation == "grafana_folder"
+    error_message = "Grafana must load dashboards from ConfigMaps labelled grafana_dashboard"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).sidecar.alerts.enabled && yamldecode(helm_release.grafana[0].values[0]).sidecar.alerts.label == "grafana_alert" && yamldecode(helm_release.grafana[0].values[0]).sidecar.alerts.initAlerts
+    error_message = "Grafana must load alerting from ConfigMaps labelled grafana_alert at startup"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).rbac.namespaced
+    error_message = "The sidecars' role must stay inside Grafana's namespace"
+  }
+
+  # ebs_csi_driver_enabled is false in this file: no StorageClass to bind.
+  assert {
+    condition     = !can(yamldecode(helm_release.grafana[0].values[0]).persistence)
+    error_message = "Without the managed gp3 class Grafana must not ask for a volume"
+  }
+}

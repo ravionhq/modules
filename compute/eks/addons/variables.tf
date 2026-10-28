@@ -1026,7 +1026,7 @@ variable "ravion_operator_warm_capacity" {
       ephemeral_storage = optional(string, "1Gi")
     }), {})
     placement = optional(object({
-      node_selector = optional(map(string), {})
+      node_selector = optional(map(string))
       tolerations = optional(list(object({
         key      = string
         operator = string
@@ -1039,7 +1039,7 @@ variable "ravion_operator_warm_capacity" {
       topology_spread_when_unsatisfiable = optional(string, "ScheduleAnyway")
     }), {})
   })
-  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. Tune replicas, per-slot requests and placement for actual rollout requirements."
+  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. A null node_selector places them in the default Karpenter node pool, on On-Demand capacity when the pool offers it, where rollouts surge On-Demand baselines and executor Jobs land; {} places them anywhere. Tune replicas, per-slot requests and placement for actual rollout requirements."
   default     = {}
 
   validation {
@@ -1363,7 +1363,7 @@ variable "loki_resources" {
     cpu_limit      = optional(string)
     memory_limit   = optional(string, "1Gi")
   })
-  description = "Resource requests and limits for the Loki pod. Sized for a small cluster in single-binary mode; raise the memory limit before raising anything else, because query fan-out over many streams is what pushes Loki over. Null limits are omitted."
+  description = "Resource requests and limits for the Loki pod. Sized for a small cluster in single-binary mode; raise the memory limit before raising anything else, because query fan-out over many streams is what pushes Loki over. Null limits are omitted. GOMEMLIMIT is set to 90% of a memory limit given in Mi or Gi."
   default     = {}
   nullable    = false
 }
@@ -1476,8 +1476,19 @@ variable "grafana_service_account" {
 
 variable "grafana_helm_values" {
   type        = list(string)
-  description = "Extra YAML documents merged into the grafana/grafana chart values, after the values this module derives (later entries win). The route to an ingress, persistence, an admin password from an existing secret, dashboards, or resources."
+  description = "Extra YAML documents merged into the grafana/grafana chart values, after the values this module derives (later entries win). The route to an admin password from an existing secret, plugins, or a different volume size."
   default     = []
+  nullable    = false
+}
+
+variable "grafana_resources" {
+  type = object({
+    cpu_request    = optional(string, "100m")
+    memory_request = optional(string, "256Mi")
+    memory_limit   = optional(string, "512Mi")
+  })
+  description = "Requests and memory limit for the Grafana pod. Raise the memory for many dashboards or alert rules: Grafana evaluates alert rules itself. Applied only when addon_resilience_enabled is true."
+  default     = {}
   nullable    = false
 }
 
@@ -1676,7 +1687,7 @@ variable "traces_destinations" {
   type        = any
   description = <<-EOT
     Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
-    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); cpu_request, memory_request and memory_limit size the pod (blank for tempo_resources); helm_values, any other chart values as an object.
     - xray: AWS X-Ray, in region (the cluster's when null).
     - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
     - datadog: site and a Secrets Manager ARN holding the API key.
@@ -1707,6 +1718,7 @@ variable "traces_destinations" {
       "destination",
       "retention_days", "storage_backend", "s3_bucket_name", "persistence_enabled", "persistence_size",
       "metrics_generator_enabled", "storage_class", "chart_version", "helm_values",
+      "cpu_request", "memory_request", "memory_limit",
       "region",
       "url", "user", "token_secret_arn",
       "site", "api_key_secret_arn",
@@ -1746,7 +1758,7 @@ variable "tempo_resources" {
     cpu_limit      = optional(string)
     memory_limit   = optional(string, "2Gi")
   })
-  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted."
+  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted. The tempo destination's cpu_request, memory_request and memory_limit take precedence. GOMEMLIMIT is set to 90% of a memory limit given in Mi or Gi."
   default     = {}
   nullable    = false
 }
@@ -2148,7 +2160,7 @@ variable "mimir_ingester_resources" {
     requests = object({ cpu = string, memory = string })
     limits   = object({ memory = string })
   })
-  description = "CPU and memory for each of the three Mimir ingesters, which hold recent samples in memory: each holds a copy of every series, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. The memory limit, in Mi or Gi, also sets when an ingester compacts early to drop series from pods that have gone: half the limit at 8KiB a series. Applied, and early compaction turned on, only when addon_resilience_enabled is true."
+  description = "CPU and memory for each Mimir ingester, which hold recent samples in memory: every series is held by three of them, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. The memory limit, in Mi or Gi, also sets when an ingester compacts early to drop series from pods that have gone: half the limit at 8KiB a series. So does GOMEMLIMIT, at 90% of the limit. Applied, and early compaction turned on, only when addon_resilience_enabled is true."
   default = {
     requests = { cpu = "1", memory = "6Gi" }
     limits   = { memory = "6Gi" }
@@ -2156,9 +2168,46 @@ variable "mimir_ingester_resources" {
   nullable = false
 }
 
+variable "mimir_ingester_replicas" {
+  type        = number
+  description = "Number of Mimir ingesters. Every series is written to three of them, so more ingesters each hold a smaller share of the series and need less memory. At least 3, each on its own node."
+  default     = 3
+  nullable    = false
+
+  validation {
+    condition     = var.mimir_ingester_replicas >= 3 && floor(var.mimir_ingester_replicas) == var.mimir_ingester_replicas
+    error_message = "mimir_ingester_replicas must be a whole number of at least 3."
+  }
+}
+
+variable "mimir_ingester_max_series" {
+  type        = number
+  description = "In-memory series one Mimir ingester holds before it refuses new ones, so a burst of new series is rejected (and retried by the collectors) instead of running every ingester out of memory at once. 0 is no limit, as in Mimir."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.mimir_ingester_max_series >= 0 && floor(var.mimir_ingester_max_series) == var.mimir_ingester_max_series
+    error_message = "mimir_ingester_max_series must be a whole number, 0 for no limit."
+  }
+}
+
+variable "mimir_store_gateway_resources" {
+  type = object({
+    requests = object({ cpu = string, memory = string })
+    limits   = object({ memory = string })
+  })
+  description = "CPU and memory for each of the three Mimir store-gateways, which serve history from S3. The chart sets their GOMEMLIMIT to the memory request, so the request must cover the heap they hold while serving queries (about 1-1.5GiB once dashboards read Mimir), or Go collects garbage continuously and burns CPU. Applied only when addon_resilience_enabled is true."
+  default = {
+    requests = { cpu = "500m", memory = "2Gi" }
+    limits   = { memory = "3Gi" }
+  }
+  nullable = false
+}
+
 variable "mimir_helm_values" {
   type        = list(string)
-  description = "Extra YAML documents merged into the mimir-distributed chart values, after the values this module derives (later entries win). The route to more ingesters, caches, per-component resources, or a private image registry."
+  description = "Extra YAML documents merged into the mimir-distributed chart values, after the values this module derives (later entries win). The route to caches, other per-component resources, or a private image registry."
   default     = []
   nullable    = false
 }

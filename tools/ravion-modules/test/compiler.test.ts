@@ -965,7 +965,9 @@ describe("compiler", () => {
     const inputs = getModuleInputs(compiled.module);
     const indexOf = (id: string) => inputs.findIndex((input) => input.id === id);
 
-    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_enabled") + 1);
+    // Ravion EKS Management ends with its warm capacity settings.
+    assert.equal(indexOf("ravion_operator_warm_capacity_enabled"), indexOf("ravion_operator_enabled") + 1);
+    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_warm_capacity_memory") + 1);
     assert.ok(indexOf("section_alb") < indexOf("section_nlb"));
     assert.ok(indexOf("section_nlb") < indexOf("aws_load_balancer_controller_chart_version"));
     assert.ok(indexOf("aws_load_balancer_controller_chart_version") < indexOf("section_karpenter"));

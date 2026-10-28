@@ -269,6 +269,11 @@ run "allowlist_composition" {
   }
 
   assert {
+    condition     = strcontains(helm_release.otel_collector[0].values[0], "kube_node_spec_unschedulable|kube_persistentvolumeclaim_info|kube_persistentvolumeclaim_status_phase|kube_persistentvolumeclaim_resource_requests_storage_bytes|kube_persistentvolume_capacity_bytes|kube_persistentvolume_status_phase|up")
+    error_message = "The kube-state-metrics keep regex must carry cordoned nodes, claims and volumes"
+  }
+
+  assert {
     condition     = strcontains(helm_release.otel_collector[0].values[0], "node_cpu_usage_seconds_total|node_memory_working_set_bytes|up")
     error_message = "The kubelet resource keep regex must carry its base list plus up"
   }

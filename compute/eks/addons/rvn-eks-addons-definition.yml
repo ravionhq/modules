@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.27.0
-  description: Enable public and private ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
+  version: 0.28.0
+  description: 'Size Loki, Tempo, Grafana and the Mimir ingesters, cap series per ingester, and turn on warm capacity from the form. Loki, Tempo and Mimir ingesters now collect garbage before their memory limit instead of being OOMKilled, Mimir store-gateways get room for their heap, Grafana keeps its users and alert state on a volume and loads dashboards and alert rules from ConfigMaps, and cordoned nodes and volume claims are collected for dashboards.'
 module:
   inputs:
     - id: cluster
@@ -108,6 +108,45 @@ module:
       moved_from:
         - beacon_enabled
       type: boolean
+    - default: false
+      description: Low-priority placeholder pods keep spare nodes running, so rollouts and pipeline jobs start without waiting for a new node. They are evicted the moment real pods need the room. The reserved capacity is billed.
+      id: ravion_operator_warm_capacity_enabled
+      label: Warm capacity
+      show_when:
+        ravion_operator_enabled: true
+      type: boolean
+    - collapsible: true
+      default: 8
+      description: Eight fit six pipeline jobs plus a second copy of a two-pod web service during a rollout.
+      id: ravion_operator_warm_capacity_slots
+      label: Warm slots
+      min: 1
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_warm_capacity_enabled: true
+      type: number
+    - collapsible: true
+      default: 100m
+      id: ravion_operator_warm_capacity_cpu
+      label: CPU per slot
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_warm_capacity_enabled: true
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: ravion_operator_warm_capacity_memory
+      label: Memory per slot
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_warm_capacity_enabled: true
+      type: string
     - description: Shared Application Load Balancers for HTTP and HTTPS workloads. EKS Web services attach through TargetGroupBinding.
       id: section_alb
       label: Application load balancers
@@ -710,6 +749,40 @@ module:
         logs_providers: loki
       type: string
     - collapsible: true
+      default: 200m
+      id: loki_cpu_request
+      label: Loki CPU request
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        logs_enabled: true
+        logs_providers: loki
+      type: string
+    - collapsible: true
+      default: 512Mi
+      id: loki_memory_request
+      label: Loki memory request
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        logs_enabled: true
+        logs_providers: loki
+      type: string
+    - collapsible: true
+      default: 1Gi
+      description: Searches over many streams are what push Loki over it, so raise this first.
+      id: loki_memory_limit
+      label: Loki memory limit
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        logs_enabled: true
+        logs_providers: loki
+      type: string
+    - collapsible: true
       default: 365
       description: Retention for the module-managed CloudWatch log groups, in days.
       id: cloudwatch_logs_retention_days
@@ -1037,6 +1110,49 @@ module:
         metrics_enabled: true
         metrics_providers: mimir
       type: string_array
+    - collapsible: true
+      default: 3
+      description: Every series is held by three ingesters, so more ingesters each hold less of them. Each runs on its own node.
+      id: mimir_ingester_replicas
+      label: Mimir ingesters
+      min: 3
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: number
+    - collapsible: true
+      default: "1"
+      id: mimir_ingester_cpu
+      label: Ingester CPU request
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - collapsible: true
+      default: 6Gi
+      description: Request and limit of each ingester, at roughly 5-8KiB per series it holds. Series from pods that have gone count until they age out.
+      id: mimir_ingester_memory
+      label: Ingester memory
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - collapsible: true
+      description: An ingester refuses new series past this many, so a burst is rejected and retried instead of running every ingester out of memory. Blank for no limit.
+      id: mimir_ingester_max_series
+      label: Series limit per ingester
+      min: 1
+      placeholder: No limit
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: number
     - default: true
       id: cloudwatch_enhanced_observability_enabled
       label: Enhanced observability
@@ -1264,6 +1380,37 @@ module:
             destination: tempo
           type: boolean
         - collapsible: true
+          id: cpu_request
+          label: CPU request
+          placeholder: 200m
+          patterns:
+            - message: A CPU quantity such as 100m, 0.5, or 2.
+              pattern: ^[0-9]+(\.[0-9]+)?m?$
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
+          id: memory_request
+          label: Memory request
+          placeholder: 512Mi
+          patterns:
+            - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+              pattern: ^[0-9]+(Mi|Gi)$
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
+          description: One pod answers every trace query, so large dashboards are what push it over. Blank for 2Gi.
+          id: memory_limit
+          label: Memory limit
+          placeholder: 2Gi
+          patterns:
+            - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+              pattern: ^[0-9]+(Mi|Gi)$
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
           description: For example 3.1.0.
           id: chart_version
           label: Chart version
@@ -1486,6 +1633,37 @@ module:
       show_when:
         grafana_enabled: true
       type: array
+    - collapsible: true
+      default: 100m
+      id: grafana_cpu_request
+      label: Grafana CPU request
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: grafana_memory_request
+      label: Grafana memory request
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: 512Mi
+      description: Many dashboards or alert rules need more; Grafana evaluates alert rules itself.
+      id: grafana_memory_limit
+      label: Grafana memory limit
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        grafana_enabled: true
+      type: string
     - id: section_grafana_sign_in
       label: Grafana sign-in
       type: section
@@ -1762,6 +1940,10 @@ module:
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
           s3_bucket_name: << module.input.loki_s3_bucket_name >>
+        loki_resources:
+          cpu_request: << module.input.loki_cpu_request || "200m" >>
+          memory_request: << module.input.loki_memory_request || "512Mi" >>
+          memory_limit: << module.input.loki_memory_limit || "1Gi" >>
         logs_cloudwatch:
           retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 365 >>'
         logs_grafana_cloud:
@@ -1804,6 +1986,15 @@ module:
           s3_bucket_name: << module.input.mimir_s3_bucket_name >>
           storage_class: << module.input.mimir_storage_class >>
           zones: '<< module.input.mimir_zones != nil ? module.input.mimir_zones : [] >>'
+        mimir_ingester_replicas: '<< module.input.mimir_ingester_replicas != nil ? module.input.mimir_ingester_replicas : 3 >>'
+        mimir_ingester_max_series: '<< module.input.mimir_ingester_max_series != nil ? module.input.mimir_ingester_max_series : 0 >>'
+        # Request and limit match, so the kubelet never evicts an ingester first.
+        mimir_ingester_resources:
+          requests:
+            cpu: << module.input.mimir_ingester_cpu || "1" >>
+            memory: << module.input.mimir_ingester_memory || "6Gi" >>
+          limits:
+            memory: << module.input.mimir_ingester_memory || "6Gi" >>
         metrics_cloudwatch:
           enhanced_observability_enabled: '<< module.input.cloudwatch_enhanced_observability_enabled != nil ? module.input.cloudwatch_enhanced_observability_enabled : true >>'
           application_signals_enabled: '<< module.input.cloudwatch_application_signals_enabled != nil ? module.input.cloudwatch_application_signals_enabled : false >>'
@@ -1838,6 +2029,10 @@ module:
         grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [{"provider": "basic"}] >>'
         grafana_environment_variables: '<< module.input.grafana_environment_variables != nil ? module.input.grafana_environment_variables : [] >>'
         grafana_secrets: '<< module.input.grafana_secrets != nil ? module.input.grafana_secrets : [] >>'
+        grafana_resources:
+          cpu_request: << module.input.grafana_cpu_request || "100m" >>
+          memory_request: << module.input.grafana_memory_request || "256Mi" >>
+          memory_limit: << module.input.grafana_memory_limit || "512Mi" >>
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
@@ -1855,6 +2050,12 @@ module:
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
+        ravion_operator_warm_capacity:
+          enabled: << module.input.ravion_operator_enabled == true && module.input.ravion_operator_warm_capacity_enabled == true >>
+          replicas: '<< module.input.ravion_operator_warm_capacity_slots != nil ? module.input.ravion_operator_warm_capacity_slots : 8 >>'
+          requests:
+            cpu: << module.input.ravion_operator_warm_capacity_cpu || "100m" >>
+            memory: << module.input.ravion_operator_warm_capacity_memory || "256Mi" >>
         ravion_operator_project_id: << project.id >>
         ravion_operator_environment_id: << environment.id >>
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
@@ -2138,7 +2339,7 @@ module:
 
     Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
-    For predictable start latency, `ravion_operator_warm_capacity.enabled=true` through **Advanced Terraform variables** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`; configure slot requests, replica count and placement accordingly. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
+    For predictable start latency, **Warm capacity** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`. They go to the default Karpenter node pool, on its On-Demand capacity when it has any; set the slot count and size here, and other placement through `ravion_operator_warm_capacity.placement` in **Advanced Terraform variables**. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
 
     **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Different releases deploy in parallel, up to twelve at once by default; two versions of the same release never do, and management commands wait for running deploys. Ravion tunes capacity over the air without a module release. Pin it for this cluster with `ravion_operator_execution_max_concurrent` (1-64) through **Advanced Terraform variables**. Current Operators always serialize per release; namespace lane selection is not supported. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` the same way. Drain existing ownership before changing management scope.
 

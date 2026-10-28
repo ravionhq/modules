@@ -857,3 +857,59 @@ run "tempo_follows_the_last_values_document" {
     error_message = "A later values document turning persistence off must win, as it does in Helm"
   }
 }
+
+run "tempo_gets_a_go_memory_limit_below_its_container_limit" {
+  command = plan
+
+  variables {
+    traces_destinations = [{ destination = "tempo" }]
+  }
+
+  # 90% of the 2Gi default.
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "1843MiB" }]
+    error_message = "Tempo must get GOMEMLIMIT at 90% of its memory limit"
+  }
+}
+
+run "tempo_card_sizes_the_pod" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", cpu_request = "1", memory_request = "4Gi", memory_limit = "6Gi" },
+    ]
+    tempo_resources = { cpu_limit = "2" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.resources == { requests = { cpu = "1", memory = "4Gi" }, limits = { cpu = "2", memory = "6Gi" } }
+    error_message = "The Tempo card's sizing must reach the pod, beside tempo_resources' CPU limit"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "GOMEMLIMIT must follow the card's memory limit"
+  }
+}
+
+run "blank_tempo_card_sizing_falls_back_to_tempo_resources" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", cpu_request = "", memory_request = null },
+    ]
+    tempo_resources = { cpu_request = "300m", memory_request = "1Gi", memory_limit = "3000M" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.resources == { requests = { cpu = "300m", memory = "1Gi" }, limits = { memory = "3000M" } }
+    error_message = "Blank card fields must fall back to tempo_resources"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == []
+    error_message = "A limit outside Mi or Gi must set no GOMEMLIMIT"
+  }
+}

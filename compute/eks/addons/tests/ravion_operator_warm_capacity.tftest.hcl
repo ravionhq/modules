@@ -100,3 +100,15 @@ run "warm_capacity_settings_reach_the_chart" {
     error_message = "Warm-capacity count, requests and placement must reach the local chart."
   }
 }
+
+run "warm_capacity_without_a_default_node_pool_goes_anywhere" {
+  command = plan
+  variables {
+    ravion_operator_warm_capacity = { enabled = true }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator_warm_capacity[0].values[0]).nodeSelector == {}
+    error_message = "Without the default node pool there is nothing to select."
+  }
+}
