@@ -62,25 +62,25 @@ module:
       label: Public IPs in public subnets
       type: boolean
     - collapsible: true
-      description: Leave empty to use /24 blocks of the VPC CIDR. One per subnet pair.
+      description: Leave empty to split the VPC CIDR into subnets 8 bits longer than its prefix, such as /24s of a /16. One per subnet pair.
       id: public_subnet_cidrs
       label: Public subnet CIDRs
       required: false
       type: string_array
     - collapsible: true
-      description: Leave empty to use /24 blocks of the VPC CIDR. One per subnet pair.
+      description: Leave empty to split the VPC CIDR into subnets 8 bits longer than its prefix, such as /24s of a /16. One per subnet pair.
       id: private_subnet_cidrs
       label: Private subnet CIDRs
       required: false
       type: string_array
     - collapsible: true
-      description: Leave empty to use /24 blocks of the secondary VPC CIDR. One per subnet pair.
+      description: Leave empty to split the secondary VPC CIDR into subnets 8 bits longer than its prefix, such as /24s of a /16. One per subnet pair.
       id: secondary_public_subnet_cidrs
       label: Secondary public subnet CIDRs
       required: false
       type: string_array
     - collapsible: true
-      description: Leave empty to use /24 blocks of the secondary VPC CIDR. One per subnet pair.
+      description: Leave empty to split the secondary VPC CIDR into subnets 8 bits longer than its prefix, such as /24s of a /16. One per subnet pair.
       id: secondary_private_subnet_cidrs
       label: Secondary private subnet CIDRs
       required: false
@@ -299,7 +299,7 @@ module:
 
     ### Subnet CIDRs
 
-    By default each subnet is a `/24` of its CIDR block. Set the subnet CIDR lists, one entry per subnet pair, for larger subnets. Set **Availability zones** with them to pin which zone each entry is created in.
+    By default each subnet's prefix is 8 bits longer than its CIDR block's: a `/16` block gives `/24` subnets, and a `/20` block gives `/28` subnets of 11 usable addresses each. Use a `/16` block, or set the subnet CIDR lists, one entry per subnet pair, for larger subnets. Set **Availability zones** with them to pin which zone each entry is created in.
 
     ## NAT Gateway
 
@@ -392,7 +392,7 @@ module:
     This VPC follows [AWS VPC best practices](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-best-practices.html):
 
     - **Availability zone spread:** Subnets are provisioned across up to 3 AZs by default, capped by the AZs available in the selected region and AWS account
-    - **Automatic CIDR allocation:** Subnets are /24 blocks carved from your VPC CIDR. With the default `10.0.0.0/16`, the first three public subnets get `10.0.1.0/24`, `10.0.2.0/24`, `10.0.3.0/24` and private subnets get `10.0.11.0/24`, `10.0.12.0/24`, `10.0.13.0/24`.
+    - **Automatic CIDR allocation:** Subnets are carved from your VPC CIDR with a prefix 8 bits longer than its own, so a `/16` gives `/24` subnets. With the default `10.0.0.0/16`, the first three public subnets get `10.0.1.0/24`, `10.0.2.0/24`, `10.0.3.0/24` and private subnets get `10.0.11.0/24`, `10.0.12.0/24`, `10.0.13.0/24`.
     - **DNS enabled:** DNS support and hostnames are enabled for service discovery
     - **Single route table for public:** All public subnets share one route table with an Internet Gateway route
     - **Per-AZ route tables when HA NAT:** Each private subnet gets its own route table pointing to the NAT in its AZ
