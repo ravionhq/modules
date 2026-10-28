@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.27.0
-  description: Enable public and private ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
+  version: 0.27.1
+  description: Keep the Grafana read role able to query EKS control-plane logs after AWS's April 2027 CloudWatch Logs IAM change.
 module:
   inputs:
     - id: cluster
