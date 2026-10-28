@@ -79,9 +79,15 @@ locals {
 
   # Go's soft memory limit at 90% of the container's: the runtime collects
   # garbage harder as the heap nears it, instead of being OOMKilled at the
-  # limit. None without a limit in Mi or Gi.
+  # limit. The limit is the last one set: loki_resources, then each
+  # loki_helm_values document. None when that limit is not in Mi or Gi.
+  loki_memory_limit_layers = concat(
+    [var.loki_resources.memory_limit],
+    [for document in var.loki_helm_values : try(tostring(yamldecode(document).singleBinary.resources.limits.memory), null)],
+  )
+  loki_memory_limit = try(reverse([for layer in local.loki_memory_limit_layers : layer if layer != null])[0], null)
   loki_memory_limit_mib = try(
-    tonumber(regex("^([0-9]+)(Mi|Gi)$", var.loki_resources.memory_limit)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", var.loki_resources.memory_limit)[1]],
+    tonumber(regex("^([0-9]+)(Mi|Gi)$", local.loki_memory_limit)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", local.loki_memory_limit)[1]],
     null,
   )
   loki_go_env = local.loki_memory_limit_mib == null ? [] : [{ name = "GOMEMLIMIT", value = "${floor(local.loki_memory_limit_mib * 0.9)}MiB" }]

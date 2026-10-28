@@ -913,3 +913,32 @@ run "blank_tempo_card_sizing_falls_back_to_tempo_resources" {
     error_message = "A limit outside Mi or Gi must set no GOMEMLIMIT"
   }
 }
+
+run "tempo_go_memory_limit_follows_a_limit_set_in_chart_values" {
+  command = plan
+
+  variables {
+    traces_destinations = [{ destination = "tempo" }]
+    tempo_helm_values   = ["tempo:\n  resources:\n    limits:\n      memory: 6Gi\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "GOMEMLIMIT must follow the memory limit tempo_helm_values sets"
+  }
+}
+
+run "tempo_go_memory_limit_follows_the_destination_chart_values" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", memory_limit = "4Gi", helm_values = { tempo = { resources = { limits = { memory = "3Gi" } } } } },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "2764MiB" }]
+    error_message = "GOMEMLIMIT must follow the memory limit the destination's helm_values sets"
+  }
+}

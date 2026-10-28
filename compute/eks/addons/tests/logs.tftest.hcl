@@ -622,3 +622,31 @@ run "grafana_loads_dashboards_and_alerts_from_its_namespace" {
     error_message = "Without the managed gp3 class Grafana must not ask for a volume"
   }
 }
+
+run "loki_go_memory_limit_follows_a_limit_set_in_chart_values" {
+  command = plan
+
+  variables {
+    logs_providers   = ["loki"]
+    loki_helm_values = ["singleBinary:\n  resources:\n    limits:\n      memory: 4Gi\n", "singleBinary:\n  replicas: 1\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.extraEnv == [{ name = "GOMEMLIMIT", value = "3686MiB" }]
+    error_message = "GOMEMLIMIT must follow the last memory limit loki_helm_values sets"
+  }
+}
+
+run "loki_go_memory_limit_is_dropped_for_a_limit_it_cannot_read" {
+  command = plan
+
+  variables {
+    logs_providers   = ["loki"]
+    loki_helm_values = ["singleBinary:\n  resources:\n    limits:\n      memory: 4G\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.extraEnv == []
+    error_message = "A chart-values limit outside Mi or Gi must set no GOMEMLIMIT rather than one from an overridden limit"
+  }
+}

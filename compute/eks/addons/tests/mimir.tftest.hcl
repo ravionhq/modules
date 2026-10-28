@@ -511,3 +511,17 @@ run "rejects_fewer_than_three_ingesters" {
 
   expect_failures = [var.mimir_ingester_replicas]
 }
+
+run "ingester_go_memory_limit_follows_a_limit_set_in_chart_values" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    mimir_helm_values = ["ingester:\n  resources:\n    limits:\n      memory: 12Gi\n"]
+  }
+
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).ingester if can(yamldecode(d).ingester.env)]).env == [{ name = "GOMEMLIMIT", value = "11059MiB" }]
+    error_message = "Ingester GOMEMLIMIT must follow the memory limit mimir_helm_values sets"
+  }
+}

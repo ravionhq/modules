@@ -1363,7 +1363,7 @@ variable "loki_resources" {
     cpu_limit      = optional(string)
     memory_limit   = optional(string, "1Gi")
   })
-  description = "Resource requests and limits for the Loki pod. Sized for a small cluster in single-binary mode; raise the memory limit before raising anything else, because query fan-out over many streams is what pushes Loki over. Null limits are omitted. GOMEMLIMIT is set to 90% of a memory limit given in Mi or Gi."
+  description = "Resource requests and limits for the Loki pod. Sized for a small cluster in single-binary mode; raise the memory limit before raising anything else, because query fan-out over many streams is what pushes Loki over. Null limits are omitted. GOMEMLIMIT is set to 90% of the memory limit Loki ends up with, including one set in loki_helm_values, when it is in Mi or Gi."
   default     = {}
   nullable    = false
 }
@@ -1758,7 +1758,7 @@ variable "tempo_resources" {
     cpu_limit      = optional(string)
     memory_limit   = optional(string, "2Gi")
   })
-  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted. The tempo destination's cpu_request, memory_request and memory_limit take precedence. GOMEMLIMIT is set to 90% of a memory limit given in Mi or Gi."
+  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted. The tempo destination's cpu_request, memory_request and memory_limit take precedence. GOMEMLIMIT is set to 90% of the memory limit Tempo ends up with, including one set in chart values, when it is in Mi or Gi."
   default     = {}
   nullable    = false
 }
