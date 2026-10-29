@@ -169,6 +169,7 @@ resource "aws_ecs_service" "this" {
     aws_lb_listener_rule.alb,
     aws_lb_listener_rule.ravion,
     aws_lb_listener_rule.test,
+    aws_lb_listener.nlb,
     aws_lb_listener.nlb_additional,
   ]
 

@@ -20,6 +20,11 @@ locals {
   # them). Every target group name is derived from this hyphenated copy.
   target_group_base_name = replace(var.name, "_", "-")
 
+  # Keep short names stable; hash the full name whenever truncation is needed.
+  target_group_name_hash      = substr(sha1(var.name), 0, 8)
+  target_group_pair_base_name = length(var.name) <= 24 ? local.target_group_base_name : "${substr(local.target_group_base_name, 0, 18)}-${local.target_group_name_hash}"
+  target_group_port_base_name = length(var.name) <= 18 ? local.target_group_base_name : "${substr(local.target_group_base_name, 0, 14)}-${local.target_group_name_hash}"
+
   # Every strategy runs on the native ECS deployment controller — the
   # blue_green / linear / canary traffic shifts are executed by ECS
   # itself (deployment_configuration.strategy), not CodeDeploy.
