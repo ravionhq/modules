@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.4.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.4.3
+  description: Prevent target group name conflicts between services with long names and ensure listeners are connected before creating the service, without replacing existing target groups on upgrade.
 module:
   inputs:
     - id: section_cluster

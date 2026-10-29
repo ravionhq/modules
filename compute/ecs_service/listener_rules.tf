@@ -282,8 +282,7 @@ resource "aws_lb_listener_rule" "test" {
 ################################################################################
 # NLB Listeners
 # For NLB, we create the listener directly (no listener rules in NLB).
-# The ECS deployment controller rewrites the default action during
-# native traffic-shift deployments.
+# NLB services only support rolling deployments, so Terraform owns their actions.
 ################################################################################
 
 resource "aws_lb_listener" "nlb" {
@@ -306,12 +305,6 @@ resource "aws_lb_listener" "nlb" {
   tags = merge(local.tags, {
     Name = "${var.name}-nlb-listener"
   })
-
-  # The ECS deployment controller rewrites the default action during
-  # native traffic-shift deployments; a no-op for rolling deployments.
-  lifecycle {
-    ignore_changes = [default_action]
-  }
 }
 
 resource "aws_lb_listener" "nlb_additional" {
@@ -334,10 +327,4 @@ resource "aws_lb_listener" "nlb_additional" {
     Name         = "${var.name}-${each.key}-nlb-listener"
     ListenerPort = each.key
   })
-
-  # The ECS deployment controller may rewrite the default action during
-  # service updates; ignore to prevent spurious Terraform drift.
-  lifecycle {
-    ignore_changes = [default_action]
-  }
 }
