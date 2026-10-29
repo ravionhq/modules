@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.4.4
-  description: Reject full image URIs in deployment inputs with guidance to pass only an image tag or SHA-256 digest.
+  version: 2.5.0
+  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
 module:
   inputs:
     - id: section_cluster

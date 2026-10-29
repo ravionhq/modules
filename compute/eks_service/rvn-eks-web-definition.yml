@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.14.0
-  description: Link every domain the module serves from the Links section of its overview page, above the load balancer link.
+  version: 1.15.0
+  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
 module:
   inputs:
     - id: section_cluster

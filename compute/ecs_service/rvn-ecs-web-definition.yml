@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.7.2
-  description: Reject full image URIs in deployment inputs with guidance to pass only an image tag or SHA-256 digest.
+  version: 2.8.0
+  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
 module:
   inputs:
     - id: section_cluster
