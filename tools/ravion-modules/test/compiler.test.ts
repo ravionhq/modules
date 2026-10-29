@@ -14,6 +14,33 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("accepts only tags or SHA-256 digests for ECS image_ref deployment inputs", async () => {
+    const valid = ["latest", "v1.46.0", "12345-railpack", "_tag", "Tag_1.2-3", "a".repeat(128), "sha256:" + "a1".repeat(32)];
+    const invalid = [
+      "inngest/inngest:v1.46.0", "inngest/inngest", "nginx:latest",
+      "registry.example.com:5000/app:v1", "app@sha256:" + "a1".repeat(32),
+      "https://registry.example.com/app:latest", "", " latest", "latest\n", "two tags",
+      ".tag", "-tag", "a".repeat(129), "sha256:abc123", "sha256:" + "g".repeat(64),
+    ];
+    for (const name of ["nlb", "web", "worker"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
+      const imageRef = findInput(getDeployInputs(module), "image_ref");
+      assert.ok(Array.isArray(imageRef.patterns), name + " must validate image_ref");
+      assert.ok(imageRef.patterns.length > 0);
+      const patterns = imageRef.patterns.map((value) => {
+        const constraint = assertRecord(value, "image_ref pattern");
+        assert.match(assertString(constraint.message), /tag or.*digest.*not a full image URI/i);
+        return new RegExp(assertString(constraint.pattern));
+      });
+      for (const value of valid) {
+        assert.ok(patterns.every((pattern) => pattern.test(value)), `${name} should accept ${JSON.stringify(value)}`);
+      }
+      for (const value of invalid) {
+        assert.ok(patterns.some((pattern) => !pattern.test(value)), `${name} should reject ${JSON.stringify(value)}`);
+      }
+    }
+  });
+
   it("enables security defaults for new module instances", async () => {
     const cases: [string, Record<string, unknown>][] = [
       ["compute/eks/addons/rvn-eks-addons-definition.yml", { public_alb_access_logs_enabled: true, private_alb_access_logs_enabled: true, public_nlb_access_logs_enabled: false, private_nlb_access_logs_enabled: false }],

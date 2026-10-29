@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.3.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.3.3
+  description: Reject full image URIs in deployment inputs with guidance to pass only an image tag or SHA-256 digest.
 module:
   inputs:
     - id: section_cluster

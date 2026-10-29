@@ -3,8 +3,8 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.7.0
-  description: Stop blue/green, linear, and canary deploys from returning 503s to returning clients after the bake, with a new Deployment stickiness duration setting (default 1 second) that Ravion applies to the listener rules on each deploy.
+  version: 2.7.1
+  description: Reject full image URIs in deployment inputs with guidance to pass only an image tag or SHA-256 digest.
 module:
   inputs:
     - id: section_cluster
