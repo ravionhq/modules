@@ -18,6 +18,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `cache/`      | `elasticache`     | AWS ElastiCache clusters (Redis, Valkey, Memcached)                    | v1.0.0  |
 | `cdn/`        | `cloudfront`      | AWS CloudFront distributions with origins, cache behaviors, and edge redirects (includes `rvn-cloudfront` module definition) | v1.0.0  |
 | `compute/`    | `ami`             | EC2 Image Builder build infrastructure for AMIs released by deploys: steps, document, or existing components with content-hashed names, a build instance role, and a build-region distribution configuration; each deploy builds the AMI, copies it to every region, tags it, publishes it when asked, and retires older images (includes `rvn-aws-ami` module definition) | Unreleased |
+| `compute/`    | `app_cluster`     | Where apps deployed with `ravion deploy` are served from, on an existing execution environment's sandbox pool: an internet-facing Network Load Balancer with a Ravion-managed wildcard domain and certificate, and custom wildcard domains, in front of a Ravion-run router, with the router's security group, IAM role and instance profile (includes `rvn-aws-app-cluster` module definition) | Unreleased |
 | `compute/`    | `autoscaling`     | AWS Auto Scaling groups with optional generated names for safe replacement | v1.0.0  |
 | `compute/`    | `ec2_service`     | Supervised EC2 workloads with opt-in replaceable Auto Scaling groups, configurable rolling deploys, ALB routing, and deployment-scoped CloudWatch logs | v1.0.0  |
 | `compute/`    | `ecs_cluster`     | AWS ECS clusters with Fargate/EC2 capacity, optional ALBs/NLBs, and ALB alarms enabled by default | v1.0.0  |
@@ -26,6 +27,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `eks/addons`      | Selectable EKS add-ons: one Operator management/deployments toggle with durable executor Jobs, optional preemptible warm-capacity reservations, two-replica HA and full-cluster management by default in Ravion; execution and namespace customization through advanced Terraform variables; retained namespace bootstrap, default S3-backed Loki logs, Prometheus/Thanos metrics and Tempo traces with optional AMP, X-Ray and vendors, an OTLP receiver, in-cluster Grafana on a shared ALB or a Kubernetes Ingress with Grafana's OAuth sign-in, Karpenter with default message-age monitoring and opt-in node SSM access, load balancer controller with webhook-ready Helm ordering, External Secrets Operator and EBS CSI with a default gp3 StorageClass and online StatefulSet volume growth (includes `rvn-eks-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, `rvn-eks-cron`, and `rvn-eks-chart` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions with live-alias rollback and Terraform-managed custom aliases   | v1.0.0  |
+| `containers/` | `ecr`             | Private ECR repositories with scan on push, default image cleanup, optional KMS encryption, and cross-account pull/push access (includes the `rvn-aws-ecr` module definition) | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
 | `database/`   | `dynamodb`        | AWS DynamoDB tables                                                    | v1.0.0  |
 | `database/`   | `planetscale_vitess` | PlanetScale MySQL with saved integrations, organization-specific regions and cluster sizes including Metal NVMe, and short-lived runner credentials, standard Terraform pipeline defaults and shared advanced settings, automatic default-keyspace adoption after creation, in-place resizing, configurable replicas and credential CIDRs, and advanced VTGate/backup controls (includes organization-only `rvn-planetscale-vitess` module definition) | Unreleased |
@@ -63,37 +65,32 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 
 | Definition | Name | Version | Module path |
 | ---------- | ---- | ------- | ----------- |
-| `rvn-acm-certificate` | ACM Certificate | v1.1.1 | `security/acm_certificate/` |
-| `rvn-aurora` | Aurora Database | v1.5.0 | `database/aurora/` |
-| `rvn-aws-alb` | AWS Application Load Balancer | v1.3.0 | `networking/alb/` |
-| `rvn-aws-alternat` | alterNAT | v0.1.2 | `networking/alternat/` |
-| `rvn-aws-ami` | AMI | v0.3.1 | `compute/ami/` |
-| `rvn-aws-compliance` | AWS Compliance | v0.2.0 | `security/compliance/` |
-| `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.1 | `security/iam_policy/` |
-| `rvn-aws-iam-role` | AWS IAM Role | v1.1.1 | `security/iam/` |
-| `rvn-aws-kms` | AWS KMS Key | v0.2.0 | `security/kms/` |
-| `rvn-aws-network` | VPC Network | v1.2.1 | `networking/vpc/` |
-| `rvn-aws-secret` | AWS Secret | v1.1.0 | `security/secret/` |
-| `rvn-aws-static` | Static Hosting | v1.4.0 | `hosting/static_site/` |
-| `rvn-cloudfront` | CloudFront CDN | v1.5.1 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v2.2.0 | `compute/ec2_service/` |
-| `rvn-ecs-cluster` | ECS Cluster | v2.2.0 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v2.3.2 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.3.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v2.2.2 | `compute/ecs_service/` |
-| `rvn-efs` | EFS File System | v1.1.0 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v0.23.2 | `compute/eks/addons/` |
-| `rvn-eks-chart` | EKS Helm Chart | v0.3.0 | `compute/eks_service/` |
-| `rvn-eks-cluster` | EKS Cluster | v0.9.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.10.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v0.13.0 | `compute/eks_service/` |
-| `rvn-elasticache` | ElastiCache | v1.1.1 | `cache/elasticache/` |
-| `rvn-lambda` | Lambda Function | v2.1.0 | `compute/lambda/` |
-| `rvn-planetscale-vitess` | PlanetScale MySQL | v0.1.0 | `database/planetscale_vitess/` |
-| `rvn-rds` | RDS Database | v1.4.0 | `database/rds/` |
-| `rvn-rds-proxy` | RDS Proxy | v0.2.0 | `database/rds-proxy/` |
-| `rvn-route53` | Route 53 DNS | v1.1.0 | `networking/route53/` |
-| `rvn-s3` | S3 Bucket | v2.0.1 | `storage/s3/` |
+| `rvn-acm-certificate` | ACM Certificate | v1.1.2 | `security/acm_certificate/` |
+| `rvn-aurora` | Aurora Database | v1.6.0 | `database/aurora/` |
+| `rvn-aws-alb` | AWS Application Load Balancer | v1.4.0 | `networking/alb/` |
+| `rvn-aws-alternat` | alterNAT | v0.1.3 | `networking/alternat/` |
+| `rvn-aws-ami` | AMI | v0.3.2 | `compute/ami/` |
+| `rvn-aws-compliance` | AWS Compliance | v1.0.0 | `security/compliance/` |
+| `rvn-aws-ecr` | AWS ECR Repository | v1.0.0 | `containers/ecr/` |
+| `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.2 | `security/iam_policy/` |
+| `rvn-aws-iam-role` | AWS IAM Role | v1.1.2 | `security/iam/` |
+| `rvn-aws-kms` | AWS KMS Key | v0.2.1 | `security/kms/` |
+| `rvn-aws-network` | VPC Network | v1.3.1 | `networking/vpc/` |
+| `rvn-aws-secret` | AWS Secret | v1.1.1 | `security/secret/` |
+| `rvn-aws-static` | Static Hosting | v1.7.0 | `hosting/static_site/` |
+| `rvn-cloudfront` | CloudFront CDN | v1.7.0 | `cdn/cloudfront/` |
+| `rvn-ec2-service` | EC2 Service | v2.4.0 | `compute/ec2_service/` |
+| `rvn-ecs-cluster` | ECS Cluster | v2.4.0 | `compute/ecs_cluster/` |
+| `rvn-ecs-nlb` | ECS Network Service | v2.4.4 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.7.2 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v2.3.3 | `compute/ecs_service/` |
+| `rvn-efs` | EFS File System | v1.1.1 | `storage/efs/` |
+| `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
+| `rvn-lambda` | Lambda Function | v2.3.0 | `compute/lambda/` |
+| `rvn-rds` | RDS Database | v1.5.0 | `database/rds/` |
+| `rvn-rds-proxy` | RDS Proxy | v0.2.1 | `database/rds-proxy/` |
+| `rvn-route53` | Route 53 DNS | v1.1.1 | `networking/route53/` |
+| `rvn-s3` | S3 Bucket | v2.1.0 | `storage/s3/` |
 | `rvn-stack` | Terraform Stack | v1.4.0 | `stack/terraform/` |
 
 <!-- END GENERATED: module-definitions -->

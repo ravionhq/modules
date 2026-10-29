@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 2.2.0
-  description: "Add opt-in Ravion-managed domains: a shared wildcard certificate and DNS for the cluster, served as the default certificate on the selected ALB HTTPS listener while every BYO certificate stays attached via SNI."
+  version: 2.4.0
+  description: Enable security logging and year-long log retention by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
 module:
   inputs:
     - id: network
@@ -25,7 +25,7 @@ module:
       label: ECS cluster
       type: section
     - default: <<project.given_id>>-<<environment.given_id>>
-      description: Name prefix for all resources. Terraform requires 1-28 characters so generated ALB names fit AWS limits.
+      description: Name prefix for all resources. 1-28 characters; at most 27 with a private load balancer, 24 with a public NLB, and 23 with a private NLB.
       id: name
       immutable: true
       label: ECS cluster name
@@ -51,7 +51,7 @@ module:
           value: enabled
         - label: Disabled
           value: disabled
-    - default: 90
+    - default: 365
       description: Inherited by services unless they set their own retention. Never expire keeps logs indefinitely.
       id: log_retention_days
       label: Default log retention (days)
@@ -112,13 +112,20 @@ module:
       id: use_ravion_managed_domains
       label: Ravion-managed domains
       type: boolean
-    - description: Base for service addresses; uses the cluster module ID when empty.
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_enabled: false
+            private_alb_enabled: false
+          message: Ravion-managed domains require exactly one load balancer.
+    - default: << module.given_id >>
+      description: Base for service addresses.
       id: ravion_cluster_name
       label: Cluster domain
       patterns:
         - message: The subdomain must contain only lowercase letters, numbers, and hyphens, and start and end with a letter or number.
           pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
-      required: false
+      required: true
       show_when:
         use_ravion_managed_domains: true
       suffix: ".<< platform.apex >>"
@@ -310,6 +317,11 @@ module:
       show_when:
         public_alb_enabled: true
       type: boolean
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the public ALB HTTPS listener for SNI.
@@ -350,7 +362,7 @@ module:
         public_alb_enabled: true
       type: string
     - collapsible: true
-      default: false
+      default: true
       description: Enable public ALB access logging.
       id: public_alb_access_logs_enabled
       label: Access logs
@@ -374,6 +386,18 @@ module:
       id: private_alb_enabled
       label: Private load balancer
       type: boolean
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_enabled: true
+            private_alb_enabled: true
+          message: Ravion-managed domains require exactly one load balancer.
+        - all:
+            private_alb_enabled: true
+            name:
+              patterns:
+                - "^.{28,}$"
+          message: A private load balancer requires an ECS cluster name of 27 characters or less.
     - default: false
       description: Enable HTTPS listener on the private ALB.
       id: private_alb_https_enabled
@@ -381,6 +405,12 @@ module:
       show_when:
         private_alb_enabled: true
       type: boolean
+      invalid_when:
+        - all:
+            use_ravion_managed_domains: true
+            public_alb_enabled: false
+            private_alb_https_enabled: false
+          message: Ravion-managed domains require HTTPS on this load balancer.
     - $template: ../../partials/templates/alb-certificate-input.yml
       with:
         additional_certificate_arns_description: Additional ACM certificate ARNs attached to the private ALB HTTPS listener for SNI.
@@ -440,7 +470,7 @@ module:
         private_alb_enabled: true
       type: number
     - collapsible: true
-      default: false
+      default: true
       description: Enable private ALB access logging.
       id: private_alb_access_logs_enabled
       label: Access logs
@@ -465,6 +495,13 @@ module:
       id: public_nlb_enabled
       label: Public NLB
       type: boolean
+      invalid_when:
+        - all:
+            public_nlb_enabled: true
+            name:
+              patterns:
+                - "^.{25,}$"
+          message: A public NLB requires an ECS cluster name of 24 characters or less.
     - add_button_label: Add security group ID
       collapsible: true
       description: Additional security groups for the public NLB.
@@ -522,6 +559,13 @@ module:
       id: private_nlb_enabled
       label: Private NLB
       type: boolean
+      invalid_when:
+        - all:
+            private_nlb_enabled: true
+            name:
+              patterns:
+                - "^.{24,}$"
+          message: A private NLB requires an ECS cluster name of 23 characters or less.
     - add_button_label: Add security group ID
       collapsible: true
       description: Additional security groups for the private NLB.
@@ -692,7 +736,7 @@ module:
     | VPC network           | Yes      | —                    | Existing VPC, subnets, AWS account, and region                |
     | ECS cluster name      | Yes      | `{project}-{env}`    | Name prefix for ECS and load balancer resources               |
     | Container insights    | No       | `enhanced`           | Collect enhanced task, service, cluster, and EC2 metrics in CloudWatch |
-    | Default log retention (days) | No | `90`              | Log retention inherited by ECS services in this cluster        |
+    | Default log retention (days) | No | `365`              | Log retention inherited by ECS services in this cluster        |
     | Create load balancer CloudWatch alarms | No | `true` | Adds 5xx and response time alarms on both ALBs               |
     | Fargate               | No       | `true`               | Allow services to use Fargate capacity                        |
     | Fargate Spot          | No       | `true`               | Allow services to use lower-cost interruptible Fargate Spot   |

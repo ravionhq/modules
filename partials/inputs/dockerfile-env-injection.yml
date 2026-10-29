@@ -1,5 +1,6 @@
+collapsible: true
 default: false
-description: Pass build environment variables into Dockerfile builds as build arguments.
+description: Passes build environment variables as `--build-arg`.
 id: dockerfile_environment_variable_injection_enabled
 label: Inject environment variables in Dockerfile
 show_when:

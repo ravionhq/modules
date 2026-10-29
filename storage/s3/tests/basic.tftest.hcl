@@ -661,8 +661,8 @@ run "test_encryption_bucket_reference" {
 # Versioning Tests
 #-------------------------------------------------------------------------------
 
-# Test: versioning is disabled by default
-run "test_versioning_disabled_default" {
+# Test: versioning is enabled by default
+run "test_versioning_enabled_default" {
   command = plan
 
   variables {
@@ -670,8 +670,8 @@ run "test_versioning_disabled_default" {
   }
 
   assert {
-    condition     = aws_s3_bucket_versioning.this.versioning_configuration[0].status == "Disabled"
-    error_message = "Versioning should be disabled by default."
+    condition     = aws_s3_bucket_versioning.this.versioning_configuration[0].status == "Enabled"
+    error_message = "Versioning should be enabled by default."
   }
 }
 
@@ -704,7 +704,7 @@ run "test_versioning_bucket_reference" {
   }
 }
 
-# Test: versioning_enabled variable defaults to false
+# Test: versioning_enabled variable defaults to true
 run "test_versioning_enabled_variable_default" {
   command = plan
 
@@ -713,8 +713,8 @@ run "test_versioning_enabled_variable_default" {
   }
 
   assert {
-    condition     = var.versioning_enabled == false
-    error_message = "versioning_enabled variable should default to false."
+    condition     = var.versioning_enabled == true
+    error_message = "versioning_enabled variable should default to true."
   }
 }
 
@@ -1317,8 +1317,8 @@ run "test_lifecycle_empty_rule_id" {
 # Policy Template Tests
 #-------------------------------------------------------------------------------
 
-# Test: policy_templates defaults to empty list
-run "test_policy_templates_default_empty" {
+# Test: policy_templates defaults to HTTPS-only access
+run "test_policy_templates_default_secure_transport" {
   command = plan
 
   variables {
@@ -1326,8 +1326,8 @@ run "test_policy_templates_default_empty" {
   }
 
   assert {
-    condition     = length(var.policy_templates) == 0
-    error_message = "policy_templates should default to empty list."
+    condition     = var.policy_templates == tolist(["deny_insecure_transport"]) && length(aws_s3_bucket_policy.this) == 1 && jsondecode(aws_s3_bucket_policy.this[0].policy).Statement[0].Condition.Bool["aws:SecureTransport"] == "false"
+    error_message = "The default bucket policy must deny insecure transport."
   }
 }
 
@@ -1644,11 +1644,12 @@ run "test_custom_policy_invalid_json" {
 #-------------------------------------------------------------------------------
 
 # Test: no bucket policy created when no templates or custom policy
-run "test_bucket_policy_not_created_by_default" {
+run "test_bucket_policy_not_created_when_explicitly_empty" {
   command = plan
 
   variables {
-    name = "test-bucket"
+    name             = "test-bucket"
+    policy_templates = []
   }
 
   assert {
@@ -1747,12 +1748,12 @@ run "test_bucket_policy_contains_custom_statements" {
   }
 
   assert {
-    condition     = length(jsondecode(aws_s3_bucket_policy.this[0].policy).Statement) == 1
-    error_message = "Bucket policy should contain 1 statement from custom policy."
+    condition     = length(jsondecode(aws_s3_bucket_policy.this[0].policy).Statement) == 2 && jsondecode(aws_s3_bucket_policy.this[0].policy).Statement[0].Sid == "DenyInsecureTransport"
+    error_message = "Bucket policy should retain the default transport deny alongside custom statements."
   }
 
   assert {
-    condition     = jsondecode(aws_s3_bucket_policy.this[0].policy).Statement[0].Sid == "CustomReadAccess"
+    condition     = jsondecode(aws_s3_bucket_policy.this[0].policy).Statement[1].Sid == "CustomReadAccess"
     error_message = "Bucket policy should contain CustomReadAccess statement."
   }
 }
@@ -1929,7 +1930,8 @@ run "test_output_bucket_policy_null_when_no_policy" {
   command = plan
 
   variables {
-    name = "my-test-bucket"
+    name             = "my-test-bucket"
+    policy_templates = []
   }
 
   assert {
@@ -1967,8 +1969,8 @@ run "test_output_versioning_enabled_default" {
   }
 
   assert {
-    condition     = output.versioning_enabled == false
-    error_message = "versioning_enabled output should be false by default."
+    condition     = output.versioning_enabled == true
+    error_message = "versioning_enabled output should be true by default."
   }
 }
 

@@ -9,7 +9,7 @@
 resource "aws_lb_target_group" "tg_1" {
   count = local.enable_load_balancer ? 1 : 0
 
-  name        = "${substr(local.target_group_base_name, 0, min(length(var.name), 24))}-tg-1"
+  name        = "${local.target_group_pair_base_name}-tg-1"
   port        = local.primary_target_group_port
   protocol    = local.primary_target_group_protocol
   vpc_id      = var.vpc_id
@@ -61,7 +61,7 @@ resource "aws_lb_target_group" "tg_1" {
 resource "aws_lb_target_group" "tg_2" {
   count = local.traffic_shift_infrastructure_enabled ? 1 : 0
 
-  name        = "${substr(local.target_group_base_name, 0, min(length(var.name), 24))}-tg-2"
+  name        = "${local.target_group_pair_base_name}-tg-2"
   port        = local.primary_target_group_port
   protocol    = local.primary_target_group_protocol
   vpc_id      = var.vpc_id
@@ -100,13 +100,15 @@ resource "aws_lb_target_group" "tg_2" {
 
   lifecycle {
     create_before_destroy = true
+    # Keep deployed target groups when upgrading the naming scheme.
+    ignore_changes = [name]
   }
 }
 
 resource "aws_lb_target_group" "nlb_additional" {
   for_each = local.additional_nlb_listeners
 
-  name        = "${substr(local.target_group_base_name, 0, min(length(var.name), 18))}-${each.key}-tg"
+  name        = "${local.target_group_port_base_name}-${each.key}-tg"
   port        = each.value.container_port
   protocol    = each.value.target_protocol
   vpc_id      = var.vpc_id
@@ -142,5 +144,6 @@ resource "aws_lb_target_group" "nlb_additional" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [name]
   }
 }

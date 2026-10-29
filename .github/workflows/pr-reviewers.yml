@@ -1,0 +1,137 @@
+name: PR reviewers
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  request-review:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login == 'devin-ai-integration[bot]'
+    permissions:
+      pull-requests: write
+    concurrency:
+      group: pr-reviewers-request-${{ github.event.pull_request.number || 'sweep' }}
+      cancel-in-progress: false
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/id=${{ github.run_id }}-pr-reviewers-request/interruptible=true
+    steps:
+      # Metadata only: never check out or execute code from the PR head.
+      - name: Request review from the session creator
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            async function requestReview(pr, {waitForGreptile}) {
+              if (pr.state !== "open" || pr.draft || pr.user.login !== "devin-ai-integration[bot]") {
+                return
+              }
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                ...context.repo,
+                pull_number: pr.number,
+                per_page: 100,
+              })
+              // Greptile writes its summary into the body when a review finishes, and also submits
+              // a review when it has comments.
+              const greptileReviewed =
+                (pr.body ?? "").includes("<!-- greptile_confidence_score:") ||
+                reviews.some((review) => review.user?.login === "greptile-apps[bot]")
+              if (waitForGreptile && !greptileReviewed) {
+                core.info(`PR #${pr.number}: waiting for Greptile's first review`)
+                return
+              }
+              const match = (pr.body ?? "").match(/^Requested by:[ \t]*@([A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38})[ \t]*\r?$/m)
+              if (!match) {
+                core.info(`PR #${pr.number}: no valid requester metadata; defaulting to @flybayer`)
+              }
+              const reviewer = match?.[1] ?? "flybayer"
+              const isReviewer = (user) => user?.login.toLowerCase() === reviewer.toLowerCase()
+              if ((pr.requested_reviewers ?? []).some(isReviewer)) {
+                return
+              }
+              if (reviews.some((review) => review.state !== "PENDING" && isReviewer(review.user))) {
+                return
+              }
+              if (waitForGreptile) {
+                // Wait until Devin addresses all unresolved Greptile threads.
+                const threads = []
+                let cursor = null
+                do {
+                  const {repository} = await github.graphql(
+                    `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                      repository(owner: $owner, name: $repo) {
+                        pullRequest(number: $number) {
+                          reviewThreads(first: 100, after: $cursor) {
+                            pageInfo { hasNextPage endCursor }
+                            nodes { isResolved comments(first: 100) { nodes { author { login } } } }
+                          }
+                        }
+                      }
+                    }`,
+                    {...context.repo, number: pr.number, cursor},
+                  )
+                  const page = repository.pullRequest.reviewThreads
+                  threads.push(...page.nodes)
+                  cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null
+                } while (cursor)
+                const unhandled = threads.filter(({isResolved, comments: {nodes: [first, ...replies]}}) =>
+                  first?.author?.login === "greptile-apps" &&
+                  !isResolved &&
+                  !replies.some((comment) => comment.author?.login === "devin-ai-integration"),
+                )
+                if (unhandled.length > 0) {
+                  core.info(`PR #${pr.number}: waiting for Devin to address ${unhandled.length} Greptile thread(s)`)
+                  return
+                }
+              }
+              await github.rest.pulls.requestReviewers({
+                ...context.repo,
+                pull_number: pr.number,
+                reviewers: [reviewer],
+              })
+              core.info(`PR #${pr.number}: requested review from @${reviewer}`)
+            }
+
+            if (context.payload.pull_request) {
+              const {data: pr} = await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: context.payload.pull_request.number,
+              })
+              await requestReview(pr, {waitForGreptile: true})
+            } else {
+              const pullRequests = await github.paginate(github.rest.pulls.list, {
+                ...context.repo,
+                state: "open",
+                per_page: 100,
+              })
+              const failedPullRequests = []
+              for (const pr of pullRequests.filter(
+                (pullRequest) =>
+                  pullRequest.user.login === "devin-ai-integration[bot]" && !pullRequest.draft,
+              )) {
+                try {
+                  await requestReview(pr, {
+                    waitForGreptile:
+                      Date.now() - Date.parse(pr.created_at) < 2 * 60 * 60 * 1000,
+                  })
+                } catch (error) {
+                  const message =
+                    error && typeof error === "object" && "message" in error
+                      ? String(error.message)
+                      : String(error)
+                  core.error(`PR #${pr.number}: ${message}`)
+                  failedPullRequests.push(pr.number)
+                }
+              }
+              if (failedPullRequests.length > 0) {
+                core.setFailed(
+                  `Failed to request reviewers for PRs: ${failedPullRequests.map((number) => `#${number}`).join(", ")}`,
+                )
+              }
+            }

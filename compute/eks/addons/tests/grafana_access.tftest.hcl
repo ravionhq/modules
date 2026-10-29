@@ -56,23 +56,25 @@ mock_provider "helm" {}
 mock_provider "ravion" {}
 
 variables {
-  cluster_name                 = "test-cluster"
-  region                       = "us-east-2"
-  cluster_security_group_id    = "sg-12345678"
-  public_subnet_ids            = ["subnet-0a", "subnet-0b"]
-  node_subnet_ids              = ["subnet-1a", "subnet-1b"]
-  public_alb_creation_enabled  = true
-  public_alb_https_enabled     = true
-  public_alb_certificate_arns  = ["arn:aws:acm:us-east-2:123456789012:certificate/11111111-2222-3333-4444-555555555555"]
-  private_alb_creation_enabled = true
-  private_alb_https_enabled    = true
-  private_alb_certificate_arns = ["arn:aws:acm:us-east-2:123456789012:certificate/66666666-7777-8888-9999-000000000000"]
-  karpenter_enabled            = false
-  ebs_csi_driver_enabled       = false
-  eso_enabled                  = true
-  eso_allowed_namespaces       = ["apps"]
-  logs_providers               = ["loki"]
-  metrics_providers            = ["prometheus"]
+  cluster_name                    = "test-cluster"
+  region                          = "us-east-2"
+  cluster_security_group_id       = "sg-12345678"
+  public_subnet_ids               = ["subnet-0a", "subnet-0b"]
+  node_subnet_ids                 = ["subnet-1a", "subnet-1b"]
+  public_alb_creation_enabled     = true
+  public_alb_https_enabled        = true
+  public_alb_certificate_arns     = ["arn:aws:acm:us-east-2:123456789012:certificate/11111111-2222-3333-4444-555555555555"]
+  private_alb_creation_enabled    = true
+  private_alb_https_enabled       = true
+  private_alb_certificate_arns    = ["arn:aws:acm:us-east-2:123456789012:certificate/66666666-7777-8888-9999-000000000000"]
+  public_alb_access_logs_enabled  = false
+  private_alb_access_logs_enabled = false
+  karpenter_enabled               = false
+  ebs_csi_driver_enabled          = false
+  eso_enabled                     = true
+  eso_allowed_namespaces          = ["apps"]
+  logs_providers                  = ["loki"]
+  metrics_providers               = ["prometheus"]
   traces_destinations = [
     { destination = "tempo" },
   ]

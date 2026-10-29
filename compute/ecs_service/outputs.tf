@@ -196,6 +196,13 @@ output "test_listener_rule_arn" {
   value       = local.test_listener_rule_arn
 }
 
+output "listener_rule_group_stickiness_duration" {
+  description = "Desired ALB group stickiness DurationSeconds for the production and test listener rules. Terraform ignores changes to existing rule actions, so the deploy manager applies this to them before each deploy: N > 0 turns group stickiness on with that duration, 0 turns it off. Null when the service has no ALB listener rule (NLB or no load balancer)."
+  value = local.alb_listener_rules_present ? (
+    local.alb_group_stickiness_enabled ? local.alb_group_stickiness_duration : 0
+  ) : null
+}
+
 ################################################################################
 # Load Balancer
 ################################################################################
@@ -335,13 +342,18 @@ output "cloudwatch_alarm_arns" {
 ################################################################################
 
 output "ravion_domain_fqdn" {
-  description = "Primary managed FQDN: the first configured domain, or the default Ravion domain when none remain after normalization. Null when the cluster has no Ravion-managed domains."
+  description = "Primary managed FQDN: the first custom domain, otherwise the default Ravion domain. Null when the cluster has no Ravion-managed domains."
   value       = length(local.effective_domains) > 0 ? local.effective_domains[0] : null
 }
 
 output "ravion_domain_url" {
   description = "HTTPS URL for the first effective domain."
   value       = length(local.effective_domains) > 0 ? "https://${local.effective_domains[0]}" : null
+}
+
+output "ravion_domain_fqdns" {
+  description = "Every FQDN this service serves: the custom domains followed by the default Ravion domain when it is on."
+  value       = local.effective_domains
 }
 
 output "ravion_custom_cert_arn" {

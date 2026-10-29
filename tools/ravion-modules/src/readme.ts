@@ -20,7 +20,7 @@ export interface ReadmeSyncResult {
 
 export function renderModuleDefinitionsTable(compiledDefinitions: CompiledDefinition[], rootPath = process.cwd()): string {
   const rows = compiledDefinitions
-    .filter((definition) => definition.published)
+    .filter((definition) => definition.published && definition.global !== false)
     .map((definition) => {
       const modulePath = relative(resolve(rootPath), dirname(definition.filePath)).split(sep).join("/");
       return {

@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.3.1
-  description: Retain components during updates and clean up retained build resources when the stack is destroyed.
+  version: 0.3.2
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml

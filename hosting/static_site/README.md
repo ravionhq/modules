@@ -133,6 +133,27 @@ module "site" {
 }
 ```
 
+### Ravion-managed custom domains
+
+Set `managed_domains` on a distribution to let Ravion issue and attach the certificate. The distribution is created with no aliases and the default CloudFront certificate. Ravion issues a `us-east-1` ACM certificate and a routing record for each domain. Add the DNS records from the `managed_certificate_validation_records` and `managed_domain_records` outputs at your DNS provider. Once the certificate validates, Ravion attaches the certificate and aliases to the distribution. Managed domains replace `aliases` and `acm_certificate_arn` on the same distribution. A distribution accepts at most 10 managed domains. `module_instance_id` and `ravion_aws_account_id` are required. `primary_domain` and `distribution_primary_domains` return the first managed domain. A distribution keeps the domain mode it was first applied with: switching between `managed_domains` and `aliases` would replace it and change its CloudFront hostname, so the plan fails instead. To switch, add a distribution in the new mode, move DNS to it, then remove the old one. A distribution created before this version records its mode on its first apply with this version, so keep that apply in the same mode.
+
+```hcl
+module "site" {
+  source = "git::https://github.com/ravionhq/ravion-modules.git//hosting/static_site?ref=v1.0.0"
+
+  name = "my-app"
+
+  module_instance_id    = "minst_123"
+  ravion_aws_account_id = "aws_123"
+
+  distributions = {
+    main = {
+      managed_domains = ["app.example.com"]
+    }
+  }
+}
+```
+
 ## Deploy and rollback
 
 A new build is two steps from CI: upload, then flip.
@@ -203,7 +224,7 @@ provider "aws" {
 }
 ```
 
-Only the default `aws` provider is required. ACM certificates for CloudFront aliases must still live in `us-east-1` regardless of the rest of your stack — provision them with [`security/acm_certificate`](../../security/acm_certificate) using a `us_east_1` provider alias in your root module and pass the ARN to `distributions[].acm_certificate_arn`.
+The default `aws` provider and the `ravion` provider (`providers.ravion.com/ravion/ravion`, `= 0.0.3-rc.1`) are required. The `ravion` provider issues certificates for `managed_domains`. ACM certificates for CloudFront aliases must still live in `us-east-1` regardless of the rest of your stack. Provision them with [`security/acm_certificate`](../../security/acm_certificate) using a `us_east_1` provider alias in your root module and pass the ARN to `distributions[].acm_certificate_arn`.
 
 ## Cache strategy
 
@@ -347,6 +368,7 @@ module "site" {
 |---|---|
 | opentofu/terraform | >= 1.10.0 |
 | aws | >= 5.0 |
+| ravion | = 0.0.3-rc.1 |
 
 No external apply-time tools required.
 
@@ -364,7 +386,9 @@ No external apply-time tools required.
 |---|---|---|---|
 | routing | URI rewrite style: `spa` or `filesystem`. | `string` | `"spa"` |
 | default_version | Fallback version prefix when KVS has neither host nor `active` entries. Also seeds `active` on first apply. | `string` | `"main"` |
-| distributions | Map of CloudFront distributions sharing the same origin. | `map(object)` | `{ main = {} }` |
+| distributions | Map of CloudFront distributions sharing the same origin. Fields: `aliases`, `acm_certificate_arn`, `managed_domains` (custom domains whose certificate Ravion issues and attaches; at most 10; cannot be combined with `aliases` or `acm_certificate_arn`), `comment`, `enabled`. | `map(object)` | `{ main = {} }` |
+| module_instance_id | Ravion module instance id (`minst_*`) that owns the managed domains and certificates. The runner injects it as `TF_VAR_module_instance_id` inside a stack run. Required when a distribution sets `managed_domains`. | `string` | `null` |
+| ravion_aws_account_id | Ravion AwsAccount row id (`aws_*`) that owns the managed certificates. Required when a distribution sets `managed_domains`. | `string` | `null` |
 | tags | Tags to apply to all resources. | `map(string)` | `{}` |
 
 ### Distribution
@@ -451,9 +475,13 @@ No external apply-time tools required.
 | cloudfront_distribution_arns_map | Map of distribution key -> distribution ARN. |
 | cloudfront_distribution_arns | List of all CloudFront distribution ARNs. |
 | distribution_domain_names | Map of distribution key -> CloudFront domain name. |
+| domains | Normalized viewer domains for the primary distribution. |
 | distribution_hosted_zone_ids | Map of distribution key -> Route53 zone ID for alias records. |
-| primary_domain | Primary viewer-facing domain of the primary distribution: first alias if configured, otherwise the CloudFront domain name. |
-| distribution_primary_domains | Map of distribution key -> primary domain (first alias, else CloudFront domain). |
+| primary_domain | Primary viewer-facing domain of the primary distribution: first managed domain or alias if configured, otherwise the CloudFront domain name. |
+| distribution_primary_domains | Map of distribution key -> primary domain (first managed domain or alias, else CloudFront domain). |
+| managed_certificate_arns | Map of distribution key -> ARN of the Ravion-issued certificate. Only distributions with `managed_domains` appear. |
+| managed_certificate_validation_records | Map of distribution key -> DNS validation records to add at your DNS provider so Ravion can issue the certificate. |
+| managed_domain_records | Map of distribution key -> routing records to add at your DNS provider, one per managed domain. |
 | cloudfront_function_arn | ARN of the viewer-request rewriter function. |
 | cache_control_function_arn | ARN of the viewer-response Cache-Control writer function. Null when `cache_control_enabled = false`. |
 | cache_policy_id | ID of the cache policy attached to the default behavior (caller-supplied when set, otherwise module-managed). |

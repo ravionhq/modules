@@ -5,6 +5,7 @@ Creates and manages AWS CloudFront distributions with support for multiple distr
 ## Features
 
 - **Multiple Distributions**: Create multiple CloudFront distributions sharing the same origins and cache behaviors, each with its own custom domains and SSL certificate
+- **Ravion-Managed Domains**: Set `managed_domains` on a distribution and Ravion issues the certificate and attaches it with the aliases once DNS validates
 - **Multiple Origins**: Support for S3 and custom (ALB, API Gateway, HTTP) origins with per-origin configuration
 - **Modern Cache Policies**: Uses cache policies and origin request policies (no legacy `forwarded_values`)
 - **Origin Access Control**: Automatic OAC creation for S3 origins (recommended over legacy OAI)
@@ -192,6 +193,41 @@ module "cdn" {
       origin_id   = "s3-assets"
       domain_name = "my-assets.s3.us-east-1.amazonaws.com"
       s3_origin_enabled   = true
+    }
+  ]
+
+  default_cache_behavior = {
+    target_origin_id       = "s3-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    cache_policy_id        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
+  }
+}
+```
+
+### Ravion-managed custom domains
+
+Set `managed_domains` on a distribution to let Ravion issue and attach the certificate. The distribution is created with no aliases and the default CloudFront certificate. Ravion issues a `us-east-1` ACM certificate and a routing record for each domain. Add the DNS records from the `managed_certificate_validation_records` and `managed_domain_records` outputs at your DNS provider. Once the certificate validates, Ravion attaches the certificate and aliases to the distribution, and Terraform ignores both fields on that distribution. Managed domains replace `aliases` and `acm_certificate_arn` on the same distribution. A distribution accepts at most 10 managed domains, and each domain is unique across distributions. Distributions without `managed_domains` are unchanged. `module_instance_id` and `ravion_aws_account_id` are required. A distribution keeps the domain mode it was first applied with: switching between `managed_domains` and `aliases` would replace it and change its CloudFront hostname, so the plan fails instead. To switch, add a distribution in the new mode, move DNS to it, then remove the old one. A distribution created before this version records its mode on its first apply with this version, so keep that apply in the same mode.
+
+```hcl
+module "cdn" {
+  source = "git::https://github.com/user/ravion-modules.git//cdn/cloudfront?ref=v1.0.0"
+
+  name = "my-website"
+
+  module_instance_id    = "minst_123"
+  ravion_aws_account_id = "aws_123"
+
+  distributions = {
+    main = {
+      managed_domains = ["www.example.com", "example.com"]
+    }
+  }
+
+  origins = [
+    {
+      origin_id         = "s3-assets"
+      domain_name       = "my-bucket.s3.us-east-1.amazonaws.com"
+      s3_origin_enabled = true
     }
   ]
 
@@ -455,6 +491,7 @@ The same-host example redirects `/old/guide` to `/docs/guide`. To redirect only 
 | ------------------ | --------- |
 | opentofu/terraform | >= 1.10.0 |
 | aws                | >= 6.0    |
+| ravion             | = 0.0.3-rc.1 |
 
 ## Inputs
 
@@ -472,6 +509,7 @@ The same-host example redirects `/old/guide` to `/docs/guide`. To redirect only 
 | distributions | A map of CloudFront distributions to create. Each key is a distribution identifier. | `map(object({...}))` | n/a | yes |
 | distributions[].aliases | CNAMEs for this distribution. | `list(string)` | `[]` | no |
 | distributions[].acm_certificate_arn | ACM certificate ARN for this distribution's domains. | `string` | `null` | no |
+| distributions[].managed_domains | Custom domains whose certificate Ravion issues and attaches. At most 10 per distribution, unique across distributions. Cannot be combined with `aliases` or `acm_certificate_arn`. | `list(string)` | `[]` | no |
 | distributions[].comment | Distribution-specific comment. | `string` | `"${name}-${key}"` | no |
 | distributions[].enabled | Whether this distribution accepts requests. | `bool` | `true` | no |
 
@@ -587,6 +625,13 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | logging_bucket_creation_enabled | Create a new S3 bucket for logging. Only applies when `logging_destination = "s3"`. | `bool` | `false` | no |
 | logging_bucket_retention_days | Days to retain logs: CloudWatch log group retention (`cloudwatch`, must be a valid CloudWatch retention value) or S3 lifecycle expiry on the module-created bucket (`s3`). | `number` | `365` | no |
 
+### Ravion-Managed Domains
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| module_instance_id | Ravion module instance id (`minst_*`) that owns the managed domains and certificates. The runner injects it as `TF_VAR_module_instance_id` inside a stack run. Required when a distribution sets `managed_domains`. | `string` | `null` | no |
+| ravion_aws_account_id | Ravion AwsAccount row id (`aws_*`) that owns the managed certificates. Required when a distribution sets `managed_domains`. | `string` | `null` | no |
+
 ### Origin Access Control
 
 | Name | Description | Type | Default | Required |
@@ -604,6 +649,7 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | distribution_ids | A map of distribution key to CloudFront distribution ID. |
 | distribution_arns | A map of distribution key to CloudFront distribution ARN. |
 | distribution_domain_names | A map of distribution key to CloudFront distribution domain name. |
+| distribution_domains | A map of distribution key to normalized managed domains or aliases served by each distribution. |
 | distribution_hosted_zone_ids | A map of distribution key to Route 53 zone ID for alias records. |
 | distribution_statuses | A map of distribution key to current distribution status. |
 | distribution_etags | A map of distribution key to current distribution ETag. |
@@ -613,6 +659,10 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 | distribution_hosted_zone_id | The Route 53 hosted zone ID when exactly one distribution is created (null otherwise). |
 | redirect_function_arn | The managed viewer-request function ARN (null when redirects and Accept cache-key normalization are disabled). |
 | redirect_function_name | The managed viewer-request function name (null when redirects and Accept cache-key normalization are disabled). |
+| managed_certificate_arns | A map of distribution key to the ARN of the Ravion-issued certificate. Only distributions with `managed_domains` appear. |
+| managed_certificate_validation_records | A map of distribution key to the DNS validation records to add so Ravion can issue the certificate. Only distributions with `managed_domains` appear. |
+| managed_domain_records | A map of distribution key to the routing records to add at your DNS provider. Each managed domain gets a `CNAME` to the distribution's CloudFront domain name. |
+| managed_primary_domains | A map of distribution key to its first managed domain. Only distributions with `managed_domains` appear. |
 | origin_access_control_ids | A map of origin_id to OAC ID for S3 origins. |
 | logging_bucket_id | The ID of the logging S3 bucket (null if not created). |
 | logging_bucket_arn | The ARN of the logging S3 bucket (null if not created). |

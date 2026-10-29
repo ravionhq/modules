@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.5.0
-  description: Chart pod CPU and memory from in-cluster Grafana Mimir when the EKS add-ons send metrics there.
+  version: 0.7.4
+  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
 module:
   inputs:
     - id: section_cluster
@@ -31,6 +31,7 @@ module:
       type: section
     - $template: ../../partials/templates/eks-workload-release-inputs.yml
       with:
+        name_label: Service name
         name_description: Name for the Helm release and the CronJob it creates.
     - $include: ../../partials/inputs/eks-workload-build-inputs.yml
     - $include: ../../partials/inputs/eks-workload-image-inputs.yml
@@ -87,7 +88,6 @@ module:
     - id: backoff_limit
       label: Retries
       type: number
-      description: Retries before a run is marked failed.
       collapsible: true
       max: 100
       min: 0
@@ -114,7 +114,7 @@ module:
           description: Leave the failed pod for inspection and start a new one.
           value: Never
     - id: termination_grace_period_seconds
-      label: Shutdown grace period (secs)
+      label: Stop timeout (secs)
       type: number
       description: Seconds a run has to finish after SIGTERM before it is killed, when it is cancelled or times out.
       collapsible: true
@@ -132,7 +132,6 @@ module:
     - id: successful_jobs_history_limit
       label: Successful runs kept
       type: number
-      description: Number of successful Job objects retained for inspection.
       collapsible: true
       max: 100
       min: 0
@@ -140,7 +139,6 @@ module:
     - id: failed_jobs_history_limit
       label: Failed runs kept
       type: number
-      description: Number of failed Job objects retained for inspection.
       collapsible: true
       max: 100
       min: 0
@@ -305,7 +303,7 @@ module:
     | Retries | 3 | Retries before a run is marked failed |
     | Run timeout (secs) | - | Wall-clock ceiling on a single run; blank means no timeout |
     | On container failure | Restart the container | Restart in place, or leave the failed pod and start a new one |
-    | Shutdown grace period (secs) | 30 | Drain window after SIGTERM when a run is cancelled or times out |
+    | Stop timeout (secs) | 30 | Drain window after SIGTERM when a run is cancelled or times out |
     | Job retention (secs) | - | Delete a finished Job this long after it ends |
     | Successful runs kept | 3 | Successful Job objects retained for inspection |
     | Failed runs kept | 1 | Failed Job objects retained for inspection |
@@ -386,7 +384,7 @@ module:
 
     Logs and pod charts cover every run of the job, because both match on the pods the CronJob creates rather than on any one Job object. Charts are the same five golden signals whichever store answers: CPU, memory working set, container restarts, network in, and network out. Two things differ on the CloudWatch link of the chain:
 
-    - **Container Insights reports per pod, Prometheus reports across pods.** A CloudWatch chart is an average over the run's pods; the Prometheus charts sum them. Same shape, different magnitude.
+    - **CPU uses different units by provider.** Prometheus shows usage as a percentage of the running pods' CPU requests, matching the autoscaler's CPU target; CloudWatch reports cores. Other Prometheus charts sum across pods; CloudWatch averages across them.
     - **It needs enhanced observability**, which the add-ons module turns on with CloudWatch by default. Without it, CPU and memory come back empty.
 
     **Runs succeeded** and **Runs failed** are Prometheus-only. Container Insights reports on running pods and never on Job completion, so it has no metric that says a run finished, let alone whether it worked. With CloudWatch as the only metrics provider those two charts are empty while the pod charts still work - so if run outcomes matter to you, keep a Prometheus provider selected.
@@ -426,7 +424,7 @@ module:
     | Retries | No | 3 | Retries before a run is marked failed |
     | Run timeout (secs) | No | - | Wall-clock ceiling on a single run |
     | On container failure | No | Restart the container | Restart in place or start a new pod |
-    | Shutdown grace period (secs) | No | 30 | Drain window after SIGTERM |
+    | Stop timeout (secs) | No | 30 | Drain window after SIGTERM |
     | Job retention (secs) | No | - | Delete a finished Job this long after it ends |
     | Successful runs kept | No | 3 | Successful Job objects retained |
     | Failed runs kept | No | 1 | Failed Job objects retained |

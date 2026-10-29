@@ -1,12 +1,89 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { join, resolve } from "node:path";
-import { compileAllDefinitions, CompileError, compileDefinitionFile } from "../src/compiler.js";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import {
+  compileAllDefinitions,
+  CompileError,
+  compileDefinitionFile,
+  findDefinitionFiles,
+} from "../src/compiler.js";
 
 const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("accepts only tags or SHA-256 digests for ECS image_ref deployment inputs", async () => {
+    const valid = ["latest", "v1.46.0", "12345-railpack", "_tag", "Tag_1.2-3", "a".repeat(128), "sha256:" + "a1".repeat(32)];
+    const invalid = [
+      "inngest/inngest:v1.46.0", "inngest/inngest", "nginx:latest",
+      "registry.example.com:5000/app:v1", "app@sha256:" + "a1".repeat(32),
+      "https://registry.example.com/app:latest", "", " latest", "latest\n", "two tags",
+      ".tag", "-tag", "a".repeat(129), "sha256:abc123", "sha256:" + "g".repeat(64),
+    ];
+    for (const name of ["nlb", "web", "worker"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
+      const imageRef = findInput(getDeployInputs(module), "image_ref");
+      assert.ok(Array.isArray(imageRef.patterns), name + " must validate image_ref");
+      assert.ok(imageRef.patterns.length > 0);
+      const patterns = imageRef.patterns.map((value) => {
+        const constraint = assertRecord(value, "image_ref pattern");
+        assert.match(assertString(constraint.message), /tag or.*digest.*not a full image URI/i);
+        return new RegExp(assertString(constraint.pattern));
+      });
+      for (const value of valid) {
+        assert.ok(patterns.every((pattern) => pattern.test(value)), `${name} should accept ${JSON.stringify(value)}`);
+      }
+      for (const value of invalid) {
+        assert.ok(patterns.some((pattern) => !pattern.test(value)), `${name} should reject ${JSON.stringify(value)}`);
+      }
+    }
+  });
+
+  it("enables security defaults for new module instances", async () => {
+    const cases: [string, Record<string, unknown>][] = [
+      ["compute/eks/addons/rvn-eks-addons-definition.yml", { public_alb_access_logs_enabled: true, private_alb_access_logs_enabled: true, public_nlb_access_logs_enabled: false, private_nlb_access_logs_enabled: false }],
+      ["compute/ecs_cluster/rvn-ecs-cluster-definition.yml", { public_alb_access_logs_enabled: true, private_alb_access_logs_enabled: true, log_retention_days: 365, public_nlb_access_logs_enabled: false, private_nlb_access_logs_enabled: false }],
+      ["networking/alb/rvn-aws-alb-definition.yml", { access_logs_enabled: true }],
+      ["networking/vpc/rvn-aws-network-definition.yml", { flow_logs_enabled: true }],
+      ["compute/lambda/rvn-lambda-definition.yml", { log_retention_days: 365 }],
+      ["compute/ec2_service/rvn-ec2-service-definition.yml", { log_retention_in_days: 365 }],
+      ["storage/s3/rvn-s3-definition.yml", { versioning_enabled: true, policy_templates: ["deny_insecure_transport"] }],
+    ];
+    for (const [path, defaults] of cases) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      for (const [id, value] of Object.entries(defaults)) {
+        assert.deepEqual(findInput(getModuleInputs(module), id).default, value, path + ":" + id);
+        assert.equal(getTerraformVariable(module, id), "<< module.input." + id + (id === "policy_templates" ? " || []" : "") + " >>");
+      }
+    }
+  });
+
+  it("defaults database exports by engine without enabling general or audit logs", async () => {
+    for (const [path, engine] of [
+      ["database/rds/rvn-rds-definition.yml", "postgres"],
+      ["database/aurora/rvn-aurora-definition.yml", "aurora-postgresql"],
+    ]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      assert.equal(findInput(getModuleInputs(module), "enabled_cloudwatch_logs_exports").default, undefined);
+      const value = assertString(getTerraformVariable(module, "enabled_cloudwatch_logs_exports"));
+      assert.ok(value.startsWith("<< module.input.enabled_cloudwatch_logs_exports != nil ? module.input.enabled_cloudwatch_logs_exports : ("));
+      assert.ok(value.includes('module.input.engine == "' + engine + '" ? ["postgresql"]'));
+      assert.ok(value.includes('["error"] : []'));
+      assert.doesNotMatch(value, /general|audit|slowquery|len\(/);
+      const evaluate = new Function("module", "nil", "return " + value.slice(3, -3));
+      for (const selectedEngine of ["postgres", "mysql", "mariadb", "aurora-postgresql", "aurora-mysql", "sqlserver-ex", "unknown"]) {
+        const expected = selectedEngine === engine ? ["postgresql"]
+          : (engine === "postgres" ? ["mysql", "mariadb"] : ["aurora-mysql"]).includes(selectedEngine) ? ["error"] : [];
+        assert.deepEqual(evaluate({ input: { engine: selectedEngine } }, null), expected);
+        assert.deepEqual(evaluate({ input: { engine: selectedEngine, enabled_cloudwatch_logs_exports: null } }, null), expected);
+        assert.deepEqual(evaluate({ input: { engine: selectedEngine, enabled_cloudwatch_logs_exports: [] } }, null), []);
+        assert.deepEqual(evaluate({ input: { engine: selectedEngine, enabled_cloudwatch_logs_exports: ["custom"] } }, null), ["custom"]);
+      }
+    }
+  });
+
   it("compiles CloudFront with all methods allowed without changing caching", async () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "cdn", "cloudfront", "rvn-cloudfront-definition.yml"));
     const inputs = getModuleInputs(compiled.module);
@@ -39,26 +116,31 @@ describe("compiler", () => {
     assert.equal(findInput(pathInputs, "allowed_methods").default, "read");
   });
 
-  it("uses the default Ravion domain only as a fallback to custom domains", async () => {
+  it("serves the default Ravion domain alongside custom domains behind a toggle", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml"),
     );
     const inputs = getModuleInputs(compiled.module);
+    const enabled = findInput(inputs, "ravion_domain_enabled");
+    assert.equal(enabled.label, "Default Ravion domain");
+    assert.equal(enabled.type, "boolean");
+    assert.equal(enabled.default, true);
+    assert.deepEqual(enabled.show_when, { ravion_managed_domains_enabled: true });
+    assert.equal(getTerraformVariable(compiled.module, "ravion_domain_enabled"), "<< module.input.ravion_domain_enabled >>");
     const domain = findInput(inputs, "ravion_domain_name");
-    assert.equal(domain.label, "Default Ravion domain");
-    assert.equal(domain.description, "Used only when no custom domains are set.");
+    assert.equal(domain.label, "Subdomain");
     assert.equal(domain.default, "<< module.given_id >>");
     assert.equal(domain.suffix, ".<< module.input.cluster_parent_fqdn >>");
-    assert.deepEqual(domain.show_when, { ravion_managed_domains_enabled: true });
+    assert.deepEqual(domain.show_when, { ravion_managed_domains_enabled: true, ravion_domain_enabled: true });
     assert.equal(getTerraformVariable(compiled.module, "ravion_domain_name"), "<< module.input.ravion_domain_name >>");
     const customDomains = findInput(inputs, "domains");
     assert.equal(customDomains.label, "Custom domains");
     assert.equal(
       customDomains.description,
-      "Replaces the default Ravion domain; Ravion manages certificates and listener rules. Add the provided DNS records at your DNS provider.",
+      "Served alongside the default Ravion domain when it is on. Ravion manages certificates and listener rules; add the provided DNS records at your DNS provider.",
     );
     assert.equal(customDomains.max_length, 5);
-    assert.deepEqual(customDomains.show_when, domain.show_when);
+    assert.deepEqual(customDomains.show_when, enabled.show_when);
     assert.deepEqual(findInput(inputs, "host_header_values").show_when, { ravion_managed_domains_enabled: false });
   });
 
@@ -169,6 +251,29 @@ describe("compiler", () => {
     const compiled = await compileAllDefinitions(join(fixturesDir, "modules"));
 
     assert.deepEqual(compiled.map((definition) => definition.type), ["ravion-aws-cluster", "ravion-aws-vpc"]);
+  });
+
+  it("discovers definitions in new module directories and ignores non-module directories", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "ravion-discovery-"));
+    const definitionPaths = [
+      "newdir/foo/x-definition.yml",
+      "node_modules/ignored/x-definition.yml",
+      "dist/ignored/x-definition.yml",
+      "tools/ignored/x-definition.yml",
+      "test/ignored/x-definition.yml",
+      "partials/ignored/x-definition.yml",
+      "charts/ignored/x-definition.yml",
+      "trusted-tools/tools/ravion-modules/test/fixtures/x-definition.yml",
+      ".hidden/ignored/x-definition.yml",
+    ];
+
+    for (const definitionPath of definitionPaths) {
+      const filePath = join(rootPath, definitionPath);
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, "");
+    }
+
+    assert.deepEqual(await findDefinitionFiles(rootPath), [join(rootPath, "newdir", "foo", "x-definition.yml")]);
   });
 
   it("compiles the RDS storage alarm threshold with a fallback when the input is hidden", async () => {
@@ -417,6 +522,36 @@ describe("compiler", () => {
     }
   });
 
+  it("sets PORT from container port on EKS web, before user variables so a user PORT wins", async () => {
+    const helmEnv = async (name: string) => {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const deploy = compiled.module.deploy as { definition: { values: { env: unknown } } };
+      return deploy.definition.values.env;
+    };
+    assert.equal(
+      await helmEnv("web"),
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>',
+    );
+    for (const name of ["worker", "cron"]) {
+      assert.equal(await helmEnv(name), "<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>");
+    }
+  });
+
+  it("puts every EKS workload environment variable in the Environment variables section, as on ECS", async () => {
+    for (const name of ["web", "worker", "cron"]) {
+      const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
+      const sectionOf = new Map<string, string>();
+      let section = "";
+      for (const input of getModuleInputs(compiled.module)) {
+        if (input.type === "section") section = String(input.id);
+        else sectionOf.set(String(input.id), section);
+      }
+      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets"]) {
+        assert.equal(sectionOf.get(id), "section_app_config", `rvn-eks-${name} ${id}`);
+      }
+    }
+  });
+
   it("compiles EKS capacity forms and workload placement with safe defaults", async () => {
     const cluster = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
     const addons = await compileDefinitionFile(join(repoRoot, "compute", "eks", "addons", "rvn-eks-addons-definition.yml"));
@@ -439,8 +574,8 @@ describe("compiler", () => {
     assert.equal(additionalNodeGroupFields.some((input) => input.id === "min_nodes" || input.id === "max_nodes"), false);
     assert.equal(additionalMinSize.label, "Minimum nodes");
     assert.equal(additionalMaxSize.label, "Maximum nodes");
-    assert.match(String(additionalMinSize.description), /spare capacity/);
-    assert.match(String(additionalMaxSize.description), /pods can remain pending/);
+    assert.match(String(additionalMinSize.description), /rolling node updates/);
+    assert.match(String(additionalMaxSize.description), /pods stay pending/);
     assert.equal(clusterInputs.some((input) => input.id === "system_node_min_size" || input.id === "system_node_max_size"), false);
     const systemNodeMinNodes = findInput(clusterInputs, "system_node_min_nodes");
     const systemNodeMaxNodes = findInput(clusterInputs, "system_node_max_nodes");
@@ -487,7 +622,7 @@ describe("compiler", () => {
     }
     assert.equal(clusterInputs.some((input) => input.id === "section_system_nodes"), false);
     assert.equal(clusterInputs.some((input) => input.id === "section_application_capacity"), false);
-    assert.match(String(findInput(clusterInputs, "section_capacity").description), /0\.5 vCPU and 1 GiB/);
+    assert.match(String(findInput(clusterInputs, "section_capacity").description), /Without Karpenter, nothing adds nodes/);
     assert.ok(clusterInputs.findIndex((input) => input.id === "section_capacity") < clusterInputs.findIndex((input) => input.id === "system_node_capacity_type"));
     assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_capacity_type") < clusterInputs.findIndex((input) => input.id === "system_node_instance_types"));
     assert.ok(clusterInputs.findIndex((input) => input.id === "system_node_disk_size") < clusterInputs.findIndex((input) => input.id === "node_groups"));
@@ -872,7 +1007,6 @@ describe("compiler", () => {
       {
         path: ["compute", "eks", "addons", "rvn-eks-addons-definition.yml"],
         sectionIds: [
-          "section_ravion_operator",
           "section_alb",
           "section_nlb",
           "section_karpenter",
@@ -975,6 +1109,53 @@ describe("compiler", () => {
     for (const variableName of specializedTerraformVariables) {
       assert.equal(getTerraformVariable(compiled.module, variableName), undefined);
     }
+  });
+
+  it("compiles ECR defaults and validates repository names and principal ARNs", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "containers", "ecr", "rvn-aws-ecr-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+
+    assert.equal(
+      getTerraformVariable(compiled.module, "untagged_image_expiry_days"),
+      "<< module.input.untagged_image_expiry_days != nil ? module.input.untagged_image_expiry_days : 14 >>",
+    );
+    assert.equal(
+      getTerraformVariable(compiled.module, "max_tagged_image_count"),
+      "<< module.input.max_tagged_image_count != nil ? module.input.max_tagged_image_count : 100 >>",
+    );
+
+    const nameInput = findInput(inputs, "name");
+    assert.ok(Array.isArray(nameInput.patterns), "name.patterns should be an array");
+    const namePatterns = nameInput.patterns.map((validation, index) =>
+      new RegExp(assertString(assertRecord(validation, `name.patterns[${index}]`).pattern)),
+    );
+
+    for (const name of ["api", "team/api", "my.app_v2-x"]) {
+      assert.ok(namePatterns.every((pattern) => pattern.test(name)), `name should accept ${name}`);
+    }
+    for (const name of ["API", "-api", "api/", "a"]) {
+      assert.ok(namePatterns.some((pattern) => !pattern.test(name)), `name should reject ${name}`);
+    }
+
+    const principalInput = findInput(inputs, "allowed_pull_principal_arns");
+    assert.ok(Array.isArray(principalInput.patterns), "allowed_pull_principal_arns.patterns should be an array");
+    assert.equal(principalInput.patterns.length, 1);
+    const principalValidation = assertRecord(principalInput.patterns[0], "allowed_pull_principal_arns.patterns[0]");
+    const principalPattern = new RegExp(assertString(principalValidation.pattern));
+    const validArns = [
+      "arn:aws:iam::123456789012:root",
+      "arn:aws-us-gov:iam::123456789012:role/team/application",
+      "arn:aws-cn:iam::123456789012:user/developer",
+    ];
+    const invalidArns = [
+      "arn:aws:iam::",
+      "arn:aws:iam::12345678901:root",
+      "arn:aws:iam::123456789012:role/",
+      "arn:aws:iam::123456789012:group/developers",
+    ];
+
+    for (const arn of validArns) assert.match(arn, principalPattern, `principal ARN should accept ${arn}`);
+    for (const arn of invalidArns) assert.doesNotMatch(arn, principalPattern, `principal ARN should reject ${arn}`);
   });
 
   it("fails when a local token remains after compilation", async () => {
@@ -1255,6 +1436,29 @@ describe("compiler", () => {
     assert.match(links, /stack\.output\.alb_dns_name/);
   });
 
+  it("compiles UI links for every module domain", async () => {
+    const [ecsWeb, eksWeb, cloudfront, staticSite] = await Promise.all([
+      compileDefinitionFile(join(repoRoot, "compute", "ecs_service", "rvn-ecs-web-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-web-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "cdn", "cloudfront", "rvn-cloudfront-definition.yml")),
+      compileDefinitionFile(join(repoRoot, "hosting", "static_site", "rvn-aws-static-definition.yml")),
+    ]);
+
+    const ecsLinks = assertString(assertRecord(ecsWeb.module.ui, "ECS web module.ui").links);
+    const eksLinks = assertString(assertRecord(eksWeb.module.ui, "EKS web module.ui").links);
+    const cloudfrontLinks = assertString(assertRecord(cloudfront.module.ui, "CloudFront module.ui").links);
+    const staticSiteLinks = assertString(assertRecord(staticSite.module.ui, "static-site module.ui").links);
+
+    assert.match(ecsLinks, /stack\.output\.ravion_domain_fqdns/);
+    assert.match(eksLinks, /stack\.output\.ravion_domain_fqdns/);
+    assert.match(cloudfrontLinks, /stack\.output\.distribution_domains\.main/);
+    assert.match(cloudfrontLinks, /stack\.output\.distribution_domain_name/);
+    assert.doesNotMatch(cloudfrontLinks, /module\.input\.(managed_domains|distribution_aliases)/);
+    assert.match(staticSiteLinks, /stack\.output\.domains/);
+    assert.match(staticSiteLinks, /stack\.output\.primary_domain/);
+    assert.doesNotMatch(staticSiteLinks, /module\.input\.(domains|distribution_aliases)/);
+  });
+
   it("compiles EC2 service load balancer source choices", async () => {
     const compiled = await compileDefinitionFile(
       join(repoRoot, "compute", "ec2_service", "rvn-ec2-service-definition.yml"),
@@ -1473,8 +1677,8 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "source_repo").description,
-        "Repository containing the application source for Dockerfile or Railpack builds.",
-        `${definition.type} should include shared Git source guidance`,
+        undefined,
+        `${definition.type} should not repeat the Git repository label in a description`,
       );
       const buildEnvironmentVariables = findInput(inputs, "build_environment_variables");
       assert.deepEqual(
@@ -1540,11 +1744,11 @@ describe("compiler", () => {
       const inputs = getModuleInputs(definition.module);
       assert.equal(
         findInput(inputs, "railpack_install_cmd").description,
-        "Optional dependency installation command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
       assert.equal(
         findInput(inputs, "railpack_build_cmd").description,
-        "Optional application build command. Leave blank to use Railpack detection.",
+        "Blank uses Railpack's detected command.",
       );
     }
   });

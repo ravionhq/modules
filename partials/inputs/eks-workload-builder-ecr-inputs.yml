@@ -27,17 +27,21 @@
     build_source:
       - dockerfile
       - railpack
-- id: ecr_image_scan_on_push_enabled
+- id: ecr_scan_on_push_enabled
+  moved_from:
+    - ecr_image_scan_on_push_enabled
   label: Scan images on push
   type: boolean
-  description: Ask ECR to run its basic vulnerability scan whenever a new image is pushed. Keep this on for early dependency and OS package findings; disable only if another scanner owns image scanning or duplicate findings are noisy.
+  description: Basic ECR vulnerability scan on every push. Turn off if another scanner covers it.
   collapsible: true
   show_when:
     build_source:
       - dockerfile
       - railpack
   default: true
-- id: ecr_force_delete_enabled
+- id: ecr_force_deletion_enabled
+  moved_from:
+    - ecr_force_delete_enabled
   label: Force delete image repository
   type: boolean
   description: Allow the ECR repository to be deleted even when it contains images. Use with care.

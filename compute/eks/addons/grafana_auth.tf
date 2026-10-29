@@ -1,10 +1,10 @@
 ################################################################################
 # In-cluster Grafana sign-in
 #
-# Grafana's own authentication, as Grafana's own configuration names it:
-# username and password for local users, and the OAuth providers Grafana
-# supports out of the box. Each grafana_auth_providers entry becomes one
-# [auth.<provider>] section in grafana.ini.
+# Grafana's own authentication, as Grafana's own configuration names it. The
+# basic entry of grafana_auth_providers is username and password for local
+# users; each other entry is one of the OAuth providers Grafana supports out of
+# the box and becomes one [auth.<provider>] section in grafana.ini.
 #
 # Every client secret is a Secrets Manager ARN. The External Secrets Operator
 # materializes it into a Kubernetes Secret, and Grafana reads it from
@@ -16,8 +16,10 @@
 locals {
   grafana_auth_entries = var.grafana_enabled ? var.grafana_auth_providers : []
 
-  # The validation guarantees each provider appears once.
-  grafana_auth_by_provider = { for entry in local.grafana_auth_entries : entry.provider => entry }
+  grafana_password_sign_in_enabled = contains([for entry in var.grafana_auth_providers : entry.provider], "basic")
+
+  # The OAuth providers. The validation guarantees each provider appears once.
+  grafana_auth_by_provider = { for entry in local.grafana_auth_entries : entry.provider => entry if entry.provider != "basic" }
 
   grafana_auth_values = {
     for provider, entry in local.grafana_auth_by_provider : provider => {
@@ -128,20 +130,19 @@ locals {
 
   # grafana.ini: SigV4 for the AMP data source always; the role new accounts
   # get; the external URL OAuth providers redirect back to while grafana_access
-  # serves Grafana; and the sign-in methods. Turning username and password
-  # off removes the login form and HTTP basic auth both, so a password is
-  # accepted nowhere.
+  # serves Grafana; and the sign-in methods. Without the basic provider there
+  # is no login form and no HTTP basic auth, so a password is accepted nowhere.
   grafana_ini = merge(
     {
       auth = merge(
         { sigv4_auth_enabled = true },
-        var.grafana_auth.login_form_enabled ? {} : { disable_login_form = true },
+        local.grafana_password_sign_in_enabled ? {} : { disable_login_form = true },
       )
       users = {
-        auto_assign_org_role = var.grafana_auth.default_role
+        auto_assign_org_role = var.grafana_default_role
       }
     },
-    { for section, settings in { "auth.basic" = { enabled = false } } : section => settings if !var.grafana_auth.login_form_enabled },
+    { for section, settings in { "auth.basic" = { enabled = false } } : section => settings if !local.grafana_password_sign_in_enabled },
     local.grafana_access_enabled ? {
       server = {
         domain   = local.grafana_hostname

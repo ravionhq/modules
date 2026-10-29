@@ -521,7 +521,7 @@ variable "ecr_scan_on_push_enabled" {
 variable "log_retention_in_days" {
   type        = number
   description = "CloudWatch log retention for app logs."
-  default     = 30
+  default     = 365
 
   validation {
     condition     = var.log_retention_in_days >= 1

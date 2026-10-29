@@ -31,3 +31,4 @@ inputs:
   - $include: ../inputs/build-inputs.yml
 source:
   $include: ./git-source.yml
+watch_paths: << module.input.watch_paths >>

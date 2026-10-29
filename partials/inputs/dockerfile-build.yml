@@ -1,14 +1,14 @@
 - id: section_dockerfile
-  label: Docker
+  label: Dockerfile
   show_when: $with.show_when
   type: section
-- description: Path to the Dockerfile to use for the build, relative to the repository root or configured source base path.
+- description: Relative to the source base path.
   id: dockerfile
   label: Dockerfile path
   placeholder: Dockerfile
   show_when: $with.show_when
   type: string
-- description: Directory to use as the Docker build context, relative to the repository root or configured source base path.
+- description: Relative to the source base path.
   id: dockerfile_context
   label: Docker build context path
   placeholder: .

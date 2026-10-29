@@ -195,6 +195,22 @@ This health check is independent of the chart's Kubernetes readiness probe. The 
 
 Each entry is `{ type, values }`. Supported types: `host-header`, `path-pattern`, `http-header`, `http-request-method`, `query-string`, `source-ip`. A rule AND-combines all of its conditions. For `http-header`, the first value is the header name and the rest are matched values. For `query-string`, the first value is the key and the second the value.
 
+### Ravion-managed domains
+
+Set when the add-ons were created with `use_ravion_managed_domains` (pipe the add-ons outputs). The service serves the configured `domains` list, normalized and deduplicated in order, followed by the default Ravion domain `<ravion_domain_name>.<cluster apex>` while `ravion_domain_enabled` is true. Turning the default off requires at least one custom domain. Ravion manages certificates and listener rules; add the provided custom-domain DNS records at your DNS provider. The caller listener rule (`listener_rule_conditions`, `listener_rule_priority`) is not created in this mode.
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| cluster_parent_fqdn | Cluster wildcard apex (`ravion_cluster_domain_fqdn` from the add-ons). Setting it enables managed domains for the service | `string` | `null` | no |
+| cluster_https_listener_arn | Add-ons ALB HTTPS listener the host-header rules attach to | `string` | `null` | no |
+| ravion_domain_enabled | Serve the default Ravion domain alongside the custom domains. False requires at least one custom domain | `bool` | `true` | no |
+| ravion_domain_name | Subdomain of the default Ravion domain; falls back to the module given ID or service name | `string` | `null` | no |
+| domains | Custom domains, served ahead of the default Ravion domain. Up to 10 custom domains | `list(string)` | `[]` | no |
+| cluster_alb_dns_name / cluster_alb_zone_id | ALB the custom-domain routing records point at | `string` | `null` | no |
+| ravion_listener_rule_priority | Base priority of the managed listener rules; `0` derives one from the service name | `number` | `0` | no |
+| ravion_aws_account_id / ravion_aws_region | Ravion AWS account (`aws_*`) and region the custom-domain certificate is issued in | `string` | `null` | no |
+| module_instance_id / module_instance_given_id | Ravion module instance that owns the domains; injected by the runner inside a stack run | `string` | `null` | no |
+
 ## Outputs
 
 | Name | Description |
@@ -215,7 +231,10 @@ Each entry is `{ type, values }`. Supported types: `host-header`, `path-pattern`
 | service_host | In-cluster DNS name of the Kubernetes Service, `<release_name>.<release_namespace>.svc.cluster.local`; answers once the first Helm deploy creates the Service. Null unless kubernetes_service_enabled |
 | service_port | Port the Kubernetes Service listens on, the container port |
 | service_url | In-cluster URL for service-to-service calls; scheme from the target group protocol |
-| load_balancer_url | URL through the shared load balancer; scheme and port from the listener, host from the first non-wildcard host rule or the load balancer DNS name |
+| load_balancer_url | URL through the shared load balancer; scheme and port from the listener, host from the first managed domain, the first non-wildcard host rule, or the load balancer DNS name |
+| ravion_domain_fqdn / ravion_domain_url | Primary managed FQDN (first custom domain, otherwise the default Ravion domain) and its HTTPS URL; null without managed domains |
+| ravion_domain_fqdns | Every managed FQDN the service serves |
+| ravion_custom_cert_arn | ACM ARN of the per-service certificate covering custom domains; null when there are none |
 | load_balancer_subnet_cidr_blocks | Sorted IPv4 CIDRs of the load balancer's subnets, admitted by the workload's ingress allow-list (empty without a load balancer) |
 | ecr_repository_arn | ARN of the ECR repository, the build's push destination |
 | ecr_repository_name | Name of the ECR repository |

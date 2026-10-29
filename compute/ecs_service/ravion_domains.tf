@@ -1,10 +1,10 @@
 ################################################################################
 # Ravion-managed service domains
 ################################################################################
-# Wired when cluster_parent_fqdn is set (piped from ecs_cluster). The normalized
-# `domains` list is authoritative; the default Ravion domain is used only when no
-# entries remain. Each effective domain is classified by whether the cluster
-# wildcard cert covers it:
+# Wired when cluster_parent_fqdn is set (piped from ecs_cluster). The service
+# serves the normalized `domains` list followed by the default Ravion domain when
+# ravion_domain_enabled is true. Each effective domain is classified by whether
+# the cluster wildcard cert covers it:
 #
 #   - wildcard-covered (<leaf>.<apex>, exactly one label under the cluster apex):
 #     nests under the cluster wildcard cert via SNI. No per-service cert, and no
@@ -20,15 +20,17 @@ locals {
 
   auto_fqdn = local.ravion_managed ? lower(trimsuffix(trimspace("${coalesce(var.ravion_domain_name, var.module_instance_given_id, var.name)}.${local.apex}"), ".")) : ""
 
-  # Normalize explicit domains before choosing the fallback so blank-only input
-  # still uses the default Ravion domain. distinct preserves first-entry order.
+  # Custom domains come first so the first one stays the primary address.
+  # distinct preserves first-entry order and drops the default Ravion domain when
+  # it is also listed as a custom domain.
   normalized_domains = local.ravion_managed ? distinct([
     for d in var.domains :
     lower(trimsuffix(trimspace(d), ".")) if trimsuffix(trimspace(d), ".") != ""
   ]) : []
-  effective_domains = local.ravion_managed ? (
-    length(local.normalized_domains) > 0 ? local.normalized_domains : [local.auto_fqdn]
-  ) : []
+  effective_domains = local.ravion_managed ? distinct(concat(
+    local.normalized_domains,
+    var.ravion_domain_enabled ? [local.auto_fqdn] : [],
+  )) : []
 
   # Per-entry classification. wildcard-covered = "<leaf>.<apex>" with a non-empty
   # single label below the apex (the only shape the `*.<apex>` cert + ALIAS

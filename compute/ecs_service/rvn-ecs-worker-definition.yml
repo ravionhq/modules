@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.2.2
-  description: "Pick up the shared ecs_service module source updates from the managed-domains work (no worker-facing input changes)."
+  version: 2.3.3
+  description: Reject full image URIs in deployment inputs with guidance to pass only an image tag or SHA-256 digest.
 module:
   inputs:
     - id: section_cluster

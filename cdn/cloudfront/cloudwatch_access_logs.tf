@@ -34,7 +34,7 @@ resource "aws_cloudwatch_log_delivery_source" "access_logs" {
 
   name         = substr(replace("${var.name}-${each.key}-access-logs", "/[^a-zA-Z0-9-_.]/", "-"), 0, 60)
   log_type     = "ACCESS_LOGS"
-  resource_arn = aws_cloudfront_distribution.this[each.key].arn
+  resource_arn = local.distributions[each.key].arn
 
   tags = local.tags
 }

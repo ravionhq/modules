@@ -46,6 +46,11 @@ output "distribution_domain_names" {
   value       = module.cdn.distribution_domain_names
 }
 
+output "domains" {
+  description = "Normalized viewer domains for the primary CloudFront distribution."
+  value       = module.cdn.distribution_domains[local.primary_distribution_key]
+}
+
 output "distribution_hosted_zone_ids" {
   description = "Map of distribution key -> CloudFront Route53 zone ID for alias records."
   value       = module.cdn.distribution_hosted_zone_ids
@@ -57,20 +62,39 @@ output "primary_distribution_id" {
 }
 
 output "primary_domain" {
-  description = "Primary viewer-facing domain of the primary distribution ('main', or the lexically first key): the first alias when aliases are configured, otherwise the CloudFront domain name (e.g. 'd123.cloudfront.net')."
+  description = "Primary viewer-facing domain of the primary distribution ('main', or the lexically first key): the first managed domain or alias when configured, otherwise the CloudFront domain name (e.g. 'd123.cloudfront.net')."
   value = (
-    length(var.distributions[local.primary_distribution_key].aliases) > 0
+    contains(keys(module.cdn.managed_primary_domains), local.primary_distribution_key)
+    ? module.cdn.managed_primary_domains[local.primary_distribution_key]
+    : length(var.distributions[local.primary_distribution_key].aliases) > 0
     ? var.distributions[local.primary_distribution_key].aliases[0]
     : module.cdn.distribution_domain_names[local.primary_distribution_key]
   )
 }
 
 output "distribution_primary_domains" {
-  description = "Map of distribution key -> primary domain: the first alias when aliases are configured, otherwise the CloudFront domain name."
+  description = "Map of distribution key -> primary domain: the first managed domain or alias when configured, otherwise the CloudFront domain name."
   value = {
     for k, d in var.distributions :
-    k => length(d.aliases) > 0 ? d.aliases[0] : module.cdn.distribution_domain_names[k]
+    k => contains(keys(module.cdn.managed_primary_domains), k) ? module.cdn.managed_primary_domains[k] : (
+      length(d.aliases) > 0 ? d.aliases[0] : module.cdn.distribution_domain_names[k]
+    )
   }
+}
+
+output "managed_certificate_arns" {
+  description = "Map of distribution key -> ARN of the Ravion-issued certificate. Only distributions with managed_domains appear."
+  value       = module.cdn.managed_certificate_arns
+}
+
+output "managed_certificate_validation_records" {
+  description = "Map of distribution key -> DNS validation records to add at your DNS provider so Ravion can issue the certificate."
+  value       = module.cdn.managed_certificate_validation_records
+}
+
+output "managed_domain_records" {
+  description = "Map of distribution key -> routing records to add at your DNS provider, one per managed domain."
+  value       = module.cdn.managed_domain_records
 }
 
 ################################################################################

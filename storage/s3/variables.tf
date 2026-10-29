@@ -123,7 +123,7 @@ variable "bucket_key_enabled" {
 variable "versioning_enabled" {
   type        = bool
   description = "Whether to enable versioning for the S3 bucket. When enabled, S3 keeps multiple versions of an object in the same bucket."
-  default     = false
+  default     = true
 }
 
 #-------------------------------------------------------------------------------
@@ -265,7 +265,7 @@ variable "lifecycle_rules" {
 variable "policy_templates" {
   type        = list(string)
   description = "List of policy template names to apply to the bucket. Available templates: deny_insecure_transport, alb_access_logs, nlb_access_logs, vpc_flow_logs, cloudfront_oac_read."
-  default     = []
+  default     = ["deny_insecure_transport"]
 
   validation {
     condition = alltrue([
