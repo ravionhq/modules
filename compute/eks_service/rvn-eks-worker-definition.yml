@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.16.0
+  version: 0.17.0
   description: 'Name the image repository from the form, for when a repository with the service''s name already belongs to something else.'
 module:
   inputs:

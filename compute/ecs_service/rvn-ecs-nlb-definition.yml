@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.4.5
-  description: Expose and document start command overrides for Dockerfile builds.
+  version: 2.5.0
+  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
 module:
   inputs:
     - id: section_cluster
