@@ -1,4 +1,10 @@
 mock_provider "aws" {
+  mock_data "aws_ec2_instance_type" {
+    defaults = { supported_architectures = ["x86_64"] }
+  }
+  mock_data "aws_ssm_parameter" {
+    defaults = { value = "ami-0123456789abcdef0" }
+  }
   override_data {
     target = data.aws_caller_identity.current
     values = {
@@ -47,6 +53,44 @@ mock_provider "aws" {
     values = {
       arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/supervised-app/1234567890abcdef"
     }
+  }
+}
+
+run "patched_default_kernel" {
+  command = plan
+  variables {
+    ami_id  = null
+    runtime = "container"
+  }
+  assert {
+    condition     = data.aws_ssm_parameter.al2023_ami[0].name == "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.18-x86_64" && local.ami_id == "ami-0123456789abcdef0"
+    error_message = "Default instances must use the patched-capable AL2023 kernel 6.18 family."
+  }
+}
+
+run "patched_arm_default_kernel" {
+  command = plan
+  variables {
+    ami_id        = null
+    instance_type = "t4g.micro"
+    runtime       = "container"
+  }
+  override_data {
+    target = data.aws_ec2_instance_type.selected
+    values = { supported_architectures = ["arm64"] }
+  }
+  assert {
+    condition     = data.aws_ssm_parameter.al2023_ami[0].name == "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.18-arm64"
+    error_message = "Graviton instances must select the matching patched-capable kernel family."
+  }
+}
+
+run "custom_ami_is_retained" {
+  command = plan
+  variables { runtime = "container" }
+  assert {
+    condition     = local.ami_id == "ami-12345678" && length(data.aws_ssm_parameter.al2023_ami) == 0
+    error_message = "An explicit image must not be overwritten by the default."
   }
 }
 

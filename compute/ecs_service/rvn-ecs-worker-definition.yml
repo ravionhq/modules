@@ -195,9 +195,15 @@ module:
 
     ## Build and deployment
 
-    Workers support Dockerfile, Railpack, Managed ECR repository, and Pull from image registry deployments. Deployments update the ECS service task definition with the selected image, generated container definition, logs, runtime environment variables, secrets, IAM roles, volumes, sidecars, and selected capacity provider settings. For Railpack builds, you can optionally pin the Railpack version and override install, build, and start commands. For Fargate and Fargate Spot, App ephemeral storage uses the AWS default of 20 GiB unless you increase it to 21-200 GiB. For image registry deployments, use Start command to override the image default CMD when the worker process uses a different command.
+    Workers support Dockerfile, Railpack, Managed ECR repository, and Pull from image registry deployments. Deployments update the ECS service task definition with the selected image, generated container definition, logs, runtime environment variables, secrets, IAM roles, volumes, sidecars, and selected capacity provider settings. For Railpack builds, you can optionally pin the Railpack version and override install, build, and start commands. For Fargate and Fargate Spot, App ephemeral storage uses the AWS default of 20 GiB unless you increase it to 21-200 GiB.
 
     For Managed ECR repository, Ravion creates and manages the service ECR repository. Push the image from a pipeline `build:image` step, then provide its tag or digest at deploy time.
+
+    ### Override the start command
+
+    For Dockerfile, Pull from image registry, and Managed ECR repository builds, use Start command (`image_start_command`) to override the image's `CMD` without changing its `ENTRYPOINT`. Leave it empty to keep the image default.
+
+    Set a different command for each service to reuse one Dockerfile for your web app and background workers. Pass each argument as a separate array item, for example `image_start_command: ["npm", "run", "start:worker"]`. For Railpack builds, use Railpack start command instead.
 
     ## Persistent storage
 

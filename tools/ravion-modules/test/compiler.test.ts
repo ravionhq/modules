@@ -14,6 +14,22 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("exposes and documents Dockerfile start command overrides for every ECS service", async () => {
+    for (const name of ["web", "worker", "nlb"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
+      const command = findInput(getModuleInputs(module), "image_start_command");
+      assert.deepEqual(getBuildSourceShowWhen(command), ["dockerfile", "image_registry", "ecr"], name);
+      assert.equal(command.type, "string_array");
+      assert.deepEqual(command.default, []);
+      assert.equal(command.required, false);
+      const readme = assertString(module.readme);
+      assert.match(readme, /For Dockerfile, Pull from image registry, and Managed ECR repository builds, use Start command/);
+      assert.match(readme, /`CMD` without changing its `ENTRYPOINT`/);
+      assert.match(readme, /image_start_command: \["npm", "run", "start:/);
+      assert.match(readme, /For Railpack builds, use Railpack start command instead/);
+    }
+  });
+
   it("accepts only tags or SHA-256 digests for ECS image_ref deployment inputs", async () => {
     const valid = ["latest", "v1.46.0", "12345-railpack", "_tag", "Tag_1.2-3", "a".repeat(128), "sha256:" + "a1".repeat(32)];
     const invalid = [
@@ -1208,7 +1224,7 @@ describe("compiler", () => {
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_ecr")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_scan_on_push_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_force_deletion_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
-    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["image_registry", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["dockerfile", "image_registry", "ecr"]);
     const minTasks = findInput(inputs, "min_tasks");
     const maxTasks = findInput(inputs, "max_tasks");
     const desiredTasks = findInput(inputs, "desired_tasks");

@@ -298,6 +298,17 @@ run "loki_runs_as_a_single_binary_with_no_extras" {
     error_message = "The gateway, both memcached tiers, and the bundled MinIO must all be off"
   }
 
+  # In single-binary mode the querier hands each result back to the query
+  # frontend over gRPC. At the 4MiB default, a filter query over a busy
+  # workload's logs fails with "received message larger than max".
+  assert {
+    condition = alltrue([
+      yamldecode(helm_release.loki[0].values[0]).loki.server.grpc_server_max_recv_msg_size == 104857600,
+      yamldecode(helm_release.loki[0].values[0]).loki.server.grpc_server_max_send_msg_size == 104857600,
+    ])
+    error_message = "Loki's gRPC server must accept query results larger than the 4MiB default."
+  }
+
   # Structured metadata is where `level` lives; without this the schema rejects
   # it and the whole label design collapses into index labels.
   assert {

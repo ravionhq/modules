@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.27.1
-  description: Keep the Grafana read role able to query EKS control-plane logs after AWS's April 2027 CloudWatch Logs IAM change.
+  version: 0.27.2
+  description: "Loki answers log searches whose results pass 4MiB. Its gRPC server kept the 4MiB message default, so a filter over a busy workload's logs failed with \"received message larger than max\"; it now accepts up to 100MiB, the querier's own limit."
 module:
   inputs:
     - id: cluster
