@@ -1,5 +1,7 @@
 # alterNAT
 
+New NAT instances default to the latest Amazon Linux 2023 minimal kernel 6.18 image for their architecture. `nat_instance_ami_id` still overrides this default. An image-selector change does not prove existing instances are patched: replace them through the failover lifecycle and verify their running kernels afterward.
+
 Highly available NAT instances for an existing VPC, using Chime's [alterNAT](https://github.com/chime/terraform-aws-alternat) (`chime/alternat/aws`, pinned to `0.10.4`). NAT instances carry private subnet egress with no per-GB processing charge. A connectivity tester in each availability zone fails the route over to a NAT gateway when a NAT instance is unhealthy, and restores it once the instance recovers.
 
 The module wraps the official alterNAT module and adds:

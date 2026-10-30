@@ -10,6 +10,9 @@ inputs:
     type: string
     description: Pass the image tag or digest to deploy. For Dockerfile or Railpack builds, this is resolved in the Ravion-created ECR repository. For Pull from image registry mode, this is resolved in the repository configured on the module. Do not pass a full image URI.
     placeholder: sha256:... or latest or <run-id>-railpack
+    patterns:
+      - message: 'Invalid image ref. Pass only a tag or SHA-256 digest, not a full image URI (v1.46.0, not inngest/inngest:v1.46.0).'
+        pattern: '^([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|sha256:[a-f0-9]{64})$'
     required: true
   - id: environment_variables
     label: Environment variables

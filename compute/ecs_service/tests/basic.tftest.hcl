@@ -119,6 +119,11 @@ run "basic_service" {
     condition     = module.security_group.security_group_vpc_id == "vpc-12345678"
     error_message = "Security group should be in the correct VPC"
   }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == null
+    error_message = "Without a load balancer there is no listener rule to reconcile, so the group-stickiness output should be null"
+  }
 }
 
 ################################################################################
@@ -248,6 +253,11 @@ run "rolling_service_with_multiple_nlb_listeners" {
   assert {
     condition     = aws_vpc_security_group_ingress_rule.nlb_additional_listener_ipv4["5443|0.0.0.0/0"].from_port == 5443
     error_message = "Additional listener ingress should use a listener-port and CIDR state key"
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == null
+    error_message = "NLB services have no ALB listener rule, so the group-stickiness output should be null"
   }
 }
 
@@ -439,6 +449,11 @@ run "blue_green_deployment" {
   }
 
   assert {
+    condition     = output.listener_rule_group_stickiness_duration == 0
+    error_message = "ALB rules without target-group stickiness should export 0 so Ravion turns group stickiness off"
+  }
+
+  assert {
     condition     = length([for c in aws_lb_listener_rule.test[0].condition : c if length([for q in c.query_string : q if q.key == "__x-rvn-test__" && q.value == "1"]) > 0]) == 1
     error_message = "Test (green) rule should distinguish traffic by the __x-rvn-test__ query string by default"
   }
@@ -545,6 +560,11 @@ run "green_rule_header_selector" {
 # tg-1 + tg-2 during traffic-shift deployments; ELBv2 rejects that
 # rewrite at PRE_SCALE_UP when the target groups have target-level
 # stickiness but the rule's forward action lacks group stickiness.
+#
+# The group-stickiness duration defaults to 1 second, independent of the
+# target-group cookie duration: AWS counts it from the client's last
+# request, so a longer value keeps polling clients on the old target
+# group until ECS removes its tasks after the bake (ALB 503s).
 ################################################################################
 
 run "sticky_target_groups_enable_group_stickiness" {
@@ -581,14 +601,290 @@ run "sticky_target_groups_enable_group_stickiness" {
   }
 
   assert {
-    condition     = aws_lb_listener_rule.alb["0"].action[0].forward[0].stickiness[0].enabled && aws_lb_listener_rule.alb["0"].action[0].forward[0].stickiness[0].duration == 3600
-    error_message = "Production rule forward action should enable group stickiness with the target-group cookie duration"
+    condition     = aws_lb_listener_rule.alb["0"].action[0].forward[0].stickiness[0].enabled && aws_lb_listener_rule.alb["0"].action[0].forward[0].stickiness[0].duration == 1
+    error_message = "Production rule forward action should enable group stickiness with the 1-second default, not the target-group cookie duration"
   }
 
   assert {
-    condition     = aws_lb_listener_rule.test[0].action[0].forward[0].stickiness[0].enabled && aws_lb_listener_rule.test[0].action[0].forward[0].stickiness[0].duration == 3600
-    error_message = "Test (green) rule forward action should enable group stickiness with the target-group cookie duration"
+    condition     = aws_lb_listener_rule.test[0].action[0].forward[0].stickiness[0].enabled && aws_lb_listener_rule.test[0].action[0].forward[0].stickiness[0].duration == 1
+    error_message = "Test (green) rule forward action should enable group stickiness with the 1-second default"
   }
+
+  assert {
+    condition     = aws_lb_target_group.tg_1[0].stickiness[0].cookie_duration == 3600
+    error_message = "Target-level stickiness should keep its own cookie duration"
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 1
+    error_message = "The group-stickiness output should carry the 1-second default for Ravion to apply"
+  }
+}
+
+################################################################################
+# Test: Custom group-stickiness duration within the bake time
+################################################################################
+
+run "group_stickiness_custom_duration" {
+  command = plan
+
+  variables {
+    deployment_type                 = "blue_green"
+    container_port                  = 8080
+    green_alb_listener_rule_enabled = true
+    alb_group_stickiness_duration   = 300
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+        stickiness = {
+          enabled         = true
+          type            = "lb_cookie"
+          cookie_duration = 3600
+        }
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "host-header"
+          values = ["api.example.com"]
+        }]
+      }]
+    }
+  }
+
+  assert {
+    condition     = aws_lb_listener_rule.alb["0"].action[0].forward[0].stickiness[0].duration == 300
+    error_message = "Production rule should use the configured group-stickiness duration"
+  }
+
+  assert {
+    condition     = aws_lb_listener_rule.test[0].action[0].forward[0].stickiness[0].duration == 300
+    error_message = "Test (green) rule should use the configured group-stickiness duration"
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 300
+    error_message = "The group-stickiness output should carry the configured duration"
+  }
+}
+
+################################################################################
+# Test: A null group-stickiness duration (hidden form field) takes the default
+################################################################################
+
+run "group_stickiness_null_uses_default" {
+  command = plan
+
+  variables {
+    deployment_type                 = "blue_green"
+    container_port                  = 8080
+    green_alb_listener_rule_enabled = true
+    alb_group_stickiness_duration   = null
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+        stickiness = {
+          enabled         = true
+          type            = "lb_cookie"
+          cookie_duration = 3600
+        }
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "host-header"
+          values = ["api.example.com"]
+        }]
+      }]
+    }
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 1
+    error_message = "A null alb_group_stickiness_duration should fall back to the 1-second default"
+  }
+}
+
+################################################################################
+# Test: Group-stickiness duration longer than the bake time is rejected
+#
+# Direct Terraform: deployment_type + deployment_strategy_config. A 2-minute
+# bake allows at most 120 seconds.
+################################################################################
+
+run "group_stickiness_longer_than_bake_rejected" {
+  command = plan
+
+  variables {
+    deployment_type                 = "blue_green"
+    container_port                  = 8080
+    green_alb_listener_rule_enabled = true
+    alb_group_stickiness_duration   = 300
+    deployment_strategy_config      = { bake_time_in_minutes = 2 }
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+        stickiness = {
+          enabled         = true
+          type            = "lb_cookie"
+          cookie_duration = 3600
+        }
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "host-header"
+          values = ["api.example.com"]
+        }]
+      }]
+    }
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
+################################################################################
+# Test: Ravion stacks validate against traffic_shift_bake_time_in_minutes
+#
+# Ravion provisions with deployment_type = rolling and passes the form's
+# traffic-shift bake time separately. A 0-minute bake allows only 1 second.
+################################################################################
+
+run "group_stickiness_ravion_bake_rejected" {
+  command = plan
+
+  variables {
+    deployment_type                    = "rolling"
+    container_port                     = 8080
+    green_alb_listener_rule_enabled    = true
+    alb_group_stickiness_duration      = 5
+    traffic_shift_bake_time_in_minutes = 0
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+        stickiness = {
+          enabled         = true
+          type            = "lb_cookie"
+          cookie_duration = 3600
+        }
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "host-header"
+          values = ["api.example.com"]
+        }]
+      }]
+    }
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
+run "group_stickiness_ravion_zero_bake_allows_minimum" {
+  command = plan
+
+  variables {
+    deployment_type                    = "rolling"
+    container_port                     = 8080
+    green_alb_listener_rule_enabled    = true
+    traffic_shift_bake_time_in_minutes = 0
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+        stickiness = {
+          enabled         = true
+          type            = "lb_cookie"
+          cookie_duration = 3600
+        }
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "host-header"
+          values = ["api.example.com"]
+        }]
+      }]
+    }
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 1
+    error_message = "A 0-minute bake should still accept the 1-second minimum"
+  }
+}
+
+################################################################################
+# Test: Rolling-only services skip the bake check
+################################################################################
+
+run "group_stickiness_rolling_skips_bake_check" {
+  command = plan
+
+  variables {
+    deployment_type                 = "rolling"
+    container_port                  = 8080
+    green_alb_listener_rule_enabled = true
+    alb_group_stickiness_duration   = 3600
+    load_balancer_attachment = {
+      target_group = {
+        port     = 8080
+        protocol = "HTTP"
+        stickiness = {
+          enabled         = true
+          type            = "lb_cookie"
+          cookie_duration = 3600
+        }
+      }
+      listener_rules = [{
+        listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/my-alb/1234567890123456/1234567890123456"
+        priority     = 100
+        conditions = [{
+          type   = "host-header"
+          values = ["api.example.com"]
+        }]
+      }]
+    }
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 3600
+    error_message = "Without a traffic-shift strategy any valid duration should be accepted"
+  }
+}
+
+################################################################################
+# Test: Group-stickiness duration must be 1-604800 whole seconds
+################################################################################
+
+run "group_stickiness_duration_rejects_zero" {
+  command = plan
+
+  variables {
+    alb_group_stickiness_duration = 0
+  }
+
+  expect_failures = [var.alb_group_stickiness_duration]
+}
+
+run "group_stickiness_duration_rejects_over_seven_days" {
+  command = plan
+
+  variables {
+    alb_group_stickiness_duration = 604801
+  }
+
+  expect_failures = [var.alb_group_stickiness_duration]
 }
 
 ################################################################################
