@@ -196,7 +196,7 @@ variable "instance_type" {
 
 variable "ami_id" {
   type        = string
-  description = "Custom AMI for the instances. Leave null to use the latest Amazon Linux 2023 AMI. Custom AMIs must run cloud-init and include the SSM agent."
+  description = "Custom AMI for the instances. Leave null to use the latest Amazon Linux 2023 kernel 6.18 AMI. Custom AMIs must run cloud-init and include the SSM agent."
   default     = null
 
   validation {

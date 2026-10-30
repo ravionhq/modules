@@ -19,6 +19,8 @@ Container workloads that need to orchestrate sibling containers can enable `dock
 
 ## How deploys work
 
+Without `ami_id`, new instances use the latest Amazon Linux 2023 kernel 6.18 image for their architecture. A custom `ami_id` is preserved. Updating the launch template does not reboot or replace existing instances: plan a separate, coordinated replacement and redeploy the workload before retiring the old instance.
+
 For the **container** runtime the module creates an SSM Command document (`<autoscaling_group_name>-deploy` — a platform contract derived from the physical group name) that encodes the whole in-place deploy for one instance:
 
 1. Rebuild the app env file: Terraform-rendered plain values, plus secret values fetched on the instance from Secrets Manager / SSM Parameter Store.
