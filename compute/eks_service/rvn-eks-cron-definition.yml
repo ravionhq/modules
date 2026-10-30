@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.8.0
-  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
+  version: 0.9.0
+  description: 'Name the image repository from the form, for when a repository with the service''s name already belongs to something else.'
 module:
   inputs:
     - id: section_cluster

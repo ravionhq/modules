@@ -27,6 +27,22 @@
     build_source:
       - dockerfile
       - railpack
+- id: ecr_repository_name
+  label: Image repository name
+  type: string
+  description: Blank uses the name above. Set it when an ECR repository by that name already belongs to something else. Changing it replaces the repository.
+  placeholder: my-team/my-service
+  collapsible: true
+  required: false
+  patterns:
+    - message: Use lowercase letters and numbers, separated by single . _ - or / characters.
+      pattern: ^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*$
+    - message: Use 2-256 characters.
+      pattern: ^.{2,256}$
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
 - id: ecr_scan_on_push_enabled
   moved_from:
     - ecr_image_scan_on_push_enabled

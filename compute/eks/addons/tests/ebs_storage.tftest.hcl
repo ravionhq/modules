@@ -118,3 +118,24 @@ run "both_features_can_be_turned_off" {
     error_message = "With both features off the chart must not be installed."
   }
 }
+
+run "grafana_keeps_its_database_on_a_volume" {
+  command = plan
+
+  variables {
+    logs_providers    = ["loki"]
+    logs_loki         = { s3_bucket_name = "test-cluster-logs" }
+    grafana_enabled   = true
+    grafana_resources = { memory_request = "1Gi", memory_limit = "2Gi" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).persistence == { enabled = true, type = "statefulset", storageClassName = "gp3", size = "2Gi" }
+    error_message = "Grafana must keep its SQLite database on a gp3 volume, as a StatefulSet"
+  }
+
+  assert {
+    condition     = one([for d in helm_release.grafana[0].values : yamldecode(d).resources if can(yamldecode(d).resources)]) == { requests = { cpu = "100m", memory = "1Gi" }, limits = { memory = "2Gi" } }
+    error_message = "grafana_resources must size Grafana"
+  }
+}

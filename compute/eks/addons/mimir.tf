@@ -85,6 +85,22 @@ locals {
   )
   mimir_early_head_compaction_series = var.addon_resilience_enabled && local.mimir_ingester_memory_mib != null ? floor(local.mimir_ingester_memory_mib * 1024 / 8 / 2) : 0
 
+  # Go's soft memory limit at 90% of the ingesters' limit: the runtime
+  # collects garbage harder as the heap nears it, instead of being OOMKilled
+  # at the limit. The chart sets none for ingesters. The limit is the one
+  # they end up with: mimir_ingester_resources, or the last mimir_helm_values
+  # document that sets one. Applied with the limit, so only with resilience.
+  mimir_ingester_memory_limit_layers = concat(
+    [var.mimir_ingester_resources.limits.memory],
+    [for document in var.mimir_helm_values : try(tostring(yamldecode(document).ingester.resources.limits.memory), null)],
+  )
+  mimir_ingester_effective_memory_limit = reverse([for layer in local.mimir_ingester_memory_limit_layers : layer if layer != null])[0]
+  mimir_ingester_go_memory_mib = try(
+    tonumber(regex("^([0-9]+)(Mi|Gi)$", local.mimir_ingester_effective_memory_limit)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", local.mimir_ingester_effective_memory_limit)[1]],
+    null,
+  )
+  mimir_ingester_go_env = local.mimir_ingester_go_memory_mib == null ? [] : [{ name = "GOMEMLIMIT", value = "${floor(local.mimir_ingester_go_memory_mib * 0.9)}MiB" }]
+
   mimir_values = {
     fullnameOverride = local.mimir_release_name
     serviceAccount   = { create = true, name = local.mimir_service_account }
@@ -102,7 +118,7 @@ locals {
     rollout_operator = { enabled = local.mimir_zone_aware }
 
     ingester = merge(
-      { replicas = 3, persistentVolume = { size = "50Gi", storageClass = local.mimir_config.storage_class } },
+      { replicas = var.mimir_ingester_replicas, persistentVolume = { size = "50Gi", storageClass = local.mimir_config.storage_class } },
       { for key, value in { zoneAwareReplication = { enabled = true, topologyKey = "kubernetes.io/hostname", zones = local.mimir_zones } } : key => value if local.mimir_zone_aware },
       { for key, value in { zoneAwareReplication = { enabled = false }, topologySpreadConstraints = local.mimir_replica_spread, affinity = local.mimir_replica_anti_affinity.ingester } : key => value if !local.mimir_zone_aware },
     )
@@ -143,10 +159,14 @@ locals {
           kafka   = { address = null, topic = null, auto_create_topic_default_partitions = null }
         }
         distributor = { remote_timeout = null }
-        ingester = {
-          push_grpc_method_enabled = null
-          ring                     = { replication_factor = 3 }
-        }
+        ingester = merge(
+          {
+            push_grpc_method_enabled = null
+            ring                     = { replication_factor = 3 }
+          },
+          # Refuses new series past the limit rather than OOMKilling every copy.
+          { for key, value in { instance_limits = { max_series = var.mimir_ingester_max_series } } : key => value if var.mimir_ingester_max_series > 0 },
+        )
 
         # Mimir's defaults reject data: 150,000 series and 10,000 samples a
         # second per tenant, which one busy cluster passes. Nothing written is

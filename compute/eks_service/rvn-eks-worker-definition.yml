@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.17.0
+  version: 0.18.0
   description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
 module:
   inputs:

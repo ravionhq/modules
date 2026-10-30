@@ -14,7 +14,7 @@ name: << module.input.name >>
 region: << module.input.aws_region >>
 vpc_id: << module.input.vpc_id >>
 ecr_repository_creation_enabled: << module.input.build_source == "dockerfile" || module.input.build_source == "railpack" >>
-ecr_repository_name: << module.input.name >>
+ecr_repository_name: << module.input.ecr_repository_name || module.input.name >>
 ecr_image_scan_on_push_enabled: << module.input.ecr_scan_on_push_enabled >>
 ecr_force_delete_enabled: << module.input.ecr_force_deletion_enabled >>
 ecr_default_lifecycle_policy_enabled: true

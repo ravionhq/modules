@@ -77,6 +77,21 @@ locals {
     var.loki_resources.memory_request == null ? {} : { memory = var.loki_resources.memory_request },
   )
 
+  # Go's soft memory limit at 90% of the container's: the runtime collects
+  # garbage harder as the heap nears it, instead of being OOMKilled at the
+  # limit. The limit is the last one set: loki_resources, then each
+  # loki_helm_values document. None when that limit is not in Mi or Gi.
+  loki_memory_limit_layers = concat(
+    [var.loki_resources.memory_limit],
+    [for document in var.loki_helm_values : try(tostring(yamldecode(document).singleBinary.resources.limits.memory), null)],
+  )
+  loki_memory_limit = try(reverse([for layer in local.loki_memory_limit_layers : layer if layer != null])[0], null)
+  loki_memory_limit_mib = try(
+    tonumber(regex("^([0-9]+)(Mi|Gi)$", local.loki_memory_limit)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", local.loki_memory_limit)[1]],
+    null,
+  )
+  loki_go_env = local.loki_memory_limit_mib == null ? [] : [{ name = "GOMEMLIMIT", value = "${floor(local.loki_memory_limit_mib * 0.9)}MiB" }]
+
   loki_resources = merge(
     length(local.loki_resource_requests) > 0 ? { requests = local.loki_resource_requests } : {},
     length(local.loki_resource_limits) > 0 ? { limits = local.loki_resource_limits } : {},
@@ -311,6 +326,7 @@ resource "helm_release" "loki" {
         singleBinary = {
           replicas  = 1
           resources = local.loki_resources
+          extraEnv  = local.loki_go_env
 
           # Changes whenever loki_volume_migration recreates the StatefulSet
           # (see loki_volume_migration.tf), so this release is always upgraded

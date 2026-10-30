@@ -118,13 +118,30 @@ locals {
 
   tempo_resource_limits = merge(
     var.tempo_resources.cpu_limit == null ? {} : { cpu = var.tempo_resources.cpu_limit },
-    var.tempo_resources.memory_limit == null ? {} : { memory = var.tempo_resources.memory_limit },
+    local.tempo_config.memory_limit == null ? {} : { memory = local.tempo_config.memory_limit },
   )
 
   tempo_resource_requests = merge(
-    var.tempo_resources.cpu_request == null ? {} : { cpu = var.tempo_resources.cpu_request },
-    var.tempo_resources.memory_request == null ? {} : { memory = var.tempo_resources.memory_request },
+    local.tempo_config.cpu_request == null ? {} : { cpu = local.tempo_config.cpu_request },
+    local.tempo_config.memory_request == null ? {} : { memory = local.tempo_config.memory_request },
   )
+
+  # Go's soft memory limit at 90% of the container's: the runtime collects
+  # garbage harder as the heap nears it, instead of being OOMKilled at the
+  # limit. The limit is the last one set, in the order Helm merges the
+  # documents: the module's, the destination's helm_values, then each
+  # tempo_helm_values document. None when that limit is not in Mi or Gi.
+  tempo_memory_limit_layers = concat(
+    [local.tempo_config.memory_limit],
+    [try(tostring(local.tempo_config.helm_values.tempo.resources.limits.memory), null)],
+    [for document in var.tempo_helm_values : try(tostring(yamldecode(document).tempo.resources.limits.memory), null)],
+  )
+  tempo_memory_limit = try(reverse([for layer in local.tempo_memory_limit_layers : layer if layer != null])[0], null)
+  tempo_memory_limit_mib = try(
+    tonumber(regex("^([0-9]+)(Mi|Gi)$", local.tempo_memory_limit)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", local.tempo_memory_limit)[1]],
+    null,
+  )
+  tempo_go_env = local.tempo_memory_limit_mib == null ? [] : [{ name = "GOMEMLIMIT", value = "${floor(local.tempo_memory_limit_mib * 0.9)}MiB" }]
 
   tempo_resources = merge(
     length(local.tempo_resource_requests) > 0 ? { requests = local.tempo_resource_requests } : {},
@@ -288,6 +305,7 @@ resource "helm_release" "tempo" {
           {
             reportingEnabled = false
             resources        = local.tempo_resources
+            extraEnv         = local.tempo_go_env
 
             # Rendered into the backend scheduler's block retention.
             retention = "${local.tempo_config.retention_days * 24}h"
