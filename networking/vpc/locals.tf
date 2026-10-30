@@ -32,11 +32,31 @@ locals {
   public_subnet_cidrs  = var.public_subnet_cidrs != null && length(var.public_subnet_cidrs) == local.subnet_count ? var.public_subnet_cidrs : local.automatic_public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs != null && length(var.private_subnet_cidrs) == local.subnet_count ? var.private_subnet_cidrs : local.automatic_private_subnet_cidrs
 
+  # Private subnets
+  private_subnet_count = var.private_subnets_enabled ? local.subnet_count : 0
+
+  # Secondary CIDR subnets follow the primary layout inside the secondary CIDR
+  secondary_subnet_count = var.secondary_vpc_cidr != null ? local.subnet_count : 0
+  automatic_secondary_public_subnet_cidrs = var.secondary_vpc_cidr == null ? [] : [
+    for i in range(local.subnet_count) : cidrsubnet(var.secondary_vpc_cidr, 8, i + 1)
+  ]
+  automatic_secondary_private_subnet_cidrs = var.secondary_vpc_cidr == null ? [] : [
+    for i in range(local.subnet_count) : cidrsubnet(var.secondary_vpc_cidr, 8, i + 11)
+  ]
+  secondary_public_subnet_cidrs  = var.secondary_public_subnet_cidrs != null && length(var.secondary_public_subnet_cidrs) == local.subnet_count ? var.secondary_public_subnet_cidrs : local.automatic_secondary_public_subnet_cidrs
+  secondary_private_subnet_cidrs = var.secondary_private_subnet_cidrs != null && length(var.secondary_private_subnet_cidrs) == local.subnet_count ? var.secondary_private_subnet_cidrs : local.automatic_secondary_private_subnet_cidrs
+  secondary_private_subnet_count = var.private_subnets_enabled ? local.secondary_subnet_count : 0
+
   # NAT Gateway HA mode (with deprecated single_nat_gateway override)
   nat_gateway_high_availability_enabled = var.single_nat_gateway != null ? !var.single_nat_gateway : var.nat_gateway_high_availability_enabled
 
   # NAT Gateway count
-  nat_gateway_count = var.nat_gateway_enabled ? (local.nat_gateway_high_availability_enabled ? local.subnet_count : 1) : 0
+  # A NAT gateway only serves private subnets; aws_vpc fails the plan when one is
+  # requested without them.
+  nat_gateway_count = var.nat_gateway_enabled && var.private_subnets_enabled ? (local.nat_gateway_high_availability_enabled ? local.subnet_count : 1) : 0
+
+  # Private route tables: one per AZ with NAT gateway HA, otherwise one shared
+  private_route_table_count = var.private_subnets_enabled ? (local.nat_gateway_high_availability_enabled ? local.subnet_count : 1) : 0
 
   # NAT Gateway EIPs
   # When the caller supplies pre-allocated EIPs, skip creating internal ones and
@@ -50,7 +70,7 @@ locals {
     : null
   )
   supplied_nat_eip_allocation_ids_match_count = local.supplied_nat_eip_allocation_ids == null || length(local.supplied_nat_eip_allocation_ids) == local.nat_gateway_count
-  create_nat_eips                             = var.nat_gateway_enabled && local.supplied_nat_eip_allocation_ids == null
+  create_nat_eips                             = local.nat_gateway_count > 0 && local.supplied_nat_eip_allocation_ids == null
   nat_gateway_eip_allocation_ids              = local.supplied_nat_eip_allocation_ids != null && local.supplied_nat_eip_allocation_ids_match_count ? local.supplied_nat_eip_allocation_ids : aws_eip.nat[*].allocation_id
 
   # VPC Endpoints

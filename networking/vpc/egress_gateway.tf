@@ -13,7 +13,7 @@ resource "aws_egress_only_internet_gateway" "this" {
 }
 
 resource "aws_route" "private_ipv6_egress" {
-  count = var.ipv6_enabled ? (local.nat_gateway_high_availability_enabled ? local.subnet_count : 1) : 0
+  count = var.ipv6_enabled ? local.private_route_table_count : 0
 
   route_table_id              = aws_route_table.private[count.index].id
   destination_ipv6_cidr_block = "::/0"
