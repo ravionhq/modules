@@ -124,6 +124,12 @@ jobs:
               tofu -chdir=hosting/static_site init -backend=false
               tofu -chdir=hosting/static_site test -filter=tests/managed_domains.tftest.hcl
 
+          - name: ECS target groups and NLB listeners
+            run: |
+              tofu -chdir=compute/ecs_service init -backend=false
+              tofu -chdir=compute/ecs_service test -filter=tests/target_group_name.tftest.hcl
+              python3 -B -m unittest discover -s compute/ecs_service/tests -p 'test_nlb_dependencies.py' -v
+
           - name: AMI module
             run: |
               python3 -B -m unittest discover -s compute/ami/tests -p 'test_*.py' -v

@@ -346,6 +346,47 @@ variable "deployment_strategy_config" {
   default     = {}
 }
 
+variable "traffic_shift_bake_time_in_minutes" {
+  type        = number
+  description = "Bake time, in minutes, of the blue_green/linear/canary deploys the deploy manager runs for this service. Only used to validate alb_group_stickiness_duration. Ravion stacks pass the form's bake time here, because they provision with deployment_type = rolling. Null falls back to deployment_strategy_config.bake_time_in_minutes when deployment_type is blue_green/linear/canary, and skips the check otherwise."
+  default     = null
+
+  validation {
+    condition     = var.traffic_shift_bake_time_in_minutes == null || try(var.traffic_shift_bake_time_in_minutes >= 0, false)
+    error_message = "The traffic_shift_bake_time_in_minutes must be null or 0 or greater."
+  }
+}
+
+variable "alb_group_stickiness_duration" {
+  type        = number
+  description = <<-EOT
+    ALB group stickiness duration (DurationSeconds, the AWSALBTG cookie) on
+    the production and test listener rules, used when the target groups
+    have target-level stickiness (ELBv2 then requires group stickiness on
+    the rules' forward action). AWS counts it from the client's last
+    request, so any value above a client's request interval keeps that
+    client on the old target group through a traffic shift until ECS
+    removes the old tasks after the bake, after which the ALB returns 503s.
+    The 1-second default (the ELBv2 minimum) effectively stops that
+    pinning. With a blue_green/linear/canary strategy it must not exceed
+    the bake time. Terraform sets it only when it creates a rule (the
+    action is in ignore_changes); Ravion applies the
+    listener_rule_group_stickiness_duration output to existing rules on
+    each deploy.
+  EOT
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition = (
+      var.alb_group_stickiness_duration >= 1
+      && var.alb_group_stickiness_duration <= 604800
+      && floor(var.alb_group_stickiness_duration) == var.alb_group_stickiness_duration
+    )
+    error_message = "The alb_group_stickiness_duration must be a whole number of seconds from 1 to 604800 (7 days)."
+  }
+}
+
 variable "test_listener_rule_arn" {
   type        = string
   description = "Optional ARN of an externally-managed ALB listener rule that routes test traffic for blue/green validation (drives the TEST_TRAFFIC_SHIFT lifecycle stages). Only used for native traffic-shift strategies when the module-created green listener rule is not enabled."

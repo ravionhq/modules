@@ -341,6 +341,11 @@ run "grafana_role_scoping" {
   }
 
   assert {
+    condition     = contains(data.aws_iam_policy_document.grafana_read[0].statement[1].resources, "arn:aws:logs:us-east-2:123456789012:log-group:/aws/eks/test-cluster/cluster")
+    error_message = "Grafana's log grant must include the bare EKS control-plane log group ARN"
+  }
+
+  assert {
     condition     = output.grafana_role_arn != null
     error_message = "grafana_role_creation_enabled must produce a role ARN"
   }

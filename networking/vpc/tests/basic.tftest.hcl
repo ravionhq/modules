@@ -386,6 +386,11 @@ run "flow_logs_cloudwatch" {
   }
 
   assert {
+    condition     = jsondecode(aws_iam_role_policy.flow_logs[0].policy).Statement[0].Resource == ["arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc-flow-logs/test-vpc", "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc-flow-logs/test-vpc:*"]
+    error_message = "Flow-logs role must grant on the log group ARN as well as its log streams."
+  }
+
+  assert {
     condition     = length(aws_flow_log.s3) == 0
     error_message = "Should not create S3 Flow Log"
   }
