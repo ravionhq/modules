@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 2.4.0
-  description: Retain application logs for a year by default for new services. Also fix large-response plans with AWS provider 6.69.1.
+  version: 2.4.1
+  description: Use the Amazon Linux 2023 kernel 6.18 image family by default for new instances, preserving custom AMIs.
 module:
   inputs:
     - id: network

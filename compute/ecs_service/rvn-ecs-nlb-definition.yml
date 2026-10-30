@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.4.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 2.4.5
+  description: Expose and document start command overrides for Dockerfile builds.
 module:
   inputs:
     - id: section_cluster
@@ -518,9 +518,15 @@ module:
 
     Railpack settings let you optionally pin the Railpack version and override install, build, and start commands. Leave them blank to use Railpack defaults and autodetection.
 
-    For Pull from image registry, provide the image repository without the tag. At deploy time, provide the tag to use. Use Registry credentials secret ARN for private registries that require ECS repository credentials. Use Start command to override the image default CMD when the image needs a different service command.
+    For Pull from image registry, provide the image repository without the tag. At deploy time, provide the tag to use. Use Registry credentials secret ARN for private registries that require ECS repository credentials.
 
     For Managed ECR repository, Ravion creates and manages the service ECR repository. Push the image from a pipeline `build:image` step, then provide its tag or digest at deploy time.
+
+    ### Override the start command
+
+    For Dockerfile, Pull from image registry, and Managed ECR repository builds, use Start command (`image_start_command`) to override the image's `CMD` without changing its `ENTRYPOINT`. Leave it empty to keep the image default.
+
+    Set a different command for each service to reuse one Dockerfile across services. Pass each argument as a separate array item, for example `image_start_command: ["npm", "run", "start:network"]`. For Railpack builds, use Railpack start command instead.
 
     ## Listeners and target groups
 

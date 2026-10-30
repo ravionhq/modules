@@ -233,6 +233,14 @@ resource "helm_release" "loki" {
 
           server = {
             http_listen_port = 3100
+
+            # In single-binary mode the querier returns each result to the
+            # query frontend over gRPC, and a filter query over a busy
+            # workload's logs easily passes the 4MiB default, failing with
+            # "received message larger than max". 100MiB matches the querier's
+            # own client limit.
+            grpc_server_max_recv_msg_size = 104857600
+            grpc_server_max_send_msg_size = 104857600
           }
 
           # A schema is the one thing the chart refuses to guess, because

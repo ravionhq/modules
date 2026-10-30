@@ -68,22 +68,22 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.1.2 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.6.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.4.0 | `networking/alb/` |
-| `rvn-aws-alternat` | alterNAT | v0.1.3 | `networking/alternat/` |
+| `rvn-aws-alternat` | alterNAT | v0.1.4 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.3.2 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v1.0.0 | `security/compliance/` |
 | `rvn-aws-ecr` | AWS ECR Repository | v1.0.0 | `containers/ecr/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.2 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.1.2 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.2.1 | `security/kms/` |
-| `rvn-aws-network` | VPC Network | v1.3.0 | `networking/vpc/` |
+| `rvn-aws-network` | VPC Network | v1.3.1 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.1 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.7.0 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.7.0 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v2.4.0 | `compute/ec2_service/` |
+| `rvn-ec2-service` | EC2 Service | v2.4.1 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.4.0 | `compute/ecs_cluster/` |
-| `rvn-ecs-nlb` | ECS Network Service | v2.4.2 | `compute/ecs_service/` |
-| `rvn-ecs-web` | ECS Web Service | v2.6.0 | `compute/ecs_service/` |
-| `rvn-ecs-worker` | ECS Worker | v2.3.2 | `compute/ecs_service/` |
+| `rvn-ecs-nlb` | ECS Network Service | v2.4.5 | `compute/ecs_service/` |
+| `rvn-ecs-web` | ECS Web Service | v2.7.3 | `compute/ecs_service/` |
+| `rvn-ecs-worker` | ECS Worker | v2.3.4 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.1 | `storage/efs/` |
 | `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.3.0 | `compute/lambda/` |
