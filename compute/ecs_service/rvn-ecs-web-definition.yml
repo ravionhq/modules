@@ -3,7 +3,7 @@ definition:
   name: ECS Web Service
   description: Web server ECS service for running an HTTP application behind an ECS cluster load balancer.
 release:
-  version: 2.8.0
+  version: 2.9.0
   description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
 module:
   inputs:

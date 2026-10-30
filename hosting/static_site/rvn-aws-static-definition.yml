@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.7.0
-  description: Link every custom domain or domain alias from the Links section of its overview page.
+  version: 1.8.0
+  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
 module:
   build:
     builder: >-

@@ -3,7 +3,7 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.4.0
+  version: 2.5.0
   description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
 module:
   inputs:

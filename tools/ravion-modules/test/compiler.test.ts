@@ -1742,6 +1742,71 @@ describe("compiler", () => {
     assert.doesNotMatch(metrics, /namespace:"AWS\/EC2"/);
   });
 
+  it("defaults every build module to automatic sandbox sizing with a fixed-size opt-out", async () => {
+    const definitions = (await compileAllDefinitions(repoRoot)).filter(({ module }) => module.build);
+    assert.deepEqual(definitions.map(({ type }) => type).sort(), [
+      "rvn-aws-static", "rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-ecs-worker",
+      "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker", "rvn-lambda",
+    ]);
+
+    for (const { type, module } of definitions) {
+      const inputs = getModuleInputs(module);
+      const automatic = findInput(inputs, "build_auto_sizing_enabled");
+      assert.equal(automatic.type, "boolean", type);
+      assert.equal(automatic.default, true, type);
+      const automaticShowWhen = assertRecord(automatic.show_when, "automatic sizing visibility");
+      assert.equal(automaticShowWhen.build_capacity_type, "sandbox", type);
+      assert.deepEqual(automaticShowWhen.build_source, getBuildSourceShowWhen(findInput(inputs, "build_capacity_type")), type);
+
+      const infrastructure = assertRecord(getModuleBuild(module).infrastructure, "build infrastructure");
+      const evaluate = (key: string, input: Record<string, unknown>): unknown => {
+        const expression = assertString(infrastructure[key]);
+        assert.ok(expression.startsWith("<< ") && expression.endsWith(" >>"));
+        return new Function("module", "nil", "return " + expression.slice(3, -3))({ input }, null);
+      };
+      const fixedSizes = { cpu: 6, memory: 12, disk: 80 };
+      for (const [resource, fixedSize] of Object.entries(fixedSizes)) {
+        const field = findInput(inputs, `build_${resource}`);
+        assert.equal(field.type, "number", type);
+        assert.deepEqual(field.show_when, { ...automaticShowWhen, build_auto_sizing_enabled: false }, type);
+        const manual = {
+          build_capacity_type: "sandbox", build_auto_sizing_enabled: false,
+          build_cpu: fixedSizes.cpu, build_memory: fixedSizes.memory, build_disk: fixedSizes.disk,
+        };
+        assert.equal(evaluate(resource, manual), fixedSize, `${type}: fixed ${resource}`);
+        for (const enabled of [true, null, undefined]) {
+          assert.equal(evaluate(resource, { ...manual, build_auto_sizing_enabled: enabled }), "auto", `${type}: auto ${resource}`);
+          assert.equal(evaluate(resource, {
+            build_capacity_type: "sandbox", build_auto_sizing_enabled: enabled,
+            build_cpu: null, build_memory: null, build_disk: null,
+          }), "auto", `${type}: hidden ${resource}`);
+        }
+        for (const capacity of ["ec2", "ec2-spot"]) {
+          for (const enabled of [true, false, null]) {
+            assert.equal(evaluate(resource, { ...manual, build_capacity_type: capacity, build_auto_sizing_enabled: enabled }), null, `${type}: ${capacity} ${resource}`);
+          }
+        }
+      }
+      assert.equal(evaluate("disk", { build_capacity_type: "sandbox", build_auto_sizing_enabled: false }), null, type);
+      assert.equal(evaluate("disk", { build_capacity_type: "sandbox", build_auto_sizing_enabled: false, build_disk: null }), null, type);
+      for (const interruptible of [true, false]) {
+        const input = { build_capacity_type: "sandbox", build_auto_sizing_enabled: true, build_interruptible_enabled: interruptible };
+        assert.equal(evaluate("interruptible", input), interruptible, type);
+        assert.equal(evaluate("disk_cache", input), "auto", type);
+        assert.equal(evaluate("cpu", input), "auto", type);
+        assert.equal(evaluate("memory", input), "auto", type);
+        assert.equal(evaluate("disk", input), "auto", type);
+      }
+      for (const capacity of ["ec2", "ec2-spot"]) {
+        const input = { build_capacity_type: capacity, build_instance_type: "c7a.4xlarge", build_ami_id: "ami-custom" };
+        assert.equal(evaluate("instance_size", input), "c7a.4xlarge", type);
+        assert.equal(evaluate("ami", input), "ami-custom", type);
+        assert.equal(evaluate("interruptible", input), null, type);
+        assert.equal(evaluate("disk_cache", input), null, type);
+      }
+    }
+  });
+
   it("propagates shared build input guidance to every consumer", async () => {
     const definitionPaths = [
       ["compute", "ec2_service", "rvn-ec2-service-definition.yml"],
@@ -1789,8 +1854,8 @@ describe("compiler", () => {
         `${definition.type} should include shared builder guidance`,
       );
       assert.equal(builderType.default, "sandbox", `${definition.type} should default to sandbox builds`);
-      assert.equal(findInput(inputs, "build_cpu").default, 14, `${definition.type} should default to 14 builder vCPUs`);
-      assert.equal(findInput(inputs, "build_memory").default, 28, `${definition.type} should default to 28 GiB builder memory`);
+      assert.equal(findInput(inputs, "build_cpu").default, 14, `${definition.type} should retain the manual CPU default`);
+      assert.equal(findInput(inputs, "build_memory").default, 28, `${definition.type} should retain the manual memory default`);
       const builderOptions = builderType.values;
       assert.ok(Array.isArray(builderOptions), `${definition.type} builder type should have values`);
       assert.deepEqual(
