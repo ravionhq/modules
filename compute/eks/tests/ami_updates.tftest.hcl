@@ -58,6 +58,45 @@ run "explicit_arm_node_version" {
   }
 }
 
+run "bottlerocket_arm_release" {
+  command = plan
+  module { source = "./modules/eks_node_group" }
+  variables {
+    ami_type           = "BOTTLEROCKET_ARM_64"
+    kubernetes_version = "1.35"
+  }
+  override_data {
+    target = data.aws_ssm_parameter.ami_release
+    values = { value = "1.49.0-19b4c0a" }
+  }
+  assert {
+    condition     = data.aws_ssm_parameter.ami_release[0].name == "/aws/service/bottlerocket/aws-k8s-1.35/arm64/latest/image_version"
+    error_message = "Standard Bottlerocket nodes must select their architecture's image_version parameter."
+  }
+  assert {
+    condition     = aws_eks_node_group.this.release_version == "1.49.0-19b4c0a" && aws_eks_node_group.this.version == "1.35"
+    error_message = "Use the recommended Bottlerocket image version as the managed node release."
+  }
+}
+
+run "bottlerocket_nvidia_release" {
+  command = plan
+  module { source = "./modules/eks_node_group" }
+  variables { ami_type = "BOTTLEROCKET_x86_64_NVIDIA" }
+  override_data {
+    target = data.aws_ssm_parameter.ami_release
+    values = { value = "1.49.0-19b4c0a" }
+  }
+  assert {
+    condition     = data.aws_ssm_parameter.ami_release[0].name == "/aws/service/bottlerocket/aws-k8s-1.36-nvidia/x86_64/latest/image_version"
+    error_message = "NVIDIA Bottlerocket nodes must select the NVIDIA image_version for the current cluster version."
+  }
+  assert {
+    condition     = aws_eks_node_group.this.release_version == "1.49.0-19b4c0a" && aws_eks_node_group.this.version == "1.36"
+    error_message = "Roll NVIDIA Bottlerocket nodes onto the recommended image version."
+  }
+}
+
 run "custom_ami_is_not_overridden" {
   command = plan
   module { source = "./modules/eks_node_group" }
