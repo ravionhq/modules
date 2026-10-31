@@ -213,8 +213,8 @@ variable "key_name" {
 
 variable "root_volume_size" {
   type        = number
-  description = "Root EBS volume size in GB."
-  default     = 30
+  description = "Root EBS volume size in GB. The root volume holds the operating system, packages, container images, and logs; keep application data on the data volume."
+  default     = 20
 
   validation {
     condition     = var.root_volume_size >= 8 && var.root_volume_size <= 16384
@@ -235,8 +235,8 @@ variable "root_volume_type" {
 
 variable "data_volume_creation_enabled" {
   type        = bool
-  description = "Attach a dedicated data EBS volume to each instance, formatted and mounted on first boot. Data survives in-place deploys but not instance termination."
-  default     = false
+  description = "Attach a dedicated data EBS volume to each instance, formatted and mounted on first boot. On by default; application data belongs here rather than on the root volume. Data survives in-place deploys but not instance termination."
+  default     = true
 }
 
 variable "data_volume_size" {
