@@ -235,7 +235,7 @@ variable "root_volume_type" {
 
 variable "data_volume_creation_enabled" {
   type        = bool
-  description = "Attach a dedicated data EBS volume to each instance, formatted and mounted on first boot. Data survives in-place deploys but not instance termination."
+  description = "Attach a dedicated data EBS volume to each instance, formatted on first boot and mounted on every boot and deploy. Data survives in-place deploys and root volume replacement but not instance termination (daily snapshots do, see data_volume_snapshots_enabled)."
   default     = false
 }
 
@@ -269,6 +269,25 @@ variable "data_volume_mount_path" {
   validation {
     condition     = can(regex("^/", var.data_volume_mount_path))
     error_message = "The data_volume_mount_path must be an absolute path starting with '/'."
+  }
+}
+
+variable "data_volume_snapshots_enabled" {
+  type        = bool
+  description = "Take a daily snapshot of every instance's data volume with Amazon Data Lifecycle Manager. Applies only when data_volume_creation_enabled is true."
+  default     = true
+  nullable    = false
+}
+
+variable "data_volume_snapshot_retention_count" {
+  type        = number
+  description = "Number of daily data volume snapshots kept per instance. Older snapshots are deleted as new ones are taken."
+  default     = 7
+  nullable    = false
+
+  validation {
+    condition     = var.data_volume_snapshot_retention_count >= 1 && var.data_volume_snapshot_retention_count <= 1000 && floor(var.data_volume_snapshot_retention_count) == var.data_volume_snapshot_retention_count
+    error_message = "The data_volume_snapshot_retention_count must be a whole number between 1 and 1000."
   }
 }
 

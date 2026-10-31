@@ -18,6 +18,10 @@ exec > >(tee -a "$LOG_PATH") 2> >(tee -a "$LOG_PATH" >&2)
 
 echo "Deploying image $IMAGE_URI (deploy $DEPLOY_ID)"
 
+# Check storage before touching the running app: a failure here leaves the
+# current container serving.
+${storage_guard_script}
+
 TOKEN=$(curl -sf -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
 INSTANCE_ID=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
 

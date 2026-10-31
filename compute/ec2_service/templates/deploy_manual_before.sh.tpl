@@ -15,6 +15,10 @@ exec > >(tee -a "$LOG_PATH") 2> >(tee -a "$LOG_PATH" >&2)
 
 echo "Preparing manual deploy $DEPLOY_ID"
 
+# Check storage before touching the running app: a failure here leaves the
+# current app running.
+${storage_guard_script}
+
 ${supervisor_install_script}
 ${env_file_script}
 
