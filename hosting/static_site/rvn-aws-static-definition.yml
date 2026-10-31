@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.8.0
-  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
+  version: 1.9.0
+  description: Create or reuse CloudFront static IPs for apex DNS and firewall allowlisting.
 module:
   build:
     builder: >-
@@ -185,11 +185,14 @@ module:
       show_when:
         ravion_managed_domains: false
       type: string_array
+    - $include: ../../partials/inputs/cloudfront-static-ip-inputs.yml
     - default: PriceClass_All
       description: You can reduce edge locations for some cost savings if it becomes an issue.
       id: price_class
       label: Price class
       type: string
+      show_when:
+        anycast_ip_list_mode: disabled
       values:
         - label: All edge locations
           value: PriceClass_All
@@ -576,6 +579,16 @@ module:
 
     EC2 Spot can reduce build cost, but builds may wait longer or be interrupted. Start with the default builder size, then adjust based on build resource usage.
 
+    ## Static IPs
+
+    Static IPs are disabled by default. Choose **Create a static IP list** to allocate 3 IPv4 addresses for apex DNS A records or 21 for firewall allowlisting. Choose **Use an existing static IP list** to share a list in the same AWS account and avoid another allocation charge.
+
+    [AWS approval](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) is required before creating a list. Static IPs use all edge locations and disable viewer IPv6. HTTPS still uses your domain name, not a bare IP address.
+
+    [AWS charges](https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/) $0.005 per IPv4 address/hour: about $11/month for 3 or $77/month for 21, plus standard CloudFront usage. The list is billed until deleted. Changing the count replaces the IPs; update external DNS or allowlists afterward.
+
+    The stack outputs include the created addresses as `anycast_ips` and the reusable list ID as `anycast_ip_list_id`. For an existing list, get its addresses from its owning stack. Remove other sites' references before deleting an owning site's list.
+
     ## Configuration
 
     | Section | Field | Required | Default | Notes |
@@ -676,7 +689,10 @@ module:
         no_cache_paths: << module.input.no_cache_paths >>
         origin_request_policy_id: << module.input.origin_request_policy_id >>
         origin_shield_enabled: << module.input.origin_shield_enabled >>
-        price_class: << module.input.price_class >>
+        anycast_ip_list_mode: << module.input.anycast_ip_list_mode || "disabled" >>
+        anycast_ip_list_id: '<< module.input.anycast_ip_list_mode == "existing" ? module.input.anycast_ip_list_id : nil >>'
+        anycast_ip_count: '<< module.input.anycast_ip_list_mode == "create" && module.input.anycast_ip_count != nil ? module.input.anycast_ip_count : 3 >>'
+        price_class: << module.input.price_class || "PriceClass_All" >>
         region: << module.input.aws_region >>
         response_headers_presets: << module.input.response_headers_presets >>
         response_headers_policy: >-
