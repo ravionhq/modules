@@ -43,7 +43,7 @@ resource "aws_launch_template" "app" {
   dynamic "block_device_mappings" {
     for_each = var.data_volume_creation_enabled ? [1] : []
     content {
-      device_name = "/dev/xvdf"
+      device_name = local.data_volume_device_name
 
       ebs {
         volume_size           = var.data_volume_size

@@ -162,7 +162,9 @@ aws ssm send-command \
 - `health_check_type` defaults to `EC2`, which is the AWS instance/system status check — unreachable instance, broken boot or network state, failed underlying host. It ignores application state: a crashed app is restarted in place by supervisord, and a failing HTTP health check never replaces an instance. So health-driven replacement is rare and tied to hardware or hypervisor failure. Setting `health_check_type = "ELB"` makes load balancer health replace instances instead, which also breaks in-place deploys (they briefly deregister the instance).
 - Mount an EFS file system (`efs_*` variables) when several instances must share the same files, or when a replacement instance must find data already in place; it is mounted on every instance and, for the container runtime, bind-mounted into the app container.
 - When `docker_socket_mount_enabled` is enabled, the data volume and EFS host paths are mapped identically inside the app container. This lets sibling containers started through the host Docker socket resolve those same host-path binds correctly.
-- Launch template changes (AMI, user data, volumes) intentionally apply only to newly launched instances; there is no instance refresh, so applying a new AMI never replaces running instances by itself. Recycling instances to pick up the new AMI is a replacement, and it deletes their volumes.
+- With `data_volume_creation_enabled`, an Amazon Data Lifecycle Manager policy (`data_volume_snapshots_enabled`, on by default) snapshots every instance's data volume daily at 03:00 UTC and keeps `data_volume_snapshot_retention_count` snapshots per instance. It targets instances by their `Name = var.name` tag, so instances launched by earlier module versions are covered, and excludes the boot volume. Snapshots of a terminated instance are no longer managed by the policy and stay until deleted, so a replaced instance's data can be restored.
+- The data volume is formatted (XFS, label `ravion-data`) only when it is a blank disk, and mounted at `data_volume_mount_path` by every bootstrap run. Discovery prefers the `ravion-data` label, then the launch template's device name (`/dev/xvdf`/`/dev/sdf` links), then the only unmounted non-root disk with a filesystem; with several candidates it logs and mounts nothing. Both deploy runtimes run a storage guard before stopping the app: it mounts the data volume (never formats) and EFS when needed and fails the deploy if either is still missing, so the app never writes to an empty directory on the root disk.
+- Launch template changes (AMI, user data, volumes) intentionally apply only to newly launched instances; there is no instance refresh, so applying a new AMI never replaces running instances by itself. Ravion's Update AMI action moves running instances to the launch template's AMI by replacing only their root volume: the instance, its data volume and EFS mounts stay, every volume is snapshotted first, and the bootstrap re-runs with the user data the instance was launched with. Anything stored only on the root disk is reset. Recycling instances instead is a replacement, and it deletes their volumes.
 
 ## Requirements
 
@@ -204,6 +206,8 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | data_volume_size | Data volume size (GB) | `number` | `20` | no |
 | data_volume_type | Data volume type | `string` | `"gp3"` | no |
 | data_volume_mount_path | Host mount path for the data volume | `string` | `"/data"` | no |
+| data_volume_snapshots_enabled | Daily DLM snapshots of every instance's data volume (needs `data_volume_creation_enabled`) | `bool` | `true` | no |
+| data_volume_snapshot_retention_count | Daily data volume snapshots kept per instance (1-1000) | `number` | `7` | no |
 | additional_user_data | Extra shell script appended to bootstrap | `string` | `""` | no |
 | min_size | Minimum instances | `number` | `1` | no |
 | max_size | Maximum instances | `number` | `1` | no |
@@ -238,6 +242,8 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | ecr_repository_url | URL of the service ECR repository (when created) |
 | target_group_arn | ARN of the service target group (when attached) |
 | target_group_arn_suffix | Target group ARN suffix for CloudWatch dimensions |
+| data_volume_snapshot_policy_id | ID of the daily data volume snapshot policy (when enabled) |
+| data_volume_snapshot_policy_arn | ARN of the daily data volume snapshot policy (when enabled) |
 | security_group_id | ID of the instance security group |
 | instance_role_arn | ARN of the instance IAM role |
 | log_group_name | CloudWatch log group receiving app logs |
