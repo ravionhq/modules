@@ -183,7 +183,7 @@ jobs:
 
   publish:
     name: Publish Module Definitions
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish/interruptible=false
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish/interruptible=false
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
