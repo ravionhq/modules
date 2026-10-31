@@ -29,6 +29,10 @@ module "cdn" {
 
   distributions = var.distributions
 
+  anycast_ip_list_mode = var.anycast_ip_list_mode
+  anycast_ip_list_id   = var.anycast_ip_list_id
+  anycast_ip_count     = var.anycast_ip_count
+
   module_instance_id    = var.module_instance_id
   ravion_aws_account_id = var.ravion_aws_account_id
 

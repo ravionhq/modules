@@ -2,6 +2,16 @@
 # Distribution
 ################################################################################
 
+output "anycast_ip_list_id" {
+  description = "Associated Anycast IP list ID, or null when static IPs are disabled. Can be reused by other modules in this AWS account."
+  value       = local.anycast_ip_list_id
+}
+
+output "anycast_ips" {
+  description = "Static IPv4 viewer addresses allocated by this module. Empty when disabled or using an existing list; read that list's addresses from its owner."
+  value       = try(aws_cloudfront_anycast_ip_list.this[0].anycast_ips, [])
+}
+
 output "distribution_ids" {
   description = "A map of distribution key to CloudFront distribution ID."
   value       = { for k, v in local.distributions : k => v.id }

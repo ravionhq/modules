@@ -35,6 +35,13 @@ mock_provider "aws" {
   }
 
   override_resource {
+    target = aws_iam_role.dlm
+    values = {
+      arn = "arn:aws:iam::123456789012:role/supervised-app-dlm"
+    }
+  }
+
+  override_resource {
     target = module.instance_security_group.aws_security_group.this
     values = {
       id = "sg-12345678"

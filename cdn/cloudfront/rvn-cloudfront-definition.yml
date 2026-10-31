@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.7.0
-  description: Link every custom domain or domain alias from the Links section of its overview page.
+  version: 1.8.0
+  description: Create or reuse CloudFront static IPs for apex DNS and firewall allowlisting.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -617,11 +617,14 @@ module:
     - id: section_settings
       label: Distribution settings
       type: section
+    - $include: ../../partials/inputs/cloudfront-static-ip-inputs.yml
     - id: price_class
       label: Price class
       type: string
       description: You can reduce edge locations for some cost savings if it becomes an issue.
       default: PriceClass_All
+      show_when:
+        anycast_ip_list_mode: disabled
       values:
         - label: All edge locations
           value: PriceClass_All
@@ -785,7 +788,10 @@ module:
           module.input.alb_arn : nil), "custom_headers":
           (module.input.origin_custom_headers != nil ? module.input.origin_custom_headers : [])}] |
           concat(module.input.additional_origins != nil ? module.input.additional_origins : []) >>
-        price_class: << module.input.price_class >>
+        anycast_ip_list_mode: << module.input.anycast_ip_list_mode || "disabled" >>
+        anycast_ip_list_id: '<< module.input.anycast_ip_list_mode == "existing" ? module.input.anycast_ip_list_id : nil >>'
+        anycast_ip_count: '<< module.input.anycast_ip_list_mode == "create" && module.input.anycast_ip_count != nil ? module.input.anycast_ip_count : 3 >>'
+        price_class: << module.input.price_class || "PriceClass_All" >>
         region: << module.input.aws_region >>
         tags:
           $include: ../stack/ravion-tags.yml
@@ -981,6 +987,16 @@ module:
     | S3 bucket | Legacy standard logging delivers compressed log files to an automatically created S3 bucket. Cheapest for high-traffic sites; not viewable in Ravion. |
 
     Logging retention days defaults to 365 and controls the CloudWatch log group retention or the S3 bucket lifecycle expiry, depending on the destination. CloudWatch retention must be one of the standard CloudWatch Logs retention values (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, and larger).
+
+    ## Static IPs
+
+    Static IPs are disabled by default. Choose **Create a static IP list** to allocate 3 IPv4 addresses for apex DNS A records or 21 for firewall allowlisting. Choose **Use an existing static IP list** to share a list in the same AWS account and avoid another allocation charge.
+
+    [AWS approval](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) is required before creating a list. Static IPs use all edge locations and disable viewer IPv6. HTTPS still uses your domain name, not a bare IP address.
+
+    [AWS charges](https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/) $0.005 per IPv4 address/hour: about $11/month for 3 or $77/month for 21, plus standard CloudFront usage. The list is billed until deleted. Changing the count replaces the IPs; update external DNS or allowlists afterward.
+
+    The stack outputs include the created addresses as `anycast_ips` and the reusable list ID as `anycast_ip_list_id`. For an existing list, get its addresses from its owning stack. Remove other sites' references before deleting an owning site's list.
 
     ## Configuration
 

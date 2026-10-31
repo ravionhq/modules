@@ -14,6 +14,42 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("compiles optional CloudFront static IP creation and reuse for CDN and static hosting", async () => {
+    for (const path of ["cdn/cloudfront/rvn-cloudfront-definition.yml", "hosting/static_site/rvn-aws-static-definition.yml"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      const inputs = getModuleInputs(module);
+      const mode = findInput(inputs, "anycast_ip_list_mode");
+      const count = findInput(inputs, "anycast_ip_count");
+      const list = findInput(inputs, "anycast_ip_list_id");
+      assert.equal(mode.default, "disabled");
+      assert.deepEqual(getValueOptions(mode), ["disabled", "create", "existing"]);
+      assert.equal(count.default, 3);
+      assert.deepEqual(getValueOptions(count), [3, 21]);
+      assert.deepEqual(count.show_when, { anycast_ip_list_mode: "create" });
+      assert.deepEqual(list.show_when, { anycast_ip_list_mode: "existing" });
+      assert.equal(list.required, true);
+      assert.deepEqual(findInput(inputs, "price_class").show_when, { anycast_ip_list_mode: "disabled" });
+
+      const evaluate = (key: string, input: Record<string, unknown>) => {
+        const template = assertString(getTerraformVariable(module, key));
+        return new Function("module", "nil", "return " + template.slice(3, -3))({ input }, null);
+      };
+      for (const input of [{}, { anycast_ip_list_mode: null }]) {
+        assert.equal(evaluate("anycast_ip_list_mode", input), "disabled");
+        assert.equal(evaluate("anycast_ip_list_id", input), null);
+        assert.equal(evaluate("anycast_ip_count", input), 3);
+        assert.equal(evaluate("price_class", input), "PriceClass_All");
+      }
+      assert.equal(evaluate("anycast_ip_list_id", { anycast_ip_list_mode: "disabled", anycast_ip_list_id: "stale-list" }), null);
+      assert.equal(evaluate("anycast_ip_list_id", { anycast_ip_list_mode: "existing", anycast_ip_list_id: "shared-list" }), "shared-list");
+      assert.equal(evaluate("anycast_ip_count", { anycast_ip_list_mode: "create" }), 3);
+      assert.equal(evaluate("anycast_ip_count", { anycast_ip_list_mode: "create", anycast_ip_count: 21 }), 21);
+      assert.equal(evaluate("price_class", { price_class: "PriceClass_200" }), "PriceClass_200");
+      assert.match(assertString(module.readme), /AWS approval/);
+      assert.match(assertString(module.readme), /\$0\.005/);
+    }
+  });
+
   it("exposes and documents Dockerfile start command overrides for every ECS service", async () => {
     for (const name of ["web", "worker", "nlb"]) {
       const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
@@ -248,6 +284,7 @@ describe("compiler", () => {
     const values = assertRecord(definition.values, "module.deploy.definition.values");
 
     assert.equal(compiled.published, false);
+    assert.equal(compiled.global, false);
     assert.equal(inputs.some((input) => input.id === "spot_burst_enabled"), false);
     assert.equal(findInput(inputs, "scheduling_enabled").default, true);
     assert.equal(inputs.some((input) => input.id === "suspend"), false);
@@ -257,10 +294,17 @@ describe("compiler", () => {
     );
   });
 
-  it("keeps the EKS cluster definition private", async () => {
-    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
+  it("prepares stable EKS definitions and publishes all except cron globally", async () => {
+    const definitions = (await compileAllDefinitions(repoRoot)).filter((definition) => definition.type.startsWith("rvn-eks-"));
 
-    assert.equal(compiled.global, false);
+    assert.deepEqual(definitions.map((definition) => definition.type).sort(), [
+      "rvn-eks-addons", "rvn-eks-chart", "rvn-eks-cluster", "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker",
+    ]);
+    for (const definition of definitions) {
+      assert.equal(definition.published, definition.type !== "rvn-eks-cron", definition.type);
+      assert.equal(definition.global, definition.type !== "rvn-eks-cron", definition.type);
+      assert.match(definition.version, /^[1-9]\d*\.\d+\.\d+$/, definition.type);
+    }
   });
 
   it("compiles all colocated definitions under module category directories", async () => {

@@ -1,11 +1,11 @@
-global: false
+global: true
 definition:
   type: rvn-eks-chart
   name: EKS Helm Chart
   description: Install any Helm chart from an HTTP Helm repository, an OCI registry or a Git repository onto an EKS cluster, with full control over the chart's values.
 release:
-  version: 0.3.3
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 1.0.0
+  description: First stable release, available to all Ravion organizations.
 module:
   inputs:
     - id: section_cluster

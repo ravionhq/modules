@@ -96,6 +96,11 @@ resource "aws_launch_template" "app" {
     }
 
     precondition {
+      condition     = !(var.data_volume_creation_enabled && var.efs_enabled) || trimsuffix(var.data_volume_mount_path, "/") != trimsuffix(var.efs_mount_path, "/")
+      error_message = "The data_volume_mount_path and efs_mount_path must be different paths."
+    }
+
+    precondition {
       condition     = !var.efs_enabled || var.efs_file_system_id != null
       error_message = "The efs_file_system_id is required when efs_enabled is true."
     }

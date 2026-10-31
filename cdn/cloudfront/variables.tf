@@ -359,6 +359,46 @@ variable "ordered_cache_behaviors" {
 # Distribution Settings
 ################################################################################
 
+variable "anycast_ip_list_mode" {
+  type        = string
+  description = "Static viewer IPs: disabled, create one shared IPv4 Anycast list, or use an existing list. Static IPs force PriceClass_All and disable IPv6."
+  default     = "disabled"
+  nullable    = false
+
+  validation {
+    condition     = contains(["disabled", "create", "existing"], var.anycast_ip_list_mode)
+    error_message = "The anycast_ip_list_mode must be 'disabled', 'create', or 'existing'."
+  }
+}
+
+variable "anycast_ip_list_id" {
+  type        = string
+  description = "Existing CloudFront Anycast IP list ID in this AWS account. Required only when anycast_ip_list_mode is existing."
+  default     = null
+
+  validation {
+    condition     = var.anycast_ip_list_mode != "existing" || try(trimspace(var.anycast_ip_list_id) != "", false)
+    error_message = "Set anycast_ip_list_id when anycast_ip_list_mode is 'existing'."
+  }
+
+  validation {
+    condition     = var.anycast_ip_list_mode == "existing" || var.anycast_ip_list_id == null
+    error_message = "Set anycast_ip_list_mode to 'existing' to use anycast_ip_list_id."
+  }
+}
+
+variable "anycast_ip_count" {
+  type        = number
+  description = "IPv4 addresses to allocate when creating an Anycast list: 3 for apex DNS or 21 for allowlisting. Changing this replaces the list and its IPs."
+  default     = 3
+  nullable    = false
+
+  validation {
+    condition     = contains([3, 21], var.anycast_ip_count)
+    error_message = "The anycast_ip_count must be 3 or 21."
+  }
+}
+
 variable "price_class" {
   type        = string
   description = "The price class for the CloudFront distribution. Controls which edge locations are used."

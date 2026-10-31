@@ -112,6 +112,8 @@ jobs:
               tofu -chdir=cdn/cloudfront init -backend=false
               tofu -chdir=cdn/cloudfront test
               node --test cdn/cloudfront/functions/viewer_request.test.js
+              tofu -chdir=hosting/static_site init -backend=false
+              tofu -chdir=hosting/static_site test
 
           - name: managed domains
             run: |

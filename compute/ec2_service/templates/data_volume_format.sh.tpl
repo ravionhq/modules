@@ -13,6 +13,16 @@ ravion_format_new_data_volume() {
       return 0
     fi
   else
+    # Without a device link the blank disk can't be told apart from an
+    # instance-store disk. If another disk already holds a filesystem, it is
+    # the likelier data volume (one from an older release has no label), so
+    # format nothing: a fresh label would make discovery prefer the empty disk.
+    for candidate in $(ravion_other_disks); do
+      if ravion_has_data_fs "$candidate"; then
+        echo "Data volume: $candidate already has a filesystem; not formatting another disk" >&2
+        return 0
+      fi
+    done
     for candidate in $(ravion_other_disks); do
       if ravion_is_blank "$candidate" && ! ravion_is_mounted "$candidate"; then
         candidates="$candidates $candidate"

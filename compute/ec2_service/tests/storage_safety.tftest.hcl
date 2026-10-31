@@ -394,9 +394,10 @@ run "container_deploy_guards_efs_only" {
   command = plan
 
   variables {
-    runtime            = "container"
-    efs_enabled        = true
-    efs_file_system_id = "fs-12345678"
+    runtime                      = "container"
+    data_volume_creation_enabled = false
+    efs_enabled                  = true
+    efs_file_system_id           = "fs-12345678"
   }
 
   assert {
@@ -414,7 +415,8 @@ run "deploys_have_no_guard_without_extra_storage" {
   command = plan
 
   variables {
-    runtime = "container"
+    runtime                      = "container"
+    data_volume_creation_enabled = false
   }
 
   assert {
@@ -427,12 +429,63 @@ run "manual_deploys_have_no_guard_without_extra_storage" {
   command = plan
 
   variables {
-    runtime              = "manual"
-    manual_start_command = "./bin/server"
+    runtime                      = "manual"
+    manual_start_command         = "./bin/server"
+    data_volume_creation_enabled = false
   }
 
   assert {
     condition     = !strcontains(aws_ssm_document.deploy.content, "refusing to start the app") && !strcontains(aws_ssm_document.deploy.content, "ravion_mount_data_volume")
     error_message = "Manual services without a data volume or EFS must deploy without a storage guard."
+  }
+}
+
+run "rejects_root_data_volume_mount_path" {
+  command = plan
+
+  variables {
+    data_volume_mount_path = "/"
+  }
+
+  expect_failures = [var.data_volume_mount_path]
+}
+
+run "rejects_root_efs_mount_path" {
+  command = plan
+
+  variables {
+    efs_enabled        = true
+    efs_file_system_id = "fs-12345678"
+    efs_mount_path     = "/"
+  }
+
+  expect_failures = [var.efs_mount_path]
+}
+
+run "rejects_same_data_volume_and_efs_paths" {
+  command = plan
+
+  variables {
+    efs_enabled            = true
+    efs_file_system_id     = "fs-12345678"
+    data_volume_mount_path = "/data"
+    efs_mount_path         = "/data/"
+  }
+
+  expect_failures = [aws_launch_template.app]
+}
+
+run "guard_checks_what_is_mounted" {
+  command = plan
+
+  variables {
+    runtime            = "container"
+    efs_enabled        = true
+    efs_file_system_id = "fs-12345678"
+  }
+
+  assert {
+    condition     = strcontains(aws_ssm_document.deploy.content, "is on the root disk") && strcontains(aws_ssm_document.deploy.content, "not EFS; refusing to start the app")
+    error_message = "The guard must check that the data path is not on the root disk and that the EFS path holds EFS."
   }
 }

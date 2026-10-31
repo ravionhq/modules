@@ -18,7 +18,7 @@ provider "providers.ravion.com/ravion/ravion" {
 
 provider "registry.opentofu.org/hashicorp/aws" {
   version     = "6.69.1"
-  constraints = ">= 6.0.0, >= 6.22.0"
+  constraints = ">= 6.22.0, >= 6.69.1"
   hashes = [
     "h1:nqCg6epkPJ6nmQSE9pixmqwXSQEfqaUaOCYDLFOWKKg=",
     "h1:rqF7c3gQJBIZsudR0ZKK6AelHqLfqfmE2kKc3g+ojXY=",

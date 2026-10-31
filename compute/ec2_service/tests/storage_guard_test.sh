@@ -92,7 +92,7 @@ make_deploy "$WORK_DIR/guard_none.sh" "$WORK_DIR/deploy_none.sh"
 #   disks             whole disks, one per line (the root disk is /dev/nvme0n1)
 #   fs/<disk>         filesystem type    label/<disk>  filesystem label
 #   uuid/<disk>       filesystem UUID    links/<name>  device a link resolves to
-#   mounts            "<device> <path>" for every mounted filesystem
+#   mounts            "<device> <path> [fstype]" for every mounted filesystem
 #   calls             every mkfs / mount call
 ################################################################################
 
@@ -106,7 +106,17 @@ stub() {
 
 stub findmnt <<'EOF'
 #!/usr/bin/env bash
-if [ "$1" = "-nvo" ] && [ "$3" = "/" ]; then echo /dev/nvme0n1p1; exit 0; fi
+if [ "$1" = "-nvo" ]; then
+  # findmnt -nvo SOURCE|FSTYPE <mount path>
+  line=$(awk -v p="$3" '$2 == p { print; exit }' "$STATE/mounts")
+  [ -n "$line" ] || exit 1
+  case "$2" in
+    SOURCE) echo "$line" | awk '{ print $1 }' ;;
+    FSTYPE) echo "$line" | awk '{ print $3 }' ;;
+    *) echo "unexpected findmnt $*" >&2; exit 64 ;;
+  esac
+  exit 0
+fi
 target=0
 [ "$1" = "-rno" ] && target=1
 dev="${@: -1}"
@@ -120,6 +130,8 @@ stub lsblk <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   "-npo PKNAME /dev/nvme0n1p1") echo /dev/nvme0n1 ;;
+  "-npo PKNAME /dev/"*) ;;
+  "-npo PKNAME "*) exit 1 ;;
   "-dnpo NAME -e 7,11") cat "$STATE/disks" ;;
   "-npo FSTYPE,PTTYPE "*)
     dev="${@: -1}"
@@ -160,11 +172,11 @@ stub mount <<'EOF'
 #!/usr/bin/env bash
 echo "mount $*" >>"$STATE/calls"
 if [ "$*" = "-a -t efs" ]; then
-  if [ -f "$STATE/efs_reachable" ]; then echo "fs-1 /mnt/efs" >>"$STATE/mounts"; exit 0; fi
+  if [ -f "$STATE/efs_reachable" ]; then echo "127.0.0.1:/ /mnt/efs nfs4" >>"$STATE/mounts"; exit 0; fi
   exit 32
 fi
 [ -f "$STATE/fs/${3##*/}" ] || exit 32
-echo "$3 $4" >>"$STATE/mounts"
+echo "$3 $4 $2" >>"$STATE/mounts"
 EOF
 
 stub mkfs <<'EOF'
@@ -282,6 +294,15 @@ grep -q "several blank disks found" "$WORK_DIR/out" || fail "skipping the format
 [ -z "$(mounted_at /data)" ] || fail "nothing may be mounted when the data volume is ambiguous"
 pass "two blank disks without a device link (e.g. instance store): nothing is formatted or mounted"
 
+new_state existing_and_blank /dev/nvme1n1 /dev/nvme2n1
+add_fs /dev/nvme1n1 xfs
+run_script "$WORK_DIR/boot.sh" || fail "boot with an existing volume and a blank disk failed"
+! grep -q '^mkfs' "$STATE/calls" || fail "a blank disk must not be formatted while another disk already has a filesystem"
+[ -z "$(cat "$STATE/label/nvme2n1" 2>/dev/null)" ] || fail "the blank disk must not get the data label"
+[ "$(mounted_at /data)" = /dev/nvme1n1 ] || fail "the existing volume must be mounted, not the blank disk"
+grep -q "already has a filesystem; not formatting another disk" "$WORK_DIR/out" || fail "skipping the format must be logged"
+pass "existing unlabelled volume plus a blank disk, no device link: nothing is formatted and the existing volume is mounted"
+
 new_state two_candidates /dev/nvme1n1 /dev/nvme2n1
 add_fs /dev/nvme1n1 xfs
 add_fs /dev/nvme2n1 xfs
@@ -345,6 +366,35 @@ for scenario in missing ambiguous blank; do
   ! grep -q '^mkfs' "$STATE/calls" || fail "the guard must never format a disk ($scenario)"
   pass "guard: fails closed before stopping the app when the data volume is $scenario"
 done
+
+new_state guard_root_bind /dev/nvme1n1
+add_fs /dev/nvme1n1 xfs ravion-data
+echo "/dev/nvme0n1p1 /data xfs" >>"$STATE/mounts"
+if run_script "$WORK_DIR/deploy_data.sh"; then
+  fail "the guard must fail when the data path is mounted from the root disk"
+fi
+grep -q "/data is on the root disk (/dev/nvme0n1p1), not the data volume" "$WORK_DIR/out" || fail "the root-disk failure must be explained"
+! grep -q "STOPPING RUNNING APP" "$WORK_DIR/out" || fail "the running app must not be stopped when /data is on the root disk"
+pass "guard: fails closed when the data path is a mount from the root disk"
+
+new_state guard_data_on_nfs
+echo "127.0.0.1:/ /data nfs4" >>"$STATE/mounts"
+if run_script "$WORK_DIR/deploy_data.sh"; then
+  fail "the guard must fail when the data path holds a network mount"
+fi
+grep -q "/data is mounted from 127.0.0.1:/, not a local data volume" "$WORK_DIR/out" || fail "the network-mount failure must be explained"
+! grep -q "STOPPING RUNNING APP" "$WORK_DIR/out" || fail "the running app must not be stopped when /data is a network mount"
+pass "guard: fails closed when the data path holds EFS or another network mount"
+
+new_state guard_efs_wrong_fs /dev/nvme1n1
+add_fs /dev/nvme1n1 xfs
+echo "/dev/nvme1n1 /mnt/efs xfs" >>"$STATE/mounts"
+if run_script "$WORK_DIR/deploy_efs.sh"; then
+  fail "the guard must fail when the EFS path holds a local disk"
+fi
+grep -q "/mnt/efs holds a xfs filesystem, not EFS" "$WORK_DIR/out" || fail "the wrong-filesystem failure must be explained"
+! grep -q "STOPPING RUNNING APP" "$WORK_DIR/out" || fail "the running app must not be stopped when EFS is the wrong filesystem"
+pass "guard: fails closed when the EFS path holds a local disk instead of EFS"
 
 new_state guard_efs_down
 if run_script "$WORK_DIR/deploy_efs.sh"; then
