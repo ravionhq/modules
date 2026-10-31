@@ -70,8 +70,8 @@ run "defaults_to_small_os_disk_and_data_volume" {
   command = plan
 
   assert {
-    condition     = var.root_volume_size == 20 && var.data_volume_creation_enabled == true && var.data_volume_size == 20 && var.data_volume_mount_path == "/data"
-    error_message = "The module must default to a 20 GB root volume and a 20 GB data volume mounted at /data."
+    condition     = var.root_volume_size == 30 && var.data_volume_creation_enabled == true && var.data_volume_size == 20 && var.data_volume_mount_path == "/data"
+    error_message = "The module must default to a 30 GB root volume and a 20 GB data volume mounted at /data."
   }
 
   assert {
@@ -82,9 +82,9 @@ run "defaults_to_small_os_disk_and_data_volume" {
   assert {
     condition = anytrue([
       for m in aws_launch_template.app.block_device_mappings :
-      m.device_name == "/dev/xvda" && m.ebs[0].volume_size == 20 && m.ebs[0].encrypted == "true"
+      m.device_name == "/dev/xvda" && m.ebs[0].volume_size == 30 && m.ebs[0].encrypted == "true"
     ])
-    error_message = "The default root volume must be a 20 GB encrypted disk."
+    error_message = "The default root volume must be a 30 GB encrypted disk."
   }
 
   assert {
@@ -121,7 +121,7 @@ run "explicit_values_still_win" {
 
   assert {
     condition     = one(aws_launch_template.app.block_device_mappings).device_name == "/dev/xvda" && one(aws_launch_template.app.block_device_mappings).ebs[0].volume_size == 50
-    error_message = "An explicit root volume size must override the 20 GB default."
+    error_message = "An explicit root volume size must override the 30 GB default."
   }
 
   assert {
@@ -139,7 +139,7 @@ run "explicit_data_volume_settings_still_win" {
   command = plan
 
   variables {
-    root_volume_size             = 30
+    root_volume_size             = 40
     data_volume_creation_enabled = true
     data_volume_size             = 100
     data_volume_mount_path       = "/var/lib/app"
@@ -148,7 +148,7 @@ run "explicit_data_volume_settings_still_win" {
   assert {
     condition = anytrue([
       for m in aws_launch_template.app.block_device_mappings :
-      m.device_name == "/dev/xvda" && m.ebs[0].volume_size == 30
+      m.device_name == "/dev/xvda" && m.ebs[0].volume_size == 40
     ])
     error_message = "An explicit root volume size must be kept."
   }

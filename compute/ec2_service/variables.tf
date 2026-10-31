@@ -214,7 +214,7 @@ variable "key_name" {
 variable "root_volume_size" {
   type        = number
   description = "Root EBS volume size in GB. The root volume holds the operating system, packages, container images, and logs; keep application data on the data volume."
-  default     = 20
+  default     = 30
 
   validation {
     condition     = var.root_volume_size >= 8 && var.root_volume_size <= 16384

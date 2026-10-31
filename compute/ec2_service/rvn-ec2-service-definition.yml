@@ -4,7 +4,7 @@ definition:
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
   version: 2.6.0
-  description: New services get a 20 GB OS disk and a separate data volume for application data by default. Existing services keep their saved disk settings; a config file that omits Data volume or Root volume size picks up the new defaults, so set them explicitly before upgrading.
+  description: New services get a separate data volume for application data by default. Existing services keep their saved disk settings; a config file that omits Data volume picks up the new default, so set it explicitly before upgrading.
 module:
   inputs:
     - id: network
@@ -499,16 +499,18 @@ module:
       collapsible: true
       max: 16384
       min: 8
-      default: 20
+      default: 30
     - id: data_volume_creation_enabled
       label: Data volume
       type: boolean
       description: On by default. A second encrypted EBS disk where application data should live, such as a local database, uploads, or a cache, kept apart from the OS disk. Each instance gets its own disk, which persists for the life of that instance.
+      collapsible: true
       default: true
     - id: data_volume_size
       label: Data volume size (GB)
       type: number
       description: Size of the dedicated EBS data volume attached to each instance. Take EBS snapshots or back up elsewhere if it holds critical data.
+      collapsible: true
       max: 16384
       min: 1
       show_when:
@@ -517,7 +519,8 @@ module:
     - id: data_volume_mount_path
       label: Data volume mount path
       type: string
-      description: Absolute host path for the data volume.
+      description: Absolute host path for the data volume. The mounted directory is owned by root; if the app runs as a non-root user, set its ownership in Additional user data, for example `chown 1000:1000 /data`.
+      collapsible: true
       required: true
       show_when:
         data_volume_creation_enabled: true
@@ -1074,7 +1077,7 @@ module:
 
     Root and Data volumes are encrypted gp3 EBS volumes attached to the instance. They are durable for the life of the instance: normal in-place deploys and updates do not replace it, so files written to disk stay there at local-disk latency. Replacing the Auto Scaling Group does replace its instances and volumes.
 
-    New services get both by default: a 20 GB root volume for the operating system, packages, container images, and logs, and a 20 GB data volume mounted at `/data` for application data. Keep application state on the data volume. It is a separate disk from the operating system, so the root volume can be rebuilt, for example to move to a new AMI, without touching your data. Existing services keep the disk settings saved with them, but a config file that leaves out Data volume or Root volume size gets the new defaults when it moves to this version.
+    New services get both by default: a root volume for the operating system, packages, container images, and logs, and a 20 GB data volume mounted at `/data` for application data. Keep application state on the data volume. It is a separate disk from the operating system, so the root volume can be rebuilt, for example to move to a new AMI, without touching your data. Existing services keep the disk settings saved with them, but a config file that leaves out Data volume gets the new default when it moves to this version. The data volume is mounted owned by root. A container or start command that runs as a non-root user cannot write there until you set ownership, for example with `chown 1000:1000 /data` in Additional user data (it runs as root on every new instance after Ravion's bootstrap).
 
     Both volumes are deleted with the instance. Keep backups of critical data on the disk — an EBS snapshot schedule, database dumps to S3, or a periodic sync — rather than avoiding local storage.
 
@@ -1191,7 +1194,7 @@ module:
     | --- | --- | --- | --- |
     | Runtime environment variables | No | [] | Plain single-line values refreshed on every deploy |
     | Runtime secrets | No | [] | Same-account Secrets Manager or SSM references fetched on each host |
-    | Root volume size (GB) | No | 20 | Encrypted per-instance gp3 OS disk for the operating system, packages, container images, and logs |
+    | Root volume size (GB) | No | 30 | Encrypted per-instance gp3 OS disk for the operating system, packages, container images, and logs |
     | Data volume / size / mount path | No | true / 20 / /data | Separate encrypted EBS volume where per-instance application data should live |
     | EFS file system | No | false | Enable shared storage for files several instances must share |
     | EFS file system reference / mount path | Yes* | - / /mnt/efs | Ravion EFS module and its host/container mount path |
