@@ -1,11 +1,11 @@
-global: false
+global: true
 definition:
   type: rvn-eks-addons
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.28.0
-  description: 'Size Loki, Tempo, Grafana and the Mimir ingesters, cap series per ingester, and turn on warm capacity from the form. Loki, Tempo and Mimir ingesters now collect garbage before their memory limit instead of being OOMKilled, Mimir store-gateways get room for their heap, Grafana keeps its users and alert state on a volume and loads dashboards and alert rules from ConfigMaps, and cordoned nodes and volume claims are collected for dashboards.'
+  version: 1.0.0
+  description: First stable release, available to all Ravion organizations.
 module:
   inputs:
     - id: cluster
