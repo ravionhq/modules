@@ -1,4 +1,4 @@
-global: false
+global: true
 definition:
   type: rvn-eks-web
   name: EKS Web Service

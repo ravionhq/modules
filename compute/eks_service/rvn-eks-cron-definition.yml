@@ -5,8 +5,8 @@ definition:
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.9.0
-  description: 'Name the image repository from the form, for when a repository with the service''s name already belongs to something else.'
+  version: 1.0.0
+  description: Prepare the first stable release.
 module:
   inputs:
     - id: section_cluster
