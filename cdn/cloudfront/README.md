@@ -485,12 +485,29 @@ redirect_rules = [
 
 The same-host example redirects `/old/guide` to `/docs/guide`. To redirect only the root, use the exact source `https://d111111abcdef8.cloudfront.net` without a path parameter. Redirect patterns do not currently support exclusions such as "all paths except `/docs`".
 
+## Static IPs
+
+Static IPs are off by default. Create one CloudFront Anycast IPv4 list shared by all distributions in this module, or reuse a list in the same AWS account with `anycast_ip_list_mode = "existing"` and `anycast_ip_list_id`.
+
+```hcl
+anycast_ip_list_mode = "create"
+anycast_ip_count     = 3
+```
+
+[AWS approval](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) is required before creating a list. Choose 3 addresses for apex DNS A records or 21 for firewall allowlisting. Static IPs automatically select all edge locations (`PriceClass_All`) and disable viewer IPv6, including when reusing a list. Normal distributions keep their existing price class and IPv6 settings.
+
+[AWS charges](https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/) $0.005 per IPv4 address/hour: approximately $10.95/month for 3 or $76.65/month for 21 at 730 hours, plus standard CloudFront usage. Reusing a list avoids another allocation charge. The list remains billable until deleted, even with disabled distributions.
+
+Use the `anycast_ips` output for the addresses of a newly created list and `anycast_ip_list_id` to share it with another module. Existing lists remain owned by their original stack; their addresses are not returned by this module. Changing the count replaces the list and IPs, so update external DNS records or allowlists. Stop sharing a managed list before deleting its owning module or disabling its static IPs.
+
+CloudFront still requires the viewer's domain and SNI for HTTPS; an IP address alone is not a site URL.
+
 ## Requirements
 
 | Name               | Version   |
 | ------------------ | --------- |
 | opentofu/terraform | >= 1.10.0 |
-| aws                | >= 6.0    |
+| aws                | >= 6.69.1 |
 | ravion             | = 0.0.3-rc.1 |
 
 ## Inputs
@@ -573,6 +590,9 @@ The same-host example redirects `/old/guide` to `/docs/guide`. To redirect only 
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
+| anycast_ip_list_mode | Static viewer IPs: `disabled`, `create`, or `existing`. | `string` | `"disabled"` | no |
+| anycast_ip_list_id | List ID in this account; required only in existing mode. | `string` | `null` | no |
+| anycast_ip_count | Number of IPv4 addresses to allocate: 3 or 21. | `number` | `3` | no |
 | price_class | Price class: `PriceClass_100`, `PriceClass_200`, `PriceClass_All`. | `string` | `"PriceClass_100"` | no |
 | http_version | Maximum HTTP version: `http1.1`, `http2`, `http2and3`. | `string` | `"http2and3"` | no |
 | ipv6_enabled | Whether IPv6 is enabled. | `bool` | `true` | no |
@@ -645,6 +665,8 @@ Access logging is enabled by default. The default destination is CloudWatch Logs
 
 | Name | Description |
 |------|-------------|
+| anycast_ip_list_id | Associated static IP list ID, or null when disabled. |
+| anycast_ips | Created list's IPv4 addresses; empty when disabled or reusing a list. |
 | cache_policy_id | The configured ID of the cache policy attached to the default behavior. |
 | distribution_ids | A map of distribution key to CloudFront distribution ID. |
 | distribution_arns | A map of distribution key to CloudFront distribution ARN. |

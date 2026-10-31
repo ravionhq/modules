@@ -14,6 +14,42 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("compiles optional CloudFront static IP creation and reuse for CDN and static hosting", async () => {
+    for (const path of ["cdn/cloudfront/rvn-cloudfront-definition.yml", "hosting/static_site/rvn-aws-static-definition.yml"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      const inputs = getModuleInputs(module);
+      const mode = findInput(inputs, "anycast_ip_list_mode");
+      const count = findInput(inputs, "anycast_ip_count");
+      const list = findInput(inputs, "anycast_ip_list_id");
+      assert.equal(mode.default, "disabled");
+      assert.deepEqual(getValueOptions(mode), ["disabled", "create", "existing"]);
+      assert.equal(count.default, 3);
+      assert.deepEqual(getValueOptions(count), [3, 21]);
+      assert.deepEqual(count.show_when, { anycast_ip_list_mode: "create" });
+      assert.deepEqual(list.show_when, { anycast_ip_list_mode: "existing" });
+      assert.equal(list.required, true);
+      assert.deepEqual(findInput(inputs, "price_class").show_when, { anycast_ip_list_mode: "disabled" });
+
+      const evaluate = (key: string, input: Record<string, unknown>) => {
+        const template = assertString(getTerraformVariable(module, key));
+        return new Function("module", "nil", "return " + template.slice(3, -3))({ input }, null);
+      };
+      for (const input of [{}, { anycast_ip_list_mode: null }]) {
+        assert.equal(evaluate("anycast_ip_list_mode", input), "disabled");
+        assert.equal(evaluate("anycast_ip_list_id", input), null);
+        assert.equal(evaluate("anycast_ip_count", input), 3);
+        assert.equal(evaluate("price_class", input), "PriceClass_All");
+      }
+      assert.equal(evaluate("anycast_ip_list_id", { anycast_ip_list_mode: "disabled", anycast_ip_list_id: "stale-list" }), null);
+      assert.equal(evaluate("anycast_ip_list_id", { anycast_ip_list_mode: "existing", anycast_ip_list_id: "shared-list" }), "shared-list");
+      assert.equal(evaluate("anycast_ip_count", { anycast_ip_list_mode: "create" }), 3);
+      assert.equal(evaluate("anycast_ip_count", { anycast_ip_list_mode: "create", anycast_ip_count: 21 }), 21);
+      assert.equal(evaluate("price_class", { price_class: "PriceClass_200" }), "PriceClass_200");
+      assert.match(assertString(module.readme), /AWS approval/);
+      assert.match(assertString(module.readme), /\$0\.005/);
+    }
+  });
+
   it("exposes and documents Dockerfile start command overrides for every ECS service", async () => {
     for (const name of ["web", "worker", "nlb"]) {
       const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
