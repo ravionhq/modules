@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 2.6.0
-  description: Snapshot data volumes daily, remount them after Update AMI rebuilds an instance's root disk, and refuse to start the app when its data volume or EFS is not mounted.
+  version: 2.7.0
+  description: "Live-test build: #264 storage safety (DLM snapshots, remount, deploy storage guard) plus #265 data volume on by default."
 module:
   inputs:
     - id: network
@@ -491,11 +491,11 @@ module:
     - id: section_storage
       label: Storage
       type: section
-      description: The root volume is the boot disk and is rebuilt by Update AMI. The data volume is per-instance storage that persists for the life of the instance and is snapshotted daily. EFS is shared storage that also survives instance replacement.
+      description: The root volume holds the operating system, the data volume holds application data for the life of each instance, and EFS provides shared storage that also survives instance replacement.
     - id: root_volume_size
       label: Root volume size (GB)
       type: number
-      description: Required encrypted boot disk for the operating system, Docker, and local files. Its contents persist across deploys, restarts, and in-place stack updates, but not Update AMI or instance replacement. Keep application data on the data volume or EFS.
+      description: Encrypted OS disk for the operating system, packages, container images, and logs. Keep application data on the data volume instead.
       collapsible: true
       max: 16384
       min: 8
@@ -503,12 +503,14 @@ module:
     - id: data_volume_creation_enabled
       label: Data volume
       type: boolean
-      description: Attach a second encrypted EBS disk to keep application data separate from the boot disk, for example a local database, uploads, or a cache. Each instance gets its own disk, which persists for the life of that instance, including Update AMI.
-      default: false
+      description: On by default. A second encrypted EBS disk where application data should live, such as a local database, uploads, or a cache, kept apart from the OS disk. Each instance gets its own disk, which persists for the life of that instance.
+      collapsible: true
+      default: true
     - id: data_volume_size
       label: Data volume size (GB)
       type: number
-      description: Size of the dedicated EBS data volume attached to each instance.
+      description: Size of the dedicated EBS data volume attached to each instance. Take EBS snapshots or back up elsewhere if it holds critical data.
+      collapsible: true
       max: 16384
       min: 1
       show_when:
@@ -517,7 +519,8 @@ module:
     - id: data_volume_mount_path
       label: Data volume mount path
       type: string
-      description: Absolute host path for the data volume.
+      description: Absolute host path for the data volume. The mounted directory is owned by root; if the app runs as a non-root user, set its ownership in Additional user data, for example `chown 1000:1000 /data`.
+      collapsible: true
       required: true
       show_when:
         data_volume_creation_enabled: true
@@ -934,7 +937,7 @@ module:
 
     Ravion provisions the launch template, Auto Scaling Group, instance role and security group, SSM deploy document, app log group, and optional target group and listener rule. Web services can attach to a standalone Application Load Balancer or reuse the public or private ALB from an ECS cluster. The selected network and load balancer must use the same AWS account, region, and VPC.
 
-    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and optional data volumes. Changing the AMI in the stack leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. To move running instances to the new AMI without replacing them, use Ravion's Update AMI action (see [Updating the AMI](#updating-the-ami)). An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). Group naming is fixed by default for new and existing services, and routine upgrades preserve the group and SSM document names. For a service that has **not yet deployed a release**, an advanced operator can set `{"autoscaling_group_generated_name_enabled": true}` in Advanced Terraform variables to avoid a name collision on replacement. This is not a zero-downtime migration: the deploy manager stores the old group name with the last successful release and does not automatically retarget a newly named group. Enabling or disabling the variable on a running service, or replacing a generated-name group after deployment, can interrupt the app and delete instance-local volumes. Repair tainted state under operator supervision if the existing group is healthy. Otherwise, arrange a separate release migration, backups, and enough EC2 capacity before replacing a live group.
+    Deploys, app restarts, and routine in-place stack updates retain the instances and their root and data volumes. Even changing the AMI leaves running instances alone: the change becomes a new launch template version that only applies to instances launched later, because the module does not run an instance refresh. An instance is replaced when you deliberately terminate or recycle it, when the group scales in, or when it fails its Auto Scaling health check (EC2 by default, or load balancer health when `health_check_type` is set to `ELB`). Group naming is fixed by default for new and existing services, and routine upgrades preserve the group and SSM document names. For a service that has **not yet deployed a release**, an advanced operator can set `{"autoscaling_group_generated_name_enabled": true}` in Advanced Terraform variables to avoid a name collision on replacement. This is not a zero-downtime migration: the deploy manager stores the old group name with the last successful release and does not automatically retarget a newly named group. Enabling or disabling the variable on a running service, or replacing a generated-name group after deployment, can interrupt the app and delete instance-local volumes. Repair tainted state under operator supervision if the existing group is healthy. Otherwise, arrange a separate release migration, backups, and enough EC2 capacity before replacing a live group.
 
     Terraform source: [ravionhq/modules/compute/ec2_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ec2_service)
 
@@ -944,13 +947,13 @@ module:
     | --- | --- | --- |
     | Existing host-installed application | Manual deploys can update files and dependencies directly on every host | A legacy Node, Ruby, or JVM service that is not packaged as a container |
     | Host customization is part of the workload | A custom AMI and Additional user data can install agents, libraries, or host services | A vendor runtime that needs an OS package or host monitoring agent |
-    | Local state on disk should stay put across releases | In-place deploys retain each instance's encrypted root and optional data volume | A SQLite database, model files, build artifacts, or a warm local cache |
+    | Local state on disk should stay put across releases | In-place deploys retain each instance's encrypted data volume, which is on by default | A SQLite database, model files, build artifacts, or a warm local cache |
     | The app needs the host itself | Manual mode and Additional user data give full access to the instance, including the Docker socket, kernel features, and host services | An agent runtime that starts its own sandbox containers |
     | A container workload needs stable hosts | Container mode replaces the app container without replacing the EC2 instance | A licensed service tied to host identity, when its license permits scaling |
     | Background processing without HTTP routing | Web service can be disabled, leaving a supervised worker group | A queue consumer that specifically needs host access or local cache |
     | Several services share one ALB | Each service owns a target group and host/path listener rule | `api.example.com` and `admin.example.com` on one shared ALB |
 
-    Instance disks are a reasonable place for application state, including a local SQLite database, as long as you back it up. Use EFS when several instances must read and write the same files, or when files must be available immediately on a replacement instance without a restore step. Use a managed database when you need relational or transactional data with its own backups, failover, and read scaling.
+    The data volume is the place for application state, including a local SQLite database, as long as you back it up. Keep the root volume for the operating system, packages, container images, and logs. Use EFS when several instances must read and write the same files, or when files must be available immediately on a replacement instance without a restore step. Use a managed database when you need relational or transactional data with its own backups, failover, and read scaling.
 
     ## EC2 Service or ECS?
 
@@ -1046,7 +1049,7 @@ module:
 
     ### Worker with local state on disk
 
-    Turn Web service off, keep Container mode, and enable a Data volume mounted at a path such as `/var/lib/app`. Container mode bind-mounts that path into the app container, and its contents stay in place across every deploy and restart. Daily data volume snapshots are on by default and outlive the instance, so the data can be restored if the instance is ever replaced; add an off-instance backup such as a periodic sync to S3 for anything you also need outside the snapshot window. Choose EFS instead when several instances must share the same files.
+    Turn Web service off, keep Container mode, and keep the Data volume (on by default) mounted at a path such as `/var/lib/app`. Container mode bind-mounts that path into the app container, and its contents stay in place across every deploy and restart. Add a backup for anything you cannot lose, such as an EBS snapshot schedule or a periodic sync to S3, because the volume is deleted if the instance is ever replaced. Choose EFS instead when several instances must share the same files.
 
     ## Load balancing and worker mode
 
@@ -1095,9 +1098,9 @@ module:
 
     Root and Data volumes are encrypted gp3 EBS volumes attached to the instance. They are durable for the life of the instance: normal in-place deploys and updates do not replace it, so files written to disk stay there at local-disk latency. Replacing the Auto Scaling Group does replace its instances and volumes.
 
-    Both volumes are deleted with the instance. With Daily data volume snapshots on (the default), Amazon Data Lifecycle Manager snapshots every instance's data volume once a day, starting at 03:00 UTC, and keeps the newest Snapshots kept per instance (7 by default). The root volume is not included. Snapshots carry the volume's tags plus `ravion:snapshot-type=scheduled`, `ravion:service` and `ravion:instance-id`. They are kept after their instance is terminated, so a replaced instance's data can be restored from them; delete them once you no longer need them. A day of writes can still be lost between snapshots, so add database dumps to S3 or a periodic sync for data you cannot afford to lose.
+    New services get both by default: a root volume for the operating system, packages, container images, and logs, and a 20 GB data volume mounted at `/data` for application data. Keep application state on the data volume. It is a separate disk from the operating system, so the root volume can be rebuilt, for example to move to a new AMI, without touching your data. Existing services keep the disk settings saved with them, but a config file that leaves out Data volume gets the new default when it moves to this version. The data volume is mounted owned by root. A container or start command that runs as a non-root user cannot write there until you set ownership, for example with `chown 1000:1000 /data` in Additional user data (it runs as root on every new instance after Ravion's bootstrap).
 
-    The data volume is mounted at its path on every boot and checked before every deploy. If it cannot be mounted (it is missing, or several disks could be it), the deploy fails before it touches the running app instead of starting the app on an empty directory on the root disk. The same check applies to the EFS mount path when EFS is enabled.
+    Both volumes are deleted with the instance. Keep backups of critical data on the disk — an EBS snapshot schedule, database dumps to S3, or a periodic sync — rather than avoiding local storage.
 
     Enable EFS and select a Ravion EFS module when several instances must share the same files, or when a replacement instance must find the data already in place. The service mounts the file system through its access point when present and attaches the EFS client security group to each instance. Container mode bind-mounts the Data and EFS host paths into the app container at the same paths. EFS is a network file system, so latency-sensitive local state such as an embedded database is usually better on the instance's own volume with backups.
 
@@ -1225,9 +1228,8 @@ module:
     | --- | --- | --- | --- |
     | Runtime environment variables | No | [] | Plain single-line values refreshed on every deploy |
     | Runtime secrets | No | [] | Same-account Secrets Manager or SSM references fetched on each host |
-    | Root volume size (GB) | No | 30 | Encrypted per-instance gp3 volume that lives as long as the instance |
-    | Data volume / size / mount path | No | false / 20 / /data | Separate encrypted EBS volume for per-instance application data |
-    | Daily data volume snapshots / Snapshots kept per instance | No | true / 7 | Daily DLM snapshots of every instance's data volume, kept after the instance is gone |
+    | Root volume size (GB) | No | 30 | Encrypted per-instance gp3 OS disk for the operating system, packages, container images, and logs |
+    | Data volume / size / mount path | No | true / 20 / /data | Separate encrypted EBS volume where per-instance application data should live |
     | EFS file system | No | false | Enable shared storage for files several instances must share |
     | EFS file system reference / mount path | Yes* | - / /mnt/efs | Ravion EFS module and its host/container mount path |
     | Log retention (days) | No | 365 | CloudWatch retention for supervised app logs |

@@ -1,11 +1,11 @@
-global: false
+global: true
 definition:
   type: rvn-eks-worker
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 0.18.0
-  description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
+  version: 1.0.0
+  description: First stable release, available to all Ravion organizations.
 module:
   inputs:
     - id: section_cluster
