@@ -79,7 +79,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-secret` | AWS Secret | v1.1.1 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.8.0 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.7.0 | `cdn/cloudfront/` |
-| `rvn-ec2-service` | EC2 Service | v2.6.0 | `compute/ec2_service/` |
+| `rvn-ec2-service` | EC2 Service | v2.7.0 | `compute/ec2_service/` |
 | `rvn-ecs-cluster` | ECS Cluster | v2.4.0 | `compute/ecs_cluster/` |
 | `rvn-ecs-nlb` | ECS Network Service | v2.6.0 | `compute/ecs_service/` |
 | `rvn-ecs-web` | ECS Web Service | v2.9.0 | `compute/ecs_service/` |
