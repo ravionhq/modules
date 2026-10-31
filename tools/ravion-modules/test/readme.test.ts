@@ -25,7 +25,7 @@ test("renders one sorted row per globally published definition with its release 
       `expected a row for ${definition.type}@${definition.version}`,
     );
   }
-  assert.match(table, /`rvn-eks-cron`/);
+  assert.doesNotMatch(table, /`rvn-eks-cron`/);
   assert.doesNotMatch(table, /`ravion-disabled-example`/);
   assert.doesNotMatch(table, /`rvn-org-only-example`/);
 });

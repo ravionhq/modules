@@ -240,15 +240,15 @@ describe("compiler", () => {
     assert.equal("global" in compiled.module, false);
   });
 
-  it("compiles EKS cron scheduling controls for global publication", async () => {
+  it("compiles EKS cron scheduling controls and keeps the definition unpublished", async () => {
     const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-cron-definition.yml"));
     const inputs = getModuleInputs(compiled.module);
     const deploy = assertRecord(compiled.module.deploy, "module.deploy");
     const definition = assertRecord(deploy.definition, "module.deploy.definition");
     const values = assertRecord(definition.values, "module.deploy.definition.values");
 
-    assert.equal(compiled.published, true);
-    assert.equal(compiled.global, true);
+    assert.equal(compiled.published, false);
+    assert.equal(compiled.global, false);
     assert.equal(inputs.some((input) => input.id === "spot_burst_enabled"), false);
     assert.equal(findInput(inputs, "scheduling_enabled").default, true);
     assert.equal(inputs.some((input) => input.id === "suspend"), false);
@@ -258,15 +258,15 @@ describe("compiler", () => {
     );
   });
 
-  it("publishes every EKS definition globally at a stable version of at least 1.0.0", async () => {
+  it("prepares stable EKS definitions and publishes all except cron globally", async () => {
     const definitions = (await compileAllDefinitions(repoRoot)).filter((definition) => definition.type.startsWith("rvn-eks-"));
 
     assert.deepEqual(definitions.map((definition) => definition.type).sort(), [
       "rvn-eks-addons", "rvn-eks-chart", "rvn-eks-cluster", "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker",
     ]);
     for (const definition of definitions) {
-      assert.equal(definition.published, true, definition.type);
-      assert.equal(definition.global, true, definition.type);
+      assert.equal(definition.published, definition.type !== "rvn-eks-cron", definition.type);
+      assert.equal(definition.global, definition.type !== "rvn-eks-cron", definition.type);
       assert.match(definition.version, /^[1-9]\d*\.\d+\.\d+$/, definition.type);
     }
   });

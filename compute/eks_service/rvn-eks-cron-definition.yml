@@ -1,12 +1,12 @@
-published: true
-global: true
+published: false
+global: false
 definition:
   type: rvn-eks-cron
   name: EKS Cron Job
   description: Scheduled job on EKS for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
 release:
   version: 1.0.0
-  description: First stable release, available to all Ravion organizations.
+  description: Prepare the first stable release.
 module:
   inputs:
     - id: section_cluster
