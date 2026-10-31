@@ -1,6 +1,6 @@
 # EC2 Service
 
-Runs an app on a stable group of EC2 instances behind an optional Application Load Balancer, with in-place deploys pushed through SSM Run Command. Instances are managed by an Auto Scaling Group but are never replaced by deploys, so per-instance state (root volume, optional data volume) persists for the life of each instance.
+Runs an app on a stable group of EC2 instances behind an optional Application Load Balancer, with in-place deploys pushed through SSM Run Command. Instances are managed by an Auto Scaling Group but are never replaced by deploys, so per-instance state persists for the life of each instance. By default each instance gets a root volume for the operating system and a separate 20 GB data volume at `/data` for application data.
 
 Two runtimes are supported:
 
@@ -157,7 +157,8 @@ aws ssm send-command \
 
 ## Storage and durability
 
-- The root volume and optional data volume are per-instance EBS. They are durable for the life of the instance: routine deploys, restarts, and in-place stack updates retain local files such as an embedded database.
+- The root volume and data volume are per-instance EBS. They are durable for the life of the instance: routine deploys, restarts, and in-place stack updates retain local files such as an embedded database.
+- The data volume is on by default (`data_volume_creation_enabled = true`, 20 GB at `/data`) and is where application data belongs. The root volume (30 GB by default) holds the operating system, packages, container images, and logs, so it can be rebuilt (for example for a new AMI) without touching application data. Set `data_volume_creation_enabled = false` to keep everything on one disk.
 - They are deleted when an instance is terminated or recycled, the group scales in, it fails its Auto Scaling health check, or the entire group is replaced. Merely upgrading this module does not replace a fixed-name group or its SSM document. A planned group replacement creates new instances without the old instances' local disks or deployed release; back up critical data off-instance and coordinate release recovery before replacing a live group.
 - `health_check_type` defaults to `EC2`, which is the AWS instance/system status check — unreachable instance, broken boot or network state, failed underlying host. It ignores application state: a crashed app is restarted in place by supervisord, and a failing HTTP health check never replaces an instance. So health-driven replacement is rare and tied to hardware or hypervisor failure. Setting `health_check_type = "ELB"` makes load balancer health replace instances instead, which also breaks in-place deploys (they briefly deregister the instance).
 - Mount an EFS file system (`efs_*` variables) when several instances must share the same files, or when a replacement instance must find data already in place; it is mounted on every instance and, for the container runtime, bind-mounted into the app container.
@@ -198,9 +199,9 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | instance_type | EC2 instance type; use the newest generation the region offers (see "Choosing an instance type") | `string` | n/a | yes |
 | ami_id | Custom AMI (null = latest AL2023) | `string` | `null` | no |
 | key_name | SSH key pair name | `string` | `null` | no |
-| root_volume_size | Root EBS volume size (GB) | `number` | `30` | no |
+| root_volume_size | Root EBS volume size (GB) for the OS, packages, container images, and logs | `number` | `30` | no |
 | root_volume_type | Root EBS volume type | `string` | `"gp3"` | no |
-| data_volume_creation_enabled | Attach a formatted per-instance data volume | `bool` | `false` | no |
+| data_volume_creation_enabled | Attach a formatted per-instance data volume for application data | `bool` | `true` | no |
 | data_volume_size | Data volume size (GB) | `number` | `20` | no |
 | data_volume_type | Data volume type | `string` | `"gp3"` | no |
 | data_volume_mount_path | Host mount path for the data volume | `string` | `"/data"` | no |
