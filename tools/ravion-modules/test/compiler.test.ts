@@ -261,7 +261,7 @@ describe("compiler", () => {
   it("publishes every EKS definition globally at a stable version of at least 1.0.0", async () => {
     const definitions = (await compileAllDefinitions(repoRoot)).filter((definition) => definition.type.startsWith("rvn-eks-"));
 
-    assert.deepEqual(definitions.map((definition) => definition.type), [
+    assert.deepEqual(definitions.map((definition) => definition.type).sort(), [
       "rvn-eks-addons", "rvn-eks-chart", "rvn-eks-cluster", "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker",
     ]);
     for (const definition of definitions) {
