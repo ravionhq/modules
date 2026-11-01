@@ -112,6 +112,11 @@ test('Query reads live and S3 stores, while only one Compactor manages retention
   assert.ok(!('access_key' in config.config));
 });
 
+test('removing Thanos deletes the Compactor scratch volume with it', () => {
+  const compactor = object(thanos, 'StatefulSet');
+  assert.deepEqual(compactor.spec.persistentVolumeClaimRetentionPolicy, { whenDeleted: 'Delete', whenScaled: 'Retain' });
+});
+
 test('Tempo uses S3, a persistent WAL, 30-day retention and receives OTLP', () => {
   const stateful = object(tempo, 'StatefulSet');
   assert.equal(stateful.spec.template.spec.serviceAccountName, 'ravion-tempo');
