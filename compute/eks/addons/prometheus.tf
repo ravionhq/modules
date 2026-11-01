@@ -100,7 +100,10 @@ resource "helm_release" "prometheus" {
             # Each replica gets its own volume and every sample (see
             # prometheus_remote_write_endpoints), so either can be lost while
             # the other serves. Parallel starts both at once after an outage.
-            statefulSet  = { enabled = true, podManagementPolicy = "Parallel" }
+            # Their blocks are in S3, so removing the StatefulSet (with the
+            # provider, or back to one replica) deletes the volumes too,
+            # instead of leaving them billed. Scaling down keeps them.
+            statefulSet  = { enabled = true, podManagementPolicy = "Parallel", pvcDeleteOnStsDelete = true, pvcDeleteOnStsScale = false }
             replicaCount = local.prometheus_replicas
             env = [{
               name      = "POD_NAME"

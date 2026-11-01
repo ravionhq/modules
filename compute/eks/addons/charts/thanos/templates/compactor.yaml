@@ -6,6 +6,11 @@ metadata:
 spec:
   # Exactly one compactor may modify a bucket, including during upgrades.
   replicas: 1
+  # Its volume is scratch space for blocks already in S3: removing Thanos
+  # removes it too, instead of leaving it billed.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
   serviceName: {{ .Release.Name }}-compactor
   selector:
     matchLabels:
