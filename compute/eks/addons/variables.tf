@@ -2197,7 +2197,7 @@ variable "mimir_store_gateway_resources" {
     requests = object({ cpu = string, memory = string })
     limits   = object({ memory = string })
   })
-  description = "CPU and memory for each of the three Mimir store-gateways, which serve history from S3. The chart sets their GOMEMLIMIT to the memory request, so the request must cover the heap they hold while serving queries (about 1-1.5GiB once dashboards read Mimir), or Go collects garbage continuously and burns CPU. Applied only when addon_resilience_enabled is true."
+  description = "CPU and memory for each of the three Mimir store-gateways, which serve history from S3. GOMEMLIMIT is set to 90% of the memory limit they end up with, including one set in mimir_helm_values, when it is in Mi or Gi; the chart's own default is the memory request, where a heap that outgrows it collects garbage continuously and burns CPU. Applied only when addon_resilience_enabled is true."
   default = {
     requests = { cpu = "500m", memory = "2Gi" }
     limits   = { memory = "3Gi" }

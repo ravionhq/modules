@@ -447,7 +447,7 @@ run "early_compaction_needs_the_limit_the_module_applies" {
   }
 }
 
-run "ingesters_get_a_go_memory_limit_and_store_gateways_room_for_their_heap" {
+run "ingesters_and_store_gateways_get_a_go_memory_limit_below_their_limit" {
   command = plan
 
   variables {
@@ -460,10 +460,16 @@ run "ingesters_get_a_go_memory_limit_and_store_gateways_room_for_their_heap" {
     error_message = "Ingesters must get GOMEMLIMIT at 90% of their memory limit."
   }
 
-  # The chart sets the store-gateways' GOMEMLIMIT to their memory request.
+  # The chart would set it to the 2Gi request; ravion-prod's store-gateways
+  # held a 2Gi heap there and collected garbage continuously.
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).store_gateway if can(yamldecode(d).store_gateway.resources)]).env == [{ name = "GOMEMLIMIT", value = "2764MiB" }]
+    error_message = "Store-gateways must get GOMEMLIMIT at 90% of their 3Gi memory limit, not the chart's request."
+  }
+
   assert {
     condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).store_gateway if can(yamldecode(d).store_gateway.resources)]).resources == { requests = { cpu = "500m", memory = "2Gi" }, limits = { memory = "3Gi" } }
-    error_message = "Store-gateways must request 2Gi, above the heap they hold while serving queries."
+    error_message = "Store-gateways must request 2Gi with a 3Gi limit."
   }
 
   assert {
@@ -523,5 +529,74 @@ run "ingester_go_memory_limit_follows_a_limit_set_in_chart_values" {
   assert {
     condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).ingester if can(yamldecode(d).ingester.env)]).env == [{ name = "GOMEMLIMIT", value = "11059MiB" }]
     error_message = "Ingester GOMEMLIMIT must follow the memory limit mimir_helm_values sets"
+  }
+}
+
+run "store_gateway_go_memory_limit_follows_its_resources" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    mimir_store_gateway_resources = {
+      requests = { cpu = "1", memory = "4Gi" }
+      limits   = { memory = "6Gi" }
+    }
+  }
+
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).store_gateway if can(yamldecode(d).store_gateway.env)]).env == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "Store-gateway GOMEMLIMIT must follow mimir_store_gateway_resources' memory limit"
+  }
+}
+
+run "store_gateway_go_memory_limit_follows_a_limit_set_in_chart_values" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    mimir_helm_values = ["store_gateway:\n  resources:\n    limits:\n      memory: 4096Mi\n"]
+  }
+
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).store_gateway if can(yamldecode(d).store_gateway.env)]).env == [{ name = "GOMEMLIMIT", value = "3686MiB" }]
+    error_message = "Store-gateway GOMEMLIMIT must follow the memory limit mimir_helm_values sets"
+  }
+
+  # Each component reads its own section.
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).ingester if can(yamldecode(d).ingester.env)]).env == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "A store-gateway limit must not move the ingesters' GOMEMLIMIT"
+  }
+}
+
+# A limit the module cannot read sets nothing, and the chart's default stands.
+run "store_gateway_go_memory_limit_is_unset_for_an_unparsed_limit" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+    mimir_store_gateway_resources = {
+      requests = { cpu = "500m", memory = "2G" }
+      limits   = { memory = "3G" }
+    }
+  }
+
+  assert {
+    condition     = one([for d in helm_release.mimir[0].values : yamldecode(d).store_gateway if can(yamldecode(d).store_gateway.resources)]).env == []
+    error_message = "A memory limit the module cannot read must set no store-gateway GOMEMLIMIT"
+  }
+}
+
+run "store_gateway_go_memory_limit_needs_the_limit_the_module_applies" {
+  command = plan
+
+  variables {
+    metrics_providers        = ["mimir"]
+    addon_resilience_enabled = false
+  }
+
+  assert {
+    condition     = length([for d in helm_release.mimir[0].values : d if can(yamldecode(d).store_gateway.env)]) == 0
+    error_message = "Without resilience the module sets no store-gateway GOMEMLIMIT"
   }
 }

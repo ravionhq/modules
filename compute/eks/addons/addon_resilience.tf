@@ -258,12 +258,13 @@ locals {
         priorityClassName = local.addon_critical_priority
         podAnnotations    = local.addon_do_not_disrupt
         resources         = var.mimir_ingester_resources
-        env               = local.mimir_ingester_go_env
+        env               = local.mimir_go_env.ingester
       }
       store_gateway = {
         priorityClassName = local.addon_critical_priority
         podAnnotations    = local.addon_do_not_disrupt
         resources         = var.mimir_store_gateway_resources
+        env               = local.mimir_go_env.store_gateway
       }
       compactor = { priorityClassName = local.addon_critical_priority, podAnnotations = local.addon_do_not_disrupt }
     },

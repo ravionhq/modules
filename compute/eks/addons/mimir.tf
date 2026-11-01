@@ -85,21 +85,29 @@ locals {
   )
   mimir_early_head_compaction_series = var.addon_resilience_enabled && local.mimir_ingester_memory_mib != null ? floor(local.mimir_ingester_memory_mib * 1024 / 8 / 2) : 0
 
-  # Go's soft memory limit at 90% of the ingesters' limit: the runtime
-  # collects garbage harder as the heap nears it, instead of being OOMKilled
-  # at the limit. The chart sets none for ingesters. The limit is the one
-  # they end up with: mimir_ingester_resources, or the last mimir_helm_values
-  # document that sets one. Applied with the limit, so only with resilience.
-  mimir_ingester_memory_limit_layers = concat(
-    [var.mimir_ingester_resources.limits.memory],
-    [for document in var.mimir_helm_values : try(tostring(yamldecode(document).ingester.resources.limits.memory), null)],
-  )
-  mimir_ingester_effective_memory_limit = reverse([for layer in local.mimir_ingester_memory_limit_layers : layer if layer != null])[0]
-  mimir_ingester_go_memory_mib = try(
-    tonumber(regex("^([0-9]+)(Mi|Gi)$", local.mimir_ingester_effective_memory_limit)[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", local.mimir_ingester_effective_memory_limit)[1]],
-    null,
-  )
-  mimir_ingester_go_env = local.mimir_ingester_go_memory_mib == null ? [] : [{ name = "GOMEMLIMIT", value = "${floor(local.mimir_ingester_go_memory_mib * 0.9)}MiB" }]
+  # Go's soft memory limit at 90% of the ingesters' and store-gateways'
+  # limit: the runtime collects garbage harder as the heap nears it, instead
+  # of being OOMKilled at the limit. The chart sets none for ingesters, and
+  # sets the store-gateways' to their memory request, where a heap that
+  # outgrows the request spins in continuous GC though the limit has room.
+  # The limit is the one they end up with: the module's resources variable,
+  # or the last mimir_helm_values document that sets one. Applied with the
+  # limit, so only with resilience.
+  mimir_go_memory_limit_layers = {
+    for component, resources in { ingester = var.mimir_ingester_resources, store_gateway = var.mimir_store_gateway_resources } : component => concat(
+      [resources.limits.memory],
+      [for document in var.mimir_helm_values : try(tostring(yamldecode(document)[component].resources.limits.memory), null)],
+    )
+  }
+  mimir_go_memory_mib = {
+    for component, layers in local.mimir_go_memory_limit_layers : component => try(
+      tonumber(regex("^([0-9]+)(Mi|Gi)$", reverse([for layer in layers : layer if layer != null])[0])[0]) * { Mi = 1, Gi = 1024 }[regex("^([0-9]+)(Mi|Gi)$", reverse([for layer in layers : layer if layer != null])[0])[1]],
+      null,
+    )
+  }
+  mimir_go_env = {
+    for component, mib in local.mimir_go_memory_mib : component => mib == null ? [] : [{ name = "GOMEMLIMIT", value = "${floor(mib * 0.9)}MiB" }]
+  }
 
   mimir_values = {
     fullnameOverride = local.mimir_release_name
