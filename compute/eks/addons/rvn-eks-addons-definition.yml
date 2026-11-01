@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.0.0
-  description: First stable release, available to all Ravion organizations.
+  version: 1.0.1
+  description: Stop Mimir store-gateways from burning CPU on continuous garbage collection once their heap outgrows the memory request.
 module:
   inputs:
     - id: cluster
