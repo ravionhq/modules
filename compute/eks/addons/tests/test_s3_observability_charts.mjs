@@ -117,6 +117,12 @@ test('removing Thanos deletes the Compactor scratch volume with it', () => {
   assert.deepEqual(compactor.spec.persistentVolumeClaimRetentionPolicy, { whenDeleted: 'Delete', whenScaled: 'Retain' });
 });
 
+test('removing the HA Prometheus StatefulSet deletes its replica volumes; scaling down keeps them', () => {
+  const server = object(prometheus, 'StatefulSet');
+  assert.ok(server.spec.volumeClaimTemplates.length > 0);
+  assert.deepEqual(server.spec.persistentVolumeClaimRetentionPolicy, { whenDeleted: 'Delete', whenScaled: 'Retain' });
+});
+
 test('Tempo uses S3, a persistent WAL, 30-day retention and receives OTLP', () => {
   const stateful = object(tempo, 'StatefulSet');
   assert.equal(stateful.spec.template.spec.serviceAccountName, 'ravion-tempo');
