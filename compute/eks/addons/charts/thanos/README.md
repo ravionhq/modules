@@ -28,7 +28,7 @@ Internal chart installed by `compute/eks/addons/thanos.tf`. It connects to the T
 
 Query reaches the Prometheus sidecars and the Store Gateways through headless Services (`<release>-sidecar-headless`, `<release>-store-headless`), so it holds a connection to every replica rather than one per ClusterIP.
 
-Tune these through `thanos_helm_values`. Retained StatefulSet PVCs are not deleted on chart uninstall. S3 history lifecycle is controlled separately by the parent Terraform module.
+Tune these through `thanos_helm_values`. The Compactor's PVC is deleted with its StatefulSet (`persistentVolumeClaimRetentionPolicy.whenDeleted: Delete`, Kubernetes 1.27+), so uninstalling the chart also deletes the working volume. It is scratch space: the blocks it compacts stay in S3. Scaling the StatefulSet down keeps the PVC, and so does deleting the StatefulSet with `--cascade=orphan`. S3 history lifecycle is controlled separately by the parent Terraform module.
 
 ## Tests
 
