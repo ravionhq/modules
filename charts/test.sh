@@ -707,6 +707,14 @@ test_rvn_eks_worker() {
   min_ready_off="$(render "${chart}" min-ready-off --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=0)"
   assert_eq "worker: minReadySeconds 0 is rendered, not dropped" \
     "0" "$(q "${min_ready_off}" "${dep} | .spec.minReadySeconds")"
+  # Kubernetes requires progressDeadlineSeconds (default 600, unset here) to be
+  # greater than minReadySeconds, so 600 or more is rejected at apply time.
+  expect_template_failure "${chart}" "worker: minReadySeconds at the 600s progress deadline is rejected" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=600
+  local min_ready_max
+  min_ready_max="$(render "${chart}" min-ready-max --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=599)"
+  assert_eq "worker: minReadySeconds just under the progress deadline is accepted" \
+    "599" "$(q "${min_ready_max}" "${dep} | .spec.minReadySeconds")"
 
   local probed
   probed="$(render "${chart}" probes --values "${CHARTS_DIR}/${chart}/ci/health-check-values.yaml")"

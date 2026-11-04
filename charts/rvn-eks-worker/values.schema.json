@@ -136,8 +136,10 @@
       }
     },
     "minReadySeconds": {
+      "description": "Must stay below the Deployment's progressDeadlineSeconds, which this chart leaves at the Kubernetes default of 600.",
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 599
     },
     "probes": {
       "type": "object",

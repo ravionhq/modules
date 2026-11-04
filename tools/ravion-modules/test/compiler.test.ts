@@ -461,7 +461,7 @@ describe("compiler", () => {
     assert.equal(minReady.type, "number");
     assert.equal(minReady.default, 10);
     assert.equal(minReady.min, 0);
-    assert.equal(minReady.max, 600);
+    assert.equal(minReady.max, 300);
     assert.equal(minReady.collapsible, true);
 
     const enabled = findInput(inputs, "health_check_enabled");

@@ -173,9 +173,9 @@ module:
     - id: min_ready_seconds
       label: Minimum ready time (secs)
       type: number
-      description: Seconds a new pod must stay ready, without restarting, before the rollout counts it as available and removes an old pod. Stops a worker that crashes shortly after starting from replacing the healthy pods.
+      description: Seconds a new pod must stay ready, without restarting, before the rollout counts it as available and removes an old pod. Stops a worker that crashes shortly after starting from replacing the healthy pods. Every rollout waits at least this long, so keep it well under the 10-minute deploy timeout.
       collapsible: true
-      max: 600
+      max: 300
       min: 0
       default: 10
     - id: termination_grace_period_seconds

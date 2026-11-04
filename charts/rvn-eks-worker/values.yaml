@@ -51,7 +51,8 @@ strategy:
 # worker that exits a second after starting would otherwise count as available
 # and the zero-unavailable rollout would remove every healthy old pod. With
 # this set, such a rollout stalls with the old pods still running, and the
-# atomic Helm release rolls it back.
+# atomic Helm release rolls it back. Must stay below the Kubernetes default
+# progressDeadlineSeconds of 600, so at most 599.
 minReadySeconds: 10
 
 # -- Optional HTTP health checks for a worker that serves a health endpoint.
