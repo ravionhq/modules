@@ -9,5 +9,5 @@ placeholder: |-
   - name: LOG_LEVEL
     value: info
 required: false
-validations:
+invalid_when:
   - $include: ./required-deploy-environment-variable-validation.yml

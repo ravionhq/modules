@@ -1,8 +1,8 @@
 $merge:
   - ./environment-variables-deploy-input.yml
-validations:
+invalid_when:
   - $include: ./required-deploy-environment-variable-validation.yml
-  - condition: '<< len(filter(module.input.deploy_environment_variable_required_names ?? [], # == "PORT")) == 0 >>'
+  - all: '<< !(len(filter(module.input.deploy_environment_variable_required_names ?? [], # == "PORT")) == 0) >>'
     message: >-
       << "Required deploy-provided environment variables must not include reserved PORT: " +
       string(module.input.deploy_environment_variable_required_names ?? []) >>

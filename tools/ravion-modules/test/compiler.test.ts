@@ -665,20 +665,20 @@ describe("compiler", () => {
         getDeployInputs(compiled.module),
         "environment_variables",
       );
-      const validations = deployEnvironmentVariables.validations;
-      assert.ok(Array.isArray(validations));
-      assert.equal(validations.length, name === "web" ? 2 : 1);
-      const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
-      assert.equal(requiredValidation.input, undefined);
-      assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
+      assert.equal(deployEnvironmentVariables.validations, undefined);
+      const invalidWhen = deployEnvironmentVariables.invalid_when;
+      assert.ok(Array.isArray(invalidWhen));
+      assert.equal(invalidWhen.length, name === "web" ? 2 : 1);
+      const requiredRule = assertRecord(invalidWhen[0], `${name}.required invalid_when rule`);
+      assert.match(assertString(requiredRule.all), /deploy_environment_variable_required_names/);
       assert.match(
-        assertString(requiredValidation.condition),
+        assertString(requiredRule.all),
         /len\(uniq\(module\.input\.deploy_environment_variable_required_names/,
       );
-      assert.match(assertString(requiredValidation.message), /Required deploy-provided environment variables/);
+      assert.match(assertString(requiredRule.message), /Required deploy-provided environment variables/);
       if (name === "web") {
-        const reservedPortValidation = assertRecord(validations[1], "web PORT validation");
-        assert.match(assertString(reservedPortValidation.condition), /"PORT"/);
+        const reservedPortRule = assertRecord(invalidWhen[1], "web PORT invalid_when rule");
+        assert.match(assertString(reservedPortRule.all), /"PORT"/);
       }
       const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
       const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
@@ -735,20 +735,20 @@ describe("compiler", () => {
         getDeployInputs(compiled.module),
         "environment_variables",
       );
-      const validations = deployEnvironmentVariables.validations;
-      assert.ok(Array.isArray(validations));
-      assert.equal(validations.length, name === "web" || name === "nlb" ? 2 : 1);
-      const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
-      assert.equal(requiredValidation.input, undefined);
-      assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
+      assert.equal(deployEnvironmentVariables.validations, undefined);
+      const invalidWhen = deployEnvironmentVariables.invalid_when;
+      assert.ok(Array.isArray(invalidWhen));
+      assert.equal(invalidWhen.length, name === "web" || name === "nlb" ? 2 : 1);
+      const requiredRule = assertRecord(invalidWhen[0], `${name}.required invalid_when rule`);
+      assert.match(assertString(requiredRule.all), /deploy_environment_variable_required_names/);
       assert.match(
-        assertString(requiredValidation.condition),
+        assertString(requiredRule.all),
         /len\(uniq\(module\.input\.deploy_environment_variable_required_names/,
       );
-      assert.match(assertString(requiredValidation.message), /Required deploy-provided environment variables/);
+      assert.match(assertString(requiredRule.message), /Required deploy-provided environment variables/);
       if (name === "web" || name === "nlb") {
-        const reservedPortValidation = assertRecord(validations[1], `${name} PORT validation`);
-        assert.match(assertString(reservedPortValidation.condition), /"PORT"/);
+        const reservedPortRule = assertRecord(invalidWhen[1], `${name} PORT invalid_when rule`);
+        assert.match(assertString(reservedPortRule.all), /"PORT"/);
       }
       const taskDefinition = assertRecord(deploy.task_definition, `${name}.task_definition`);
       assert.match(assertString(taskDefinition.container_definitions), /deploy_environment_variable_required_names/);
