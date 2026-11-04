@@ -4,14 +4,15 @@ Ravion application chart for a long-running background worker on EKS.
 
 Renders a Deployment, a Pod Identity ServiceAccount, optionally a
 HorizontalPodAutoscaler, and optionally an ExternalSecret. There is deliberately
-**no Service, no Ingress, no TargetGroupBinding, no container port, and no
-probe** — a worker has no inbound network surface.
+**no Service, no Ingress, no TargetGroupBinding, and no container port** — a
+worker has no inbound network surface. A worker that serves an HTTP health
+endpoint can opt into readiness and startup probes against it.
 
 The image / env / resources / secrets surface is identical to
 [`rvn-eks-web`](../rvn-eks-web), so an app can move between the two shapes
 without rewriting those values.
 
-Chart version `0.4.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
+Chart version `0.7.0`. See [compatibility policy](../README.md#values-schema-is-a-public-api).
 
 ## Usage
 
@@ -74,6 +75,7 @@ env:
 | `strategy.type` | string | `RollingUpdate` | Or `Recreate`. |
 | `strategy.maxSurge` | string/int | `100%` | Full replacement set; lower to limit temporary capacity. |
 | `strategy.maxUnavailable` | string/int | `0` | |
+| `minReadySeconds` | int | `10` | Seconds a new pod must stay Ready, without restarting, before the rollout counts it as available and removes an old pod. Without a readiness probe a pod is Ready as soon as its container runs, so this is what stops a worker that crashes shortly after starting from replacing every healthy pod. |
 | `podDisruptionBudget.enabled` | bool | `true` | Render a `policy/v1` PodDisruptionBudget (with `unhealthyPodEvictionPolicy: AlwaysAllow`) limiting voluntary disruptions such as node drains and autoscaler consolidation. A worker loses its in-flight work when it is evicted, so a fleet drained at once loses all of it. Skipped when the replica floor (`autoscaling.minReplicas`, or `replicaCount`) is not greater than `minAvailable`, because such a budget allows no evictions and blocks every drain. |
 | `podDisruptionBudget.minAvailable` | int | `1` | Pods that must stay available during a voluntary disruption. |
 | `revisionHistoryLimit` | int | `10` | |
@@ -125,6 +127,28 @@ The EKS add-ons module installs KEDA 2.20.2 by default when selected. Its publis
 | `podSecurityContext` / `securityContext` | map | `{}` | |
 | `volumes` / `volumeMounts` | list | `[]` | |
 
+### Health checks
+
+Off by default. The container declares no named port, so `port` is a number.
+There is no liveness probe: a worker reports a fatal error by exiting.
+
+| Value | Type | Default | Description |
+|-------|------|---------|-------------|
+| `probes.readiness.enabled` | bool | `false` | HTTP `GET` that decides when a pod is Ready and counts toward a rollout. |
+| `probes.readiness.path` | string | `/` | |
+| `probes.readiness.port` | int/null | `null` | Required when enabled. |
+| `probes.readiness.initialDelaySeconds` | int | `0` | |
+| `probes.readiness.periodSeconds` | int | `5` | |
+| `probes.readiness.timeoutSeconds` | int | `5` | |
+| `probes.readiness.failureThreshold` | int | `3` | |
+| `probes.readiness.successThreshold` | int | `1` | |
+| `probes.startup.enabled` | bool | `false` | Restart a container whose endpoint never succeeds. |
+| `probes.startup.path` | string | `""` | Defaults to the readiness path. |
+| `probes.startup.port` | int/null | `null` | Defaults to the readiness port. |
+| `probes.startup.periodSeconds` | int | `5` | |
+| `probes.startup.timeoutSeconds` | int | `5` | |
+| `probes.startup.failureThreshold` | int | `30` | About 150 seconds at the 5-second period. |
+
 ### Secrets
 
 | Value | Type | Default | Description |
@@ -137,9 +161,8 @@ The EKS add-ons module installs KEDA 2.20.2 by default when selected. Its publis
 
 Full contract: [the charts README](../README.md#the-secrets-contract).
 
-## Not in 0.1.0
+## Not included
 
-Workers get no probes. A liveness probe for a worker is necessarily
-`exec`-shaped rather than HTTP-shaped, which is a different values shape from
-`rvn-eks-web`'s; adding it later is a compatible MINOR change behind a
-default-off toggle.
+No liveness probe. A worker that stops making progress without exiting is
+better caught by its own watchdog than by an HTTP check that a stuck worker
+can still answer.

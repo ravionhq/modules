@@ -135,6 +135,22 @@
         }
       }
     },
+    "minReadySeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "readiness": {
+          "$ref": "#/definitions/probe"
+        },
+        "startup": {
+          "$ref": "#/definitions/probe"
+        }
+      }
+    },
     "resources": {
       "type": "object",
       "additionalProperties": false,
@@ -497,6 +513,47 @@
     }
   ],
   "definitions": {
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "port": {
+          "description": "Container port number. The worker declares no named port.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "initialDelaySeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "periodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "failureThreshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "successThreshold": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "ravion": {
       "type": "object",
       "additionalProperties": false,
