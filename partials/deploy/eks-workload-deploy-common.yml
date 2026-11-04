@@ -45,9 +45,11 @@ inputs:
     type: array
     description: >-
       Plain environment variables to set for this deploy. Only names listed in the module's
-      Deploy-provided environment variables input are applied; others are ignored. Can't replace
-      a runtime variable or secret.
+      Deploy-provided or Required deploy-provided environment variables input are applied; others
+      are ignored. Can't replace a runtime variable or secret.
     placeholder: |-
       - name: LOG_LEVEL
         value: info
     required: false
+validations:
+  - $include: ./required-deploy-environment-variable-validation.yml

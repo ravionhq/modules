@@ -584,14 +584,30 @@ describe("compiler", () => {
 
   it("limits EKS deploy environment variables to allowlisted names without replacing module values", async () => {
     const deployEnv =
-      "<< (module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {\"name\": #.name, \"value\": string(#.value)}) : []) >>";
+      "<< (module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name in concat(module.input.deploy_environment_variable_names ?? [], module.input.deploy_environment_variable_required_names ?? []) && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {\"name\": #.name, \"value\": string(#.value)}) : []) >>";
     const helmEnv = async (name: string) => {
       const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
       const inputs = getModuleInputs(compiled.module);
       const allowlist = findInput(inputs, "deploy_environment_variable_names");
       assert.equal(allowlist.type, "string_array");
       assert.equal(allowlist.add_button_label, "Add env var name");
+      const requiredNames = findInput(inputs, "deploy_environment_variable_required_names");
+      assert.equal(requiredNames.label, "Required deploy-provided environment variables");
+      assert.equal(requiredNames.type, "string_array");
+      assert.equal(requiredNames.description, "Every deploy must supply a non-empty value for each name.");
+      assert.equal(requiredNames.required, false);
       const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
+      const validations = deploy.validations;
+      assert.ok(Array.isArray(validations));
+      assert.equal(validations.length, name === "web" ? 2 : 1);
+      const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
+      assert.equal(requiredValidation.input, "environment_variables");
+      assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
+      assert.match(assertString(requiredValidation.message), /Required deploy-provided environment variables/);
+      if (name === "web") {
+        const reservedPortValidation = assertRecord(validations[1], "web PORT validation");
+        assert.match(assertString(reservedPortValidation.condition), /"PORT"/);
+      }
       const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
       const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
       const deployEnvironmentVariables = findInput(
@@ -609,8 +625,8 @@ describe("compiler", () => {
         deployEnvironmentVariables.description,
         [
           "Plain environment variables to set for this deploy.",
-          "Only names listed in the module's",
-          "Deploy-provided environment variables input are applied; others are ignored.",
+          "Only names listed in the module's Deploy-provided or Required deploy-provided",
+          "environment variables input are applied; others are ignored.",
           "Can't replace a runtime variable or secret.",
         ].join(" "),
       );
@@ -619,7 +635,7 @@ describe("compiler", () => {
     assert.equal(await helmEnv("worker"), deployEnv);
     assert.equal(
       await helmEnv("web"),
-      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" && #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>',
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" && #.name in concat(module.input.deploy_environment_variable_names ?? [], module.input.deploy_environment_variable_required_names ?? []) && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>',
     );
     assert.equal(await helmEnv("cron"), deployEnv);
   });
@@ -640,6 +656,25 @@ describe("compiler", () => {
         allowlist.description,
         "Names a pipeline deploy step may set with `input.environment_variables` for the primary container. Plain values only; can't replace a runtime variable or secret.",
       );
+      const requiredNames = findInput(inputs, "deploy_environment_variable_required_names");
+      assert.equal(requiredNames.label, "Required deploy-provided environment variables");
+      assert.equal(requiredNames.type, "string_array");
+      assert.equal(requiredNames.description, "Every deploy must supply a non-empty value for each name.");
+      assert.equal(requiredNames.required, false);
+      const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
+      const validations = deploy.validations;
+      assert.ok(Array.isArray(validations));
+      assert.equal(validations.length, name === "web" || name === "nlb" ? 2 : 1);
+      const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
+      assert.equal(requiredValidation.input, "environment_variables");
+      assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
+      assert.match(assertString(requiredValidation.message), /Required deploy-provided environment variables/);
+      if (name === "web" || name === "nlb") {
+        const reservedPortValidation = assertRecord(validations[1], `${name} PORT validation`);
+        assert.match(assertString(reservedPortValidation.condition), /"PORT"/);
+      }
+      const taskDefinition = assertRecord(deploy.task_definition, `${name}.task_definition`);
+      assert.match(assertString(taskDefinition.container_definitions), /deploy_environment_variable_required_names/);
 
       const deployEnvironmentVariables = findInput(
         getDeployInputs(compiled.module),
@@ -656,8 +691,8 @@ describe("compiler", () => {
         deployEnvironmentVariables.description,
         [
           "Plain environment variables to set for this deploy.",
-          "Only names listed in the module's",
-          "Deploy-provided environment variables input are applied; others are ignored.",
+          "Only names listed in the module's Deploy-provided or Required deploy-provided",
+          "environment variables input are applied; others are ignored.",
           "Can't replace a runtime variable or secret.",
         ].join(" "),
       );
@@ -673,7 +708,7 @@ describe("compiler", () => {
         if (input.type === "section") section = String(input.id);
         else sectionOf.set(String(input.id), section);
       }
-      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets", "deploy_environment_variable_names"]) {
+      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets", "deploy_environment_variable_names", "deploy_environment_variable_required_names"]) {
         assert.equal(sectionOf.get(id), "section_app_config", `rvn-eks-${name} ${id}`);
       }
     }

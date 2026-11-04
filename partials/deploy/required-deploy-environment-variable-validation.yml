@@ -1,0 +1,19 @@
+input: environment_variables
+condition: >-
+  << len(filter(module.input.deploy_environment_variable_required_names ?? [],
+  # in map(deploy.input.environment_variables ?? [], .name))) ==
+  len(module.input.deploy_environment_variable_required_names ?? []) &&
+  len(filter(deploy.input.environment_variables ?? [],
+  #.name in (module.input.deploy_environment_variable_required_names ?? []))) ==
+  len(module.input.deploy_environment_variable_required_names ?? []) &&
+  len(filter(deploy.input.environment_variables ?? [],
+  #.name in (module.input.deploy_environment_variable_required_names ?? []) &&
+  #.value != nil && string(#.value) != "")) ==
+  len(module.input.deploy_environment_variable_required_names ?? []) &&
+  len(filter(module.input.deploy_environment_variable_required_names ?? [],
+  # in map(module.input.environment_variables ?? [], .name))) == 0 &&
+  len(filter(module.input.deploy_environment_variable_required_names ?? [],
+  # in map(module.input.secrets ?? [], .name))) == 0 >>
+message: >-
+  << "Required deploy-provided environment variables must each have exactly one non-empty value and must not conflict with runtime variables, secrets, or names excluded by this module's environment filter: " +
+  string(module.input.deploy_environment_variable_required_names ?? []) >>
