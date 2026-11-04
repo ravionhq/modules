@@ -351,13 +351,9 @@ module:
   deploy:
     $merge:
       - ../../partials/deploy/ecs-service-deploy-common.yml
-    validations:
-      - $include: ../../partials/deploy/required-deploy-environment-variable-validation.yml
-      - input: environment_variables
-        condition: '<< len(filter(module.input.deploy_environment_variable_required_names ?? [], # == "PORT")) == 0 >>'
-        message: >-
-          << "Required deploy-provided environment variables must not include reserved PORT: " +
-          string(module.input.deploy_environment_variable_required_names ?? []) >>
+    inputs:
+      - $include: ../../partials/deploy/ecs-service-image-ref-input.yml
+      - $include: ../../partials/deploy/environment-variables-deploy-input-with-port.yml
     strategy:
       $include: ../../partials/deploy/ecs-service-rolling-strategy.yml
     infrastructure:

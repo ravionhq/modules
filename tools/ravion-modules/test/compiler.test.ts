@@ -660,11 +660,16 @@ describe("compiler", () => {
       assert.equal(requiredNames.description, "Every deploy must supply a non-empty value for each name.");
       assert.equal(requiredNames.required, false);
       const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
-      const validations = deploy.validations;
+      assert.equal(deploy.validations, undefined);
+      const deployEnvironmentVariables = findInput(
+        getDeployInputs(compiled.module),
+        "environment_variables",
+      );
+      const validations = deployEnvironmentVariables.validations;
       assert.ok(Array.isArray(validations));
       assert.equal(validations.length, name === "web" ? 2 : 1);
       const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
-      assert.equal(requiredValidation.input, "environment_variables");
+      assert.equal(requiredValidation.input, undefined);
       assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
       assert.match(
         assertString(requiredValidation.condition),
@@ -677,10 +682,6 @@ describe("compiler", () => {
       }
       const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
       const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
-      const deployEnvironmentVariables = findInput(
-        getDeployInputs(compiled.module),
-        "environment_variables",
-      );
       assert.equal(deployEnvironmentVariables.label, "Environment variables");
       assert.equal(deployEnvironmentVariables.type, "array");
       assert.equal(deployEnvironmentVariables.required, false);
@@ -729,11 +730,16 @@ describe("compiler", () => {
       assert.equal(requiredNames.description, "Every deploy must supply a non-empty value for each name.");
       assert.equal(requiredNames.required, false);
       const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
-      const validations = deploy.validations;
+      assert.equal(deploy.validations, undefined);
+      const deployEnvironmentVariables = findInput(
+        getDeployInputs(compiled.module),
+        "environment_variables",
+      );
+      const validations = deployEnvironmentVariables.validations;
       assert.ok(Array.isArray(validations));
       assert.equal(validations.length, name === "web" || name === "nlb" ? 2 : 1);
       const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
-      assert.equal(requiredValidation.input, "environment_variables");
+      assert.equal(requiredValidation.input, undefined);
       assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
       assert.match(
         assertString(requiredValidation.condition),
@@ -747,10 +753,6 @@ describe("compiler", () => {
       const taskDefinition = assertRecord(deploy.task_definition, `${name}.task_definition`);
       assert.match(assertString(taskDefinition.container_definitions), /deploy_environment_variable_required_names/);
 
-      const deployEnvironmentVariables = findInput(
-        getDeployInputs(compiled.module),
-        "environment_variables",
-      );
       assert.equal(deployEnvironmentVariables.label, "Environment variables");
       assert.equal(deployEnvironmentVariables.type, "array");
       assert.equal(deployEnvironmentVariables.required, false);

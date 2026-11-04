@@ -1,4 +1,3 @@
-input: environment_variables
 condition: >-
   << len(uniq(module.input.deploy_environment_variable_required_names ?? [])) ==
   len(module.input.deploy_environment_variable_required_names ?? []) &&
