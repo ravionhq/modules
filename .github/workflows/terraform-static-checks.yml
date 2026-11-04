@@ -112,6 +112,8 @@ jobs:
               tofu -chdir=cdn/cloudfront init -backend=false
               tofu -chdir=cdn/cloudfront test
               node --test cdn/cloudfront/functions/viewer_request.test.js
+              tofu -chdir=hosting/static_site init -backend=false
+              tofu -chdir=hosting/static_site test
 
           - name: managed domains
             run: |
@@ -123,6 +125,12 @@ jobs:
               tofu -chdir=compute/eks/addons test -filter=tests/managed_domains.tftest.hcl
               tofu -chdir=hosting/static_site init -backend=false
               tofu -chdir=hosting/static_site test -filter=tests/managed_domains.tftest.hcl
+
+          - name: ECS target groups and NLB listeners
+            run: |
+              tofu -chdir=compute/ecs_service init -backend=false
+              tofu -chdir=compute/ecs_service test -filter=tests/target_group_name.tftest.hcl
+              python3 -B -m unittest discover -s compute/ecs_service/tests -p 'test_nlb_dependencies.py' -v
 
           - name: AMI module
             run: |

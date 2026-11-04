@@ -3,8 +3,8 @@ definition:
   name: alterNAT
   description: Highly available alterNAT instances that replace NAT gateway data processing charges and fail over to a NAT gateway automatically.
 release:
-  version: 0.1.3
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 0.1.4
+  description: Use the Amazon Linux 2023 minimal kernel 6.18 image family by default for new NAT instances, preserving custom AMIs.
 module:
   inputs:
     - id: network

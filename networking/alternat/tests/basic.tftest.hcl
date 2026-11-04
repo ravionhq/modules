@@ -93,6 +93,11 @@ run "defaults" {
   command = plan
 
   assert {
+    condition     = local.nat_ami == "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-6.18-arm64"
+    error_message = "NAT instances must use the patched-capable minimal kernel 6.18 family while preserving alterNAT's minimal-image volume handling."
+  }
+
+  assert {
     condition = local.vpc_az_maps == [
       { az = "us-west-2a", public_subnet_id = "subnet-public-a", route_table_ids = ["rtb-private"], private_subnet_ids = ["subnet-private-a", "subnet-private-b"] },
     ]
@@ -123,6 +128,11 @@ run "defaults" {
 run "x86_instance_type" {
   command = plan
 
+  assert {
+    condition     = local.nat_ami == "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-6.18-x86_64"
+    error_message = "Intel and AMD NAT instances must use the matching kernel 6.18 family."
+  }
+
   variables {
     nat_instance_type = "c6in.large"
   }
@@ -135,6 +145,15 @@ run "x86_instance_type" {
   assert {
     condition     = local.architecture == "x86_64"
     error_message = "Expected the architecture to follow the x86 instance type."
+  }
+}
+
+run "custom_nat_ami" {
+  command = plan
+  variables { nat_instance_ami_id = "ami-0123456789abcdef0" }
+  assert {
+    condition     = local.nat_ami == "ami-0123456789abcdef0"
+    error_message = "An explicit NAT AMI must not be overridden."
   }
 }
 

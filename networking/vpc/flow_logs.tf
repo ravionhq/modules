@@ -51,8 +51,11 @@ resource "aws_iam_role_policy" "flow_logs" {
           "logs:PutLogEvents",
           "logs:DescribeLogStreams"
         ]
-        Effect   = "Allow"
-        Resource = "${aws_cloudwatch_log_group.flow_logs[0].arn}:*"
+        Effect = "Allow"
+        Resource = [
+          aws_cloudwatch_log_group.flow_logs[0].arn,
+          "${aws_cloudwatch_log_group.flow_logs[0].arn}:*"
+        ]
       }
     ]
   })
@@ -199,5 +202,4 @@ resource "aws_flow_log" "s3" {
 
   depends_on = [aws_s3_bucket_policy.flow_logs]
 }
-
 

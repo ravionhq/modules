@@ -33,6 +33,15 @@
           - ec2-spot
   type: string
   values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>&costUnit=minute
+- default: true
+  description: Ravion sizes CPU, memory, and disk from previous builds. Turn off to set fixed sizes.
+  id: build_auto_sizing_enabled
+  label: Automatic build sizing
+  show_when:
+    $merge:
+      - $with.show_when
+      - build_capacity_type: sandbox
+  type: boolean
 - default: 14
   id: build_cpu
   label: Builder vCPUs
@@ -41,6 +50,7 @@
     $merge:
       - $with.show_when
       - build_capacity_type: sandbox
+        build_auto_sizing_enabled: false
   type: number
 - default: 28
   id: build_memory
@@ -50,6 +60,7 @@
     $merge:
       - $with.show_when
       - build_capacity_type: sandbox
+        build_auto_sizing_enabled: false
   type: number
 - collapsible: true
   default: 30
@@ -61,6 +72,7 @@
     $merge:
       - $with.show_when
       - build_capacity_type: sandbox
+        build_auto_sizing_enabled: false
   type: number
 - collapsible: true
   default: true

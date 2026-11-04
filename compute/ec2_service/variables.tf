@@ -196,7 +196,7 @@ variable "instance_type" {
 
 variable "ami_id" {
   type        = string
-  description = "Custom AMI for the instances. Leave null to use the latest Amazon Linux 2023 AMI. Custom AMIs must run cloud-init and include the SSM agent."
+  description = "Custom AMI for the instances. Leave null to use the latest Amazon Linux 2023 kernel 6.18 AMI. Custom AMIs must run cloud-init and include the SSM agent."
   default     = null
 
   validation {
@@ -213,7 +213,7 @@ variable "key_name" {
 
 variable "root_volume_size" {
   type        = number
-  description = "Root EBS volume size in GB."
+  description = "Root EBS volume size in GB. The root volume holds the operating system, packages, container images, and logs; keep application data on the data volume."
   default     = 30
 
   validation {
@@ -235,8 +235,8 @@ variable "root_volume_type" {
 
 variable "data_volume_creation_enabled" {
   type        = bool
-  description = "Attach a dedicated data EBS volume to each instance, formatted and mounted on first boot. Data survives in-place deploys but not instance termination."
-  default     = false
+  description = "Attach a dedicated data EBS volume to each instance, formatted on first boot and mounted on every boot and deploy. On by default; application data belongs here rather than on the root volume. Data survives in-place deploys and root volume replacement but not instance termination (daily snapshots do, see data_volume_snapshots_enabled)."
+  default     = true
 }
 
 variable "data_volume_size" {
@@ -267,8 +267,27 @@ variable "data_volume_mount_path" {
   default     = "/data"
 
   validation {
-    condition     = can(regex("^/", var.data_volume_mount_path))
-    error_message = "The data_volume_mount_path must be an absolute path starting with '/'."
+    condition     = can(regex("^/[^/]", var.data_volume_mount_path))
+    error_message = "The data_volume_mount_path must be an absolute path other than '/'."
+  }
+}
+
+variable "data_volume_snapshots_enabled" {
+  type        = bool
+  description = "Take a daily snapshot of every instance's data volume with Amazon Data Lifecycle Manager. Applies only when data_volume_creation_enabled is true."
+  default     = true
+  nullable    = false
+}
+
+variable "data_volume_snapshot_retention_count" {
+  type        = number
+  description = "Number of daily data volume snapshots kept per instance. Older snapshots are deleted as new ones are taken."
+  default     = 7
+  nullable    = false
+
+  validation {
+    condition     = var.data_volume_snapshot_retention_count >= 1 && var.data_volume_snapshot_retention_count <= 1000 && floor(var.data_volume_snapshot_retention_count) == var.data_volume_snapshot_retention_count
+    error_message = "The data_volume_snapshot_retention_count must be a whole number between 1 and 1000."
   }
 }
 
@@ -487,8 +506,8 @@ variable "efs_mount_path" {
   default     = "/mnt/efs"
 
   validation {
-    condition     = can(regex("^/", var.efs_mount_path))
-    error_message = "The efs_mount_path must be an absolute path starting with '/'."
+    condition     = can(regex("^/[^/]", var.efs_mount_path))
+    error_message = "The efs_mount_path must be an absolute path other than '/'."
   }
 }
 

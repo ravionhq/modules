@@ -99,6 +99,14 @@ locals {
     "kube_node_status_condition",
     "kube_node_status_allocatable",
     "kube_node_status_capacity",
+    "kube_node_spec_unschedulable",
+    # Storage: each claim and volume, its phase and size. A few series per
+    # claim, and what shows a claim stuck Pending or a volume Released.
+    "kube_persistentvolumeclaim_info",
+    "kube_persistentvolumeclaim_status_phase",
+    "kube_persistentvolumeclaim_resource_requests_storage_bytes",
+    "kube_persistentvolume_capacity_bytes",
+    "kube_persistentvolume_status_phase",
   ]
 
   # kubelet /metrics/resource — node headline usage, which is what makes a

@@ -38,6 +38,29 @@ locals {
 
   supervisor_install_script = templatefile("${path.module}/templates/install_supervisor.sh.tpl", {})
 
+  # The launch template attaches the data volume under this device name. On
+  # Nitro instances the disk appears as NVMe and Amazon Linux links it back
+  # to the requested name; the scripts check both the xvd and sd spellings.
+  data_volume_device_name = "/dev/xvdf"
+  data_volume_label       = "ravion-data"
+
+  # Data volume discovery and mount, shared by boot and the deploy guard.
+  data_volume_mount_script = templatefile("${path.module}/templates/data_volume_mount.sh.tpl", {
+    data_volume_device_links = "${local.data_volume_device_name} ${replace(local.data_volume_device_name, "/dev/xvd", "/dev/sd")}"
+    data_volume_label        = local.data_volume_label
+    data_volume_mount_path   = var.data_volume_mount_path
+  })
+
+  # Fail-closed storage check run by both deploy modes before the running
+  # app is stopped. Empty when the service has no data volume or EFS.
+  storage_guard_script = templatefile("${path.module}/templates/ensure_storage.sh.tpl", {
+    data_volume_enabled      = var.data_volume_creation_enabled
+    data_volume_mount_path   = var.data_volume_mount_path
+    data_volume_mount_script = local.data_volume_mount_script
+    efs_enabled              = var.efs_enabled
+    efs_mount_path           = var.efs_mount_path
+  })
+
   deployment_log_script = templatefile("${path.module}/templates/configure_deployment_logs.sh.tpl", {
     log_directory  = local.log_directory
     log_group_name = local.log_group_name
@@ -73,6 +96,7 @@ locals {
       source_working_directory_path = local.source_working_directory_path
     })
     name                      = var.name
+    storage_guard_script      = local.storage_guard_script
     supervisor_install_script = local.supervisor_install_script
     supervisor_program        = local.supervisor_program
   })
@@ -106,6 +130,7 @@ locals {
     data_volume_mount_path      = var.data_volume_creation_enabled ? var.data_volume_mount_path : ""
     efs_mount_path              = var.efs_enabled ? var.efs_mount_path : ""
     docker_socket_mount_enabled = var.docker_socket_mount_enabled
+    storage_guard_script        = local.storage_guard_script
   }) : null
 
   user_data = base64encode(templatefile("${path.module}/templates/user_data.sh.tpl", {
@@ -116,6 +141,8 @@ locals {
     supervisor_install_script    = local.supervisor_install_script
     data_volume_creation_enabled = var.data_volume_creation_enabled
     data_volume_mount_path       = var.data_volume_mount_path
+    data_volume_mount_script     = local.data_volume_mount_script
+    data_volume_format_script    = templatefile("${path.module}/templates/data_volume_format.sh.tpl", {})
     efs_enabled                  = var.efs_enabled
     efs_file_system_id           = var.efs_file_system_id != null ? var.efs_file_system_id : ""
     efs_access_point_id          = var.efs_access_point_id != null ? var.efs_access_point_id : ""

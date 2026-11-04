@@ -14,6 +14,85 @@ const fixturesDir = join(process.cwd(), "test", "fixtures", "compile");
 const repoRoot = resolve(process.cwd(), "../..");
 
 describe("compiler", () => {
+  it("compiles optional CloudFront static IP creation and reuse for CDN and static hosting", async () => {
+    for (const path of ["cdn/cloudfront/rvn-cloudfront-definition.yml", "hosting/static_site/rvn-aws-static-definition.yml"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, path));
+      const inputs = getModuleInputs(module);
+      const mode = findInput(inputs, "anycast_ip_list_mode");
+      const count = findInput(inputs, "anycast_ip_count");
+      const list = findInput(inputs, "anycast_ip_list_id");
+      assert.equal(mode.default, "disabled");
+      assert.deepEqual(getValueOptions(mode), ["disabled", "create", "existing"]);
+      assert.equal(count.default, 3);
+      assert.deepEqual(getValueOptions(count), [3, 21]);
+      assert.deepEqual(count.show_when, { anycast_ip_list_mode: "create" });
+      assert.deepEqual(list.show_when, { anycast_ip_list_mode: "existing" });
+      assert.equal(list.required, true);
+      assert.deepEqual(findInput(inputs, "price_class").show_when, { anycast_ip_list_mode: "disabled" });
+
+      const evaluate = (key: string, input: Record<string, unknown>) => {
+        const template = assertString(getTerraformVariable(module, key));
+        return new Function("module", "nil", "return " + template.slice(3, -3))({ input }, null);
+      };
+      for (const input of [{}, { anycast_ip_list_mode: null }]) {
+        assert.equal(evaluate("anycast_ip_list_mode", input), "disabled");
+        assert.equal(evaluate("anycast_ip_list_id", input), null);
+        assert.equal(evaluate("anycast_ip_count", input), 3);
+        assert.equal(evaluate("price_class", input), "PriceClass_All");
+      }
+      assert.equal(evaluate("anycast_ip_list_id", { anycast_ip_list_mode: "disabled", anycast_ip_list_id: "stale-list" }), null);
+      assert.equal(evaluate("anycast_ip_list_id", { anycast_ip_list_mode: "existing", anycast_ip_list_id: "shared-list" }), "shared-list");
+      assert.equal(evaluate("anycast_ip_count", { anycast_ip_list_mode: "create" }), 3);
+      assert.equal(evaluate("anycast_ip_count", { anycast_ip_list_mode: "create", anycast_ip_count: 21 }), 21);
+      assert.equal(evaluate("price_class", { price_class: "PriceClass_200" }), "PriceClass_200");
+      assert.match(assertString(module.readme), /AWS approval/);
+      assert.match(assertString(module.readme), /\$0\.005/);
+    }
+  });
+
+  it("exposes and documents Dockerfile start command overrides for every ECS service", async () => {
+    for (const name of ["web", "worker", "nlb"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
+      const command = findInput(getModuleInputs(module), "image_start_command");
+      assert.deepEqual(getBuildSourceShowWhen(command), ["dockerfile", "image_registry", "ecr"], name);
+      assert.equal(command.type, "string_array");
+      assert.deepEqual(command.default, []);
+      assert.equal(command.required, false);
+      const readme = assertString(module.readme);
+      assert.match(readme, /For Dockerfile, Pull from image registry, and Managed ECR repository builds, use Start command/);
+      assert.match(readme, /`CMD` without changing its `ENTRYPOINT`/);
+      assert.match(readme, /image_start_command: \["npm", "run", "start:/);
+      assert.match(readme, /For Railpack builds, use Railpack start command instead/);
+    }
+  });
+
+  it("accepts only tags or SHA-256 digests for ECS image_ref deployment inputs", async () => {
+    const valid = ["latest", "v1.46.0", "12345-railpack", "_tag", "Tag_1.2-3", "a".repeat(128), "sha256:" + "a1".repeat(32)];
+    const invalid = [
+      "inngest/inngest:v1.46.0", "inngest/inngest", "nginx:latest",
+      "registry.example.com:5000/app:v1", "app@sha256:" + "a1".repeat(32),
+      "https://registry.example.com/app:latest", "", " latest", "latest\n", "two tags",
+      ".tag", "-tag", "a".repeat(129), "sha256:abc123", "sha256:" + "g".repeat(64),
+    ];
+    for (const name of ["nlb", "web", "worker"]) {
+      const { module } = await compileDefinitionFile(join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`));
+      const imageRef = findInput(getDeployInputs(module), "image_ref");
+      assert.ok(Array.isArray(imageRef.patterns), name + " must validate image_ref");
+      assert.ok(imageRef.patterns.length > 0);
+      const patterns = imageRef.patterns.map((value) => {
+        const constraint = assertRecord(value, "image_ref pattern");
+        assert.match(assertString(constraint.message), /tag or.*digest.*not a full image URI/i);
+        return new RegExp(assertString(constraint.pattern));
+      });
+      for (const value of valid) {
+        assert.ok(patterns.every((pattern) => pattern.test(value)), `${name} should accept ${JSON.stringify(value)}`);
+      }
+      for (const value of invalid) {
+        assert.ok(patterns.some((pattern) => !pattern.test(value)), `${name} should reject ${JSON.stringify(value)}`);
+      }
+    }
+  });
+
   it("enables security defaults for new module instances", async () => {
     const cases: [string, Record<string, unknown>][] = [
       ["compute/eks/addons/rvn-eks-addons-definition.yml", { public_alb_access_logs_enabled: true, private_alb_access_logs_enabled: true, public_nlb_access_logs_enabled: false, private_nlb_access_logs_enabled: false }],
@@ -205,6 +284,7 @@ describe("compiler", () => {
     const values = assertRecord(definition.values, "module.deploy.definition.values");
 
     assert.equal(compiled.published, false);
+    assert.equal(compiled.global, false);
     assert.equal(inputs.some((input) => input.id === "spot_burst_enabled"), false);
     assert.equal(findInput(inputs, "scheduling_enabled").default, true);
     assert.equal(inputs.some((input) => input.id === "suspend"), false);
@@ -214,10 +294,17 @@ describe("compiler", () => {
     );
   });
 
-  it("keeps the EKS cluster definition private", async () => {
-    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks", "rvn-eks-cluster-definition.yml"));
+  it("prepares stable EKS definitions and publishes all except cron globally", async () => {
+    const definitions = (await compileAllDefinitions(repoRoot)).filter((definition) => definition.type.startsWith("rvn-eks-"));
 
-    assert.equal(compiled.global, false);
+    assert.deepEqual(definitions.map((definition) => definition.type).sort(), [
+      "rvn-eks-addons", "rvn-eks-chart", "rvn-eks-cluster", "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker",
+    ]);
+    for (const definition of definitions) {
+      assert.equal(definition.published, definition.type !== "rvn-eks-cron", definition.type);
+      assert.equal(definition.global, definition.type !== "rvn-eks-cron", definition.type);
+      assert.match(definition.version, /^[1-9]\d*\.\d+\.\d+$/, definition.type);
+    }
   });
 
   it("compiles all colocated definitions under module category directories", async () => {
@@ -495,18 +582,85 @@ describe("compiler", () => {
     }
   });
 
-  it("sets PORT from container port on EKS web, before user variables so a user PORT wins", async () => {
+  it("limits EKS deploy environment variables to allowlisted names without replacing module values", async () => {
+    const deployEnv =
+      "<< (module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {\"name\": #.name, \"value\": string(#.value)}) : []) >>";
     const helmEnv = async (name: string) => {
       const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", `rvn-eks-${name}-definition.yml`));
-      const deploy = compiled.module.deploy as { definition: { values: { env: unknown } } };
-      return deploy.definition.values.env;
+      const inputs = getModuleInputs(compiled.module);
+      const allowlist = findInput(inputs, "deploy_environment_variable_names");
+      assert.equal(allowlist.type, "string_array");
+      assert.equal(allowlist.add_button_label, "Add env var name");
+      const deploy = assertRecord(compiled.module.deploy, `${name}.deploy`);
+      const definition = assertRecord(deploy.definition, `${name}.deploy.definition`);
+      const values = assertRecord(definition.values, `${name}.deploy.definition.values`);
+      const deployEnvironmentVariables = findInput(
+        getDeployInputs(compiled.module),
+        "environment_variables",
+      );
+      assert.equal(deployEnvironmentVariables.label, "Environment variables");
+      assert.equal(deployEnvironmentVariables.type, "array");
+      assert.equal(deployEnvironmentVariables.required, false);
+      assert.equal(
+        deployEnvironmentVariables.placeholder,
+        "- name: LOG_LEVEL\n  value: info",
+      );
+      assert.equal(
+        deployEnvironmentVariables.description,
+        [
+          "Plain environment variables to set for this deploy.",
+          "Only names listed in the module's",
+          "Deploy-provided environment variables input are applied; others are ignored.",
+          "Can't replace a runtime variable or secret.",
+        ].join(" "),
+      );
+      return values.env;
     };
+    assert.equal(await helmEnv("worker"), deployEnv);
     assert.equal(
       await helmEnv("web"),
-      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) >>',
+      '<< [{"name": "PORT", "value": string(module.input.container_port)}] | concat(module.input.environment_variables != nil ? module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" && #.name in module.input.deploy_environment_variable_names && #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) && !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>',
     );
-    for (const name of ["worker", "cron"]) {
-      assert.equal(await helmEnv(name), "<< module.input.environment_variables != nil ? module.input.environment_variables : [] >>");
+    assert.equal(await helmEnv("cron"), deployEnv);
+  });
+
+  it("exposes allowlisted deploy environment variable inputs for ECS services", async () => {
+    for (const name of ["web", "worker", "nlb"]) {
+      const compiled = await compileDefinitionFile(
+        join(repoRoot, "compute", "ecs_service", `rvn-ecs-${name}-definition.yml`),
+      );
+      const inputs = getModuleInputs(compiled.module);
+      const allowlist = findInput(inputs, "deploy_environment_variable_names");
+      assert.equal(allowlist.label, "Deploy-provided environment variables");
+      assert.equal(allowlist.type, "string_array");
+      assert.equal(allowlist.add_button_label, "Add env var name");
+      assert.equal(allowlist.collapsible, true);
+      assert.equal(allowlist.required, false);
+      assert.equal(
+        allowlist.description,
+        "Names a pipeline deploy step may set with `input.environment_variables` for the primary container. Plain values only; can't replace a runtime variable or secret.",
+      );
+
+      const deployEnvironmentVariables = findInput(
+        getDeployInputs(compiled.module),
+        "environment_variables",
+      );
+      assert.equal(deployEnvironmentVariables.label, "Environment variables");
+      assert.equal(deployEnvironmentVariables.type, "array");
+      assert.equal(deployEnvironmentVariables.required, false);
+      assert.equal(
+        deployEnvironmentVariables.placeholder,
+        "- name: LOG_LEVEL\n  value: info",
+      );
+      assert.equal(
+        deployEnvironmentVariables.description,
+        [
+          "Plain environment variables to set for this deploy.",
+          "Only names listed in the module's",
+          "Deploy-provided environment variables input are applied; others are ignored.",
+          "Can't replace a runtime variable or secret.",
+        ].join(" "),
+      );
     }
   });
 
@@ -519,7 +673,7 @@ describe("compiler", () => {
         if (input.type === "section") section = String(input.id);
         else sectionOf.set(String(input.id), section);
       }
-      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets"]) {
+      for (const id of ["build_environment_variables", "dockerfile_environment_variable_injection_enabled", "environment_variables", "secrets", "deploy_environment_variable_names"]) {
         assert.equal(sectionOf.get(id), "section_app_config", `rvn-eks-${name} ${id}`);
       }
     }
@@ -965,7 +1119,9 @@ describe("compiler", () => {
     const inputs = getModuleInputs(compiled.module);
     const indexOf = (id: string) => inputs.findIndex((input) => input.id === id);
 
-    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_enabled") + 1);
+    // Ravion EKS Management ends with its warm capacity settings.
+    assert.equal(indexOf("ravion_operator_warm_capacity_enabled"), indexOf("ravion_operator_enabled") + 1);
+    assert.equal(indexOf("section_alb"), indexOf("ravion_operator_warm_capacity_memory") + 1);
     assert.ok(indexOf("section_alb") < indexOf("section_nlb"));
     assert.ok(indexOf("section_nlb") < indexOf("aws_load_balancer_controller_chart_version"));
     assert.ok(indexOf("aws_load_balancer_controller_chart_version") < indexOf("section_karpenter"));
@@ -1181,7 +1337,7 @@ describe("compiler", () => {
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "section_ecr")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_scan_on_push_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
     assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "ecr_force_deletion_enabled")), ["dockerfile", "railpack", "nixpacks", "ecr"]);
-    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["image_registry", "ecr"]);
+    assert.deepEqual(getBuildSourceShowWhen(findInput(inputs, "image_start_command")), ["dockerfile", "image_registry", "ecr"]);
     const minTasks = findInput(inputs, "min_tasks");
     const maxTasks = findInput(inputs, "max_tasks");
     const desiredTasks = findInput(inputs, "desired_tasks");
@@ -1632,6 +1788,71 @@ describe("compiler", () => {
     assert.doesNotMatch(metrics, /namespace:"AWS\/EC2"/);
   });
 
+  it("defaults every build module to automatic sandbox sizing with a fixed-size opt-out", async () => {
+    const definitions = (await compileAllDefinitions(repoRoot)).filter(({ module }) => module.build);
+    assert.deepEqual(definitions.map(({ type }) => type).sort(), [
+      "rvn-aws-static", "rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-ecs-worker",
+      "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker", "rvn-lambda",
+    ]);
+
+    for (const { type, module } of definitions) {
+      const inputs = getModuleInputs(module);
+      const automatic = findInput(inputs, "build_auto_sizing_enabled");
+      assert.equal(automatic.type, "boolean", type);
+      assert.equal(automatic.default, true, type);
+      const automaticShowWhen = assertRecord(automatic.show_when, "automatic sizing visibility");
+      assert.equal(automaticShowWhen.build_capacity_type, "sandbox", type);
+      assert.deepEqual(automaticShowWhen.build_source, getBuildSourceShowWhen(findInput(inputs, "build_capacity_type")), type);
+
+      const infrastructure = assertRecord(getModuleBuild(module).infrastructure, "build infrastructure");
+      const evaluate = (key: string, input: Record<string, unknown>): unknown => {
+        const expression = assertString(infrastructure[key]);
+        assert.ok(expression.startsWith("<< ") && expression.endsWith(" >>"));
+        return new Function("module", "nil", "return " + expression.slice(3, -3))({ input }, null);
+      };
+      const fixedSizes = { cpu: 6, memory: 12, disk: 80 };
+      for (const [resource, fixedSize] of Object.entries(fixedSizes)) {
+        const field = findInput(inputs, `build_${resource}`);
+        assert.equal(field.type, "number", type);
+        assert.deepEqual(field.show_when, { ...automaticShowWhen, build_auto_sizing_enabled: false }, type);
+        const manual = {
+          build_capacity_type: "sandbox", build_auto_sizing_enabled: false,
+          build_cpu: fixedSizes.cpu, build_memory: fixedSizes.memory, build_disk: fixedSizes.disk,
+        };
+        assert.equal(evaluate(resource, manual), fixedSize, `${type}: fixed ${resource}`);
+        for (const enabled of [true, null, undefined]) {
+          assert.equal(evaluate(resource, { ...manual, build_auto_sizing_enabled: enabled }), "auto", `${type}: auto ${resource}`);
+          assert.equal(evaluate(resource, {
+            build_capacity_type: "sandbox", build_auto_sizing_enabled: enabled,
+            build_cpu: null, build_memory: null, build_disk: null,
+          }), "auto", `${type}: hidden ${resource}`);
+        }
+        for (const capacity of ["ec2", "ec2-spot"]) {
+          for (const enabled of [true, false, null]) {
+            assert.equal(evaluate(resource, { ...manual, build_capacity_type: capacity, build_auto_sizing_enabled: enabled }), null, `${type}: ${capacity} ${resource}`);
+          }
+        }
+      }
+      assert.equal(evaluate("disk", { build_capacity_type: "sandbox", build_auto_sizing_enabled: false }), null, type);
+      assert.equal(evaluate("disk", { build_capacity_type: "sandbox", build_auto_sizing_enabled: false, build_disk: null }), null, type);
+      for (const interruptible of [true, false]) {
+        const input = { build_capacity_type: "sandbox", build_auto_sizing_enabled: true, build_interruptible_enabled: interruptible };
+        assert.equal(evaluate("interruptible", input), interruptible, type);
+        assert.equal(evaluate("disk_cache", input), "auto", type);
+        assert.equal(evaluate("cpu", input), "auto", type);
+        assert.equal(evaluate("memory", input), "auto", type);
+        assert.equal(evaluate("disk", input), "auto", type);
+      }
+      for (const capacity of ["ec2", "ec2-spot"]) {
+        const input = { build_capacity_type: capacity, build_instance_type: "c7a.4xlarge", build_ami_id: "ami-custom" };
+        assert.equal(evaluate("instance_size", input), "c7a.4xlarge", type);
+        assert.equal(evaluate("ami", input), "ami-custom", type);
+        assert.equal(evaluate("interruptible", input), null, type);
+        assert.equal(evaluate("disk_cache", input), null, type);
+      }
+    }
+  });
+
   it("propagates shared build input guidance to every consumer", async () => {
     const definitionPaths = [
       ["compute", "ec2_service", "rvn-ec2-service-definition.yml"],
@@ -1679,8 +1900,8 @@ describe("compiler", () => {
         `${definition.type} should include shared builder guidance`,
       );
       assert.equal(builderType.default, "sandbox", `${definition.type} should default to sandbox builds`);
-      assert.equal(findInput(inputs, "build_cpu").default, 14, `${definition.type} should default to 14 builder vCPUs`);
-      assert.equal(findInput(inputs, "build_memory").default, 28, `${definition.type} should default to 28 GiB builder memory`);
+      assert.equal(findInput(inputs, "build_cpu").default, 14, `${definition.type} should retain the manual CPU default`);
+      assert.equal(findInput(inputs, "build_memory").default, 28, `${definition.type} should retain the manual memory default`);
       const builderOptions = builderType.values;
       assert.ok(Array.isArray(builderOptions), `${definition.type} builder type should have values`);
       assert.deepEqual(

@@ -169,6 +169,7 @@ resource "aws_ecs_service" "this" {
     aws_lb_listener_rule.alb,
     aws_lb_listener_rule.ravion,
     aws_lb_listener_rule.test,
+    aws_lb_listener.nlb,
     aws_lb_listener.nlb_additional,
   ]
 
@@ -238,6 +239,19 @@ resource "aws_ecs_service" "this" {
         || var.deployment_type == "rolling"
       )
       error_message = "nlb_listeners requires rolling deployments because traffic-shift infrastructure is not created for this shape."
+    }
+
+    # ALB group stickiness pins a client to one target group for the
+    # duration after its last request. During a traffic-shift deploy, any
+    # duration longer than the bake keeps clients on the old target group
+    # after ECS removes its tasks, so the ALB answers them with 503s.
+    precondition {
+      condition = (
+        !local.alb_group_stickiness_enabled
+        || local.alb_group_stickiness_bake_time_in_minutes == null
+        || var.alb_group_stickiness_duration <= local.alb_group_stickiness_max_duration
+      )
+      error_message = "alb_group_stickiness_duration (${var.alb_group_stickiness_duration}s) is longer than the traffic-shift bake time allows (${local.alb_group_stickiness_max_duration}s). Clients would stay pinned to the old target group after its tasks are removed and get ALB 503s. Lower alb_group_stickiness_duration to ${local.alb_group_stickiness_max_duration} or less (1 is recommended), or raise the bake time."
     }
   }
 }

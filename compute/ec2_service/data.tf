@@ -14,7 +14,7 @@ data "aws_ec2_instance_type" "selected" {
 data "aws_ssm_parameter" "al2023_ami" {
   count = var.ami_id == null ? 1 : 0
 
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-${local.cpu_architecture}"
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.18-${local.cpu_architecture}"
 }
 
 # Get current AWS region

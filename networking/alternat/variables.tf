@@ -75,7 +75,7 @@ variable "nat_instance_type" {
 
 variable "nat_instance_ami_id" {
   type        = string
-  description = "AMI for the NAT instances. Defaults to the latest Amazon Linux 2023 minimal AMI for the instance type's architecture."
+  description = "AMI for the NAT instances. Defaults to the latest Amazon Linux 2023 minimal kernel 6.18 AMI for the instance type's architecture."
   default     = null
 
   validation {

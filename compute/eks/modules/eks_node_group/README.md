@@ -11,6 +11,12 @@ group for control-plane-adjacent workloads (Karpenter, the LB Controller,
 CoreDNS, metrics-server) and let Karpenter handle elasticity for everything
 else.
 
+## AMI updates
+
+Each apply resolves AWS's recommended image release for Amazon Linux and Bottlerocket node groups. A changed release triggers EKS's managed rolling update, honoring pod disruption budgets unless `version_force_update_enabled` is set. When `kubernetes_version` is omitted, both the image release and node version follow the deployed cluster version. Windows and custom AMIs retain their existing behavior.
+
+The recommended image is not proof that a specific vulnerability is fixed. Check the vendor advisory and the nodes' running kernels after the rollout; a package update without rebooting does not replace the running kernel.
+
 ## Usage
 
 Prefer the [`compute/eks`](../..) composite. This module is nested under

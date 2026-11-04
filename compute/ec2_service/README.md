@@ -1,6 +1,6 @@
 # EC2 Service
 
-Runs an app on a stable group of EC2 instances behind an optional Application Load Balancer, with in-place deploys pushed through SSM Run Command. Instances are managed by an Auto Scaling Group but are never replaced by deploys, so per-instance state (root volume, optional data volume) persists for the life of each instance.
+Runs an app on a stable group of EC2 instances behind an optional Application Load Balancer, with in-place deploys pushed through SSM Run Command. Instances are managed by an Auto Scaling Group but are never replaced by deploys, so per-instance state persists for the life of each instance. By default each instance gets a root volume for the operating system and a separate 20 GB data volume at `/data` for application data.
 
 Two runtimes are supported:
 
@@ -18,6 +18,8 @@ Container workloads that need to orchestrate sibling containers can enable `dock
 **Do not enable or disable this override on a running service as part of a routine update.** Either change replaces the ASG and its instances and renames the SSM deploy document. Generated naming solves only the **name collision**, not release readiness: the deploy manager's last successful release still points at the old group and cannot automatically catch up a newly named group's instances before the old group is removed. This also applies to later taint replacements of a generated-name group. Web traffic or workers can stop, and instance-local volumes are lost. Repair tainted state under operator supervision if the existing group is healthy; otherwise, a live migration needs a separate, coordinated release plan and backups. Check EC2 capacity and vCPU quota before any planned group replacement.
 
 ## How deploys work
+
+Without `ami_id`, new instances use the latest Amazon Linux 2023 kernel 6.18 image for their architecture. A custom `ami_id` is preserved. Updating the launch template does not reboot or replace existing instances: plan a separate, coordinated replacement and redeploy the workload before retiring the old instance.
 
 For the **container** runtime the module creates an SSM Command document (`<autoscaling_group_name>-deploy` — a platform contract derived from the physical group name) that encodes the whole in-place deploy for one instance:
 
@@ -155,12 +157,15 @@ aws ssm send-command \
 
 ## Storage and durability
 
-- The root volume and optional data volume are per-instance EBS. They are durable for the life of the instance: routine deploys, restarts, and in-place stack updates retain local files such as an embedded database.
+- The root volume and data volume are per-instance EBS. They are durable for the life of the instance: routine deploys, restarts, and in-place stack updates retain local files such as an embedded database.
+- The data volume is on by default (`data_volume_creation_enabled = true`, 20 GB at `/data`) and is where application data belongs. The root volume (30 GB by default) holds the operating system, packages, container images, and logs, so it can be rebuilt (for example for a new AMI) without touching application data. Set `data_volume_creation_enabled = false` to keep everything on one disk.
 - They are deleted when an instance is terminated or recycled, the group scales in, it fails its Auto Scaling health check, or the entire group is replaced. Merely upgrading this module does not replace a fixed-name group or its SSM document. A planned group replacement creates new instances without the old instances' local disks or deployed release; back up critical data off-instance and coordinate release recovery before replacing a live group.
 - `health_check_type` defaults to `EC2`, which is the AWS instance/system status check — unreachable instance, broken boot or network state, failed underlying host. It ignores application state: a crashed app is restarted in place by supervisord, and a failing HTTP health check never replaces an instance. So health-driven replacement is rare and tied to hardware or hypervisor failure. Setting `health_check_type = "ELB"` makes load balancer health replace instances instead, which also breaks in-place deploys (they briefly deregister the instance).
 - Mount an EFS file system (`efs_*` variables) when several instances must share the same files, or when a replacement instance must find data already in place; it is mounted on every instance and, for the container runtime, bind-mounted into the app container.
 - When `docker_socket_mount_enabled` is enabled, the data volume and EFS host paths are mapped identically inside the app container. This lets sibling containers started through the host Docker socket resolve those same host-path binds correctly.
-- Launch template changes (AMI, user data, volumes) intentionally apply only to newly launched instances; there is no instance refresh, so applying a new AMI never replaces running instances by itself. Recycling instances to pick up the new AMI is a replacement, and it deletes their volumes.
+- With `data_volume_creation_enabled`, an Amazon Data Lifecycle Manager policy (`data_volume_snapshots_enabled`, on by default) snapshots every instance's data volume daily at 03:00 UTC and keeps `data_volume_snapshot_retention_count` snapshots per instance. It targets instances by their `Name = var.name` tag, so instances launched by earlier module versions are covered, and excludes the boot volume. Snapshots of a terminated instance are no longer managed by the policy and stay until deleted, so a replaced instance's data can be restored.
+- The data volume is formatted (XFS, label `ravion-data`) only when it is a blank disk, and mounted at `data_volume_mount_path` by every bootstrap run. Without a device link, a blank disk is not formatted while another non-root disk already has a filesystem, since that disk is the likelier data volume. Discovery prefers the `ravion-data` label, then the launch template's device name (`/dev/xvdf`/`/dev/sdf` links), then the only unmounted non-root disk with a filesystem; with several candidates it logs and mounts nothing. Both deploy runtimes run a storage guard before stopping the app: it mounts the data volume (never formats) and EFS when needed and fails the deploy if either is still missing or is the wrong storage: the data path must be mounted from a local disk other than the root disk, and the EFS path must hold an NFS (EFS) mount. Neither path may be `/`, and the two must differ when both are enabled.
+- Launch template changes (AMI, user data, volumes) intentionally apply only to newly launched instances; there is no instance refresh, so applying a new AMI never replaces running instances by itself. Ravion's Update AMI action moves running instances to the launch template's AMI by replacing only their root volume: the instance, its data volume and EFS mounts stay, every volume is snapshotted first, and the bootstrap re-runs with the user data the instance was launched with. Anything stored only on the root disk is reset. Recycling instances instead is a replacement, and it deletes their volumes.
 
 ## Requirements
 
@@ -196,12 +201,14 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | instance_type | EC2 instance type; use the newest generation the region offers (see "Choosing an instance type") | `string` | n/a | yes |
 | ami_id | Custom AMI (null = latest AL2023) | `string` | `null` | no |
 | key_name | SSH key pair name | `string` | `null` | no |
-| root_volume_size | Root EBS volume size (GB) | `number` | `30` | no |
+| root_volume_size | Root EBS volume size (GB) for the OS, packages, container images, and logs | `number` | `30` | no |
 | root_volume_type | Root EBS volume type | `string` | `"gp3"` | no |
-| data_volume_creation_enabled | Attach a formatted per-instance data volume | `bool` | `false` | no |
+| data_volume_creation_enabled | Attach a formatted per-instance data volume for application data | `bool` | `true` | no |
 | data_volume_size | Data volume size (GB) | `number` | `20` | no |
 | data_volume_type | Data volume type | `string` | `"gp3"` | no |
 | data_volume_mount_path | Host mount path for the data volume | `string` | `"/data"` | no |
+| data_volume_snapshots_enabled | Daily DLM snapshots of every instance's data volume (needs `data_volume_creation_enabled`) | `bool` | `true` | no |
+| data_volume_snapshot_retention_count | Daily data volume snapshots kept per instance (1-1000) | `number` | `7` | no |
 | additional_user_data | Extra shell script appended to bootstrap | `string` | `""` | no |
 | min_size | Minimum instances | `number` | `1` | no |
 | max_size | Maximum instances | `number` | `1` | no |
@@ -236,6 +243,8 @@ Instances need outbound access to SSM, ECR/S3, CloudWatch Logs, PyPI for the pin
 | ecr_repository_url | URL of the service ECR repository (when created) |
 | target_group_arn | ARN of the service target group (when attached) |
 | target_group_arn_suffix | Target group ARN suffix for CloudWatch dimensions |
+| data_volume_snapshot_policy_id | ID of the daily data volume snapshot policy (when enabled) |
+| data_volume_snapshot_policy_arn | ARN of the daily data volume snapshot policy (when enabled) |
 | security_group_id | ID of the instance security group |
 | instance_role_arn | ARN of the instance IAM role |
 | log_group_name | CloudWatch log group receiving app logs |

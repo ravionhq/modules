@@ -24,6 +24,21 @@
 locals {
   grafana_release_name = "ravion-grafana"
 
+  # Users, teams, service accounts and their tokens, and alert state live in
+  # Grafana's SQLite database, which without a volume is an emptyDir emptied by
+  # every restart. A StatefulSet, not a Deployment: its claim is not part of
+  # the Helm release, so it outlives a replaced release, and the old pod lets
+  # go of the volume before the new one mounts it. Only where the managed gp3
+  # class can bind it.
+  grafana_persistence_values = local.ebs_default_storage_class_enabled ? {
+    persistence = {
+      enabled          = true
+      type             = "statefulset"
+      storageClassName = "gp3"
+      size             = "2Gi"
+    }
+  } : {}
+
   # Only the datasources whose backing pipeline is actually installed. Grafana
   # renders a datasource it cannot reach as a permanently failing panel, which
   # is worse than an absent one.
@@ -210,7 +225,35 @@ resource "helm_release" "grafana" {
             datasources = local.grafana_datasources
           }
         }
-      }, local.grafana_ingress_values)),
+
+        # Dashboards and alerting from ConfigMaps in Grafana's own namespace,
+        # such as an EKS Helm chart module installs: labelled grafana_dashboard
+        # (in the folder their grafana_folder annotation names) or
+        # grafana_alert. The sidecars' role stays inside that namespace.
+        # Grafana rescans the dashboards folder itself, so no reload call
+        # (which would need basic auth). Alerting provisioning is read only at
+        # startup, from an init container: restart Grafana to pick up a change.
+        rbac = { namespaced = true }
+        sidecar = {
+          dashboards = {
+            enabled          = true
+            label            = "grafana_dashboard"
+            labelValue       = "1"
+            resource         = "configmap"
+            folderAnnotation = "grafana_folder"
+            skipReload       = true
+            provider         = { foldersFromFilesStructure = true }
+          }
+          alerts = {
+            enabled    = true
+            label      = "grafana_alert"
+            labelValue = "1"
+            resource   = "configmap"
+            skipReload = true
+            initAlerts = true
+          }
+        }
+      }, local.grafana_ingress_values, local.grafana_persistence_values)),
     ],
     local.addon_placement_values,
     local.grafana_resilience_values,

@@ -9,6 +9,7 @@ locals {
   vpc_ipv6_cidr_blocks = [for association in data.aws_vpc.this.ipv6_cidr_block_associations : association.ipv6_cidr_block]
 
   architecture = contains(data.aws_ec2_instance_type.nat.supported_architectures, "arm64") ? "arm64" : "x86_64"
+  nat_ami      = var.nat_instance_ami_id != null ? var.nat_instance_ami_id : "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-6.18-${local.architecture}"
 
   ################################################################################
   # Route tables and NAT instance placement

@@ -34,7 +34,10 @@ resource "aws_lb_listener_rule" "alb" {
   # When the target groups have target-level stickiness the forward
   # action must carry group-level stickiness or ELBv2 rejects the
   # weighted forward ECS writes during traffic-shift deployments — see
-  # alb_group_stickiness_enabled in locals.tf.
+  # alb_group_stickiness_enabled in locals.tf. The duration only applies
+  # at create time (ignore_changes on action); the deploy manager
+  # reconciles existing rules from the listener_rule_group_stickiness_duration
+  # output.
   action {
     type             = "forward"
     target_group_arn = local.alb_group_stickiness_enabled ? null : aws_lb_target_group.tg_1[0].arn
@@ -279,8 +282,7 @@ resource "aws_lb_listener_rule" "test" {
 ################################################################################
 # NLB Listeners
 # For NLB, we create the listener directly (no listener rules in NLB).
-# The ECS deployment controller rewrites the default action during
-# native traffic-shift deployments.
+# NLB services only support rolling deployments, so Terraform owns their actions.
 ################################################################################
 
 resource "aws_lb_listener" "nlb" {
@@ -303,12 +305,6 @@ resource "aws_lb_listener" "nlb" {
   tags = merge(local.tags, {
     Name = "${var.name}-nlb-listener"
   })
-
-  # The ECS deployment controller rewrites the default action during
-  # native traffic-shift deployments; a no-op for rolling deployments.
-  lifecycle {
-    ignore_changes = [default_action]
-  }
 }
 
 resource "aws_lb_listener" "nlb_additional" {
@@ -331,10 +327,4 @@ resource "aws_lb_listener" "nlb_additional" {
     Name         = "${var.name}-${each.key}-nlb-listener"
     ListenerPort = each.key
   })
-
-  # The ECS deployment controller may rewrite the default action during
-  # service updates; ignore to prevent spurious Terraform drift.
-  lifecycle {
-    ignore_changes = [default_action]
-  }
 }

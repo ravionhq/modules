@@ -43,7 +43,7 @@ resource "aws_launch_template" "app" {
   dynamic "block_device_mappings" {
     for_each = var.data_volume_creation_enabled ? [1] : []
     content {
-      device_name = "/dev/xvdf"
+      device_name = local.data_volume_device_name
 
       ebs {
         volume_size           = var.data_volume_size
@@ -93,6 +93,11 @@ resource "aws_launch_template" "app" {
     precondition {
       condition     = var.deploy_health_check_path == null || var.app_port != null
       error_message = "The app_port is required when deploy_health_check_path is set."
+    }
+
+    precondition {
+      condition     = !(var.data_volume_creation_enabled && var.efs_enabled) || trimsuffix(var.data_volume_mount_path, "/") != trimsuffix(var.efs_mount_path, "/")
+      error_message = "The data_volume_mount_path and efs_mount_path must be different paths."
     }
 
     precondition {

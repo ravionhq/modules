@@ -196,6 +196,13 @@ output "test_listener_rule_arn" {
   value       = local.test_listener_rule_arn
 }
 
+output "listener_rule_group_stickiness_duration" {
+  description = "Desired ALB group stickiness DurationSeconds for the production and test listener rules. Terraform ignores changes to existing rule actions, so the deploy manager applies this to them before each deploy: N > 0 turns group stickiness on with that duration, 0 turns it off. Null when the service has no ALB listener rule (NLB or no load balancer)."
+  value = local.alb_listener_rules_present ? (
+    local.alb_group_stickiness_enabled ? local.alb_group_stickiness_duration : 0
+  ) : null
+}
+
 ################################################################################
 # Load Balancer
 ################################################################################

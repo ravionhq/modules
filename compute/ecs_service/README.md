@@ -341,6 +341,8 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 | desired_count | Desired number of tasks (0 for infrastructure-first) | `number` | `0` | no |
 | deployment_type | Initial deployment strategy for direct Terraform use; Ravion stacks use rolling and set blue_green/linear/canary per deploy via UpdateService | `string` | `"rolling"` | no |
 | deployment_strategy_config | Initial bake/canary/linear tuning for direct Terraform use; Ravion stacks set this per deploy through the deploy manager | `object` | `{}` | no |
+| traffic_shift_bake_time_in_minutes | Bake time of the blue_green/linear/canary deploys the deploy manager runs. Only validates `alb_group_stickiness_duration`; Ravion stacks pass the form's bake time because they provision with `deployment_type = rolling`. Null falls back to `deployment_strategy_config.bake_time_in_minutes` for a native `deployment_type`, and skips the check otherwise | `number` | `null` | no |
+| alb_group_stickiness_duration | ALB group stickiness duration (seconds, `AWSALBTG` cookie) on the production and test listener rules when the target groups are sticky. Must be at most `max(1, bake time × 60)` with a traffic-shift strategy. See [ALB group stickiness](#alb-group-stickiness) | `number` | `1` | no |
 | test_listener_rule_arn | Optional ALB listener rule ARN for test traffic during blue/green validation when the module-created green listener rule is not enabled | `string` | `null` | no |
 | green_alb_listener_rule_enabled | Create a dedicated ALB listener rule that routes test traffic to the green (alternate) target group during native traffic-shift deployments, so the new revision can be validated before production traffic shifts. ALB-only; no effect for NLB services | `bool` | `true` | no |
 | test_traffic_condition_type | Which request attribute distinguishes test traffic for the green rule: `header` (test_header_name/value) or `query-string` (test_query_string_key/value). One type per service — ALB AND-combines conditions and ECS wires exactly one test rule, so genuine "header OR query-string" matching is not possible natively | `string` | `"query-string"` | no |
@@ -468,6 +470,9 @@ A production (tg-1) + alternate (tg-2) pair exists for ALB attachments. Rolling-
 | target_group_arn_suffix | Production target group ARN suffix for CloudWatch metrics |
 | target_group_arns | Map of all target group ARNs, including additional NLB listener target groups |
 | ecs_infrastructure_role_arn | IAM role ECS assumes to manage listener wiring during native traffic-shift deployments |
+| production_listener_rule_arn | Production ALB listener rule (or primary NLB listener) ECS rewrites during traffic shifts |
+| test_listener_rule_arn | Test listener rule ECS rewrites during the TEST_TRAFFIC_SHIFT stages (null if none) |
+| listener_rule_group_stickiness_duration | Group stickiness DurationSeconds the deploy manager applies to the existing production and test rules before each deploy: N > 0 = on with N seconds, 0 = off, null = no ALB listener rule (NLB or no LB) |
 
 ### NLB Listener
 
@@ -1180,6 +1185,16 @@ The infrastructure for the ECS deployment controller's built-in traffic shifting
 - An ECS infrastructure IAM role (AmazonECSInfrastructureRolePolicyForLoadBalancers) that ECS assumes to rewrite listener rules and (de)register targets during the shift
 - The service's `load_balancer.advanced_configuration` (alternate target group, production listener rule, optional test listener rule, infrastructure role)
 - `deployment_configuration` is seeded from `deployment_type` / `deployment_strategy_config` at create time only; the Flightcontrol deploy manager passes the authoritative configuration — including pause lifecycle hooks — on every UpdateService call, so the block is in `ignore_changes`
+
+### ALB group stickiness
+
+When the target groups have target-level stickiness, ELBv2 requires group stickiness on any multi-target-group forward that references them, so the module turns it on for the production and test listener rules. Group stickiness sets the `AWSALBTG` cookie, which sends a returning client to the target group it reached last.
+
+ECS cutovers only change the rule's target-group weights, and the weights apply only to requests without an `AWSALBTG` cookie. AWS counts the duration from the client's last request, so a client that sends requests more often than the duration (for example, polling every 30 seconds) stays on the old target group for the whole deploy. When ECS removes the old tasks after the bake, the ALB returns 503s to those clients.
+
+`alb_group_stickiness_duration` therefore defaults to 1 second, the ELBv2 minimum, which satisfies ELBv2 without pinning clients across a deploy. Raising it keeps clients on the deployment they first reached during the shift, at the cost of 503s for those still active when the old tasks are removed. With a traffic-shift strategy the module rejects values above `max(1, bake_time_in_minutes × 60)`; AWS recommends 5 minutes or less ([Blue/green deployments with Application Load Balancer](https://aws.amazon.com/blogs/devops/blue-green-deployments-with-application-load-balancer/)).
+
+The listener rules have `ignore_changes = [action]`, so Terraform only sets the duration when it creates a rule. The `listener_rule_group_stickiness_duration` output carries the desired value, and the Ravion deploy manager applies it to the existing production and test rules before each deploy, keeping their target groups and weights.
 
 ## Notes
 

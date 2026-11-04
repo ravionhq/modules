@@ -101,6 +101,44 @@ variables {
 # Routing validation
 #-------------------------------------------------------------------------------
 
+run "static_ips_disabled_by_default" {
+  command = plan
+  assert {
+    condition     = output.anycast_ip_list_id == null && length(output.anycast_ips) == 0
+    error_message = "Static sites must not allocate billable IPs by default."
+  }
+}
+
+run "static_ips_create_returns_child_allocation" {
+  command = apply
+  variables {
+    anycast_ip_list_mode = "create"
+  }
+  override_resource {
+    target = module.cdn.aws_cloudfront_anycast_ip_list.this
+    values = {
+      id          = "static-site-list"
+      anycast_ips = ["192.0.2.1", "192.0.2.2", "192.0.2.3"]
+    }
+  }
+  assert {
+    condition     = output.anycast_ip_list_id == "static-site-list" && output.anycast_ips == tolist(["192.0.2.1", "192.0.2.2", "192.0.2.3"])
+    error_message = "Forward static IP configuration and outputs through the composed CDN module."
+  }
+}
+
+run "static_ips_reuses_existing_list" {
+  command = plan
+  variables {
+    anycast_ip_list_mode = "existing"
+    anycast_ip_list_id   = "shared-list"
+  }
+  assert {
+    condition     = output.anycast_ip_list_id == "shared-list" && length(output.anycast_ips) == 0
+    error_message = "Static sites must be able to share another module's list without allocating IPs."
+  }
+}
+
 run "routing_default_is_spa" {
   command = plan
 

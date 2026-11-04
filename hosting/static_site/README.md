@@ -362,12 +362,29 @@ module "site" {
 
 > **Don't put `Cache-Control` in `custom_headers` with `override = true`** unless you intentionally want to overwrite what the cache-control function set. Response-headers policies apply *after* CloudFront Functions, so a policy-set value with override beats the function. The whole point of the function is to discriminate HTML from assets at the URI level, which a static policy can't do.
 
+## Static IPs
+
+Static IPs are off by default. Create one CloudFront Anycast IPv4 list shared by all distributions in this module, or reuse a list in the same AWS account with `anycast_ip_list_mode = "existing"` and `anycast_ip_list_id`.
+
+```hcl
+anycast_ip_list_mode = "create"
+anycast_ip_count     = 3
+```
+
+[AWS approval](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) is required before creating a list. Choose 3 addresses for apex DNS A records or 21 for firewall allowlisting. Static IPs automatically select all edge locations (`PriceClass_All`) and disable viewer IPv6, including when reusing a list. Normal distributions keep their existing price class and IPv6 settings.
+
+[AWS charges](https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/) $0.005 per IPv4 address/hour: approximately $10.95/month for 3 or $76.65/month for 21 at 730 hours, plus standard CloudFront usage. Reusing a list avoids another allocation charge. The list remains billable until deleted, even with disabled distributions.
+
+Use the `anycast_ips` output for the addresses of a newly created list and `anycast_ip_list_id` to share it with another module. Existing lists remain owned by their original stack; their addresses are not returned by this module. Changing the count replaces the list and IPs, so update external DNS records or allowlists. Stop sharing a managed list before deleting its owning module or disabling its static IPs.
+
+CloudFront still requires the viewer's domain and SNI for HTTPS; an IP address alone is not a site URL.
+
 ## Requirements
 
 | Name | Version |
 |---|---|
 | opentofu/terraform | >= 1.10.0 |
-| aws | >= 5.0 |
+| aws | >= 6.69.1 |
 | ravion | = 0.0.3-rc.1 |
 
 No external apply-time tools required.
@@ -396,6 +413,9 @@ No external apply-time tools required.
 | Name | Description | Type | Default |
 |---|---|---|---|
 | price_class | CloudFront price class. | `string` | `"PriceClass_100"` |
+| anycast_ip_list_mode | Static viewer IPs: `disabled`, `create`, or `existing`. | `string` | `"disabled"` |
+| anycast_ip_list_id | List ID in this account; required only in existing mode. | `string` | `null` |
+| anycast_ip_count | Number of IPv4 addresses to allocate: 3 or 21. | `number` | `3` |
 | minimum_protocol_version | Minimum TLS version when using a custom ACM cert. | `string` | `"TLSv1.2_2021"` |
 | geo_restriction_type | `none`, `whitelist`, `blacklist`. | `string` | `"none"` |
 | geo_restriction_locations | ISO-3166-1-alpha-2 country codes. | `list(string)` | `[]` |
@@ -467,6 +487,8 @@ No external apply-time tools required.
 | Name | Description |
 |---|---|
 | hosting_bucket_id | Name of the S3 hosting bucket. |
+| anycast_ip_list_id | Associated static IP list ID, or null when disabled. |
+| anycast_ips | Created list's IPv4 addresses; empty when disabled or reusing a list. |
 | hosting_bucket_arn | ARN of the S3 hosting bucket. |
 | hosting_bucket_regional_domain_name | Regional domain name of the hosting bucket. |
 | hosting_bucket_region | AWS region of the hosting bucket. |
