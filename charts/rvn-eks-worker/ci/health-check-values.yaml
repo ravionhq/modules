@@ -1,0 +1,12 @@
+# A worker that serves an HTTP health endpoint without exposing a port.
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-worker
+  tag: v1.2.3
+replicaCount: 2
+probes:
+  readiness:
+    enabled: true
+    path: /health
+    port: 8081
+  startup:
+    enabled: true

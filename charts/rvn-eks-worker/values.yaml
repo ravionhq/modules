@@ -2,7 +2,8 @@
 #
 # The image/env/resources/secrets surface is identical to rvn-eks-web so an app
 # can move between the two shapes without rewriting values. What is absent here
-# is deliberate: no containerPort, no service, no probes, no targetGroupArns.
+# is deliberate: no containerPort, no service, no targetGroupArns. Probes are
+# opt-in, for workers that serve an HTTP health endpoint.
 
 # -- Override the chart name used in resource names and labels.
 nameOverride: ""
@@ -43,6 +44,44 @@ strategy:
   type: RollingUpdate
   maxSurge: 100%
   maxUnavailable: 0
+
+# -- Seconds a new pod must stay Ready, without its container restarting,
+# before the rolling update counts it as available and removes an old pod.
+# Without a readiness probe a pod is Ready as soon as its container runs, so a
+# worker that exits a second after starting would otherwise count as available
+# and the zero-unavailable rollout would remove every healthy old pod. With
+# this set, such a rollout stalls with the old pods still running, and the
+# atomic Helm release rolls it back. Must stay below the Kubernetes default
+# progressDeadlineSeconds of 600, so at most 599.
+minReadySeconds: 10
+
+# -- Optional HTTP health checks for a worker that serves a health endpoint.
+# The container declares no named port, so port must be a number. Readiness
+# decides when a new pod counts toward the rollout; startup restarts a
+# container that never becomes healthy. There is deliberately no liveness
+# probe: a worker reports a fatal error by exiting.
+probes:
+  readiness:
+    enabled: false
+    path: /
+    # -- Container port the health endpoint listens on. Required when enabled.
+    port: null
+    initialDelaySeconds: 0
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  startup:
+    enabled: false
+    # -- Defaults to the readiness path when empty.
+    path: ""
+    # -- Defaults to the readiness port when null.
+    port: null
+    initialDelaySeconds: 0
+    periodSeconds: 5
+    timeoutSeconds: 5
+    # -- 30 checks at 5 seconds: about 150 seconds to become healthy.
+    failureThreshold: 30
 
 resources:
   requests:

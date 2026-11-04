@@ -453,6 +453,69 @@ describe("compiler", () => {
     );
   });
 
+  it("compiles EKS worker rollout safety: minimum ready time and an opt-in HTTP health check", async () => {
+    const compiled = await compileDefinitionFile(join(repoRoot, "compute", "eks_service", "rvn-eks-worker-definition.yml"));
+    const inputs = getModuleInputs(compiled.module);
+
+    const minReady = findInput(inputs, "min_ready_seconds");
+    assert.equal(minReady.type, "number");
+    assert.equal(minReady.default, 10);
+    assert.equal(minReady.min, 0);
+    assert.equal(minReady.max, 300);
+    assert.equal(minReady.collapsible, true);
+
+    const enabled = findInput(inputs, "health_check_enabled");
+    assert.equal(enabled.type, "boolean");
+    assert.equal(enabled.default, false);
+    for (const [inputId, type] of [
+      ["health_check_port", "number"],
+      ["health_check_path", "string"],
+      ["readiness_probe_period_seconds", "number"],
+      ["startup_probe_enabled", "boolean"],
+    ] as const) {
+      const input = findInput(inputs, inputId);
+      assert.equal(input.type, type);
+      assert.deepEqual(input.show_when, { health_check_enabled: true });
+    }
+    assert.equal(findInput(inputs, "health_check_port").min, 1);
+    assert.equal(findInput(inputs, "health_check_port").max, 65535);
+    assert.equal(findInput(inputs, "health_check_path").default, "/");
+    assert.equal(findInput(inputs, "readiness_probe_period_seconds").default, 5);
+    assert.equal(findInput(inputs, "startup_probe_enabled").default, false);
+    assert.deepEqual(findInput(inputs, "startup_timeout_seconds").show_when, {
+      health_check_enabled: true,
+      startup_probe_enabled: true,
+    });
+    assert.equal(findInput(inputs, "startup_timeout_seconds").default, 150);
+    assert.equal(inputs.some((input) => input.id === "liveness_probe_enabled"), false);
+
+    const deploy = assertRecord(compiled.module.deploy, "module.deploy");
+    const definition = assertRecord(deploy.definition, "module.deploy.definition");
+    const values = assertRecord(definition.values, "module.deploy.definition.values");
+    assert.equal(
+      values.minReadySeconds,
+      "<< module.input.min_ready_seconds != nil ? module.input.min_ready_seconds : 10 >>",
+    );
+    const probes = assertRecord(values.probes, "values.probes");
+    const readiness = assertRecord(probes.readiness, "values.probes.readiness");
+    const startup = assertRecord(probes.startup, "values.probes.startup");
+    assert.equal(readiness.enabled, "<< module.input.health_check_enabled == true >>");
+    assert.equal(readiness.path, '<< module.input.health_check_path || "/" >>');
+    assert.equal(readiness.port, "<< module.input.health_check_port >>");
+    assert.equal(
+      readiness.periodSeconds,
+      "<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 5 >>",
+    );
+    assert.equal(
+      startup.enabled,
+      "<< module.input.health_check_enabled == true && module.input.startup_probe_enabled == true >>",
+    );
+    assert.equal(
+      startup.failureThreshold,
+      "<< module.input.startup_timeout_seconds != nil ? int((module.input.startup_timeout_seconds + 4) / 5) : 30 >>",
+    );
+  });
+
   it("compiles EKS web and worker Spot burst inputs with nil-safe KEDA wiring", async () => {
     for (const [name, inputDefault] of [
       ["rvn-eks-web", 2],

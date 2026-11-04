@@ -4,7 +4,7 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.1.0
+  version: 1.2.0
   description: Require selected pipeline-provided environment variables on every deploy.
 module:
   inputs:
@@ -103,6 +103,62 @@ module:
     - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
+    - id: section_health
+      label: Health check
+      type: section
+    - id: health_check_enabled
+      label: HTTP health check
+      type: boolean
+      description: Check an HTTP endpoint the worker serves before a new pod counts toward a rollout. The worker still exposes no Service or container port; Kubernetes calls the endpoint on the pod directly.
+      collapsible: true
+      default: false
+    - id: health_check_port
+      label: Health check port
+      type: number
+      description: Port inside the container the health endpoint listens on. Required when the health check is on.
+      collapsible: true
+      max: 65535
+      min: 1
+      required: false
+      show_when:
+        health_check_enabled: true
+    - id: health_check_path
+      label: Health check path
+      type: string
+      description: Unauthenticated endpoint that succeeds once the worker is ready to process work.
+      collapsible: true
+      default: /
+      show_when:
+        health_check_enabled: true
+    - id: readiness_probe_period_seconds
+      label: Readiness check interval (secs)
+      type: number
+      description: Seconds between readiness checks. A pod stops counting as ready after three failed checks in a row.
+      collapsible: true
+      max: 300
+      min: 1
+      default: 5
+      show_when:
+        health_check_enabled: true
+    - id: startup_probe_enabled
+      label: Enforce startup timeout
+      type: boolean
+      description: Restart the container if the health endpoint does not succeed in time.
+      collapsible: true
+      default: false
+      show_when:
+        health_check_enabled: true
+    - id: startup_timeout_seconds
+      label: Maximum startup time (secs)
+      type: number
+      description: Maximum time the worker may take to become healthy before Kubernetes restarts it. Rounded up to the next five-second check.
+      collapsible: true
+      max: 1500
+      min: 5
+      default: 150
+      show_when:
+        health_check_enabled: true
+        startup_probe_enabled: true
     - id: section_deployments
       label: Networking and deployment
       type: section
@@ -114,6 +170,14 @@ module:
       max: 100
       min: 1
       default: 100
+    - id: min_ready_seconds
+      label: Minimum ready time (secs)
+      type: number
+      description: Seconds a new pod must stay ready, without restarting, before the rollout counts it as available and removes an old pod. Stops a worker that crashes shortly after starting from replacing the healthy pods. Every rollout waits at least this long, so keep it well under the 10-minute deploy timeout.
+      collapsible: true
+      max: 300
+      min: 0
+      default: 10
     - id: termination_grace_period_seconds
       label: Stop timeout (secs)
       type: number
@@ -178,6 +242,16 @@ module:
               - terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
                 strategy:
                   maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%'
+                minReadySeconds: '<< module.input.min_ready_seconds != nil ? module.input.min_ready_seconds : 10 >>'
+                probes:
+                  readiness:
+                    enabled: '<< module.input.health_check_enabled == true >>'
+                    path: '<< module.input.health_check_path || "/" >>'
+                    port: << module.input.health_check_port >>
+                    periodSeconds: '<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 5 >>'
+                  startup:
+                    enabled: '<< module.input.health_check_enabled == true && module.input.startup_probe_enabled == true >>'
+                    failureThreshold: '<< module.input.startup_timeout_seconds != nil ? int((module.input.startup_timeout_seconds + 4) / 5) : 30 >>'
                 podDisruptionBudget:
                   enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
                   minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
@@ -264,7 +338,7 @@ module:
 
     Under the hood, each deploy installs a Helm chart that Ravion maintains - a packaged template of the Kubernetes resources a worker needs. The `rvn-eks-worker` chart renders the Deployment that runs your pods, a ServiceAccount, an optional HorizontalPodAutoscaler, and, when the module declares runtime secrets, an `ExternalSecret`. Each release runs `helm upgrade --install --atomic`, so a failed deploy rolls back to the previous revision on its own.
 
-    The chart deliberately includes no Service, no container port, and no probes. A worker is reached by nothing; it reaches out.
+    The chart deliberately includes no Service and no container port. A worker is reached by nothing; it reaches out. A worker that serves an HTTP health endpoint can turn on a health check against it.
 
     The Terraform stack creates the ECR repository that Dockerfile and Railpack builds push to and, when Fargate is selected, a workload-specific EKS Fargate profile and pod execution role. On the Pull from image registry path with automatic or EC2 compute, the stack creates no AWS resources. Everything else the module needs - cluster endpoint, certificate authority data, private subnet IDs, and the Ravion Runner role - comes from the selected EKS Cluster module.
 
@@ -368,6 +442,14 @@ module:
 
     Every deploy runs `helm upgrade --install --atomic`, so a release either lands completely or leaves the cluster on the previous revision. Pods roll with zero unavailable. **Maximum rollout surge (%)** defaults to 100%, allowing a full replacement set to start together when enough matching capacity is already available. Lower this advanced setting to limit temporary capacity. The disruption budget controls voluntary evictions such as node drains, not Deployment rolling updates; shutdown grace still allows old workers to finish in-flight work.
 
+    **Minimum ready time (secs)**, 10 by default, is how long a new pod must stay ready, without its container restarting, before it counts as available and an old pod is removed. Without a health check a pod is ready as soon as its container starts, so this is what keeps a worker that crashes a second after starting from replacing every healthy pod: the rollout stalls with the old pods still running, and the atomic Helm release rolls it back.
+
+    ### Health check
+
+    **HTTP health check** is off by default. Turn it on when the worker serves an unauthenticated HTTP endpoint that succeeds once it is ready to process work - for example once its queue consumers have connected. Set **Health check port** to the port inside the container and **Health check path** to the endpoint. Kubernetes calls it on the pod directly, so the worker still exposes no Service or container port. A new pod then counts toward a rollout only after the endpoint succeeds and has kept succeeding for the minimum ready time. **Enforce startup timeout** additionally restarts a container whose endpoint never succeeds within **Maximum startup time (secs)**.
+
+    There is no liveness probe. A worker should exit on a fatal error and let Kubernetes restart it.
+
     Deployments collapse: if several are queued, only the newest runs.
 
     ## Metrics and logs
@@ -437,6 +519,13 @@ module:
     | Polling interval (secs) | No | 30 | KEDA trigger polling interval |
     | Cooldown period (secs) | No | 300 | Delay before KEDA scales Spot replicas down |
     | Maximum rollout surge (%) | No | 100 | Extra pods during rolling updates; lower to limit temporary capacity |
+    | Minimum ready time (secs) | No | 10 | Time a new pod must stay ready before it replaces an old one |
+    | HTTP health check | No | false | Gate rollouts on an HTTP endpoint the worker serves |
+    | Health check port | Yes* | - | Container port of the health endpoint; required with the health check |
+    | Health check path | No | / | Health endpoint path |
+    | Readiness check interval (secs) | No | 5 | Seconds between readiness checks |
+    | Enforce startup timeout | No | false | Restart a container that never becomes healthy |
+    | Maximum startup time (secs) | No | 150 | Startup deadline when enforced |
     | Stop timeout (secs) | No | 30 | Drain window after SIGTERM |
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
@@ -461,7 +550,7 @@ module:
 
     - **Terraform owns AWS-side workload infrastructure.** The worker itself is Helm-owned; the stack creates an ECR repository when Ravion builds the image and a dedicated EKS Fargate profile when Fargate is selected. With a pulled image and automatic or EC2 compute, it creates nothing.
     - **No Nixpacks.** ECS still carries a Nixpacks build source for services created before Railpack existed. EKS has no such history, so Dockerfile and Railpack are the only builders.
-    - **No Service and no probes.** A worker exposes no port, so there is nothing to route to and no HTTP endpoint to check. Liveness for a worker is better expressed by letting the process exit on a fatal error and letting Kubernetes restart it.
+    - **No Service, opt-in readiness, no liveness.** A worker exposes no port, so there is nothing to route to. Readiness is opt-in for workers that serve a health endpoint; the minimum ready time protects rollouts for the rest. Liveness for a worker is better expressed by letting the process exit on a fatal error and letting Kubernetes restart it.
     - **Autoscaling defaults off.** CPU utilization rarely tracks worker demand. Turning it on by default would produce autoscaling that looks configured but never fires.
     - **Name and namespace are fixed after creation.** Together they identify the Helm release that rollback and history target.
     - **Pod Identity, not IRSA.** The chart emits a stable ServiceAccount name and no role annotation. With **Create IAM role** on, the stack creates the role and an `aws_eks_pod_identity_association` binding it to that ServiceAccount by namespace and name; the trust policy is pinned to this cluster and account. No IAM OIDC provider is involved.

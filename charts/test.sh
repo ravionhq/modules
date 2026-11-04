@@ -690,7 +690,57 @@ test_rvn_eks_worker() {
   assert_eq "worker: container declares no ports" \
     "" "$(q "${full}" "${ctr} | .ports")"
   assert_eq "worker: container declares no probes" \
-    "" "$(q "${full}" "${ctr} | .livenessProbe")"
+    "" "$(q "${full}" "${ctr} | [.livenessProbe, .readinessProbe, .startupProbe] | map(select(. != null)) | .[]")"
+
+  # --- rollout safety ---------------------------------------------------------
+  # Without probes a pod counts as Ready the moment its container is running,
+  # so a worker that crashes a second after starting still counted as
+  # available, and a zero-unavailable rollout removed every old pod.
+  # minReadySeconds makes a new pod stay up before it replaces an old one.
+  assert_eq "worker: new pods must stay ready 10s before they count as available" \
+    "10" "$(q "${default}" "${dep} | .spec.minReadySeconds")"
+  local min_ready
+  min_ready="$(render "${chart}" min-ready --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=45)"
+  assert_eq "worker: minReadySeconds is configurable" \
+    "45" "$(q "${min_ready}" "${dep} | .spec.minReadySeconds")"
+  local min_ready_off
+  min_ready_off="$(render "${chart}" min-ready-off --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=0)"
+  assert_eq "worker: minReadySeconds 0 is rendered, not dropped" \
+    "0" "$(q "${min_ready_off}" "${dep} | .spec.minReadySeconds")"
+  # Kubernetes requires progressDeadlineSeconds (default 600, unset here) to be
+  # greater than minReadySeconds, so 600 or more is rejected at apply time.
+  expect_template_failure "${chart}" "worker: minReadySeconds at the 600s progress deadline is rejected" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=600
+  local min_ready_max
+  min_ready_max="$(render "${chart}" min-ready-max --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set minReadySeconds=599)"
+  assert_eq "worker: minReadySeconds just under the progress deadline is accepted" \
+    "599" "$(q "${min_ready_max}" "${dep} | .spec.minReadySeconds")"
+
+  local probed
+  probed="$(render "${chart}" probes --values "${CHARTS_DIR}/${chart}/ci/health-check-values.yaml")"
+  assert_eq "worker: readiness probe checks the HTTP health endpoint on a numeric port" \
+    "/health 8081 0 5 5 3 1" \
+    "$(q "${probed}" "${ctr} | .readinessProbe | [.httpGet.path, .httpGet.port, .initialDelaySeconds, .periodSeconds, .timeoutSeconds, .failureThreshold, .successThreshold] | join(\" \")")"
+  assert_eq "worker: startup probe defaults to the readiness path and port" \
+    "/health 8081 5 30" \
+    "$(q "${probed}" "${ctr} | .startupProbe | [.httpGet.path, .httpGet.port, .periodSeconds, .failureThreshold] | join(\" \")")"
+  assert_eq "worker: a health check still exposes no container port or Service" \
+    " 0" "$(q "${probed}" "${ctr} | .ports") $(count "${probed}" Service)"
+  assert_eq "worker: no liveness probe is rendered" \
+    "" "$(q "${probed}" "${ctr} | .livenessProbe")"
+  local readiness_only
+  readiness_only="$(render "${chart}" readiness-only --values "${CHARTS_DIR}/${chart}/ci/health-check-values.yaml" --set probes.startup.enabled=false)"
+  assert_eq "worker: startup probe is optional" \
+    "" "$(q "${readiness_only}" "${ctr} | .startupProbe")"
+  expect_template_failure "${chart}" "worker: a readiness probe without a port is rejected" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.readiness.enabled=true
+  expect_template_failure "${chart}" "worker: a startup probe without a port is rejected" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set probes.startup.enabled=true
+  local spot_probed
+  spot_probed="$(render "${chart}" spot-probes --values "${CHARTS_DIR}/${chart}/ci/spot-burst-values.yaml" --values "${CHARTS_DIR}/${chart}/ci/health-check-values.yaml")"
+  assert_eq "worker: baseline and Spot Deployments both get minReadySeconds and the readiness probe" \
+    "2 10 10 /health /health" \
+    "$(q "${spot_probed}" "[.[] | select(.kind == \"Deployment\")] | [length, .[0].spec.minReadySeconds, .[1].spec.minReadySeconds, .[0].spec.template.spec.containers[0].readinessProbe.httpGet.path, .[1].spec.template.spec.containers[0].readinessProbe.httpGet.path] | join(\" \")")"
 
   # --- HPA toggling ---------------------------------------------------------
   assert_eq "worker: no HPA by default" \
