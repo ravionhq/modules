@@ -603,6 +603,10 @@ describe("compiler", () => {
       const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
       assert.equal(requiredValidation.input, "environment_variables");
       assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
+      assert.match(
+        assertString(requiredValidation.condition),
+        /len\(uniq\(module\.input\.deploy_environment_variable_required_names/,
+      );
       assert.match(assertString(requiredValidation.message), /Required deploy-provided environment variables/);
       if (name === "web") {
         const reservedPortValidation = assertRecord(validations[1], "web PORT validation");
@@ -668,6 +672,10 @@ describe("compiler", () => {
       const requiredValidation = assertRecord(validations[0], `${name}.required validation`);
       assert.equal(requiredValidation.input, "environment_variables");
       assert.match(assertString(requiredValidation.condition), /deploy_environment_variable_required_names/);
+      assert.match(
+        assertString(requiredValidation.condition),
+        /len\(uniq\(module\.input\.deploy_environment_variable_required_names/,
+      );
       assert.match(assertString(requiredValidation.message), /Required deploy-provided environment variables/);
       if (name === "web" || name === "nlb") {
         const reservedPortValidation = assertRecord(validations[1], `${name} PORT validation`);

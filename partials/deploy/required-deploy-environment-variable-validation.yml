@@ -1,6 +1,8 @@
 input: environment_variables
 condition: >-
-  << len(filter(module.input.deploy_environment_variable_required_names ?? [],
+  << len(uniq(module.input.deploy_environment_variable_required_names ?? [])) ==
+  len(module.input.deploy_environment_variable_required_names ?? []) &&
+  len(filter(module.input.deploy_environment_variable_required_names ?? [],
   # in map(deploy.input.environment_variables ?? [], .name))) ==
   len(module.input.deploy_environment_variable_required_names ?? []) &&
   len(filter(deploy.input.environment_variables ?? [],
@@ -15,5 +17,5 @@ condition: >-
   len(filter(module.input.deploy_environment_variable_required_names ?? [],
   # in map(module.input.secrets ?? [], .name))) == 0 >>
 message: >-
-  << "Required deploy-provided environment variables must each have exactly one non-empty value and must not conflict with runtime variables, secrets, or names excluded by this module's environment filter: " +
+  << "Required deploy-provided environment variables must have unique names. Each name must have exactly one non-empty value and must not conflict with runtime variables, secrets, or names excluded by this module's environment filter: " +
   string(module.input.deploy_environment_variable_required_names ?? []) >>
