@@ -3,8 +3,8 @@ definition:
   name: Terraform Stack
   description: Automate Terraform and OpenTofu workflows with git-driven deployments and managed state.
 release:
-  version: 1.4.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.4.1
+  description: Show Git workflow settings after stack variables.
 module:
   inputs:
     - id: section_aws
@@ -64,6 +64,24 @@ module:
       label: Watch paths
       placeholder: path/to/watch
       type: string_array
+    - id: section_inputs
+      label: Stack inputs
+      type: section
+    - add_button_label: Add variable file
+      description: Relative paths from base path to `.tfvars` or `.tfvars.json` files (equivalent to -var-file flags)
+      id: terraform_variable_files
+      label: Terraform variable files
+      placeholder: prod.tfvars
+      type: string_array
+    - description: Variables passed to Terraform/OpenTofu (equivalent to -var flags)
+      id: tf_variables
+      label: Terraform variables
+      placeholder: key/value format
+      type: object
+    - id: env_variables
+      label: Environment variables
+      placeholder: key/value format with support for from_parameter_store and from_secrets_manager
+      type: object
     - id: section_git_workflow
       label: Git workflow
       type: section
@@ -100,24 +118,6 @@ module:
       show_when:
         primary_branch_runs: plan_and_apply
       type: boolean
-    - id: section_inputs
-      label: Stack inputs
-      type: section
-    - add_button_label: Add variable file
-      description: Relative paths from base path to `.tfvars` or `.tfvars.json` files (equivalent to -var-file flags)
-      id: terraform_variable_files
-      label: Terraform variable files
-      placeholder: prod.tfvars
-      type: string_array
-    - description: Variables passed to Terraform/OpenTofu (equivalent to -var flags)
-      id: tf_variables
-      label: Terraform variables
-      placeholder: key/value format
-      type: object
-    - id: env_variables
-      label: Environment variables
-      placeholder: key/value format with support for from_parameter_store and from_secrets_manager
-      type: object
     - id: section_iac
       label: IaC tool
       type: section
