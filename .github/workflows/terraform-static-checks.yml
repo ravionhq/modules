@@ -59,6 +59,11 @@ jobs:
             xargs -P 4 -I{} tofu -chdir={} get
 
       - name: Initialize TFLint plugins
+        # The snapshot/local installer avoids API requests; CI retains authenticated init.
+        # Its tests need only Node's built-in test runner, not npm dependencies.
+        run: node --test .github/scripts/install-tflint-aws.test.mjs
+
+      - name: Initialize TFLint plugins with GitHub authentication
         run: tflint --init
         env:
           GITHUB_TOKEN: ${{ github.token }}
