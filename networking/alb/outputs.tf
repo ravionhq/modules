@@ -108,6 +108,7 @@ output "cloudwatch_alarm_arns" {
     elb_5xx              = aws_cloudwatch_metric_alarm.elb_5xx[0].arn
     target_5xx           = aws_cloudwatch_metric_alarm.target_5xx[0].arn
     target_response_time = aws_cloudwatch_metric_alarm.target_response_time[0].arn
+    unhealthy_hosts      = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].arn
   } : {}
 }
 

@@ -631,7 +631,7 @@ run "cloudwatch_alarms_disabled" {
   }
 
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_response_time) == 0
+    condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_5xx) == 0 && length(aws_cloudwatch_metric_alarm.target_response_time) == 0 && length(aws_cloudwatch_metric_alarm.unhealthy_hosts) == 0
     error_message = "No CloudWatch alarms should be created when explicitly disabled"
   }
 
@@ -646,8 +646,8 @@ run "cloudwatch_alarms_enabled_by_default" {
   command = plan
 
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1
-    error_message = "All three CloudWatch alarms should be created when enabled"
+    condition     = length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1 && length(aws_cloudwatch_metric_alarm.unhealthy_hosts) == 1
+    error_message = "All four CloudWatch alarms should be created when enabled"
   }
 
   assert {
@@ -689,6 +689,21 @@ run "cloudwatch_alarms_enabled_by_default" {
     condition     = aws_cloudwatch_metric_alarm.elb_5xx[0].alarm_name == "test-alb-alb-elb-5xx"
     error_message = "ELB 5xx alarm name should be prefixed with the module name"
   }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_name == "test-alb-alb-unhealthy-hosts" && aws_cloudwatch_metric_alarm.unhealthy_hosts[0].threshold == 0 && aws_cloudwatch_metric_alarm.unhealthy_hosts[0].comparison_operator == "GreaterThanThreshold"
+    error_message = "Unhealthy hosts alarm should fire on any unhealthy target by default"
+  }
+
+  assert {
+    condition     = one(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].metric_query).expression == "SELECT MAX(UnHealthyHostCount) FROM SCHEMA(\"AWS/ApplicationELB\", LoadBalancer, TargetGroup) WHERE LoadBalancer = 'app/test-alb/1234567890123456'"
+    error_message = "Unhealthy hosts alarm should query every target group behind this load balancer"
+  }
+
+  assert {
+    condition     = one(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].metric_query).period == 300 && one(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].metric_query).return_data == true && aws_cloudwatch_metric_alarm.unhealthy_hosts[0].treat_missing_data == "notBreaching"
+    error_message = "Unhealthy hosts alarm should use the alarm period and treat a load balancer with no targets as not breaching"
+  }
 }
 
 # Test 33: CloudWatch alarms with custom thresholds and actions
@@ -700,6 +715,7 @@ run "cloudwatch_alarms_custom" {
     cloudwatch_alarm_elb_5xx_threshold              = 50
     cloudwatch_alarm_target_5xx_threshold           = 25
     cloudwatch_alarm_target_response_time_threshold = 2.5
+    cloudwatch_alarm_unhealthy_hosts_threshold      = 1
     cloudwatch_alarm_evaluation_periods             = 3
     cloudwatch_alarm_period                         = 60
     cloudwatch_alarm_actions                        = ["arn:aws:sns:us-east-1:123456789012:alerts"]
@@ -725,6 +741,16 @@ run "cloudwatch_alarms_custom" {
     condition     = length(aws_cloudwatch_metric_alarm.target_response_time[0].ok_actions) == 1 && contains(aws_cloudwatch_metric_alarm.target_response_time[0].ok_actions, "arn:aws:sns:us-east-1:123456789012:recovered")
     error_message = "Alarms should notify the configured OK actions"
   }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].threshold == 1 && aws_cloudwatch_metric_alarm.unhealthy_hosts[0].evaluation_periods == 3 && one(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].metric_query).period == 60
+    error_message = "Unhealthy hosts alarm should use the custom threshold, evaluation periods and period"
+  }
+
+  assert {
+    condition     = contains(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_actions, "arn:aws:sns:us-east-1:123456789012:alerts") && contains(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].ok_actions, "arn:aws:sns:us-east-1:123456789012:recovered")
+    error_message = "Unhealthy hosts alarm should notify the configured actions"
+  }
 }
 
 run "cloudwatch_alarms_null_uses_default" {
@@ -735,7 +761,7 @@ run "cloudwatch_alarms_null_uses_default" {
   }
 
   assert {
-    condition     = length(output.cloudwatch_alarm_arns) == 3 && length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1
+    condition     = length(output.cloudwatch_alarm_arns) == 4 && length(aws_cloudwatch_metric_alarm.elb_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_5xx) == 1 && length(aws_cloudwatch_metric_alarm.target_response_time) == 1
     error_message = "Expected alarms to be enabled by default, including null input"
   }
 }

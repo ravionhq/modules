@@ -765,6 +765,18 @@ variable "alb_cloudwatch_alarm_target_response_time_threshold" {
   }
 }
 
+variable "alb_cloudwatch_alarm_unhealthy_hosts_threshold" {
+  type        = number
+  description = "Number of unhealthy targets (UnHealthyHostCount, maximum per period across every target group behind the ALB) above which the ALB alarm fires."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.alb_cloudwatch_alarm_unhealthy_hosts_threshold >= 0
+    error_message = "The alb_cloudwatch_alarm_unhealthy_hosts_threshold must be at least 0."
+  }
+}
+
 variable "cloudwatch_alarm_evaluation_periods" {
   type        = number
   description = "The number of periods over which data is compared to the threshold."

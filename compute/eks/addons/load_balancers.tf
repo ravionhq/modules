@@ -61,6 +61,10 @@ module "public_alb" {
   # WAF
   waf_association_enabled = var.public_alb_web_acl_arn != null
   web_acl_arn             = var.public_alb_web_acl_arn
+
+  # CloudWatch alarms
+  cloudwatch_alarm_actions = var.load_balancer_alarm_actions
+  cloudwatch_ok_actions    = var.load_balancer_alarm_ok_actions
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cluster_from_public_alb" {
@@ -118,6 +122,10 @@ module "private_alb" {
   access_logs_enabled        = var.private_alb_access_logs_enabled
   access_logs_bucket_arn     = var.private_alb_access_logs_bucket_arn
   access_logs_retention_days = var.load_balancer_access_logs_retention_days
+
+  # CloudWatch alarms
+  cloudwatch_alarm_actions = var.load_balancer_alarm_actions
+  cloudwatch_ok_actions    = var.load_balancer_alarm_ok_actions
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cluster_from_private_alb" {

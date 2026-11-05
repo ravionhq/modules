@@ -27,3 +27,12 @@
   show_when:
     cloudwatch_alarms_creation_enabled: true
   default: 1
+- id: cloudwatch_alarm_unhealthy_hosts_threshold
+  label: Unhealthy targets alarm threshold
+  type: number
+  description: Triggers when more targets than this are unhealthy in any attached target group. 0 alarms on the first one.
+  collapsible: true
+  min: 0
+  show_when:
+    cloudwatch_alarms_creation_enabled: true
+  default: 0
