@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   notify:
@@ -31,6 +32,8 @@ jobs:
           REVIEWER: ${{ github.event.review.user.login }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
           REQUESTED_REVIEWERS: ${{ toJSON(github.event.pull_request.requested_reviewers) }}
           ASSIGNEES: ${{ toJSON(github.event.pull_request.assignees) }}
           REPOSITORY: ${{ github.repository }}
@@ -73,7 +76,38 @@ jobs:
           PY
           )"
 
-          if [[ "${PR_AUTHOR,,}" != "devin-ai-integration[bot]" && -z "${requested_by_login}" ]]; then
+          # Tembo credits the session's requester as a commit co-author instead of a body line.
+          if [[ -z "${requested_by_login}" && "${PR_AUTHOR,,}" == "tembo[bot]" ]]; then
+            commit_authors_query="$(
+              jq -n \
+                --arg owner "${REPOSITORY%%/*}" \
+                --arg repo "${REPOSITORY#*/}" \
+                --argjson number "${PR_NUMBER}" \
+                '{
+                  query: "query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { commits(first: 100) { nodes { commit { authors(first: 10) { nodes { user { login } } } } } } } } }",
+                  variables: {owner: $owner, repo: $repo, number: $number}
+                }'
+            )"
+            if commit_authors="$(
+              curl --silent --show-error --fail \
+                --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data "${commit_authors_query}" \
+                https://api.github.com/graphql
+            )"; then
+              requested_by_login="$(
+                jq -r '
+                  [.data.repository.pullRequest.commits.nodes[]?.commit.authors.nodes[]?.user.login
+                    | select(type == "string" and (endswith("[bot]") | not))]
+                  | first // ""
+                ' <<<"${commit_authors}"
+              )"
+            else
+              echo "::warning::Could not read commit authors to find the Tembo requester"
+            fi
+          fi
+
+          if [[ "${PR_AUTHOR,,}" != "devin-ai-integration[bot]" && "${PR_AUTHOR,,}" != "tembo[bot]" && -z "${requested_by_login}" ]]; then
             exit 0
           fi
 
