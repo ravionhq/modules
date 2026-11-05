@@ -2125,6 +2125,26 @@ describe("monitoring defaults", () => {
   }
 });
 
+describe("Terraform stack input order", () => {
+  it("places Git workflow after all stack variables and before the IaC tool", async () => {
+    const { module } = await compileDefinitionFile(join(repoRoot, "stack", "terraform", "rvn-stack-definition.yml"));
+    const ids = getModuleInputs(module).map((input) => input.id);
+    const start = ids.indexOf("section_inputs");
+    assert.ok(start >= 0);
+    assert.deepEqual(ids.slice(start, start + 9), [
+      "section_inputs",
+      "terraform_variable_files",
+      "tf_variables",
+      "env_variables",
+      "section_git_workflow",
+      "pull_request_runs",
+      "primary_branch_runs",
+      "primary_branch_autoapprove_enabled",
+      "section_iac",
+    ]);
+  });
+});
+
 describe("Terraform runner permissions", () => {
   it("adds permission inputs and pipeline values to stack modules", async () => {
     const definitions = await Promise.all([
