@@ -95,13 +95,32 @@ jobs:
                 --data "${commit_authors_query}" \
                 https://api.github.com/graphql
             )"; then
-              requested_by_login="$(
+              # GraphQL reports failures with HTTP 200 and an `errors` array.
+              graphql_errors="$(
                 jq -r '
-                  [.data.repository.pullRequest.commits.nodes[]?.commit.authors.nodes[]?.user.login
-                    | select(type == "string" and (endswith("[bot]") | not))]
-                  | first // ""
-                ' <<<"${commit_authors}"
+                  if (.errors | type) == "array" and (.errors | length) > 0 then
+                    [.errors[] | .message // "unknown error"] | join("; ")
+                  elif (.data.repository.pullRequest | type) != "object" then
+                    "pull request missing from response"
+                  else
+                    ""
+                  end
+                ' <<<"${commit_authors}" 2>/dev/null || echo "invalid JSON response"
               )"
+              if [[ -n "${graphql_errors}" ]]; then
+                echo "::warning::Could not read commit authors to find the Tembo requester: ${graphql_errors}"
+              else
+                requested_by_login="$(
+                  jq -r '
+                    [.data.repository.pullRequest.commits.nodes[]?.commit.authors.nodes[]?.user.login
+                      | select(type == "string" and (endswith("[bot]") | not))]
+                    | first // ""
+                  ' <<<"${commit_authors}"
+                )"
+                if [[ -z "${requested_by_login}" ]]; then
+                  echo "::warning::No human commit author found to identify the Tembo requester"
+                fi
+              fi
             else
               echo "::warning::Could not read commit authors to find the Tembo requester"
             fi
