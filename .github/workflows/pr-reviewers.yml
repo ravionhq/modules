@@ -7,6 +7,8 @@ on:
     types: [submitted]
   pull_request_review_comment:
     types: [created]
+  issue_comment:
+    types: [created]
   schedule:
     - cron: "0 13 * * *"
   workflow_dispatch:
@@ -15,12 +17,20 @@ permissions: {}
 
 jobs:
   request-review:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(fromJSON('["devin-ai-integration[bot]", "tembo[bot]"]'), github.event.pull_request.user.login)
+    # Greptile status comments matter too: they say when Greptile skipped an agent PR.
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      contains(fromJSON('["devin-ai-integration[bot]", "tembo[bot]"]'), github.event.pull_request.user.login) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        github.event.comment.user.login == 'greptile-apps[bot]'
+      )
     permissions:
       pull-requests: write
       contents: read
+      issues: write
     concurrency:
-      group: pr-reviewers-request-${{ github.event.pull_request.number || 'sweep' }}
+      group: pr-reviewers-request-${{ github.event.pull_request.number || github.event.issue.number || 'sweep' }}
       cancel-in-progress: false
     runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/id=${{ github.run_id }}-pr-reviewers-request/interruptible=true
     steps:
@@ -78,6 +88,32 @@ jobs:
               return "flybayer"
             }
 
+            // Greptile's dashboard trigger rules can skip agent PRs (it posts a status comment saying
+            // the PR "does not match any of the configured review trigger rule"). Mention it once to
+            // start the review; the request then follows Greptile's summary as usual.
+            async function triggerSkippedGreptileReview(pr) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                ...context.repo,
+                issue_number: pr.number,
+                per_page: 100,
+              })
+              const skipped = comments.some(
+                (comment) =>
+                  comment.user?.login === "greptile-apps[bot]" &&
+                  (comment.body ?? "").includes("<!-- greptile-status -->") &&
+                  (comment.body ?? "").includes("does not match any of the"),
+              )
+              if (!skipped || comments.some((comment) => /@greptileai\b/i.test(comment.body ?? ""))) {
+                return
+              }
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: pr.number,
+                body: "@greptileai",
+              })
+              core.info(`PR #${pr.number}: Greptile skipped the review; asked it to review`)
+            }
+
             async function requestReview(pr, {waitForGreptile}) {
               const agent = agentFor(pr)
               if (pr.state !== "open" || pr.draft || !agent) {
@@ -94,6 +130,7 @@ jobs:
                 (pr.body ?? "").includes("<!-- greptile_confidence_score:") ||
                 reviews.some((review) => review.user?.login === "greptile-apps[bot]")
               if (waitForGreptile && !greptileReviewed) {
+                await triggerSkippedGreptileReview(pr)
                 core.info(`PR #${pr.number}: waiting for Greptile's first review`)
                 return
               }
@@ -145,10 +182,11 @@ jobs:
               core.info(`PR #${pr.number}: requested review from @${reviewer}`)
             }
 
-            if (context.payload.pull_request) {
+            const eventPullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number
+            if (eventPullNumber) {
               const {data: pr} = await github.rest.pulls.get({
                 ...context.repo,
-                pull_number: context.payload.pull_request.number,
+                pull_number: eventPullNumber,
               })
               await requestReview(pr, {waitForGreptile: true})
             } else {
