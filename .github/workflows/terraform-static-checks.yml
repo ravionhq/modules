@@ -58,7 +58,10 @@ jobs:
           find . -mindepth 3 -maxdepth 3 -name versions.tf -exec dirname {} \; | sort |
             xargs -P 4 -I{} tofu -chdir={} get
 
-      - name: Initialize TFLint plugins
+      - name: Test local TFLint installer
+        run: node --test .github/scripts/install-tflint-aws.test.mjs
+
+      - name: Initialize TFLint plugins with GitHub authentication
         run: tflint --init
         env:
           GITHUB_TOKEN: ${{ github.token }}

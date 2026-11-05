@@ -15,9 +15,10 @@ permissions: {}
 
 jobs:
   request-review:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login == 'devin-ai-integration[bot]'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(fromJSON('["devin-ai-integration[bot]", "tembo[bot]"]'), github.event.pull_request.user.login)
     permissions:
       pull-requests: write
+      contents: read
     concurrency:
       group: pr-reviewers-request-${{ github.event.pull_request.number || 'sweep' }}
       cancel-in-progress: false
@@ -28,8 +29,58 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
+            // Coding agents whose PRs get a human reviewer once Greptile is done. `replyLogin` is the
+            // agent's GraphQL login on review thread comments.
+            const agents = new Map([
+              ["devin-ai-integration[bot]", {name: "Devin", replyLogin: "devin-ai-integration"}],
+              ["tembo[bot]", {name: "Tembo", replyLogin: "tembo"}],
+            ])
+            const agentFor = (pr) => agents.get(pr.user?.login ?? "")
+
+            // Tembo PRs carry no requester line; Tembo credits the session's requester as a commit
+            // co-author instead. Use the earliest human author.
+            async function commitRequester(pr) {
+              const {repository} = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      commits(first: 100) {
+                        nodes { commit { authors(first: 10) { nodes { user { login } } } } }
+                      }
+                    }
+                  }
+                }`,
+                {...context.repo, number: pr.number},
+              )
+              for (const {commit} of repository.pullRequest.commits.nodes) {
+                for (const author of commit.authors.nodes) {
+                  const login = author.user?.login
+                  if (login && !login.endsWith("[bot]")) {
+                    return login
+                  }
+                }
+              }
+              return null
+            }
+
+            async function reviewerFor(pr) {
+              const match = (pr.body ?? "").match(/^Requested by:[ \t]*@([A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38})[ \t]*\r?$/m)
+              if (match) {
+                return match[1]
+              }
+              if (pr.user?.login === "tembo[bot]") {
+                const login = await commitRequester(pr)
+                if (login) {
+                  return login
+                }
+              }
+              core.info(`PR #${pr.number}: no valid requester metadata; defaulting to @flybayer`)
+              return "flybayer"
+            }
+
             async function requestReview(pr, {waitForGreptile}) {
-              if (pr.state !== "open" || pr.draft || pr.user.login !== "devin-ai-integration[bot]") {
+              const agent = agentFor(pr)
+              if (pr.state !== "open" || pr.draft || !agent) {
                 return
               }
               const reviews = await github.paginate(github.rest.pulls.listReviews, {
@@ -46,11 +97,7 @@ jobs:
                 core.info(`PR #${pr.number}: waiting for Greptile's first review`)
                 return
               }
-              const match = (pr.body ?? "").match(/^Requested by:[ \t]*@([A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38})[ \t]*\r?$/m)
-              if (!match) {
-                core.info(`PR #${pr.number}: no valid requester metadata; defaulting to @flybayer`)
-              }
-              const reviewer = match?.[1] ?? "flybayer"
+              const reviewer = await reviewerFor(pr)
               const isReviewer = (user) => user?.login.toLowerCase() === reviewer.toLowerCase()
               if ((pr.requested_reviewers ?? []).some(isReviewer)) {
                 return
@@ -59,7 +106,7 @@ jobs:
                 return
               }
               if (waitForGreptile) {
-                // Wait until Devin addresses all unresolved Greptile threads.
+                // Wait until the agent addresses all unresolved Greptile threads.
                 const threads = []
                 let cursor = null
                 do {
@@ -83,10 +130,10 @@ jobs:
                 const unhandled = threads.filter(({isResolved, comments: {nodes: [first, ...replies]}}) =>
                   first?.author?.login === "greptile-apps" &&
                   !isResolved &&
-                  !replies.some((comment) => comment.author?.login === "devin-ai-integration"),
+                  !replies.some((comment) => comment.author?.login === agent.replyLogin),
                 )
                 if (unhandled.length > 0) {
-                  core.info(`PR #${pr.number}: waiting for Devin to address ${unhandled.length} Greptile thread(s)`)
+                  core.info(`PR #${pr.number}: waiting for ${agent.name} to address ${unhandled.length} Greptile thread(s)`)
                   return
                 }
               }
@@ -112,8 +159,7 @@ jobs:
               })
               const failedPullRequests = []
               for (const pr of pullRequests.filter(
-                (pullRequest) =>
-                  pullRequest.user.login === "devin-ai-integration[bot]" && !pullRequest.draft,
+                (pullRequest) => agentFor(pullRequest) && !pullRequest.draft,
               )) {
                 try {
                   await requestReview(pr, {
