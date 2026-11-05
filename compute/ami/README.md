@@ -58,10 +58,18 @@ the deploy finishes once every copy is available.
 | Input | Default | What it does |
 | --- | --- | --- |
 | `component_parameters` | `{}` | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets in the module, key by key. |
+| `parent_image` | `""` | An AMI ID to build this deploy on in place of the module's parent image, such as the previous release. Empty builds on the module's parent image. |
 | `extra_tags` | `{}` | Tags added to every AMI and snapshot this deploy creates, in every region. |
 | `publish` | `false` | Grants launch permission `all` on this deploy's AMIs in every region. `false` keeps them private. |
 
 A deploy can also be started from the dashboard or with `ravion deploy create`.
+
+## Enhanced image metadata
+
+After a build, Image Builder inventories the image's packages and OS details
+(`enhanced_image_metadata_enabled`, on by default), a step of about a minute.
+Turn it off to skip the inventory. It is an input of the module definition
+rather than a Terraform variable, because only the deploy reads it.
 
 ## Retention
 

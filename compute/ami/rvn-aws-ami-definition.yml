@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.3.2
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 0.4.0
+  description: 'Add the Enhanced image metadata input, which turns off Image Builder''s inventory of each finished image (about a minute of every build), and a Parent image input on deploys, which builds one release on an image of your choosing, such as the previous release, instead of the module''s parent image.'
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -832,6 +832,12 @@ module:
       label: Terminate instance on failure
       type: boolean
     - collapsible: true
+      default: true
+      description: Image Builder's enhanced image metadata. After the build, Image Builder inventories the image's packages and OS details, a step of about a minute. Turn off to skip it.
+      id: enhanced_image_metadata_enabled
+      label: Enhanced image metadata
+      type: boolean
+    - collapsible: true
       description: S3 bucket the build logs are written to. The build instance is granted write access under the log prefix. Leave blank to keep the logs in CloudWatch only.
       id: log_bucket
       label: Build log bucket
@@ -963,6 +969,15 @@ module:
         description: 'Per-component parameter overrides for this deploy, as {component_name: {parameter_name: value}}. Left out, each component keeps its module-level defaults.'
         default: {}
         required: false
+      - id: parent_image
+        label: Parent image
+        type: string
+        description: An AMI ID to build this deploy on, in place of the module's parent image. Left out, the deploy builds on the module's parent image.
+        default: ''
+        required: false
+        patterns:
+          - message: Use an AMI ID.
+            pattern: ^$|^ami-[0-9a-f]{8,17}$
       - id: extra_tags
         label: Extra tags
         type: keyvalue
@@ -981,9 +996,10 @@ module:
       image_builder_distribution_configuration_arn: << stack.output.image_builder_distribution_configuration_arn >>
       components: << stack.output.component_refs >>
       parent_image: >-
-        << module.input.parent_image_source == "lookup" ?
+        << deploy.input.parent_image ? {"id": deploy.input.parent_image} :
+        (module.input.parent_image_source == "lookup" ?
         {"lookup": {"name": module.input.parent_image_name, "owners": module.input.parent_image_owners}} :
-        {"id": module.input.parent_image} >>
+        {"id": module.input.parent_image}) >>
       block_device_mappings: >-
         << module.input.root_volume_override_enabled ? [{
         "device_name": module.input.root_device_name,
@@ -993,6 +1009,7 @@ module:
         "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil)
         }] : nil >>
       distribution_regions: << module.input.distribution_regions || [] >>
+      enhanced_image_metadata_enabled: << module.input.enhanced_image_metadata_enabled >>
       retention:
         published_image_count: << module.input.retention_published_image_count >>
         private_image_count: << module.input.retention_private_image_count >>
@@ -1079,6 +1096,7 @@ module:
     | Input | Default | What it does |
     | --- | --- | --- |
     | Component parameters | None | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets here, key by key. |
+    | Parent image | None | An AMI ID to build this deploy on in place of the module's parent image, such as the previous release. |
     | Extra tags | None | Tags added to every AMI and snapshot this deploy creates, in every region. |
     | Publish | Off | Grants launch permission `all` on this deploy's AMIs in every region. Off keeps them private. |
 
@@ -1112,6 +1130,7 @@ module:
     | Subnet and security groups | No | Default VPC | The build needs outbound internet or VPC endpoints. |
     | Build instance policies | No | Image Builder minimum | What the components need to reach. |
     | Build log bucket and prefix | No | CloudWatch only | Build logs in S3, with write access scoped to the prefix. |
+    | Enhanced image metadata | No | On | Image Builder inventories the finished image's packages and OS details, a step of about a minute. Turn off to skip it. |
     | AMI name, description, and tags | No | Name and build date | Applied to each image in the build region. |
     | Additional regions | No | None | Regions each deploy copies the image to. |
     | Published images to keep | Yes | 5 | Published images each region keeps. |
