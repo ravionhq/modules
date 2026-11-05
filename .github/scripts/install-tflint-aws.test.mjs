@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import {spawnSync} from "node:child_process"
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs"
+import {mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from "node:fs"
 import {tmpdir} from "node:os"
 import {join} from "node:path"
 import {test} from "node:test"
@@ -58,4 +58,37 @@ test("untrusted archive is rejected before extraction", (t) => {
   assert.equal(result.status, 1)
   assert.match(result.stderr, /archive checksum mismatch/)
   assert.doesNotMatch(result.stderr, /unexpected extraction/)
+})
+
+test("clean installation writes an executable plugin to the versioned directory", (t) => {
+  const f = fixture(t)
+  f.command("curl", "exit 0")
+  f.command("sha256sum", `case "$1" in
+    */plugin.zip) echo e81212eef130a2bacd537e9159a65de6a6a1ab8b5cdbd1a5e919b60bee46b120 ;;
+    *) echo bdea6c87e9962b80eb674d7d8e7bfab89ea72295664fa4fb83b371d4799beb2d ;;
+  esac`)
+  f.command("unzip", "printf 'verified binary fixture'")
+  const result = f.run()
+  assert.equal(result.status, 0, result.stderr)
+  const destination = join(f.root, ".tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-aws/0.38.0/tflint-ruleset-aws")
+  assert.equal(readFileSync(destination, "utf8"), "verified binary fixture")
+  assert.equal(statSync(destination).mode & 0o777, 0o755)
+})
+
+test("a bad replacement binary leaves the existing plugin unchanged", (t) => {
+  const f = fixture(t)
+  const dir = join(f.root, ".tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-aws/0.38.0")
+  mkdirSync(dir, {recursive: true})
+  const destination = join(dir, "tflint-ruleset-aws")
+  writeFileSync(destination, "existing plugin", {mode: 0o755})
+  f.command("curl", "exit 0")
+  f.command("sha256sum", `case "$1" in
+    */plugin.zip) echo e81212eef130a2bacd537e9159a65de6a6a1ab8b5cdbd1a5e919b60bee46b120 ;;
+    *) echo invalid-binary-checksum ;;
+  esac`)
+  f.command("unzip", "printf 'untrusted replacement'")
+  const result = f.run()
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /binary checksum mismatch/)
+  assert.equal(readFileSync(destination, "utf8"), "existing plugin")
 })
