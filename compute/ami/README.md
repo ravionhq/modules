@@ -64,13 +64,6 @@ the deploy finishes once every copy is available.
 
 A deploy can also be started from the dashboard or with `ravion deploy create`.
 
-## Enhanced image metadata
-
-After a build, Image Builder inventories the image's packages and OS details
-(`enhanced_image_metadata_enabled`, on by default), a step of about a minute.
-Turn it off to skip the inventory. It is an input of the module definition
-rather than a Terraform variable, because only the deploy reads it.
-
 ## Retention
 
 Each deploy keeps the newest `retention_published_image_count` images (5 by
