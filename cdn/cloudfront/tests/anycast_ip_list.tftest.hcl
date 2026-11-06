@@ -129,7 +129,7 @@ run "managed_domains_use_static_ips" {
   }
 
   assert {
-    condition     = aws_cloudfront_distribution.managed["managed"].anycast_ip_list_id == "shared-list-id" && !aws_cloudfront_distribution.managed["managed"].is_ipv6_enabled && aws_cloudfront_distribution.managed["managed"].price_class == "PriceClass_All"
+    condition     = aws_cloudfront_distribution.this["managed"].anycast_ip_list_id == "shared-list-id" && !aws_cloudfront_distribution.this["managed"].is_ipv6_enabled && aws_cloudfront_distribution.this["managed"].price_class == "PriceClass_All"
     error_message = "Ravion-managed certificates must use the same static IP wiring."
   }
 }

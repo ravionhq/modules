@@ -3,10 +3,15 @@
 ################################################################################
 # Each distribution with managed_domains gets one ACM certificate in us-east-1
 # (<=10 SANs) plus a routing record per domain for the customer to add. Once DNS
-# validates, Ravion attaches the certificate and aliases to the live
-# distribution, which is why aws_cloudfront_distribution.managed ignores both.
+# validates, Ravion attaches the certificate and sets the aliases to its
+# domains, which is why aws_cloudfront_distribution.this ignores both. Until
+# then the distribution keeps serving what it served before.
 
 locals {
+  managed_distributions = {
+    for k, v in var.distributions : k => v if length(v.managed_domains) > 0
+  }
+
   # Lowercased and de-duplicated, so the first entry stays the primary domain.
   managed_domain_names = {
     for k, v in local.managed_distributions : k => distinct([
@@ -31,7 +36,7 @@ resource "ravion_aws_acm_certificate" "this" {
   module_instance_id = var.module_instance_id
   aws_account_id     = var.ravion_aws_account_id
   aws_region         = "us-east-1"
-  target_arn         = aws_cloudfront_distribution.managed[each.key].arn
+  target_arn         = aws_cloudfront_distribution.this[each.key].arn
 
   lifecycle {
     precondition {
@@ -51,8 +56,8 @@ resource "ravion_domain" "this" {
 
   name               = each.value.domain
   module_instance_id = var.module_instance_id
-  target_dns_name    = aws_cloudfront_distribution.managed[each.value.distribution_key].domain_name
-  target_zone_id     = aws_cloudfront_distribution.managed[each.value.distribution_key].hosted_zone_id
+  target_dns_name    = aws_cloudfront_distribution.this[each.value.distribution_key].domain_name
+  target_zone_id     = aws_cloudfront_distribution.this[each.value.distribution_key].hosted_zone_id
 
   lifecycle {
     precondition {
