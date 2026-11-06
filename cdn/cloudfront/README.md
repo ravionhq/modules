@@ -542,8 +542,8 @@ CloudFront still requires the viewer's domain and SNI for HTTPS; an IP address a
 | origins[].http_port | HTTP port for the origin. | `number` | `80` | no |
 | origins[].https_port | HTTPS port for the origin. | `number` | `443` | no |
 | origins[].origin_ssl_protocols | SSL/TLS protocols for the origin. | `list(string)` | `["TLSv1.2"]` | no |
-| origins[].origin_keepalive_timeout | Keep-alive timeout in seconds. | `number` | `null` | no |
-| origins[].origin_read_timeout | Read timeout in seconds. | `number` | `null` | no |
+| origins[].origin_keepalive_timeout | Keep-alive timeout in seconds (1-180; above 60 needs a quota increase). Custom and VPC origins only. | `number` | `null` | no |
+| origins[].origin_read_timeout | Read (response) timeout in seconds (1-180; above 60 needs a quota increase). Custom and VPC origins only. | `number` | `null` | no |
 | origins[].origin_access_control_id | Override to use an externally-managed OAC. | `string` | `null` | no |
 | origins[].connection_attempts | Number of connection attempts (1-3). | `number` | `null` | no |
 | origins[].connection_timeout | Connection timeout in seconds (1-10). | `number` | `null` | no |
