@@ -527,6 +527,30 @@ variable "load_balancer_deletion_protection_enabled" {
   default     = false
 }
 
+variable "load_balancer_alarm_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when a shared ALB alarm (5xx, response time, unhealthy targets) enters ALARM. Empty disables direct actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.load_balancer_alarm_actions) <= 5 && alltrue([for arn in var.load_balancer_alarm_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
+variable "load_balancer_alarm_ok_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when a shared ALB alarm returns to OK. Empty disables direct recovery actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.load_balancer_alarm_ok_actions) <= 5 && alltrue([for arn in var.load_balancer_alarm_ok_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
 ################################################################################
 # Public ALB
 ################################################################################

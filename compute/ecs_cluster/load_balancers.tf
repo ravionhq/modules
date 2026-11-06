@@ -50,6 +50,7 @@ module "public_alb" {
   cloudwatch_alarm_elb_5xx_threshold              = var.alb_cloudwatch_alarm_elb_5xx_threshold
   cloudwatch_alarm_target_5xx_threshold           = var.alb_cloudwatch_alarm_target_5xx_threshold
   cloudwatch_alarm_target_response_time_threshold = var.alb_cloudwatch_alarm_target_response_time_threshold
+  cloudwatch_alarm_unhealthy_hosts_threshold      = var.alb_cloudwatch_alarm_unhealthy_hosts_threshold
   cloudwatch_alarm_evaluation_periods             = var.cloudwatch_alarm_evaluation_periods
   cloudwatch_alarm_period                         = var.cloudwatch_alarm_period
   cloudwatch_alarm_actions                        = var.cloudwatch_alarm_actions
@@ -104,6 +105,7 @@ module "private_alb" {
   cloudwatch_alarm_elb_5xx_threshold              = var.alb_cloudwatch_alarm_elb_5xx_threshold
   cloudwatch_alarm_target_5xx_threshold           = var.alb_cloudwatch_alarm_target_5xx_threshold
   cloudwatch_alarm_target_response_time_threshold = var.alb_cloudwatch_alarm_target_response_time_threshold
+  cloudwatch_alarm_unhealthy_hosts_threshold      = var.alb_cloudwatch_alarm_unhealthy_hosts_threshold
   cloudwatch_alarm_evaluation_periods             = var.cloudwatch_alarm_evaluation_periods
   cloudwatch_alarm_period                         = var.cloudwatch_alarm_period
   cloudwatch_alarm_actions                        = var.cloudwatch_alarm_actions
