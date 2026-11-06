@@ -751,6 +751,11 @@ run "cloudwatch_alarms_custom" {
     condition     = contains(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_actions, "arn:aws:sns:us-east-1:123456789012:alerts") && contains(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].ok_actions, "arn:aws:sns:us-east-1:123456789012:recovered")
     error_message = "Unhealthy hosts alarm should notify the configured actions"
   }
+
+  assert {
+    condition     = one(output.cloudwatch_alarm_notification_actions.alarm) == "arn:aws:sns:us-east-1:123456789012:alerts" && one(output.cloudwatch_alarm_notification_actions.ok) == "arn:aws:sns:us-east-1:123456789012:recovered"
+    error_message = "cloudwatch_alarm_notification_actions should expose the configured alarm and OK actions"
+  }
 }
 
 run "cloudwatch_alarms_null_uses_default" {

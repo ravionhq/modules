@@ -391,6 +391,7 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 | Name | Description |
 |------|-------------|
 | cloudwatch_alarm_arns | Map of alarm ARNs keyed by `elb_5xx`, `target_5xx`, `target_response_time`, and `unhealthy_hosts` (empty when disabled) |
+| cloudwatch_alarm_notification_actions | Actions every alarm runs when it fires (`alarm`) and when it recovers (`ok`); both empty when disabled |
 
 ## Architecture
 
