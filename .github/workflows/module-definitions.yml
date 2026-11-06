@@ -7,6 +7,9 @@ on:
   push:
     branches:
       - main
+      # Ravion merge queue candidates. The queue waits for the required checks
+      # on the candidate SHA, so every required check must run here.
+      - 'ravion/merge-queue/**'
 
 permissions:
   contents: read
@@ -66,11 +69,15 @@ jobs:
     name: Publish Dry-Run Plan
     runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish-plan/interruptible=true
     needs: validate
-    # Fork PRs receive no repository or organization secrets; skip the plan.
+    # "Publish Dry-Run Plan" is a required check, so it also runs on merge
+    # queue candidates. Fork PRs receive no repository or organization
+    # secrets; skip the plan. It never runs on main, where publish takes over.
     if: >-
       ${{
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.fork == false
+        (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.fork == false) ||
+        (github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/heads/ravion/merge-queue/'))
       }}
     permissions:
       contents: read
@@ -134,6 +141,7 @@ jobs:
           RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
 
       - name: Generate module category source diff
+        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -149,7 +157,7 @@ jobs:
 
       - name: Comment publish dry-run plan
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         with:
           script: |
             const fs = require('node:fs');
@@ -172,6 +180,16 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
+      - name: Show publish dry-run plan
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          if [ -f publish-plan.md ]; then
+            cat publish-plan.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -s publish-plan.err ]; then
+            tail -c 2000 publish-plan.err
+          fi
+
       - name: Fail when publish dry-run plan failed
         if: steps.publish_plan.outcome == 'failure'
         run: exit 1
@@ -185,6 +203,8 @@ jobs:
     name: Publish Module Definitions
     runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish/interruptible=false
     needs: validate
+    # Side effects (tags, registry publish, README commit, releases, docs
+    # dispatch) only ever run for main, never for merge queue candidates.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write

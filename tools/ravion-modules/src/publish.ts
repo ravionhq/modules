@@ -218,8 +218,8 @@ export async function publishDefinitions(
     const categoryChanged = categories.length > 0 &&
       (categoryIds.length !== categories.length || !haveSameValues(remoteCategoryIds, categoryIds));
     const shouldPublishDefinitionGlobally =
-      (isInitialPublication && definition.global !== false) ||
-      (!isInitialPublication && definition.global === true && remoteDefinition?.isGlobalPublished !== true);
+      (!remoteDefinition || remoteDefinition.organizationId != null) &&
+      (isInitialPublication ? definition.global !== false : definition.global === true);
     if (!remoteDefinition) {
       items.push(
         createItem(
