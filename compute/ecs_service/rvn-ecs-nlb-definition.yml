@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.6.0
-  description: Let pipeline deploy steps set allowlisted environment variables, such as a release version computed earlier in the pipeline.
+  version: 2.7.0
+  description: Require selected pipeline-provided environment variables on every deploy.
 module:
   inputs:
     - id: section_cluster
@@ -351,6 +351,9 @@ module:
   deploy:
     $merge:
       - ../../partials/deploy/ecs-service-deploy-common.yml
+    inputs:
+      - $include: ../../partials/deploy/ecs-service-image-ref-input.yml
+      - $include: ../../partials/deploy/environment-variables-deploy-input-with-port.yml
     strategy:
       $include: ../../partials/deploy/ecs-service-rolling-strategy.yml
     infrastructure:
@@ -365,9 +368,10 @@ module:
         "depends_on": [{"container_name": "log_router", "condition": "START"}], "environment": ([{name:
         "PORT", value: string(module.input.listeners[0].container_port)}] |
         concat(module.input.environment_variables != nil ? module.input.environment_variables : []) |
-        concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+        concat(deploy.input.environment_variables != nil ?
         map(filter(deploy.input.environment_variables, #.name != "PORT" &&
-        #.name in module.input.deploy_environment_variable_names && #.value != nil &&
+        #.name in concat(module.input.deploy_environment_variable_names ?? [],
+        module.input.deploy_environment_variable_required_names ?? []) && #.value != nil &&
         !(#.name in map(module.input.environment_variables ?? [], .name)) &&
         !(#.name in map(module.input.secrets ?? [], .name))),
         {"name": #.name, "value": string(#.value)}) : [])), "essential": true, "image":
@@ -407,9 +411,10 @@ module:
         (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) :
         int(float(module.input.fargate_size.vcpu) * 1024)), "environment": ([{name: "PORT", value:
         string(module.input.listeners[0].container_port)}] | concat(module.input.environment_variables != nil ?
-        module.input.environment_variables : []) | concat(module.input.deploy_environment_variable_names != nil &&
-        deploy.input.environment_variables != nil ? map(filter(deploy.input.environment_variables, #.name != "PORT" &&
-        #.name in module.input.deploy_environment_variable_names && #.value != nil &&
+        module.input.environment_variables : []) | concat(deploy.input.environment_variables != nil ?
+        map(filter(deploy.input.environment_variables, #.name != "PORT" &&
+        #.name in concat(module.input.deploy_environment_variable_names ?? [],
+        module.input.deploy_environment_variable_required_names ?? []) && #.value != nil &&
         !(#.name in map(module.input.environment_variables ?? [], .name)) &&
         !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : [])),
         "essential": true, "image": (module.input.build_source ==
@@ -613,6 +618,8 @@ module:
 
     Use **Deploy-provided environment variables** to allow a pipeline deploy step to set selected plain values. They cannot replace a Runtime environment variable or Runtime secret, and `PORT` is reserved for the network service.
 
+    Set `deploy_environment_variable_required_names` to names such as `RELEASE_ID` to require every pipeline deploy to supply exactly one non-empty value for each name. Required names are also allowed for deploy-time injection and cannot replace a Runtime environment variable or Runtime secret; `PORT` remains reserved.
+
     Use Runtime secrets for sensitive values. Secrets are injected into the ECS task from SSM Parameter Store or Secrets Manager using name and value_from objects.
 
     Stop timeout (secs) controls how long ECS waits after sending SIGTERM to the app container before sending SIGKILL. The default is 30 secs; Fargate allows up to 120 secs.
@@ -678,6 +685,7 @@ module:
     | Listener protocol                | Yes      | TCP                      | TCP, TLS, or UDP for each listener               |
     | Container port                   | Yes      | 3000                     | Container port targeted by each listener         |
     | Deploy-provided environment variables | No  | -                        | Names a pipeline deploy step may set to plain values; `PORT` is reserved |
+    | Required deploy-provided environment variables | No | [] | Names every deploy must supply exactly once with a non-empty value |
     | TLS certificate                  | Yes*     | -                        | Required for each TLS listener                   |
     | TLS SSL policy                   | No       | ELBSecurityPolicy-TLS13-1-2-2021-06 | SSL policy for each TLS listener        |
     | TLS ALPN policy                  | No       | None                     | Optional ALPN behavior for each TLS listener     |

@@ -1,0 +1,8 @@
+id: image_ref
+label: Image tag or digest
+type: string
+description: >-
+  Tag or digest to deploy from the configured image repository. A value starting with
+  "sha256:" is used as a digest, anything else as a tag. Do not pass a full image URI.
+placeholder: "sha256:... or latest"
+required: true
