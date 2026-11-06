@@ -147,6 +147,16 @@ variable "origins" {
   }
 
   validation {
+    condition     = alltrue([for o in var.origins : o.origin_read_timeout == null || (o.origin_read_timeout >= 1 && o.origin_read_timeout <= 180)])
+    error_message = "The origin_read_timeout must be between 1 and 180 seconds."
+  }
+
+  validation {
+    condition     = alltrue([for o in var.origins : o.origin_keepalive_timeout == null || (o.origin_keepalive_timeout >= 1 && o.origin_keepalive_timeout <= 180)])
+    error_message = "The origin_keepalive_timeout must be between 1 and 180 seconds."
+  }
+
+  validation {
     condition     = alltrue([for o in var.origins : !o.vpc_origin_enabled || o.vpc_origin_arn != null])
     error_message = "A vpc_origin_arn is required when vpc_origin_enabled is true."
   }

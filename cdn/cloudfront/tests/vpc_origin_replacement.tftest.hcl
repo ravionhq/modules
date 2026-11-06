@@ -114,3 +114,49 @@ run "long_names_stay_within_the_vpc_origin_name_limit" {
     error_message = "VPC origin names must stay within 64 characters."
   }
 }
+
+run "vpc_origin_applies_connection_and_response_timeouts" {
+  command = plan
+
+  variables {
+    origins = [
+      {
+        origin_id                = "alb-origin"
+        domain_name              = "website.private.example.com"
+        vpc_origin_enabled       = true
+        vpc_origin_arn           = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/my-alb/1111111111111111"
+        origin_protocol_policy   = "https-only"
+        connection_timeout       = 2
+        connection_attempts      = 1
+        origin_read_timeout      = 15
+        origin_keepalive_timeout = 10
+      }
+    ]
+  }
+
+  assert {
+    condition = alltrue([
+      one(aws_cloudfront_distribution.this["primary"].origin).connection_timeout == 2,
+      one(aws_cloudfront_distribution.this["primary"].origin).connection_attempts == 1,
+      one(one(aws_cloudfront_distribution.this["primary"].origin).vpc_origin_config).origin_read_timeout == 15,
+      one(one(aws_cloudfront_distribution.this["primary"].origin).vpc_origin_config).origin_keepalive_timeout == 10,
+    ])
+    error_message = "Connection and response timeouts must reach the VPC origin on the distribution."
+  }
+}
+
+run "rejects_response_timeout_above_cloudfront_maximum" {
+  command = plan
+
+  variables {
+    origins = [
+      {
+        origin_id           = "alb-origin"
+        domain_name         = "website.private.example.com"
+        origin_read_timeout = 181
+      }
+    ]
+  }
+
+  expect_failures = [var.origins]
+}
