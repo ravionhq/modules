@@ -45,6 +45,7 @@ it("CloudFront exposes primary origin connection and response timeouts", async (
     assert.equal(input.min, min);
     assert.equal(input.max, max);
     assert.equal(input.default, defaultValue);
+    assert.equal(input.collapsible, true, id);
   }
 
   const stack = record(definition.module.stack);
