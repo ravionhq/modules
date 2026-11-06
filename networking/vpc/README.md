@@ -320,6 +320,7 @@ module "vpc" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | vpc_cidr | The IPv4 CIDR block for the VPC | `string` | `"10.0.0.0/16"` | no |
+| secondary_vpc_cidr | An additional IPv4 CIDR block for the VPC. Adds a public subnet, and a private subnet when private subnets are enabled, from it in each AZ | `string` | `null` | no |
 | dns_support_enabled | Enable DNS support in the VPC | `bool` | `true` | no |
 | dns_hostnames_enabled | Enable DNS hostnames in the VPC | `bool` | `true` | no |
 
@@ -331,6 +332,10 @@ module "vpc" {
 | availability_zones | A list of availability zones to use for subnets. If empty, AZs will be automatically selected | `list(string)` | `[]` | no |
 | public_subnet_cidrs | A list of CIDR blocks for public subnets. If null, CIDRs will be automatically calculated | `list(string)` | `null` | no |
 | private_subnet_cidrs | A list of CIDR blocks for private subnets. If null, CIDRs will be automatically calculated | `list(string)` | `null` | no |
+| secondary_public_subnet_cidrs | A list of CIDR blocks for public subnets in the secondary VPC CIDR. If null, CIDRs will be automatically calculated | `list(string)` | `null` | no |
+| secondary_private_subnet_cidrs | A list of CIDR blocks for private subnets in the secondary VPC CIDR. If null, CIDRs will be automatically calculated | `list(string)` | `null` | no |
+| private_subnets_enabled | Create private subnets. When false the VPC only has public subnets, and the NAT gateway and interface endpoints must be disabled | `bool` | `true` | no |
+| public_subnet_map_public_ip_on_launch | Assign a public IPv4 address to instances launched in public subnets | `bool` | `false` | no |
 
 ### NAT Gateway
 
@@ -400,6 +405,8 @@ Each entry in `vpc_peering_connections` accepts the following attributes:
 | vpc_arn | The ARN of the VPC |
 | vpc_cidr_block | The IPv4 CIDR block of the VPC |
 | vpc_ipv6_cidr_block | The IPv6 CIDR block of the VPC (if IPv6 is enabled) |
+| secondary_vpc_cidr_block | The secondary IPv4 CIDR block of the VPC (if set) |
+| default_security_group_id | The ID of the VPC's default security group |
 
 ### Subnets
 
@@ -414,6 +421,10 @@ Each entry in `vpc_peering_connections` accepts the following attributes:
 | public_subnet_arns | List of ARNs of public subnets |
 | private_subnet_arns | List of ARNs of private subnets |
 | availability_zones | List of availability zones used for subnets |
+| secondary_public_subnet_ids | List of IDs of public subnets in the secondary CIDR block |
+| secondary_private_subnet_ids | List of IDs of private subnets in the secondary CIDR block |
+| secondary_public_subnet_cidrs | List of IPv4 CIDR blocks of public subnets in the secondary CIDR block |
+| secondary_private_subnet_cidrs | List of IPv4 CIDR blocks of private subnets in the secondary CIDR block |
 
 ### Internet Gateway
 

@@ -44,7 +44,7 @@ resource "aws_security_group" "vpc_endpoints" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [aws_vpc.this.cidr_block]
+    cidr_blocks = compact([aws_vpc.this.cidr_block, var.secondary_vpc_cidr])
   }
 
   tags = merge(local.tags, {
@@ -59,9 +59,11 @@ resource "aws_security_group" "vpc_endpoints" {
 resource "aws_vpc_endpoint" "interface" {
   for_each = toset(local.vpc_endpoint_interface_services)
 
-  vpc_id              = aws_vpc.this.id
-  service_name        = "com.amazonaws.${local.region}.${each.value}"
-  vpc_endpoint_type   = "Interface"
+  vpc_id            = aws_vpc.this.id
+  service_name      = "com.amazonaws.${local.region}.${each.value}"
+  vpc_endpoint_type = "Interface"
+  # An endpoint takes one subnet per AZ, so it stays in the primary private
+  # subnets; the security group admits the secondary CIDR too.
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
