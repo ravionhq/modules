@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.4.0
-  description: 'Add a Parent image input on deploys, which builds one release on an image of your choosing, such as the previous release, instead of the module''s parent image.'
+  version: 0.4.1
+  description: A component document longer than the 16,000 characters Image Builder takes is refused when the configuration is validated, not first at a deploy's plan.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -128,9 +128,12 @@ module:
               - steps
               - document
           type: string
-        - description: Image Builder component document in YAML. Changing it creates a new component, which the next deploy builds with.
+        - description: Image Builder component document in YAML, at most 16,000 characters. Changing it creates a new component, which the next deploy builds with.
           id: data
           label: Component document
+          patterns:
+            - message: A component document can be at most 16,000 characters, the most Image Builder takes inline. Move comments out of the document, or split it into more components.
+              pattern: ^[\s\S]{0,16000}$
           placeholder: |-
             name: provision
             schemaVersion: 1.0
