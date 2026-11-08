@@ -965,3 +965,40 @@ run "module_instance_id_is_null_outside_ravion" {
     error_message = "module_instance_id must be null when no module instance is given"
   }
 }
+
+################################################################################
+# Image Builder takes at most 16,000 characters of an inline component document
+################################################################################
+
+run "a_component_document_over_16000_characters_is_refused" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name = "provision"
+        data = "name: provision\nschemaVersion: 1.0\nphases: []\n${format("%16000s", "")}"
+      },
+    ]
+  }
+
+  expect_failures = [var.components]
+}
+
+run "a_component_document_of_16000_characters_is_accepted" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name = "provision"
+        data = "name: provision\nschemaVersion: 1.0\nphases: []\n${format("%15954s", "")}"
+      },
+    ]
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_component.this["provision"].data) == 16000
+    error_message = "A 16,000-character document must still be planned"
+  }
+}

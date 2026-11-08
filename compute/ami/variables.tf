@@ -137,6 +137,17 @@ variable "components" {
     error_message = "Each component must describe steps, set data, or set arn, matching the source it names."
   }
 
+  # Image Builder takes at most 16,000 characters of an inline component
+  # document, and the AWS provider refuses a longer one only once a deploy
+  # plans. Saying so here names the component; the module definition's pattern
+  # on data says it before that, when the configuration is validated.
+  validation {
+    condition = alltrue([
+      for c in var.components : length(c.data != null ? c.data : "") <= 16000
+    ])
+    error_message = "A component document (data) can be at most 16,000 characters, the most Image Builder takes inline. Move comments out of the document, or split it into more components."
+  }
+
   validation {
     condition     = alltrue([for c in var.components : c.source == null || contains(["steps", "document", "arn"], coalesce(c.source, "steps"))])
     error_message = "Each component source must be steps, document or arn."
