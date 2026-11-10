@@ -17,6 +17,11 @@ output "vpc_cidr_block" {
   value       = aws_vpc.this.cidr_block
 }
 
+output "default_security_group_id" {
+  description = "The ID of the VPC's default security group."
+  value       = aws_vpc.this.default_security_group_id
+}
+
 output "vpc_ipv6_cidr_block" {
   description = "The IPv6 CIDR block of the VPC (if IPv6 is enabled)."
   value       = var.ipv6_enabled ? aws_vpc.this.ipv6_cidr_block : null
@@ -44,6 +49,31 @@ output "public_subnet_cidrs" {
 output "private_subnet_cidrs" {
   description = "List of IPv4 CIDR blocks of private subnets."
   value       = aws_subnet.private[*].cidr_block
+}
+
+output "secondary_vpc_cidr_block" {
+  description = "The secondary IPv4 CIDR block of the VPC, if one is set."
+  value       = one(aws_vpc_ipv4_cidr_block_association.secondary[*].cidr_block)
+}
+
+output "secondary_public_subnet_ids" {
+  description = "List of IDs of public subnets in the secondary CIDR block."
+  value       = aws_subnet.secondary_public[*].id
+}
+
+output "secondary_private_subnet_ids" {
+  description = "List of IDs of private subnets in the secondary CIDR block."
+  value       = aws_subnet.secondary_private[*].id
+}
+
+output "secondary_public_subnet_cidrs" {
+  description = "List of IPv4 CIDR blocks of public subnets in the secondary CIDR block."
+  value       = aws_subnet.secondary_public[*].cidr_block
+}
+
+output "secondary_private_subnet_cidrs" {
+  description = "List of IPv4 CIDR blocks of private subnets in the secondary CIDR block."
+  value       = aws_subnet.secondary_private[*].cidr_block
 }
 
 output "public_subnet_ipv6_cidrs" {

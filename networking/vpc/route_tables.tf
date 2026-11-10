@@ -38,7 +38,7 @@ resource "aws_route_table_association" "public" {
 # When using a single NAT gateway, we only need one private route table
 # When using multiple NAT gateways (one per AZ), we need one route table per AZ
 resource "aws_route_table" "private" {
-  count = local.nat_gateway_high_availability_enabled ? local.subnet_count : 1
+  count = local.private_route_table_count
 
   vpc_id = aws_vpc.this.id
 
@@ -48,7 +48,7 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
-  count = local.subnet_count
+  count = local.private_subnet_count
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = local.nat_gateway_high_availability_enabled ? aws_route_table.private[count.index].id : aws_route_table.private[0].id
@@ -60,6 +60,33 @@ resource "aws_route_table_association" "private" {
   # peering, and gateway endpoint traffic in the meantime. Because of these
   # dependencies, `-target` on an association also applies their removals;
   # see "Migrating between NAT topologies" in the README instead.
+  depends_on = [
+    aws_route.private_nat,
+    aws_route.private_ipv6_egress,
+    aws_route.private_vpc_peering,
+    aws_vpc_endpoint.s3,
+    aws_vpc_endpoint.dynamodb,
+  ]
+}
+
+################################################################################
+# Secondary CIDR Route Table Associations
+################################################################################
+
+resource "aws_route_table_association" "secondary_public" {
+  count = local.secondary_subnet_count
+
+  subnet_id      = aws_subnet.secondary_public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "secondary_private" {
+  count = local.secondary_private_subnet_count
+
+  subnet_id      = aws_subnet.secondary_private[count.index].id
+  route_table_id = local.nat_gateway_high_availability_enabled ? aws_route_table.private[count.index].id : aws_route_table.private[0].id
+
+  # Same ordering as aws_route_table_association.private.
   depends_on = [
     aws_route.private_nat,
     aws_route.private_ipv6_egress,

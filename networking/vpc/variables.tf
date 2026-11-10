@@ -33,6 +33,17 @@ variable "vpc_cidr" {
   }
 }
 
+variable "secondary_vpc_cidr" {
+  type        = string
+  description = "An additional IPv4 CIDR block for the VPC. When set, the module creates a public subnet, and a private subnet when private subnets are enabled, from it in each availability zone."
+  default     = null
+
+  validation {
+    condition     = var.secondary_vpc_cidr == null || can(cidrhost(var.secondary_vpc_cidr, 0))
+    error_message = "The secondary_vpc_cidr must be a valid IPv4 CIDR block."
+  }
+}
+
 variable "dns_support_enabled" {
   type        = bool
   description = "Enable DNS support in the VPC."
@@ -62,8 +73,9 @@ variable "subnet_count" {
 
 variable "availability_zones" {
   type        = list(string)
-  description = "A list of availability zones to use for subnets. If empty, AZs will be automatically selected."
+  description = "A list of availability zones to use for subnets. If empty or null, AZs will be automatically selected."
   default     = []
+  nullable    = false
 
   validation {
     condition     = length(var.availability_zones) == 0 || length(var.availability_zones) >= 1
@@ -101,6 +113,50 @@ variable "private_subnet_cidrs" {
     condition     = var.private_subnet_cidrs == null || var.subnet_count == null || length(var.private_subnet_cidrs) == var.subnet_count
     error_message = "The number of private_subnet_cidrs must equal subnet_count when subnet_count is set."
   }
+}
+
+variable "secondary_public_subnet_cidrs" {
+  type        = list(string)
+  description = "A list of CIDR blocks for public subnets in the secondary VPC CIDR. If null, CIDRs will be automatically calculated from the secondary VPC CIDR."
+  default     = null
+
+  validation {
+    condition     = var.secondary_public_subnet_cidrs == null || alltrue([for cidr in var.secondary_public_subnet_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "All secondary_public_subnet_cidrs must be valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition     = var.secondary_public_subnet_cidrs == null || var.subnet_count == null || length(var.secondary_public_subnet_cidrs) == var.subnet_count
+    error_message = "The number of secondary_public_subnet_cidrs must equal subnet_count when subnet_count is set."
+  }
+}
+
+variable "secondary_private_subnet_cidrs" {
+  type        = list(string)
+  description = "A list of CIDR blocks for private subnets in the secondary VPC CIDR. If null, CIDRs will be automatically calculated from the secondary VPC CIDR."
+  default     = null
+
+  validation {
+    condition     = var.secondary_private_subnet_cidrs == null || alltrue([for cidr in var.secondary_private_subnet_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "All secondary_private_subnet_cidrs must be valid IPv4 CIDR blocks."
+  }
+
+  validation {
+    condition     = var.secondary_private_subnet_cidrs == null || var.subnet_count == null || length(var.secondary_private_subnet_cidrs) == var.subnet_count
+    error_message = "The number of secondary_private_subnet_cidrs must equal subnet_count when subnet_count is set."
+  }
+}
+
+variable "private_subnets_enabled" {
+  type        = bool
+  description = "Create private subnets. Without them the VPC only has public subnets, and the NAT gateway and interface VPC endpoints must be disabled."
+  default     = true
+}
+
+variable "public_subnet_map_public_ip_on_launch" {
+  type        = bool
+  description = "Assign a public IPv4 address to instances launched in public subnets."
+  default     = false
 }
 
 ################################################################################

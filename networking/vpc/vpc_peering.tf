@@ -108,3 +108,12 @@ resource "aws_route" "peer_vpc_peering" {
   destination_cidr_block    = aws_vpc.this.cidr_block
   vpc_peering_connection_id = aws_vpc_peering_connection.this[each.value.peering_key].id
 }
+
+# Return routes for the secondary CIDR, so its subnets reach the peer too.
+resource "aws_route" "peer_vpc_peering_secondary" {
+  for_each = var.secondary_vpc_cidr != null ? local.vpc_peering_peer_routes : {}
+
+  route_table_id            = each.value.route_table_id
+  destination_cidr_block    = aws_vpc_ipv4_cidr_block_association.secondary[0].cidr_block
+  vpc_peering_connection_id = aws_vpc_peering_connection.this[each.value.peering_key].id
+}
