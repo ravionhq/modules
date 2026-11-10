@@ -130,7 +130,8 @@ jobs:
             exit 0
           fi
 
-          # Skip approval DMs once the requester has approved the PR and added it to the merge queue themselves.
+          # Don't DM the requester about approvals once they have approved the PR and added it to the merge queue themselves.
+          skip_login=""
           if [[ "${review_state}" == "approved" && -n "${requested_by_login}" ]]; then
             queue_state_query="$(
               jq -n \
@@ -167,8 +168,8 @@ jobs:
               )"
               case "${requester_queued}" in
                 true)
-                  echo "@${requested_by_login} already approved and queued this PR; skipping notification"
-                  exit 0
+                  echo "@${requested_by_login} already approved and queued this PR; not notifying them"
+                  skip_login="${requested_by_login}"
                   ;;
                 false) ;;
                 *) echo "::warning::Could not check merge queue state: ${requester_queued#error: }" ;;
@@ -181,6 +182,7 @@ jobs:
           recipients="$(
             jq -cn \
               --arg reviewer "${REVIEWER}" \
+              --arg skip "${skip_login}" \
               --arg requested_by "${requested_by_login}" \
               --argjson requested "${REQUESTED_REVIEWERS}" \
               --argjson assignees "${ASSIGNEES}" '
@@ -189,6 +191,7 @@ jobs:
                   | map(.login)
                   | map(select(type == "string"))
                   | map(select((ascii_downcase) != ($reviewer | ascii_downcase)))
+                  | map(select((ascii_downcase) != ($skip | ascii_downcase)))
                   | reduce .[] as $login
                       ([];
                        if any(.[]; ascii_downcase == ($login | ascii_downcase))
