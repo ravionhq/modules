@@ -27,5 +27,12 @@ resource "aws_imagebuilder_component" "this" {
   # Create the replacement before retiring the old component from state.
   lifecycle {
     create_before_destroy = true
+
+    # A document the module writes from steps is held to Image Builder's limit
+    # too, with the component named, before the provider refuses it.
+    precondition {
+      condition     = length(each.value.data) <= 16000
+      error_message = "Component ${each.key}'s document is ${length(each.value.data)} characters; Image Builder takes at most 16,000. Move steps into another component."
+    }
   }
 }
