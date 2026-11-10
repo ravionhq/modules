@@ -130,6 +130,54 @@ jobs:
             exit 0
           fi
 
+          # Skip approval DMs once the requester has approved the PR and added it to the merge queue themselves.
+          if [[ "${review_state}" == "approved" && -n "${requested_by_login}" ]]; then
+            queue_state_query="$(
+              jq -n \
+                --arg owner "${REPOSITORY%%/*}" \
+                --arg repo "${REPOSITORY#*/}" \
+                --argjson number "${PR_NUMBER}" \
+                '{
+                  query: "query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { labels(first: 100) { nodes { name } } latestOpinionatedReviews(first: 100, writersOnly: true) { nodes { state author { login } } } } } }",
+                  variables: {owner: $owner, repo: $repo, number: $number}
+                }'
+            )"
+            if queue_state="$(
+              curl --silent --show-error --fail \
+                --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data "${queue_state_query}" \
+                https://api.github.com/graphql
+            )"; then
+              requester_queued="$(
+                jq -r --arg requester "${requested_by_login}" '
+                  if (.errors | type) == "array" and (.errors | length) > 0 then
+                    "error: " + ([.errors[] | .message // "unknown error"] | join("; "))
+                  elif (.data.repository.pullRequest | type) != "object" then
+                    "error: pull request missing from response"
+                  else
+                    .data.repository.pullRequest as $pr
+                    | (any($pr.labels.nodes[]?.name; . == "0 - ravion queue" or . == "0 - ravion priority")) as $queued
+                    | (any($pr.latestOpinionatedReviews.nodes[]?;
+                        .state == "APPROVED" and
+                        ((.author.login // "") | ascii_downcase) == ($requester | ascii_downcase))) as $approved
+                    | ($queued and $approved | tostring)
+                  end
+                ' <<<"${queue_state}" 2>/dev/null || echo "error: invalid JSON response"
+              )"
+              case "${requester_queued}" in
+                true)
+                  echo "@${requested_by_login} already approved and queued this PR; skipping notification"
+                  exit 0
+                  ;;
+                false) ;;
+                *) echo "::warning::Could not check merge queue state: ${requester_queued#error: }" ;;
+              esac
+            else
+              echo "::warning::Could not check merge queue state"
+            fi
+          fi
+
           recipients="$(
             jq -cn \
               --arg reviewer "${REVIEWER}" \
