@@ -1,0 +1,359 @@
+definition:
+  type: rvn-ecs-jobs
+  name: ECS Jobs
+  description: Scheduled and on-demand jobs that run as one-off ECS tasks from your container image.
+release:
+  version: 1.0.0
+  description: First release. Jobs run as one-off ECS tasks on a cron schedule, on demand, or from a pipeline job:run step.
+module:
+  inputs:
+    - id: section_cluster
+      label: ECS cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-ecs-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/ecs-service-cluster-common-mapped-inputs.yml
+      required: true
+    - id: section_service
+      label: Jobs service
+      type: section
+    - id: name
+      immutable: true
+      label: Service name
+      type: string
+      description: Name for the ECS service (it runs no tasks; it holds the task definition and network settings jobs use) and related resources.
+      required: true
+      default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      patterns:
+        - message: Use 1-255 letters, numbers, underscores, or hyphens, starting with a letter or number.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$
+    - id: private_subnet_placement_enabled
+      label: Run in private subnets
+      type: boolean
+      description: Recommended. Requires a NAT gateway or equivalent for internet access and keeps job tasks off public subnets.
+      default: true
+    - $include: ../../partials/inputs/ecs-service-build-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-capacity-inputs.yml
+    - $template: ../../partials/templates/ecs-service-runtime-env-inputs.yml
+      with:
+        environment_variables_description: Runtime environment variables passed to every job's container.
+    - $include: ../../partials/inputs/ecs-service-deploy-command-inputs.yml
+    - $template: ../../partials/templates/ecs-service-early-success-inputs.yml
+      with:
+        field_overrides: {}
+    - $include: ../../partials/inputs/ecs-service-logging-iam-networking-inputs.yml
+    - $include: ../../partials/inputs/ecs-service-efs-inputs.yml
+    - id: section_compliance
+      label: Compliance
+      type: section
+    - id: log_retention_days
+      label: Log retention (days)
+      type: number
+      description: Leave blank to inherit the cluster setting. Never expire keeps logs indefinitely.
+      collapsible: true
+      placeholder: Inherited from the ECS cluster
+      values:
+        - label: Never expire
+          value: 0
+        - label: 1 day
+          value: 1
+        - label: 3 days
+          value: 3
+        - label: 5 days
+          value: 5
+        - label: 7 days
+          value: 7
+        - label: 14 days
+          value: 14
+        - label: 30 days
+          value: 30
+        - label: 60 days
+          value: 60
+        - label: 90 days
+          value: 90
+        - label: 120 days
+          value: 120
+        - label: 150 days
+          value: 150
+        - label: 180 days
+          value: 180
+        - label: 365 days
+          value: 365
+        - label: 400 days
+          value: 400
+        - label: 545 days
+          value: 545
+        - label: 731 days
+          value: 731
+        - label: 1096 days
+          value: 1096
+        - label: 1827 days
+          value: 1827
+        - label: 2192 days
+          value: 2192
+        - label: 2557 days
+          value: 2557
+        - label: 2922 days
+          value: 2922
+        - label: 3288 days
+          value: 3288
+        - label: 3653 days
+          value: 3653
+      required: false
+      min: 0
+    - id: section_jobs
+      label: Jobs
+      type: section
+    - id: jobs
+      label: Jobs
+      type: object_array
+      description: >-
+        Jobs run as one-off ECS tasks from the image of the latest successful deploy, with this
+        service's network settings. A job with a schedule runs on its own; every job can also run
+        on demand from the Jobs tab, the API, the CLI, or a pipeline `job:run` step.
+      item_label: Job
+      required: false
+      default: []
+      item_inputs:
+        - id: id
+          label: Job ID
+          type: string
+          description: Unique id used by the API, the CLI and `job:run` steps. Changing it starts a new job with a new history.
+          placeholder: process-reports
+          required: true
+          patterns:
+            - message: Use 1-63 lowercase letters, numbers, or hyphens, starting with a letter or number.
+              pattern: ^[a-z0-9][a-z0-9-]{0,62}$
+        - id: name
+          label: Name
+          type: string
+          placeholder: Process reports
+          required: false
+        - id: command
+          label: Command
+          type: string_array
+          description: Container command for the job. Pass each argument as a separate item, for example `node`, `scripts/process-reports.js`.
+          add_button_label: Add argument
+          placeholder: node
+          required: true
+        - id: schedule
+          label: Schedule
+          type: cron
+          description: When the job runs on its own. Leave empty for a job that only runs on demand.
+          timezone_input: timezone
+          required: false
+        - id: timezone
+          label: Time zone
+          type: string
+          description: IANA time zone the schedule runs in.
+          placeholder: UTC
+          required: false
+          default: UTC
+        - id: timeout_minutes
+          label: Timeout (minutes)
+          type: number
+          description: Ravion stops an attempt that runs longer and marks it timed out.
+          min: 1
+          max: 1440
+          required: false
+          default: 30
+        - id: retries
+          label: Retries
+          type: number
+          description: Extra attempts after a failed one, within the same run.
+          min: 0
+          max: 9
+          required: false
+          default: 0
+        - id: concurrency
+          label: Concurrent runs
+          type: number
+          description: Runs of this job allowed at once; 0 is unlimited. A scheduled run that would exceed it is skipped.
+          min: 0
+          required: false
+          default: 1
+        - id: enabled
+          label: Enabled
+          type: boolean
+          description: A disabled job keeps its history but has no schedule and refuses runs.
+          default: true
+    - $include: ../../partials/inputs/ecs-service-builder-ecr-misc-inputs.yml
+  stack:
+    type: opentofu
+    ravion_state_backend_workspace: >-
+      << module.input.ravion_state_backend_workspace || project.given_id + "-" + environment.given_id + "-"
+      + module.given_id + "-" + stack.id>>
+    pipelines:
+      defaults:
+        input:
+          $merge:
+            - ../../partials/stack/terraform-runner-permissions-pipeline-inputs.yml
+          aws_account_id: "<< module.input.execution_environment_id ? null : module.input.aws_account_id >>"
+          aws_region: "<< module.input.execution_environment_id ? null : module.input.aws_region >>"
+          base_path: compute/ecs_service
+          branch: main
+          execution_environment_id: << module.input.execution_environment_id >>
+          ref: $local.module_tag
+          repo: https://github.com/ravionhq/modules
+          stack_id: <<stack.id>>
+          terraform_variables:
+            $merge:
+              - $template: ../../partials/stack/ecs-service-common-terraform-variables.yml
+                with:
+                  load_balancer_target_tracking: ...<< [] >>
+              - container_port: 3000
+                load_balancer_attachment: null
+                # The service only carries the task definition and network
+                # settings jobs run with; it never runs tasks itself.
+                desired_count: 0
+                auto_scaling:
+                  enabled: false
+                  min_capacity: 0
+                  max_capacity: 0
+                cloudwatch_alarms_creation_enabled: false
+                log_retention_days: >-
+                  << module.input.log_retention_days != nil ? module.input.log_retention_days :
+                  (module.input.cluster_log_retention_days != nil ? module.input.cluster_log_retention_days : 30) >>
+          tool: opentofu
+          tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
+        variant: standard
+      change:
+        pipeline_id: << defaults.change_pipeline_id >>
+      destroy:
+        pipeline_id: << defaults.destroy_pipeline_id >>
+  build:
+    $merge:
+      - ../../partials/build/ecs-service-image-build.yml
+    soci_enabled: << module.input.capacity_provider == "fargate" || module.input.capacity_provider == "fargate_spot" >>
+  deploy:
+    $merge:
+      - ../../partials/deploy/ecs-service-deploy-common.yml
+    strategy:
+      $include: ../../partials/deploy/ecs-service-rolling-strategy.yml
+    task_definition:
+      $merge:
+        - ../../partials/deploy/ecs-service-task-definition-common.yml
+      container_definitions: >-
+        << (module.input.firelens_enabled ? [{"command": (len(module.input.image_start_command)
+        > 0 ? module.input.image_start_command : nil), "cpu": (module.input.capacity_provider == "ec2" ?
+        int(float(module.input.task_cpu) * 1024) : int(float(module.input.fargate_size.vcpu) * 1024)),
+        "depends_on": [{"container_name": "log_router", "condition": "START"}], "environment":
+        ((module.input.environment_variables != nil ? module.input.environment_variables : []) |
+        concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+        map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names &&
+        #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+        !(#.name in map(module.input.secrets ?? [], .name))),
+        {"name": #.name, "value": string(#.value)}) : [])), "essential": true,
+        "image": (module.input.build_source == "image_registry" ? (deploy.input.image_ref contains
+        "sha256:" ? module.input.image_repository + "@" + deploy.input.image_ref : module.input.image_repository
+        + ":" + deploy.input.image_ref) : (deploy.input.image_ref contains "sha256:" ?
+        stack.output.ecr_repository_url + "@" + deploy.input.image_ref : stack.output.ecr_repository_url + ":" +
+        deploy.input.image_ref)), "linux_parameters": {"init_process_enabled": true}, "log_configuration":
+        {"log_driver": "awsfirelens"}, "memory": (module.input.capacity_provider == "ec2" ?
+        int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) * 1024)),
+        "mount_points": (module.input.efs_enabled ? [{"source_volume": "efs", "container_path":
+        module.input.efs_mount_path, "read_only": module.input.efs_read_only}] : []),
+        "name": (stack.output.container_name), "readonly_root_filesystem": false, "repository_credentials":
+        (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
+        module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}, {"name": "log_router", "image": module.input.firelens_image, "cpu": 0,
+        "memory_reservation": 51, "essential": true, "environment": ([{name: "FIRELENS_CONFIG_CONTENT",
+        value: "[SERVICE]\n    Flush 1\n    Grace 30\n\n" + (module.input.firelens_config ?
+        module.input.firelens_config + "\n" : "") + (module.input.firelens_cloudwatch_output_enabled ?
+        "\n[OUTPUT]\n    Name cloudwatch\n    Match *\n    region " + stack.output.region +
+        "\n    log_group_name " + stack.output.log_group_name +
+        "\n    auto_create_group true\n    log_stream_prefix " + stack.output.log_stream_prefix +
+        "/\n    retry_limit 2\n    log_key log\n    log_format json/emf\n" : "")}] |
+        concat(module.input.firelens_environment_variables != nil ? module.input.firelens_environment_variables : [])),
+        "secrets": module.input.firelens_secrets != nil ? module.input.firelens_secrets : [], "command":
+        ["/bin/sh", "-c", "printf '%s' \"$FIRELENS_CONFIG_CONTENT\" > /flightcontrol-firelens.conf && exec /entrypoint.sh"],
+        "user": "0", "log_configuration": {"log_driver": "awslogs", "options": {"awslogs-group":
+        stack.output.log_group_name, "awslogs-region": stack.output.region, "awslogs-stream-prefix":
+        stack.output.log_stream_prefix + "/firelens"}}, "firelens_configuration": {"type": "fluentbit",
+        "options": {"config-file-type": "file", "config-file-value": "/flightcontrol-firelens.conf",
+        "enable-ecs-log-metadata": string(module.input.firelens_ecs_metadata_enabled)}}}] : [{"command":
+        (len(module.input.image_start_command) > 0 ? module.input.image_start_command : nil), "cpu":
+        (module.input.capacity_provider == "ec2" ? int(float(module.input.task_cpu) * 1024) :
+        int(float(module.input.fargate_size.vcpu) * 1024)), "environment":
+        ((module.input.environment_variables != nil ? module.input.environment_variables : []) |
+        concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+        map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names &&
+        #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+        !(#.name in map(module.input.secrets ?? [], .name))),
+        {"name": #.name, "value": string(#.value)}) : [])), "essential": true, "image": (module.input.build_source ==
+        "image_registry" ? (deploy.input.image_ref contains "sha256:" ? module.input.image_repository + "@" +
+        deploy.input.image_ref : module.input.image_repository + ":" + deploy.input.image_ref) :
+        (deploy.input.image_ref contains "sha256:" ? stack.output.ecr_repository_url + "@" + deploy.input.image_ref :
+        stack.output.ecr_repository_url + ":" + deploy.input.image_ref)), "linux_parameters":
+        {"init_process_enabled": true}, "log_configuration": {"log_driver": "awslogs", "options":
+        {"awslogs-group": stack.output.log_group_name, "awslogs-region": stack.output.region,
+        "awslogs-stream-prefix": stack.output.log_stream_prefix}}, "memory": (module.input.capacity_provider ==
+        "ec2" ? int(float(module.input.task_memory) * 1024) : int(float(module.input.fargate_size.memory_gb) *
+        1024)), "mount_points": (module.input.efs_enabled ? [{"source_volume": "efs", "container_path":
+        module.input.efs_mount_path, "read_only": module.input.efs_read_only}] : []), "name":
+        (stack.output.container_name), "readonly_root_filesystem": false,
+        "repository_credentials": (module.input.image_registry_credentials_secret_arn ? {credentials_parameter:
+        module.input.image_registry_credentials_secret_arn} : nil), "secrets": (module.input.secrets),
+        "stop_timeout": (module.input.stop_timeout != nil ? module.input.stop_timeout : 30)}]) | concat(module.input.sidecars ? map(module.input.sidecars, {"name": #.name, "image": #.image,
+        "essential": #.essential, "cpu": (#.cpu ? int(float(#.cpu) * 1024) : nil), "memory":
+        (#.memory ? int(float(#.memory) * 1024) : nil), "memory_reservation":
+        (#.memory_reservation ? int(float(#.memory_reservation) * 1024) : nil),
+        "environment": #.environment, "secrets": #.secrets, "port_mappings": #.port_mappings,
+        "mount_points": #.mount_points, "depends_on": #.depends_on, "command": #.command, "entry_point":
+        #.entry_point, "working_directory": #.working_directory}) : []) >>
+  jobs: >-
+    << map(module.input.jobs != nil ? module.input.jobs : [], {"id": #.id, "name": #.name, "enabled": (#.enabled
+    != nil ? #.enabled : true), "schedule": (#.schedule != nil && #.schedule != "" ? {"cron": #.schedule,
+    "timezone": (#.timezone != nil && #.timezone != "" ? #.timezone : "UTC")} : nil), "timeout":
+    int((#.timeout_minutes != nil ? #.timeout_minutes : 30) * 60), "retry": {"max_attempts": int((#.retries != nil
+    ? #.retries : 0) + 1)}, "concurrency": {"limit": int(#.concurrency != nil ? #.concurrency : 1)}, "target":
+    {"type": "aws:ecs", "overrides": {"container_overrides": [{"name": stack.output.container_name, "command":
+    #.command}]}}}) >>
+  ui:
+    logs:
+      - id: ecs_jobs_logs
+        name: ECS job logs
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << stack.output.region >>
+          log_group: << stack.output.log_group_name >>
+          log_stream_prefix: << stack.output.log_stream_prefix >>
+  readme: |
+    Scheduled and on-demand jobs that run as one-off ECS tasks from your container image.
+
+    ## Overview
+
+    ECS Jobs deploys like ECS Worker: Ravion builds or pulls your image and deploys it to an ECS service in an existing Ravion ECS cluster. The service runs no tasks of its own (its desired count is always 0). It holds the task definition revision and the network settings, and each job run starts a one-off ECS task from them.
+
+    Terraform source: [ravionhq/modules/compute/ecs_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/ecs_service)
+
+    ## Jobs
+
+    Add jobs in the **Jobs** section. Each job has an id, a command, and optionally a cron schedule with a time zone, a timeout, retries and a concurrency limit.
+
+    - A job with a schedule runs on its own. Pause a schedule from the module's Jobs tab; manual runs still work while it's paused.
+    - Every job can run on demand from the Jobs tab, the API, the CLI, or a pipeline `job:run` step, optionally with a different command.
+    - Runs use the image of the latest successful deploy. A job that fires before the first deploy is recorded as skipped.
+    - A scheduled run that would exceed the job's concurrency limit is recorded as skipped. Manual, API and pipeline runs always start.
+    - Each run keeps its exit code, the reason ECS gave for stopping, and its logs.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | ----- | -------- | ------- | ----------- |
+    | Cluster | Yes | - | Existing rvn-ecs-cluster module instance |
+    | Service name | Yes | {project}-{env}-{module} | Name for the ECS service and related resources |
+    | Run in private subnets | No | true | Run job tasks in private subnets without public IPs |
+    | Build source | Yes | dockerfile | Dockerfile, Railpack, Managed ECR repository, or Pull from image registry |
+    | Capacity provider | Yes | fargate | Capacity provider job tasks run on |
+    | App size | No | 2 vCPU, 4 GB | Fargate task CPU and memory for every job |
+    | Jobs | No | [] | Jobs with id, command, schedule, time zone, timeout, retries, concurrency and enabled |
+    | Log retention (days) | No | Cluster default | Overrides the CloudWatch log retention inherited from the cluster |
+
+    ## Learn more
+
+    - [Amazon ECS standalone tasks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/standalone-tasks.html)
