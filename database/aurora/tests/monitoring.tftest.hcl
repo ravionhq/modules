@@ -92,7 +92,7 @@ run "storage_and_io_monitoring" {
     error_message = "Storage must use five-minute minimum space."
   }
   assert {
-    condition     = length(output.cloudwatch_alarm_arns) == 6
+    condition     = length(output.cloudwatch_alarm_arns) == 7
     error_message = "Expose old and new alarm ARNs."
   }
 }
@@ -136,6 +136,66 @@ run "mysql_provisioned_storage" {
     condition     = aws_cloudwatch_metric_alarm.cluster_storage[0].metric_name == "AuroraVolumeBytesLeftTotal" && aws_cloudwatch_metric_alarm.cluster_storage[0].threshold == 53687091200
     error_message = "Provisioned MySQL must use the configured remaining-space threshold."
   }
+}
+
+run "mysql_local_storage" {
+  command = plan
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.free_local_storage[0].metric_name == "FreeLocalStorage" && aws_cloudwatch_metric_alarm.free_local_storage[0].namespace == "AWS/RDS" && aws_cloudwatch_metric_alarm.free_local_storage[0].comparison_operator == "LessThanThreshold" && aws_cloudwatch_metric_alarm.free_local_storage[0].threshold == 5368709120
+    error_message = "Alarm when instance local storage falls below the default 5 GiB."
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.free_local_storage[0].statistic == "Minimum" && keys(aws_cloudwatch_metric_alarm.free_local_storage[0].dimensions) == tolist(["DBClusterIdentifier"])
+    error_message = "Monitor the cluster instance with the least local storage left."
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.free_local_storage[0].period == 300 && aws_cloudwatch_metric_alarm.free_local_storage[0].treat_missing_data == "missing"
+    error_message = "Local storage must use five-minute periods and must not silently report OK."
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.free_local_storage[0].alarm_actions == toset(var.cloudwatch_alarm_actions) && aws_cloudwatch_metric_alarm.free_local_storage[0].ok_actions == toset(var.cloudwatch_ok_actions)
+    error_message = "Forward alarm and recovery actions."
+  }
+  assert {
+    condition     = output.cloudwatch_alarm_arns.free_local_storage == aws_cloudwatch_metric_alarm.free_local_storage[0].arn
+    error_message = "Expose the local storage alarm ARN."
+  }
+}
+
+run "postgres_local_storage" {
+  command = plan
+  variables {
+    engine                                   = "aurora-postgresql"
+    engine_version                           = "16.4"
+    cloudwatch_alarm_local_storage_threshold = 10737418240
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.free_local_storage[0].metric_name == "FreeLocalStorage" && aws_cloudwatch_metric_alarm.free_local_storage[0].threshold == 10737418240
+    error_message = "PostgreSQL must alarm on free local storage, which it has no remaining-volume metric to replace."
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.cluster_storage[0].metric_name == "VolumeBytesUsed"
+    error_message = "The local storage alarm must not replace the volume usage alarm."
+  }
+}
+
+run "alarms_disabled_local_storage" {
+  command = plan
+  variables {
+    cloudwatch_alarms_creation_enabled = false
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.free_local_storage) == 0
+    error_message = "Disabled monitoring must create no local storage alarm."
+  }
+}
+
+run "reject_zero_local_storage_threshold" {
+  command = plan
+  variables {
+    cloudwatch_alarm_local_storage_threshold = 0
+  }
+  expect_failures = [var.cloudwatch_alarm_local_storage_threshold]
 }
 
 run "reject_zero_read_iops_threshold" {

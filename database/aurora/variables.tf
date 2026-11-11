@@ -677,6 +677,19 @@ variable "cloudwatch_alarm_storage_threshold" {
   }
 }
 
+variable "cloudwatch_alarm_local_storage_threshold" {
+  description = "Minimum free local storage in bytes on any cluster instance. Local storage holds temporary tables and sort spills and does not grow with the cluster volume."
+  type        = number
+  default     = 5368709120
+
+  nullable = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_local_storage_threshold > 0
+    error_message = "Local storage alarm threshold must be greater than 0."
+  }
+}
+
 variable "cloudwatch_alarm_volume_bytes_used_threshold" {
   description = "Maximum Aurora PostgreSQL cluster storage usage in bytes. Default is 115 TiB; tune below the storage limit supported by the engine version."
   type        = number

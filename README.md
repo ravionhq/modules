@@ -66,7 +66,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | Definition | Name | Version | Module path |
 | ---------- | ---- | ------- | ----------- |
 | `rvn-acm-certificate` | ACM Certificate | v1.1.2 | `security/acm_certificate/` |
-| `rvn-aurora` | Aurora Database | v1.6.0 | `database/aurora/` |
+| `rvn-aurora` | Aurora Database | v1.7.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.4.0 | `networking/alb/` |
 | `rvn-aws-alternat` | alterNAT | v0.2.0 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.4.1 | `compute/ami/` |
@@ -88,7 +88,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-addons` | EKS Add-ons | v1.2.0 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v1.0.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v1.0.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.17.0 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v1.18.0 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v1.1.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.4.0 | `compute/lambda/` |
