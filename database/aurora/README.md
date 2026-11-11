@@ -404,6 +404,7 @@ module "aurora" {
 | cloudwatch_alarm_cpu_threshold | CPU utilization threshold (%). | `number` | `80` | no |
 | cloudwatch_alarm_memory_threshold | Freeable memory threshold (bytes). | `number` | `268435456` | no |
 | cloudwatch_alarm_storage_threshold | Minimum Aurora MySQL remaining volume space (bytes). | `number` | `107374182400` (100 GiB) | no |
+| cloudwatch_alarm_local_storage_threshold | Minimum free local storage on any instance (bytes). | `number` | `5368709120` (5 GiB) | no |
 | cloudwatch_alarm_volume_bytes_used_threshold | Maximum Aurora PostgreSQL volume usage (bytes). Tune below the engine storage limit. | `number` | `126443837194240` (115 TiB) | no |
 | cloudwatch_alarm_read_iops_threshold | Read IOPS threshold; tune to workload capacity. | `number` | `1000` | no |
 | cloudwatch_alarm_write_iops_threshold | Write IOPS threshold; tune to workload capacity. | `number` | `1000` | no |
