@@ -15,7 +15,11 @@ locals {
 resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
   count = local.unhealthy_hosts_alarm_enabled ? 1 : 0
 
-  alarm_name          = "${var.name}-unhealthy-hosts"
+  # Named after the target group, not var.name: target group names are unique
+  # per region and at most 32 characters, so two workloads sharing var.name
+  # (see var.target_group_name) never share an alarm, and the name always fits
+  # CloudWatch's 255-character limit.
+  alarm_name          = "${local.target_group_name}-unhealthy-hosts"
   alarm_description   = "Unhealthy load balancer targets for ${var.name}"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = var.cloudwatch_alarm_evaluation_periods

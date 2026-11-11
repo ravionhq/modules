@@ -72,8 +72,8 @@ run "unhealthy_hosts_alarm_by_default" {
     error_message = "A load-balanced workload must get an unhealthy hosts alarm by default."
   }
   assert {
-    condition     = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_name == "test-workload-unhealthy-hosts"
-    error_message = "The alarm name must be derived from the workload name."
+    condition     = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_name == "test-workload-tg-unhealthy-hosts"
+    error_message = "The alarm name must be derived from the target group name."
   }
   assert {
     condition     = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].metric_name == "UnHealthyHostCount" && aws_cloudwatch_metric_alarm.unhealthy_hosts[0].namespace == "AWS/ApplicationELB" && aws_cloudwatch_metric_alarm.unhealthy_hosts[0].statistic == "Maximum"
@@ -119,6 +119,32 @@ run "unhealthy_hosts_alarm_custom_settings" {
   assert {
     condition     = output.cloudwatch_alarm_arns.unhealthy_hosts == aws_cloudwatch_metric_alarm.unhealthy_hosts[0].arn
     error_message = "The alarm ARN must be exposed."
+  }
+}
+
+run "alarm_name_follows_target_group_override" {
+  command = plan
+
+  variables {
+    target_group_name = "other-api-tg"
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_name == "other-api-tg-unhealthy-hosts"
+    error_message = "Two workloads sharing var.name but not a target group must not share an alarm."
+  }
+}
+
+run "alarm_name_stays_bounded_for_long_names" {
+  command = plan
+
+  variables {
+    name = "a${join("", [for i in range(254) : "b"])}"
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_name) <= 255
+    error_message = "The alarm name must fit CloudWatch's 255-character limit for any valid workload name."
   }
 }
 

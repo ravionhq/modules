@@ -1031,7 +1031,7 @@ module:
 
     ## Alarms
 
-    Load-balanced services get a CloudWatch alarm on `UnHealthyHostCount` for their own target group, on by default. It fires when more targets than **Unhealthy hosts alarm threshold** (default 0) fail the load balancer health check for **Alarm evaluation periods** consecutive periods, using the period maximum. Periods with no data, such as before the first pod registers, do not breach. Add an SNS topic ARN under **Alarm actions** to be notified; without one the alarm only changes state. Load balancer wide alarms (ELB 5xx, response time) belong to the EKS add-ons module. Cluster-only services have no target group and get no alarm.
+    Load-balanced services get a CloudWatch alarm on `UnHealthyHostCount` for their own target group, on by default, named `<target group name>-unhealthy-hosts`. It fires when more targets than **Unhealthy hosts alarm threshold** (default 0) fail the load balancer health check for **Alarm evaluation periods** consecutive periods, using the period maximum. Periods with no data, such as before the first pod registers, do not breach. Add an SNS topic ARN under **Alarm actions** to be notified; without one the alarm only changes state. Load balancer wide alarms (ELB 5xx, response time) belong to the EKS add-ons module. Cluster-only services have no target group and get no alarm.
 
     ## Metrics and logs
 
