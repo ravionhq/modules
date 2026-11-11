@@ -965,3 +965,76 @@ run "module_instance_id_is_null_outside_ravion" {
     error_message = "module_instance_id must be null when no module instance is given"
   }
 }
+
+################################################################################
+# Image Builder takes at most 16,000 characters of an inline component document
+################################################################################
+
+run "a_component_document_over_16000_characters_is_refused" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name = "provision"
+        data = "name: provision\nschemaVersion: 1.0\nphases: []\n${format("%16000s", "")}"
+      },
+    ]
+  }
+
+  expect_failures = [var.components]
+}
+
+run "a_component_document_of_16000_characters_is_accepted" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name = "provision"
+        data = "name: provision\nschemaVersion: 1.0\nphases: []\n${format("%15954s", "")}"
+      },
+    ]
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_component.this["provision"].data) == 16000
+    error_message = "A 16,000-character document must still be planned"
+  }
+}
+
+run "a_leftover_document_over_16000_characters_is_ignored_for_an_arn" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name   = "update"
+        source = "arn"
+        data   = "name: stale\nschemaVersion: 1.0\nphases: []\n${format("%16000s", "")}"
+        arn    = "arn:aws:imagebuilder:us-west-2:aws:component/update-linux/x.x.x"
+      },
+    ]
+  }
+
+  assert {
+    condition     = length(aws_imagebuilder_component.this) == 0
+    error_message = "A component whose source is arn must not be held to the length of a document it ignores"
+  }
+}
+
+run "a_document_written_from_steps_over_16000_characters_is_refused" {
+  command = plan
+
+  variables {
+    components = [
+      {
+        name        = "provision"
+        source      = "steps"
+        build_steps = [{ name = "Install", commands = ["echo '${format("%16000s", "")}'"] }]
+      },
+    ]
+  }
+
+  expect_failures = [aws_imagebuilder_component.this]
+}

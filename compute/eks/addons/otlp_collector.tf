@@ -1,14 +1,20 @@
 ################################################################################
-# OTLP collector — workload traces and metrics (Helm)
+# OTLP collector — workload traces, metrics and logs (Helm)
 #
 # A Deployment of its own, apart from the collector that scrapes the cluster
 # (otel_collector.tf), so a burst of spans or workload metrics never competes
 # with the scrape. It runs while traces are on. Workloads send OTLP to its
 # in-cluster Service (otlp_grpc_endpoint, otlp_http_endpoint), and it exports:
 #
-#   - every trace to each traces destination, and
+#   - every trace to each traces destination,
 #   - workload metrics to the metrics destinations while metrics are on,
-#     without the scrape allow-list, so every series a workload sends is billed.
+#     without the scrape allow-list, so every series a workload sends is billed,
+#     and
+#   - OTLP logs to the in-cluster Loki while Loki is a logs provider, through
+#     Loki's native OTLP endpoint. Pod stdout does not come this way (Alloy
+#     tails it); these are logs a sender exports itself, such as the ones a
+#     platform relays for machines outside the cluster. Without a logs
+#     pipeline the receiver does not serve /v1/logs and answers 404.
 #
 # THE RECEIVER AUTHENTICATES NO SENDER. Any pod that reaches the Service can
 # send spans and metrics under any service name, and they reach the
@@ -33,6 +39,29 @@ locals {
 
   # Workload metrics go where the scraped ones do, while metrics are on.
   otlp_metrics_enabled = local.otlp_collector_enabled && local.otel_metrics_enabled
+
+  # OTLP logs go to the in-cluster Loki, which ingests OTLP natively on the
+  # tsdb/v13 schema with structured metadata (loki.tf).
+  otlp_logs_enabled = local.otlp_collector_enabled && local.loki_enabled
+
+  otel_otlp_logs_exporters = local.otlp_logs_enabled ? {
+    # Plain HTTP inside the cluster. The exporter appends /v1/logs to the
+    # endpoint, so this posts to Loki's /otlp/v1/logs. A Loki restart or a
+    # rate limit is ridden out by the queue and retries, as Tempo's is.
+    "otlp_http/loki" = {
+      endpoint = "${local.loki_endpoint}/otlp"
+      sending_queue = {
+        enabled    = true
+        queue_size = 1000
+      }
+      retry_on_failure = {
+        enabled          = true
+        initial_interval = "5s"
+        max_interval     = "30s"
+        max_elapsed_time = "300s"
+      }
+    }
+  } : {}
 
   # One exporter per traces destination. A vendor that is also a metrics
   # destination shares the metrics exporter's id: one account, one exporter.
@@ -102,6 +131,7 @@ locals {
     { debug = null },
     { for name, exporter in local.otel_metrics_exporters : name => exporter if local.otlp_metrics_enabled && exporter != null },
     local.otel_traces_exporters,
+    local.otel_otlp_logs_exporters,
   )
 
   otlp_collector_extensions = merge(
@@ -119,7 +149,11 @@ locals {
 
   otlp_collector_pipelines = merge(
     {
-      logs = null
+      logs = local.otlp_logs_enabled ? {
+        receivers  = ["otlp"]
+        processors = ["memory_limiter", "batch"]
+        exporters  = sort(keys(local.otel_otlp_logs_exporters))
+      } : null
       traces = {
         receivers  = ["otlp"]
         processors = ["memory_limiter", "batch"]
