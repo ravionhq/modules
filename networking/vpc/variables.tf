@@ -234,7 +234,7 @@ variable "ipv6_enabled" {
 variable "flow_logs_enabled" {
   type        = bool
   description = "Enable VPC Flow Logs for network traffic monitoring."
-  default     = false
+  default     = true
 }
 
 variable "flow_logs_destination" {
@@ -262,7 +262,7 @@ variable "flow_logs_s3_bucket_arn" {
 variable "flow_logs_retention_days" {
   type        = number
   description = "The number of days to retain VPC Flow Logs in CloudWatch. Only applies when flow_logs_destination is 'cloudwatch'. Set to 0 for indefinite retention."
-  default     = 30
+  default     = 365
 
   validation {
     condition = contains([

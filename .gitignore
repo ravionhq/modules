@@ -44,7 +44,7 @@ test/.env.test
 
 # Generated tool builds
 tools/ravion-modules/dist/
-tools/ravion-modules/node_modules/
+tools/ravion-modules/node_modules
 
 # Python test/import caches
 __pycache__/

@@ -113,6 +113,10 @@ locals {
     storage_class             = try(trimspace(local.trace.tempo.storage_class), "") != "" ? trimspace(local.trace.tempo.storage_class) : (local.ebs_default_storage_class_enabled ? "gp3" : null)
     chart_version             = try(trimspace(local.trace.tempo.chart_version), "") == "" ? "3.1.0" : trimspace(local.trace.tempo.chart_version)
     helm_values               = try(merge({}, local.trace.tempo.helm_values), {})
+    # The card's sizing, or tempo_resources for a field left blank.
+    cpu_request    = try(trimspace(local.trace.tempo.cpu_request), "") != "" ? trimspace(local.trace.tempo.cpu_request) : var.tempo_resources.cpu_request
+    memory_request = try(trimspace(local.trace.tempo.memory_request), "") != "" ? trimspace(local.trace.tempo.memory_request) : var.tempo_resources.memory_request
+    memory_limit   = try(trimspace(local.trace.tempo.memory_limit), "") != "" ? trimspace(local.trace.tempo.memory_limit) : var.tempo_resources.memory_limit
   }
 
   loki_config = {

@@ -49,7 +49,7 @@ module "alternat" {
   # NAT instances
   nat_instance_type     = var.nat_instance_type
   architecture          = local.architecture
-  nat_ami               = var.nat_instance_ami_id == null ? "" : var.nat_instance_ami_id
+  nat_ami               = local.nat_ami
   nat_instance_eip_ids  = var.nat_instance_eip_allocation_ids
   max_instance_lifetime = var.max_instance_lifetime_days * 86400
   nat_instance_key_name = var.nat_instance_key_name == null ? "" : var.nat_instance_key_name

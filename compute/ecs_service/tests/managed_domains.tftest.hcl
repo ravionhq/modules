@@ -113,6 +113,39 @@ run "empty_domains_creates_auto_domain_and_listener_rule" {
     condition     = length(aws_lb_listener_rule.alb) == 0
     error_message = "Managed mode must suppress caller-provided listener rules"
   }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 0
+    error_message = "Managed rules without target-group stickiness should export 0 so Ravion turns group stickiness off"
+  }
+}
+
+run "managed_rule_group_stickiness_defaults_to_one_second" {
+  command = plan
+
+  variables {
+    load_balancer_attachment = {
+      target_group = {
+        port     = 80
+        protocol = "HTTP"
+        stickiness = {
+          enabled = true
+          type    = "lb_cookie"
+        }
+      }
+      listener_rules = []
+    }
+  }
+
+  assert {
+    condition     = aws_lb_listener_rule.ravion["0"].action[0].forward[0].stickiness[0].enabled && aws_lb_listener_rule.ravion["0"].action[0].forward[0].stickiness[0].duration == 1
+    error_message = "Managed rules should enable group stickiness with the 1-second default, not the 86400-second target-group cookie duration"
+  }
+
+  assert {
+    condition     = output.listener_rule_group_stickiness_duration == 1
+    error_message = "Managed rules should export the 1-second group-stickiness duration"
+  }
 }
 
 run "custom_domain_creates_certificate_domain_and_rule" {
@@ -154,7 +187,11 @@ run "custom_domain_creates_certificate_domain_and_rule" {
   }
 
   assert {
-    condition     = output.ravion_domain_fqdn == "www.example.com" && output.ravion_domain_url == "https://www.example.com"
+    condition = (
+      output.ravion_domain_fqdn == "www.example.com"
+      && output.ravion_domain_url == "https://www.example.com"
+      && output.ravion_domain_fqdns == tolist(["www.example.com", "fallback.cluster.ravion.app"])
+    )
     error_message = "The first configured custom domain must be the primary output"
   }
 }
@@ -199,7 +236,15 @@ run "mixed_domains_share_one_custom_certificate" {
   }
 
   assert {
-    condition     = output.ravion_domain_fqdn == "api.cluster.ravion.app"
+    condition = (
+      output.ravion_domain_fqdn == "api.cluster.ravion.app"
+      && output.ravion_domain_fqdns == tolist([
+        "api.cluster.ravion.app",
+        "www.example.com",
+        "api.example.com",
+        "test-service.cluster.ravion.app",
+      ])
+    )
     error_message = "The first explicit domain must remain the primary output"
   }
 }
@@ -217,6 +262,7 @@ run "ravion_domain_name_names_the_default_domain" {
       length(local.effective_domains) == 1
       && local.effective_domains[0] == "api.cluster.ravion.app"
       && output.ravion_domain_fqdn == "api.cluster.ravion.app"
+      && output.ravion_domain_fqdns == tolist(["api.cluster.ravion.app"])
     )
     error_message = "ravion_domain_name must name the default Ravion domain"
   }
@@ -300,7 +346,7 @@ run "manual_mode_has_no_managed_domains" {
   }
 
   assert {
-    condition     = length(ravion_domain.wildcard) == 0 && length(ravion_domain.custom) == 0 && length(aws_lb_listener_rule.ravion) == 0 && output.ravion_domain_fqdn == null
+    condition     = length(ravion_domain.wildcard) == 0 && length(ravion_domain.custom) == 0 && length(aws_lb_listener_rule.ravion) == 0 && output.ravion_domain_fqdn == null && length(output.ravion_domain_fqdns) == 0
     error_message = "Manual mode must not allocate managed domains or rules"
   }
 }

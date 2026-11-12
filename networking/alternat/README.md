@@ -1,5 +1,7 @@
 # alterNAT
 
+New NAT instances default to the latest Amazon Linux 2023 minimal kernel 6.18 image for their architecture. `nat_instance_ami_id` still overrides this default. An image-selector change does not prove existing instances are patched: replace them through the failover lifecycle and verify their running kernels afterward.
+
 Highly available NAT instances for an existing VPC, using Chime's [alterNAT](https://github.com/chime/terraform-aws-alternat) (`chime/alternat/aws`, pinned to `0.10.4`). NAT instances carry private subnet egress with no per-GB processing charge. A connectivity tester in each availability zone fails the route over to a NAT gateway when a NAT instance is unhealthy, and restores it once the instance recovers.
 
 The module wraps the official alterNAT module and adds:
@@ -72,6 +74,21 @@ Failover keeps connectivity, but connections through a failed or replaced NAT in
 
 When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its next apply points the route back at the NAT gateway; with `nat_restore_enabled` (default), alterNAT moves it back to the NAT instance within a minute.
 
+## Alarms
+
+By default, the module creates a CloudWatch alarm on the invocation error rate of each alterNAT Lambda function: the Auto Scaling hook and every connectivity tester. A failing function can leave traffic on a broken NAT instance. The alarms notify nobody until you set `cloudwatch_alarm_actions`:
+
+```hcl
+module "alternat" {
+  # ...
+
+  cloudwatch_alarm_actions = [aws_sns_topic.alerts.arn]
+  cloudwatch_ok_actions    = [aws_sns_topic.alerts.arn]
+}
+```
+
+Set `cloudwatch_alarms_creation_enabled = false` to skip the alarms. `cloudwatch_alarm_arns` returns each alarm's ARN, keyed by function name.
+
 ## Requirements
 
 | Name | Version |
@@ -110,6 +127,12 @@ When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its 
 | ec2_endpoint_enabled | EC2 interface endpoint so failover works while internet egress is down. | `bool` | `true` | no |
 | s3_gateway_endpoint_enabled | Free S3 gateway endpoint on the managed route tables. | `bool` | `false` | no |
 | dynamodb_gateway_endpoint_enabled | Free DynamoDB gateway endpoint on the managed route tables. | `bool` | `false` | no |
+| cloudwatch_alarms_creation_enabled | Error-rate alarm on each alterNAT Lambda function. | `bool` | `true` | no |
+| cloudwatch_alarm_error_rate_threshold | Invocation error percentage at or above which an alarm fires; greater than 0, at most 100. | `number` | `1` | no |
+| cloudwatch_alarm_period | Metric aggregation period in seconds: 60, 300, 900, or 3600. | `number` | `300` | no |
+| cloudwatch_alarm_evaluation_periods | Consecutive breaching periods required to alarm; at most one day in total. | `number` | `1` | no |
+| cloudwatch_alarm_actions | Action ARNs, such as SNS topics in the module's region, notified when an alarm fires. | `list(string)` | `[]` | no |
+| cloudwatch_ok_actions | Action ARNs notified when an alarm recovers. | `list(string)` | `[]` | no |
 | tags | Tags for all resources. | `map(string)` | `{}` | no |
 
 ## Outputs
@@ -134,6 +157,7 @@ When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its 
 | connectivity_tester_log_group_names | Log groups of the connectivity tester Lambda functions. |
 | autoscaling_hook_function_name | Lambda function that fails over when a NAT instance terminates. |
 | autoscaling_hook_log_group_name | Log group of the Auto Scaling hook Lambda function. |
+| cloudwatch_alarm_arns | Error-rate alarm ARN for each alterNAT Lambda function, keyed by function name. |
 | ec2_vpc_endpoint_id | EC2 interface endpoint ID, if created. |
 | s3_vpc_endpoint_id | S3 gateway endpoint ID, if created. |
 | dynamodb_vpc_endpoint_id | DynamoDB gateway endpoint ID, if created. |

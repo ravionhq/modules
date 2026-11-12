@@ -136,7 +136,7 @@ while those still exist.
 | region | AWS region; when null the provider's configured region is used | `string` | `null` | no |
 | tags | A map of tags to assign to all resources | `map(string)` | `{}` | no |
 | ecr_repository_creation_enabled | Create an ECR repository for this workload's container image | `bool` | `false` | no |
-| ecr_repository_name | Name of the ECR repository; falls back to `name` | `string` | `null` | no |
+| ecr_repository_name | Name of the ECR repository; falls back to `name`. The form's **Image repository name** sets it. | `string` | `null` | no |
 | ecr_image_tag_mutability | Tag mutability, `MUTABLE` or `IMMUTABLE` | `string` | `"MUTABLE"` | no |
 | ecr_image_scan_on_push_enabled | Scan images for vulnerabilities on push | `bool` | `true` | no |
 | ecr_force_delete_enabled | Allow deleting the repository while it still holds images | `bool` | `false` | no |

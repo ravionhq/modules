@@ -2,6 +2,16 @@
 # Distribution
 ################################################################################
 
+output "anycast_ip_list_id" {
+  description = "Associated Anycast IP list ID, or null when static IPs are disabled. Can be reused by other modules in this AWS account."
+  value       = local.anycast_ip_list_id
+}
+
+output "anycast_ips" {
+  description = "Static IPv4 viewer addresses allocated by this module. Empty when disabled or using an existing list; read that list's addresses from its owner."
+  value       = try(aws_cloudfront_anycast_ip_list.this[0].anycast_ips, [])
+}
+
 output "distribution_ids" {
   description = "A map of distribution key to CloudFront distribution ID."
   value       = { for k, v in local.distributions : k => v.id }
@@ -20,6 +30,17 @@ output "distribution_arns" {
 output "distribution_domain_names" {
   description = "A map of distribution key to CloudFront distribution domain name."
   value       = { for k, v in local.distributions : k => v.domain_name }
+}
+
+output "distribution_domains" {
+  description = "A map of distribution key to normalized viewer domains: managed domains when configured, otherwise aliases."
+  value = {
+    for k, v in var.distributions : k => (
+      length(v.managed_domains) > 0
+      ? local.managed_domain_names[k]
+      : local.distribution_alias_names[k]
+    )
+  }
 }
 
 output "distribution_hosted_zone_ids" {

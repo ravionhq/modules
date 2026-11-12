@@ -75,7 +75,7 @@ variables {
   ravion_aws_account_id = "aws_testaccount"
   distributions = {
     primary = {
-      managed_domains = ["www.example.com", "example.com"]
+      managed_domains = [" www.Example.com. ", "example.com", "WWW.EXAMPLE.com."]
     }
   }
   origins = [
@@ -131,6 +131,11 @@ run "managed_domains_create_certificate_and_routing_records" {
     condition     = output.managed_primary_domains["primary"] == "www.example.com"
     error_message = "The first managed domain must be the primary domain."
   }
+
+  assert {
+    condition     = output.distribution_domains["primary"] == tolist(["www.example.com", "example.com"])
+    error_message = "Viewer domains must use the normalized, deduplicated managed domains."
+  }
 }
 
 run "managed_distribution_starts_with_default_certificate" {
@@ -163,7 +168,7 @@ run "byo_distribution_keeps_original_address" {
   variables {
     distributions = {
       primary = {
-        aliases             = ["www.example.com"]
+        aliases             = [" www.Example.com. ", "WWW.example.com", "api.EXAMPLE.com."]
         acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-1111-1111-1111-111111111111"
       }
     }
@@ -175,8 +180,13 @@ run "byo_distribution_keeps_original_address" {
   }
 
   assert {
-    condition     = contains(aws_cloudfront_distribution.this["primary"].aliases, "www.example.com")
-    error_message = "BYO aliases must still be set."
+    condition     = toset(aws_cloudfront_distribution.this["primary"].aliases) == toset(["www.example.com", "api.example.com"])
+    error_message = "BYO aliases must be normalized and deduplicated."
+  }
+
+  assert {
+    condition     = output.distribution_domains["primary"] == tolist(["www.example.com", "api.example.com"])
+    error_message = "Viewer domains must expose normalized BYO aliases."
   }
 
   assert {
@@ -239,6 +249,11 @@ run "no_managed_domains_creates_no_ravion_resources" {
     condition     = length(aws_cloudfront_distribution.managed) == 0
     error_message = "Without managed domains the managed resource stays empty."
   }
+
+  assert {
+    condition     = output.distribution_domains["primary"] == tolist([])
+    error_message = "Without managed domains or aliases the viewer-domain output must be empty."
+  }
 }
 
 run "managed_domains_reject_byo_aliases" {
@@ -281,7 +296,19 @@ run "managed_domains_reject_more_than_ten" {
   variables {
     distributions = {
       primary = {
-        managed_domains = [for i in range(11) : "app${i}.example.com"]
+        managed_domains = [
+          "app0.example.com",
+          "app1.example.com",
+          "app2.example.com",
+          "app3.example.com",
+          "app4.example.com",
+          "app5.example.com",
+          "app6.example.com",
+          "app7.example.com",
+          "app8.example.com",
+          "app9.example.com",
+          "app10.example.com",
+        ]
       }
     }
   }

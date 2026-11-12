@@ -3,8 +3,8 @@ definition:
   name: CloudFront CDN
   description: CloudFront CDN distribution that serves web applications and private S3 buckets from ECS services, standalone ALBs, S3 origins, and other custom origins.
 release:
-  version: 1.6.0
-  description: Add Ravion-managed custom domains, where Ravion issues the certificate and attaches it to the distribution once you add the provided DNS records.
+  version: 1.9.0
+  description: Set how long CloudFront spends connecting to and waiting on each origin, including connection timeout and attempts.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -226,6 +226,50 @@ module:
           type: string
           required: true
       default: []
+    - id: origin_connection_timeout
+      label: Origin connection timeout (seconds)
+      type: number
+      collapsible: true
+      description: How long CloudFront waits to open a connection to the primary origin before retrying or failing. The worst-case connect time is this timeout times the connection attempts.
+      min: 1
+      max: 10
+      default: 10
+    - id: origin_connection_attempts
+      label: Origin connection attempts
+      type: number
+      collapsible: true
+      description: Total tries CloudFront makes to connect to the primary origin before returning an error.
+      min: 1
+      max: 3
+      default: 3
+    - id: origin_read_timeout
+      label: Origin response timeout (seconds)
+      type: number
+      collapsible: true
+      description: How long CloudFront waits for the primary origin to respond. Values above 60 need a CloudFront quota increase.
+      min: 1
+      max: 180
+      default: 30
+      show_when:
+        origin_source:
+          - ecs_web_service
+          - ecs_cluster
+          - alb
+          - custom
+    - id: origin_keepalive_timeout
+      label: Origin keep-alive timeout (seconds)
+      type: number
+      collapsible: true
+      description: How long CloudFront keeps an idle connection to the primary origin open. Values above 60 need a CloudFront quota increase.
+      min: 1
+      max: 180
+      default: 5
+      show_when:
+        origin_source:
+          - ecs_web_service
+          - ecs_cluster
+          - alb
+          - custom
     - id: additional_origins
       label: Additional origins
       type: object_array
@@ -265,6 +309,36 @@ module:
               value: http-only
             - label: Match viewer
               value: match-viewer
+        - id: connection_timeout
+          label: Connection timeout (seconds)
+          type: number
+          collapsible: true
+          min: 1
+          max: 10
+          default: 10
+        - id: connection_attempts
+          label: Connection attempts
+          type: number
+          collapsible: true
+          min: 1
+          max: 3
+          default: 3
+        - id: origin_read_timeout
+          label: Response timeout (seconds)
+          type: number
+          collapsible: true
+          description: Values above 60 need a CloudFront quota increase.
+          min: 1
+          max: 180
+          default: 30
+        - id: origin_keepalive_timeout
+          label: Keep-alive timeout (seconds)
+          type: number
+          collapsible: true
+          description: Values above 60 need a CloudFront quota increase.
+          min: 1
+          max: 180
+          default: 5
         - id: custom_headers
           label: Custom headers
           type: object_array
@@ -617,11 +691,14 @@ module:
     - id: section_settings
       label: Distribution settings
       type: section
+    - $include: ../../partials/inputs/cloudfront-static-ip-inputs.yml
     - id: price_class
       label: Price class
       type: string
       description: You can reduce edge locations for some cost savings if it becomes an issue.
       default: PriceClass_All
+      show_when:
+        anycast_ip_list_mode: disabled
       values:
         - label: All edge locations
           value: PriceClass_All
@@ -783,9 +860,16 @@ module:
           (module.input.origin_source == "ecs_web_service" && module.input.origin_vpc_enabled == true ?
           module.input.ecs_web_alb_arn : module.input.origin_source == "alb" && module.input.origin_vpc_enabled == true ?
           module.input.alb_arn : nil), "custom_headers":
-          (module.input.origin_custom_headers != nil ? module.input.origin_custom_headers : [])}] |
+          (module.input.origin_custom_headers != nil ? module.input.origin_custom_headers : []),
+          "connection_timeout": module.input.origin_connection_timeout, "connection_attempts":
+          module.input.origin_connection_attempts, "origin_read_timeout": (module.input.origin_source ==
+          "s3_bucket" ? nil : module.input.origin_read_timeout), "origin_keepalive_timeout":
+          (module.input.origin_source == "s3_bucket" ? nil : module.input.origin_keepalive_timeout)}] |
           concat(module.input.additional_origins != nil ? module.input.additional_origins : []) >>
-        price_class: << module.input.price_class >>
+        anycast_ip_list_mode: << module.input.anycast_ip_list_mode || "disabled" >>
+        anycast_ip_list_id: '<< module.input.anycast_ip_list_mode == "existing" ? module.input.anycast_ip_list_id : nil >>'
+        anycast_ip_count: '<< module.input.anycast_ip_list_mode == "create" && module.input.anycast_ip_count != nil ? module.input.anycast_ip_count : 3 >>'
+        price_class: << module.input.price_class || "PriceClass_All" >>
         region: << module.input.aws_region >>
         tags:
           $include: ../stack/ravion-tags.yml
@@ -799,8 +883,10 @@ module:
       >>
     links: |-
       <<
-      (stack.output.distribution_domain_name ? [{"name": "CloudFront domain", "href": "https://" + stack.output.distribution_domain_name}] : []) +
-      (module.input.distribution_aliases != nil && module.input.distribution_aliases != [] ? [{"name": module.input.distribution_aliases[0], "href": "https://" + module.input.distribution_aliases[0]}] : [])
+      (stack.output.distribution_domains != nil && stack.output.distribution_domains.main != nil &&
+      stack.output.distribution_domains.main != [] ?
+      map(stack.output.distribution_domains.main, {"name": #, "href": "https://" + #}) : []) +
+      (stack.output.distribution_domain_name ? [{"name": "CloudFront domain", "href": "https://" + stack.output.distribution_domain_name}] : [])
       >>
     metrics: |-
       <<
@@ -980,6 +1066,16 @@ module:
 
     Logging retention days defaults to 365 and controls the CloudWatch log group retention or the S3 bucket lifecycle expiry, depending on the destination. CloudWatch retention must be one of the standard CloudWatch Logs retention values (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, and larger).
 
+    ## Static IPs
+
+    Static IPs are disabled by default. Choose **Create a static IP list** to allocate 3 IPv4 addresses for apex DNS A records or 21 for firewall allowlisting. Choose **Use an existing static IP list** to share a list in the same AWS account and avoid another allocation charge.
+
+    [AWS approval](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html) is required before creating a list. Static IPs use all edge locations and disable viewer IPv6. HTTPS still uses your domain name, not a bare IP address.
+
+    [AWS charges](https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/) $0.005 per IPv4 address/hour: about $11/month for 3 or $77/month for 21, plus standard CloudFront usage. The list is billed until deleted. Changing the count replaces the IPs; update external DNS or allowlists afterward.
+
+    The stack outputs include the created addresses as `anycast_ips` and the reusable list ID as `anycast_ip_list_id`. For an existing list, get its addresses from its owning stack. Remove other sites' references before deleting an owning site's list.
+
     ## Configuration
 
     | Field | Required | Default | Notes |
@@ -997,7 +1093,11 @@ module:
     | Origin domain name | When origin source is custom | None | Any reachable origin domain |
     | Origin protocol policy | Yes | HTTPS only | Origin needs a certificate valid for the forwarded host |
     | Origin custom headers | No | [] | Headers added to every request sent to the primary custom or load balancer origin |
-    | Additional origins | No | [] | Extra origins with optional custom headers for path-based cache behaviors |
+    | Origin connection timeout | No | 10 | Seconds (1-10) to open a connection to the primary origin |
+    | Origin connection attempts | No | 3 | Tries (1-3) before CloudFront returns an error; worst-case connect time is timeout times attempts |
+    | Origin response timeout | No | 30 | Seconds (1-180) to wait for a response from a custom or load balancer origin; above 60 needs a quota increase |
+    | Origin keep-alive timeout | No | 5 | Seconds (1-180) to keep idle connections to a custom or load balancer origin open; above 60 needs a quota increase |
+    | Additional origins | No | [] | Extra origins with optional custom headers and timeouts for path-based cache behaviors |
     | Redirect rules | No | [] | Ordered URL-pattern redirects returned before contacting an origin |
     | Viewer protocol policy | Yes | Redirect to HTTPS | How viewers connect to CloudFront |
     | Allowed methods | Yes | All methods | All HTTP methods reach the origin; only GET and HEAD responses can be cached. |

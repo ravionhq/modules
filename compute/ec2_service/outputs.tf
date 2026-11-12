@@ -69,6 +69,20 @@ output "instance_role_arn" {
 }
 
 ################################################################################
+# Storage
+################################################################################
+
+output "data_volume_snapshot_policy_id" {
+  description = "The ID of the Data Lifecycle Manager policy that snapshots instance data volumes daily, when enabled."
+  value       = local.data_volume_snapshots_enabled ? aws_dlm_lifecycle_policy.data_volume[0].id : null
+}
+
+output "data_volume_snapshot_policy_arn" {
+  description = "The ARN of the Data Lifecycle Manager policy that snapshots instance data volumes daily, when enabled."
+  value       = local.data_volume_snapshots_enabled ? aws_dlm_lifecycle_policy.data_volume[0].arn : null
+}
+
+################################################################################
 # Logging
 ################################################################################
 

@@ -467,7 +467,7 @@ variable "public_alb_ingress_security_group_ids" {
 variable "public_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the public ALB."
-  default     = false
+  default     = true
 }
 
 variable "public_alb_access_logs_bucket_arn" {
@@ -567,7 +567,7 @@ variable "private_alb_ingress_security_group_ids" {
 variable "private_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the private ALB."
-  default     = false
+  default     = true
 }
 
 variable "private_alb_access_logs_bucket_arn" {
@@ -710,7 +710,7 @@ variable "private_nlb_elastic_ip_allocation_ids" {
 variable "log_retention_days" {
   type        = number
   description = "Default CloudWatch Logs retention (days) that ECS services in this cluster inherit. Exposed as an output; the cluster itself creates no log groups. 0 retains logs indefinitely."
-  default     = 90
+  default     = 365
   nullable    = false
 
   validation {
@@ -762,6 +762,18 @@ variable "alb_cloudwatch_alarm_target_response_time_threshold" {
   validation {
     condition     = var.alb_cloudwatch_alarm_target_response_time_threshold > 0
     error_message = "The alb_cloudwatch_alarm_target_response_time_threshold must be greater than 0."
+  }
+}
+
+variable "alb_cloudwatch_alarm_unhealthy_hosts_threshold" {
+  type        = number
+  description = "Number of unhealthy targets (UnHealthyHostCount, maximum per period across every target group behind the ALB) above which the ALB alarm fires."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.alb_cloudwatch_alarm_unhealthy_hosts_threshold >= 0
+    error_message = "The alb_cloudwatch_alarm_unhealthy_hosts_threshold must be at least 0."
   }
 }
 

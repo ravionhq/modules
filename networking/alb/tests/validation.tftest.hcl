@@ -57,3 +57,14 @@ run "invalid_cloudwatch_alarm_target_response_time_threshold" {
 
   expect_failures = [var.cloudwatch_alarm_target_response_time_threshold]
 }
+
+run "invalid_cloudwatch_alarm_unhealthy_hosts_threshold" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled         = true
+    cloudwatch_alarm_unhealthy_hosts_threshold = -1
+  }
+
+  expect_failures = [var.cloudwatch_alarm_unhealthy_hosts_threshold]
+}

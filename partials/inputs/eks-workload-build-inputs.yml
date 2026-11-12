@@ -36,31 +36,17 @@
       build_source:
         - dockerfile
         - railpack
-# Build-time environment, gated the way compute/ec2_service gates it. These are
-# available to the builder only; ./eks-workload-runtime-inputs.yml carries the
-# variables the running container sees. The two sets are deliberately separate:
-# a registry token needed to install dependencies has no business being in the
-# pod's environment.
-- $merge:
-    - ./build-environment-variables.yml
-  show_when:
-    build_source:
-      - dockerfile
-      - railpack
 - $template: ./dockerfile-build.yml
   with:
     show_when:
       build_source: dockerfile
-# Already carries show_when: {build_source: dockerfile}, which is exactly the
-# gate this needs, so it is included rather than merged over. Sits after the
-# Dockerfile template so it lands in the Docker section the template opens.
-- $include: ./dockerfile-env-injection.yml
 - $template: ./railpack.yml
   with:
     show_when:
       build_source: railpack
 - id: railpack_start_cmd
-  label: Start command
+  label: Railpack start command
+  description: Blank uses Railpack's detected command.
   type: string
   placeholder: Railpack default
   show_when:

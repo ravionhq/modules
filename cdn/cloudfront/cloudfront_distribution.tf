@@ -8,6 +8,11 @@ locals {
   managed_distributions = {
     for k, v in var.distributions : k => v if length(v.managed_domains) > 0
   }
+  distribution_alias_names = {
+    for k, v in var.distributions : k => distinct([
+      for alias in v.aliases : lower(trimsuffix(trimspace(alias), "."))
+    ])
+  }
 
   # Both distribution resources render the blocks below, so they cannot drift.
   distribution_origins = [
@@ -79,13 +84,14 @@ resource "aws_cloudfront_distribution" "this" {
 
   enabled             = each.value.enabled
   comment             = each.value.comment != null ? each.value.comment : "${var.name}-${each.key}"
-  price_class         = var.price_class
+  price_class         = var.anycast_ip_list_mode == "disabled" ? var.price_class : "PriceClass_All"
   http_version        = var.http_version
-  is_ipv6_enabled     = var.ipv6_enabled
+  is_ipv6_enabled     = var.anycast_ip_list_mode == "disabled" ? var.ipv6_enabled : false
+  anycast_ip_list_id  = local.anycast_ip_list_id
   default_root_object = var.default_root_object
   retain_on_delete    = var.retain_on_delete_enabled
   wait_for_deployment = var.deployment_wait_enabled
-  aliases             = each.value.aliases
+  aliases             = local.distribution_alias_names[each.key]
   web_acl_id          = var.web_acl_id
 
   dynamic "origin" {
@@ -255,9 +261,10 @@ resource "aws_cloudfront_distribution" "managed" {
 
   enabled             = each.value.enabled
   comment             = each.value.comment != null ? each.value.comment : "${var.name}-${each.key}"
-  price_class         = var.price_class
+  price_class         = var.anycast_ip_list_mode == "disabled" ? var.price_class : "PriceClass_All"
   http_version        = var.http_version
-  is_ipv6_enabled     = var.ipv6_enabled
+  is_ipv6_enabled     = var.anycast_ip_list_mode == "disabled" ? var.ipv6_enabled : false
+  anycast_ip_list_id  = local.anycast_ip_list_id
   default_root_object = var.default_root_object
   retain_on_delete    = var.retain_on_delete_enabled
   wait_for_deployment = var.deployment_wait_enabled

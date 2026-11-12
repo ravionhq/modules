@@ -261,7 +261,7 @@ variable "ingress_security_group_ids" {
 variable "access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the ALB."
-  default     = false
+  default     = true
 }
 
 variable "access_logs_bucket_arn" {
@@ -336,7 +336,7 @@ variable "web_acl_arn" {
 
 variable "cloudwatch_alarms_creation_enabled" {
   type        = bool
-  description = "Create CloudWatch alarms for load balancer 5xx responses, target 5xx responses, and target response time."
+  description = "Create CloudWatch alarms for load balancer 5xx responses, target 5xx responses, target response time, and unhealthy targets."
   default     = true
   nullable    = false
 }
@@ -374,6 +374,18 @@ variable "cloudwatch_alarm_target_response_time_threshold" {
   validation {
     condition     = var.cloudwatch_alarm_target_response_time_threshold > 0
     error_message = "The cloudwatch_alarm_target_response_time_threshold must be greater than 0."
+  }
+}
+
+variable "cloudwatch_alarm_unhealthy_hosts_threshold" {
+  type        = number
+  description = "Number of unhealthy targets (UnHealthyHostCount, maximum per period across every target group behind the load balancer) above which the alarm fires."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_unhealthy_hosts_threshold >= 0
+    error_message = "The cloudwatch_alarm_unhealthy_hosts_threshold must be at least 0."
   }
 }
 

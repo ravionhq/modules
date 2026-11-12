@@ -857,3 +857,140 @@ run "tempo_follows_the_last_values_document" {
     error_message = "A later values document turning persistence off must win, as it does in Helm"
   }
 }
+
+run "tempo_gets_a_go_memory_limit_below_its_container_limit" {
+  command = plan
+
+  variables {
+    traces_destinations = [{ destination = "tempo" }]
+  }
+
+  # 90% of the 2Gi default.
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "1843MiB" }]
+    error_message = "Tempo must get GOMEMLIMIT at 90% of its memory limit"
+  }
+}
+
+run "tempo_card_sizes_the_pod" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", cpu_request = "1", memory_request = "4Gi", memory_limit = "6Gi" },
+    ]
+    tempo_resources = { cpu_limit = "2" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.resources == { requests = { cpu = "1", memory = "4Gi" }, limits = { cpu = "2", memory = "6Gi" } }
+    error_message = "The Tempo card's sizing must reach the pod, beside tempo_resources' CPU limit"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "GOMEMLIMIT must follow the card's memory limit"
+  }
+}
+
+run "blank_tempo_card_sizing_falls_back_to_tempo_resources" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", cpu_request = "", memory_request = null },
+    ]
+    tempo_resources = { cpu_request = "300m", memory_request = "1Gi", memory_limit = "3000M" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.resources == { requests = { cpu = "300m", memory = "1Gi" }, limits = { memory = "3000M" } }
+    error_message = "Blank card fields must fall back to tempo_resources"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == []
+    error_message = "A limit outside Mi or Gi must set no GOMEMLIMIT"
+  }
+}
+
+run "tempo_go_memory_limit_follows_a_limit_set_in_chart_values" {
+  command = plan
+
+  variables {
+    traces_destinations = [{ destination = "tempo" }]
+    tempo_helm_values   = ["tempo:\n  resources:\n    limits:\n      memory: 6Gi\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "5529MiB" }]
+    error_message = "GOMEMLIMIT must follow the memory limit tempo_helm_values sets"
+  }
+}
+
+run "tempo_go_memory_limit_follows_the_destination_chart_values" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo", memory_limit = "4Gi", helm_values = { tempo = { resources = { limits = { memory = "3Gi" } } } } },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.tempo[0].values[0]).tempo.extraEnv == [{ name = "GOMEMLIMIT", value = "2764MiB" }]
+    error_message = "GOMEMLIMIT must follow the memory limit the destination's helm_values sets"
+  }
+}
+
+################################################################################
+# OTLP logs: with Loki as a logs provider the collector serves /v1/logs and
+# sends what it receives to Loki's native OTLP endpoint; without Loki it has no
+# logs pipeline.
+################################################################################
+
+run "otlp_logs_go_to_loki_when_loki_is_a_logs_provider" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.logs.receivers == ["otlp"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.logs.exporters == ["otlp_http/loki"]
+    error_message = "With Loki on, the OTLP collector must run a logs pipeline from its OTLP receiver to Loki"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/loki"].endpoint == "${output.loki_endpoint}/otlp"
+    error_message = "OTLP logs must go to Loki's native OTLP endpoint on its in-cluster Service"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/loki"].retry_on_failure.enabled == true && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/loki"].sending_queue.enabled == true
+    error_message = "The Loki exporter must queue and retry, so a Loki restart does not drop logs"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_grpc/tempo"]
+    error_message = "Logs must not change where traces go"
+  }
+}
+
+run "otlp_logs_have_no_pipeline_without_loki" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.logs == null && !contains(keys(yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters), "otlp_http/loki")
+    error_message = "Without Loki the OTLP collector must keep no logs pipeline and no Loki exporter"
+  }
+}

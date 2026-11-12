@@ -298,6 +298,17 @@ run "loki_runs_as_a_single_binary_with_no_extras" {
     error_message = "The gateway, both memcached tiers, and the bundled MinIO must all be off"
   }
 
+  # In single-binary mode the querier hands each result back to the query
+  # frontend over gRPC. At the 4MiB default, a filter query over a busy
+  # workload's logs fails with "received message larger than max".
+  assert {
+    condition = alltrue([
+      yamldecode(helm_release.loki[0].values[0]).loki.server.grpc_server_max_recv_msg_size == 104857600,
+      yamldecode(helm_release.loki[0].values[0]).loki.server.grpc_server_max_send_msg_size == 104857600,
+    ])
+    error_message = "Loki's gRPC server must accept query results larger than the 4MiB default."
+  }
+
   # Structured metadata is where `level` lives; without this the schema rejects
   # it and the whole label design collapses into index labels.
   assert {
@@ -571,5 +582,82 @@ run "grafana_with_logs_only_has_one_datasource" {
   assert {
     condition     = length(module.grafana_workspace_read_role) == 0 && output.grafana_amp_role_arn == null
     error_message = "With no workspace to query there is nothing for the AMP role to grant"
+  }
+}
+
+run "loki_gets_a_go_memory_limit_below_its_container_limit" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+    loki_resources = { memory_request = "1Gi", memory_limit = "4Gi" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.resources == { requests = { cpu = "200m", memory = "1Gi" }, limits = { memory = "4Gi" } }
+    error_message = "loki_resources must size the single binary"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.extraEnv == [{ name = "GOMEMLIMIT", value = "3686MiB" }]
+    error_message = "Loki must get GOMEMLIMIT at 90% of its memory limit"
+  }
+}
+
+run "grafana_loads_dashboards_and_alerts_from_its_namespace" {
+  command = plan
+
+  variables {
+    logs_providers  = ["loki"]
+    grafana_enabled = true
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).sidecar.dashboards.enabled && yamldecode(helm_release.grafana[0].values[0]).sidecar.dashboards.label == "grafana_dashboard" && yamldecode(helm_release.grafana[0].values[0]).sidecar.dashboards.folderAnnotation == "grafana_folder"
+    error_message = "Grafana must load dashboards from ConfigMaps labelled grafana_dashboard"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).sidecar.alerts.enabled && yamldecode(helm_release.grafana[0].values[0]).sidecar.alerts.label == "grafana_alert" && yamldecode(helm_release.grafana[0].values[0]).sidecar.alerts.initAlerts
+    error_message = "Grafana must load alerting from ConfigMaps labelled grafana_alert at startup"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.grafana[0].values[0]).rbac.namespaced
+    error_message = "The sidecars' role must stay inside Grafana's namespace"
+  }
+
+  # ebs_csi_driver_enabled is false in this file: no StorageClass to bind.
+  assert {
+    condition     = !can(yamldecode(helm_release.grafana[0].values[0]).persistence)
+    error_message = "Without the managed gp3 class Grafana must not ask for a volume"
+  }
+}
+
+run "loki_go_memory_limit_follows_a_limit_set_in_chart_values" {
+  command = plan
+
+  variables {
+    logs_providers   = ["loki"]
+    loki_helm_values = ["singleBinary:\n  resources:\n    limits:\n      memory: 4Gi\n", "singleBinary:\n  replicas: 1\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.extraEnv == [{ name = "GOMEMLIMIT", value = "3686MiB" }]
+    error_message = "GOMEMLIMIT must follow the last memory limit loki_helm_values sets"
+  }
+}
+
+run "loki_go_memory_limit_is_dropped_for_a_limit_it_cannot_read" {
+  command = plan
+
+  variables {
+    logs_providers   = ["loki"]
+    loki_helm_values = ["singleBinary:\n  resources:\n    limits:\n      memory: 4G\n"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.loki[0].values[0]).singleBinary.extraEnv == []
+    error_message = "A chart-values limit outside Mi or Gi must set no GOMEMLIMIT rather than one from an overridden limit"
   }
 }

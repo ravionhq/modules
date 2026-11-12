@@ -88,7 +88,7 @@ variable "lifecycle_policy" {
 
 variable "default_lifecycle_policy_enabled" {
   type        = bool
-  description = "Apply a built-in lifecycle policy that expires untagged images and caps the number of tagged images retained. Ignored if lifecycle_policy is set."
+  description = "Apply a built-in lifecycle policy that expires untagged images and caps the number of images retained, tagged or untagged. Ignored if lifecycle_policy is set."
   default     = false
 }
 
@@ -105,7 +105,7 @@ variable "untagged_image_expiry_days" {
 
 variable "max_tagged_image_count" {
   type        = number
-  description = "Maximum number of tagged images to retain. Older images beyond this count are expired. Used only when default_lifecycle_policy_enabled is true."
+  description = "Maximum number of images to retain, tagged or untagged. Older images beyond this count are expired. Used only when default_lifecycle_policy_enabled is true."
   default     = 100
 
   validation {

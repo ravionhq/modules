@@ -7,6 +7,9 @@ on:
   push:
     branches:
       - main
+      # Ravion merge queue candidates. The queue waits for the required checks
+      # on the candidate SHA, so every required check must run here.
+      - 'ravion/merge-queue/**'
 
 permissions:
   contents: read
@@ -20,7 +23,7 @@ concurrency:
 jobs:
   lint:
     name: Format, lint and scan
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-lint/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-lint/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -58,7 +61,10 @@ jobs:
           find . -mindepth 3 -maxdepth 3 -name versions.tf -exec dirname {} \; | sort |
             xargs -P 4 -I{} tofu -chdir={} get
 
-      - name: Initialize TFLint plugins
+      - name: Test local TFLint installer
+        run: node --test .github/scripts/install-tflint-aws.test.mjs
+
+      - name: Initialize TFLint plugins with GitHub authentication
         run: tflint --init
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -81,7 +87,7 @@ jobs:
   # provider version once for all its modules.
   validate:
     name: Validate modules (${{ matrix.shard }}/6)
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate-${{ matrix.shard }}/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-validate-${{ matrix.shard }}/interruptible=true
     strategy:
       fail-fast: false
       matrix:
@@ -102,19 +108,18 @@ jobs:
 
   test:
     name: Test ${{ matrix.name }}
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=${{ matrix.memory || 4 }}/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-test-${{ strategy.job-index }}/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-test-${{ strategy.job-index }}/interruptible=true
     strategy:
       fail-fast: false
       matrix:
         include:
-          # tofu test keeps an AWS provider process alive per run, and this
-          # module's tests peak near 8 GB, so 4 GB runners kill them.
           - name: CloudFront module
-            memory: 8
             run: |
               tofu -chdir=cdn/cloudfront init -backend=false
               tofu -chdir=cdn/cloudfront test
               node --test cdn/cloudfront/functions/viewer_request.test.js
+              tofu -chdir=hosting/static_site init -backend=false
+              tofu -chdir=hosting/static_site test
 
           - name: managed domains
             run: |
@@ -124,6 +129,14 @@ jobs:
               tofu -chdir=compute/ecs_service test -filter=tests/managed_domains.tftest.hcl
               tofu -chdir=compute/eks/addons init -backend=false
               tofu -chdir=compute/eks/addons test -filter=tests/managed_domains.tftest.hcl
+              tofu -chdir=hosting/static_site init -backend=false
+              tofu -chdir=hosting/static_site test -filter=tests/managed_domains.tftest.hcl
+
+          - name: ECS target groups and NLB listeners
+            run: |
+              tofu -chdir=compute/ecs_service init -backend=false
+              tofu -chdir=compute/ecs_service test -filter=tests/target_group_name.tftest.hcl
+              python3 -B -m unittest discover -s compute/ecs_service/tests -p 'test_nlb_dependencies.py' -v
 
           - name: AMI module
             run: |
@@ -165,6 +178,11 @@ jobs:
               tofu -chdir=networking/alternat init -backend=false
               tofu -chdir=networking/alternat test
 
+          - name: ECR module
+            run: |
+              tofu -chdir=containers/ecr init -backend=false
+              tofu -chdir=containers/ecr test
+
           # The provider waits 30 seconds after every apply, so this takes minutes.
           # Pull requests run it only when they touch the module or this workflow.
           - name: PlanetScale Vitess lifecycle
@@ -178,7 +196,8 @@ jobs:
 
       # An entry with paths runs on a pull request only when the pull request
       # changes one of them. The job still succeeds when skipped, so "Validate
-      # Terraform Modules" passes. Pushes to main always run everything.
+      # Terraform Modules" passes. Pushes (main and merge queue
+      # candidates) always run everything.
       - name: Check for relevant changes
         id: changes
         if: matrix.paths && github.event_name == 'pull_request'
@@ -210,7 +229,7 @@ jobs:
     name: Validate Terraform Modules
     if: always()
     needs: [lint, validate, test]
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-result/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-terraform-static-checks-result/interruptible=true
     steps:
       - name: Check results
         env:

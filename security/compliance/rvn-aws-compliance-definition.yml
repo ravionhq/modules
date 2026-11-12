@@ -1,10 +1,10 @@
 definition:
   type: rvn-aws-compliance
   name: AWS Compliance
-  description: Manages an AWS compliance baseline with GuardDuty threat detection and registry-wide ECR image scanning across selected Regions.
+  description: Manages an AWS compliance baseline with GuardDuty, ECR image scanning, and regional CloudTrail audit trails.
 release:
-  version: 0.2.0
-  description: Add Terraform plan and apply IAM policy inputs to scope stack runner permissions.
+  version: 1.0.0
+  description: Record management events with regional CloudTrail trails and private, versioned log storage; optionally omit Regions already covered by existing trails.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -15,12 +15,47 @@ module:
       label: Compliance regions
       type: section
     - add_button_label: Add Region
-      description: AWS Regions where GuardDuty and Basic ECR scan-on-push are enabled. ECR scanning covers every repository and replaces existing Enhanced scanning or custom filters. Use one module per account with all required Regions; each Region must already be enabled.
+      description: Regions for GuardDuty, ECR scanning and CloudTrail. Include us-east-1 for IAM changes; each Region must be enabled.
       id: regions
       label: Regions
       required: true
       type: string_array
       values: $values:aws/regions
+    - id: section_cloudtrail
+      label: CloudTrail
+      type: section
+    - id: cloudtrail_enabled
+      label: CloudTrail
+      type: boolean
+      default: true
+      description: Use CloudTrail regions to omit existing coverage, or turn off if all Regions are already covered.
+    - id: cloudtrail_regions
+      label: CloudTrail regions
+      type: string_array
+      collapsible: true
+      add_button_label: Add Region
+      required: false
+      values: $values:aws/regions
+      description: Defaults to all selected Regions. Leave out Regions an existing trail already covers.
+      show_when:
+        cloudtrail_enabled: true
+    - id: cloudtrail_log_retention_days
+      label: Log retention (days)
+      type: number
+      collapsible: true
+      default: 365
+      min: 0
+      description: S3 lifecycle expiry; 0 keeps logs forever.
+      show_when:
+        cloudtrail_enabled: true
+    - id: cloudtrail_kms_key_arn
+      label: KMS key ARN
+      type: string
+      collapsible: true
+      required: false
+      description: Leave blank for SSE-S3. Use a bucket-Region key whose policy allows cloudtrail.amazonaws.com for every trail.
+      show_when:
+        cloudtrail_enabled: true
     - id: section_protection_plans
       label: GuardDuty protection plans
       type: section
@@ -96,6 +131,10 @@ module:
       base_path: security/compliance
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        cloudtrail_enabled: << module.input.cloudtrail_enabled >>
+        cloudtrail_regions: "<< module.input.cloudtrail_regions != nil && len(module.input.cloudtrail_regions) > 0 ? module.input.cloudtrail_regions : nil >>"
+        cloudtrail_log_retention_days: "<< module.input.cloudtrail_log_retention_days != nil ? module.input.cloudtrail_log_retention_days : 365 >>"
+        cloudtrail_kms_key_arn: << module.input.cloudtrail_kms_key_arn || nil >>
         eks_protection_enabled: << module.input.eks_protection_enabled >>
         finding_publishing_frequency: << module.input.finding_publishing_frequency || "FIFTEEN_MINUTES" >>
         lambda_protection_enabled: << module.input.lambda_protection_enabled >>
@@ -116,13 +155,13 @@ module:
       }) : []
       >>
   readme: |
-    Manages an AWS compliance baseline with GuardDuty threat detection and Basic ECR image scanning on push across selected Regions.
+    Manages an AWS compliance baseline with GuardDuty, ECR image scanning, and regional CloudTrail audit trails.
 
     ## Account-level setup
 
-    Deploy one module for an AWS account and select every Region you want covered. The runner Region controls where Terraform executes; the Regions list controls where both services are configured. Every selected Region must already be enabled for the account.
+    Deploy one module for an AWS account and select every Region you want covered. The runner Region controls where Terraform executes and hosts the shared CloudTrail bucket; the Regions list controls GuardDuty, ECR scanning and CloudTrail trails. Every selected Region must already be enabled for the account.
 
-    Each Region receives a GuardDuty detector with explicitly managed protection plans and an ECR registry scanning rule covering all existing and future private repositories. The module supports threat-detection and vulnerability-scanning controls; application alarms, log retention, and other compliance controls remain in their respective modules.
+    Each selected Region receives a GuardDuty detector with explicitly managed protection plans and an ECR registry scanning rule covering all existing and future private repositories. CloudTrail trails cover all selected Regions by default, or the CloudTrail regions subset when set. Application alarms and application log retention remain in their respective modules.
 
     ## GuardDuty
 
@@ -135,6 +174,20 @@ module:
     Basic scan-on-push is always enabled with a registry-level `*` filter. It covers repositories used by ECS, EKS, EC2, Lambda, and other workloads, including repositories created later. This declares the registry settings checked by OneLeet's image-scanning monitor.
 
     Basic scans check operating-system vulnerabilities on new image pushes. They do not provide continuous scanning or automatically scan all images pushed before this configuration was enabled.
+
+    ## CloudTrail
+
+    CloudTrail is enabled by default and creates one single-Region trail in each selected Region. CloudTrail regions optionally limits trails to a non-empty subset of Regions; leave it blank for all selected Regions. Turn CloudTrail off to disable all trails. Each trail records read and write management events with log file validation and no data events. The trails share one bucket in the runner Region.
+
+    Include us-east-1 in Regions and, when set, CloudTrail regions to capture IAM changes and other global service events (CloudFront and the STS global endpoint). Only that trail includes global service events; us-east-1 is not added automatically. STS regional-endpoint events are recorded in their respective Regions.
+
+    Logs go to a dedicated private S3 bucket with public access blocked, bucket-owner-enforced ownership, versioning, and encryption. Log retention (days) sets lifecycle expiry for current and noncurrent object versions; 365 is the default and 0 keeps them forever. With versioning, current-object expiry makes a version noncurrent, then noncurrent expiry applies.
+
+    Leave KMS key ARN blank for SSE-S3, or supply a key in the bucket's runner Region, even for trails in other Regions. Its policy must allow cloudtrail.amazonaws.com to encrypt logs for every selected trail. This module does not manage the key policy.
+
+    The first copy of management events per Region is free; S3 storage and optional KMS usage incur charges. If an existing trail already records those events in a Region, the additional copy is paid. Leave those Regions out via CloudTrail regions, or turn CloudTrail off if an organization trail already provides full coverage.
+
+    Destroy fails while the bucket contains logs or object versions: force deletion is disabled. Disabling CloudTrail also attempts to remove its bucket, so preserve or explicitly remove retained logs before doing so.
 
     ## Existing resources and ownership
 
@@ -152,13 +205,17 @@ module:
     | --- | --- | --- |
     | AWS account | Required | Account whose regional security settings are managed. |
     | Region | Required | Terraform runner Region. |
-    | Regions | Required | Regions covered by both GuardDuty and ECR scanning. |
+    | Regions | Required | Regions covered by GuardDuty, ECR scanning and CloudTrail. Include us-east-1 for IAM changes. |
     | ECR scanning | Basic scan-on-push for all repositories | Always enabled by this module. |
+    | CloudTrail | Enabled | One single-Region management-event trail in each selected Region, sharing a runner-Region bucket. |
+    | CloudTrail regions | All selected Regions | Optional subset of Regions; omit Regions already covered by an existing trail. |
+    | Log retention (days) | 365 | S3 lifecycle expiry; 0 keeps logs forever. |
+    | KMS key ARN | None (SSE-S3) | Key in the bucket's runner Region whose policy permits encryption for every trail. |
     | S3, EKS, malware, RDS, Lambda protection | Enabled | GuardDuty protection plans. |
     | Runtime monitoring | Disabled | Optional workload security agents. |
     | Automated agent management | EKS, ECS Fargate, EC2 | Used when Runtime Monitoring is enabled. |
     | Finding publishing frequency | Every 15 minutes | Export cadence for updated GuardDuty findings. |
-    | Tags | Standard Ravion tags | Additional tags for GuardDuty detectors; ECR registry scanning does not support tags. |
+    | Tags | Standard Ravion tags | Additional tags for GuardDuty, CloudTrail and its bucket; ECR registry scanning does not support tags. |
 
     ## Learn more
 

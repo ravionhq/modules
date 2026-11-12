@@ -5,7 +5,7 @@
 # existing release rather than update it.
 - id: name
   immutable: true
-  label: Service name
+  label: $with.name_label
   type: string
   description: $with.name_description
   required: true
@@ -17,7 +17,6 @@
   immutable: true
   label: Namespace
   type: string
-  description: Kubernetes namespace the release installs into.
   required: true
   default: <<project.given_id>>-<<environment.given_id>>
   patterns:
@@ -26,6 +25,6 @@
 - id: namespace_creation_enabled
   label: Create namespace
   type: boolean
-  description: Create the namespace if it does not already exist. Turn off when the namespace is managed elsewhere.
+  description: Turn off when the namespace is managed elsewhere.
   collapsible: true
   default: true

@@ -2,10 +2,56 @@
 # Regions
 ################################################################################
 
+variable "cloudtrail_enabled" {
+  type        = bool
+  description = "Create a single-Region management-event trail in each selected Region."
+  default     = true
+  nullable    = false
+}
+
+variable "cloudtrail_regions" {
+  type        = set(string)
+  description = "Regions to create trails in, or null for all regions. Omit Regions already covered by another trail."
+  default     = null
+
+  validation {
+    condition     = var.cloudtrail_regions == null ? true : length(var.cloudtrail_regions) > 0
+    error_message = "CloudTrail Regions must be non-empty when set. Set cloudtrail_enabled = false to turn CloudTrail off."
+  }
+
+  validation {
+    condition     = var.cloudtrail_regions == null ? true : length(setsubtract(var.cloudtrail_regions, toset(var.regions))) == 0
+    error_message = "Every CloudTrail Region must also be included in regions."
+  }
+}
+
+variable "cloudtrail_log_retention_days" {
+  type        = number
+  description = "S3 audit log expiry in days. Set to 0 to keep logs forever."
+  default     = 365
+  nullable    = false
+
+  validation {
+    condition     = var.cloudtrail_log_retention_days >= 0 && floor(var.cloudtrail_log_retention_days) == var.cloudtrail_log_retention_days
+    error_message = "CloudTrail log retention must be a nonnegative whole number of days."
+  }
+}
+
+variable "cloudtrail_kms_key_arn" {
+  type        = string
+  description = "Optional KMS key ARN in the bucket's runner Region. Its policy must allow cloudtrail.amazonaws.com for every trail; null uses SSE-S3."
+  default     = null
+
+  validation {
+    condition     = var.cloudtrail_kms_key_arn == null || can(regex("^arn:[^:]+:kms:[^:]+:[0-9]{12}:key/.+$", var.cloudtrail_kms_key_arn))
+    error_message = "The CloudTrail KMS key must be a KMS key ARN."
+  }
+}
+
 variable "regions" {
   type        = list(string)
   nullable    = false
-  description = "AWS Regions where GuardDuty and registry-wide Basic ECR scan-on-push are enabled. Every Region must be enabled (opted in) for the account."
+  description = "Regions for GuardDuty, ECR scanning and optional CloudTrail. Include us-east-1 to capture IAM changes. Each Region must be enabled for the account."
 
   validation {
     condition     = length(var.regions) > 0
@@ -107,6 +153,6 @@ variable "runtime_monitoring_automated_agents" {
 
 variable "tags" {
   type        = map(string)
-  description = "A map of additional tags applied to every GuardDuty detector."
+  description = "A map of additional tags applied to GuardDuty detectors, CloudTrail trails and their bucket."
   default     = {}
 }

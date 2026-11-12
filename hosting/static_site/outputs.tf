@@ -26,6 +26,16 @@ output "hosting_bucket_region" {
 # CloudFront Distributions
 ################################################################################
 
+output "anycast_ip_list_id" {
+  description = "Associated Anycast IP list ID, or null when static IPs are disabled. Can be reused by other modules in this AWS account."
+  value       = module.cdn.anycast_ip_list_id
+}
+
+output "anycast_ips" {
+  description = "Static IPv4 viewer addresses allocated by this module. Empty when disabled or using an existing list; read that list's addresses from its owner."
+  value       = module.cdn.anycast_ips
+}
+
 output "distribution_ids" {
   description = "Map of distribution key -> CloudFront distribution ID."
   value       = module.cdn.distribution_ids
@@ -44,6 +54,11 @@ output "cloudfront_distribution_arns" {
 output "distribution_domain_names" {
   description = "Map of distribution key -> CloudFront distribution domain name (e.g. 'd123.cloudfront.net')."
   value       = module.cdn.distribution_domain_names
+}
+
+output "domains" {
+  description = "Normalized viewer domains for the primary CloudFront distribution."
+  value       = module.cdn.distribution_domains[local.primary_distribution_key]
 }
 
 output "distribution_hosted_zone_ids" {

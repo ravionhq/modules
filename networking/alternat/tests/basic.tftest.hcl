@@ -93,6 +93,11 @@ run "defaults" {
   command = plan
 
   assert {
+    condition     = local.nat_ami == "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-6.18-arm64"
+    error_message = "NAT instances must use the patched-capable minimal kernel 6.18 family while preserving alterNAT's minimal-image volume handling."
+  }
+
+  assert {
     condition = local.vpc_az_maps == [
       { az = "us-west-2a", public_subnet_id = "subnet-public-a", route_table_ids = ["rtb-private"], private_subnet_ids = ["subnet-private-a", "subnet-private-b"] },
     ]
@@ -123,6 +128,11 @@ run "defaults" {
 run "x86_instance_type" {
   command = plan
 
+  assert {
+    condition     = local.nat_ami == "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-minimal-kernel-6.18-x86_64"
+    error_message = "Intel and AMD NAT instances must use the matching kernel 6.18 family."
+  }
+
   variables {
     nat_instance_type = "c6in.large"
   }
@@ -135,6 +145,15 @@ run "x86_instance_type" {
   assert {
     condition     = local.architecture == "x86_64"
     error_message = "Expected the architecture to follow the x86 instance type."
+  }
+}
+
+run "custom_nat_ami" {
+  command = plan
+  variables { nat_instance_ami_id = "ami-0123456789abcdef0" }
+  assert {
+    condition     = local.nat_ami == "ami-0123456789abcdef0"
+    error_message = "An explicit NAT AMI must not be overridden."
   }
 }
 
@@ -393,4 +412,73 @@ run "only_private_nat_gateway" {
   }
 
   expect_failures = [terraform_data.preconditions]
+}
+
+run "error_rate_alarms_by_default" {
+  command = plan
+
+  assert {
+    condition     = toset(keys(aws_cloudwatch_metric_alarm.lambda_error_rate)) == toset(["test-autoscaling-hook", "test-connectivity-tester-us-west-2a"])
+    error_message = "Expected an error-rate alarm on the autoscaling hook and on each connectivity tester."
+  }
+
+  assert {
+    condition     = alltrue([for name, alarm in aws_cloudwatch_metric_alarm.lambda_error_rate : alltrue([for m in flatten([for q in alarm.metric_query : q.metric]) : m.namespace == "AWS/Lambda" && m.stat == "Sum" && m.period == 300 && m.dimensions.FunctionName == name])])
+    error_message = "Each alarm must sum its own function's Lambda metrics over the configured period."
+  }
+
+  assert {
+    condition     = alltrue([for alarm in aws_cloudwatch_metric_alarm.lambda_error_rate : one([for q in alarm.metric_query : q if q.return_data]).expression == "IF(invocations > 0, 100 * errors / invocations, 0)" && alarm.threshold == 1 && alarm.treat_missing_data == "notBreaching"])
+    error_message = "Alarm on error percentage, guarding division by zero, without alerting on missing data."
+  }
+
+  assert {
+    condition     = length(output.cloudwatch_alarm_arns) == 2
+    error_message = "Expose one alarm ARN per Lambda function."
+  }
+}
+
+run "error_rate_alarm_settings" {
+  command = plan
+
+  variables {
+    cloudwatch_alarm_error_rate_threshold = 5
+    cloudwatch_alarm_period               = 60
+    cloudwatch_alarm_evaluation_periods   = 3
+    cloudwatch_alarm_actions              = ["arn:aws:sns:us-west-2:123456789012:alerts"]
+    cloudwatch_ok_actions                 = ["arn:aws:sns:us-west-2:123456789012:recovery"]
+  }
+
+  assert {
+    condition     = alltrue([for alarm in aws_cloudwatch_metric_alarm.lambda_error_rate : alarm.threshold == 5 && alarm.evaluation_periods == 3 && alltrue([for m in flatten([for q in alarm.metric_query : q.metric]) : m.period == 60])])
+    error_message = "Use the configured threshold, period, and evaluation window."
+  }
+
+  assert {
+    condition     = alltrue([for alarm in aws_cloudwatch_metric_alarm.lambda_error_rate : alarm.alarm_actions == toset(var.cloudwatch_alarm_actions) && alarm.ok_actions == toset(var.cloudwatch_ok_actions)])
+    error_message = "Wire alarm and recovery notifications."
+  }
+}
+
+run "error_rate_alarms_disabled" {
+  command = plan
+
+  variables {
+    cloudwatch_alarms_creation_enabled = false
+  }
+
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.lambda_error_rate) == 0
+    error_message = "Disabling alarms must create none."
+  }
+}
+
+run "invalid_error_rate_threshold" {
+  command = plan
+
+  variables {
+    cloudwatch_alarm_error_rate_threshold = 0
+  }
+
+  expect_failures = [var.cloudwatch_alarm_error_rate_threshold]
 }

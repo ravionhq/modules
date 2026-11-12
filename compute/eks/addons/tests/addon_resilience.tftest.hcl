@@ -291,6 +291,10 @@ run "prometheus_runs_two_replicas_each_with_every_sample" {
     error_message = "Prometheus must run two replicas, each with its own volume."
   }
   assert {
+    condition     = yamldecode(helm_release.prometheus[0].values[0]).server.statefulSet.pvcDeleteOnStsDelete == true && yamldecode(helm_release.prometheus[0].values[0]).server.statefulSet.pvcDeleteOnStsScale == false
+    error_message = "Removing the Prometheus StatefulSet must delete its volumes; scaling down must keep them."
+  }
+  assert {
     condition     = yamldecode(helm_release.prometheus[0].values[0]).server.podDisruptionBudget == { enabled = true, maxUnavailable = 1 }
     error_message = "A drain must leave one Prometheus replica serving."
   }

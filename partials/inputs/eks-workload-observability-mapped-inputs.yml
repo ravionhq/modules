@@ -29,7 +29,7 @@
 - id: amp_workspace_id
   label: AMP workspace ID
   type: string
-  description: Amazon Managed Prometheus workspace the cluster's metrics collector writes to. Inherited from the selected add-ons module; empty until its stack applies with Amazon Managed Prometheus selected.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: ws-01234567-abcd-4abc-8abc-0123456789ab
   required: false
@@ -37,7 +37,7 @@
 - id: amp_workspace_region
   label: AMP region
   type: string
-  description: Region of the Amazon Managed Prometheus workspace. Inherited from the selected add-ons module; empty until its stack applies with Amazon Managed Prometheus selected.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: us-east-1
   required: false
@@ -45,7 +45,7 @@
 - id: logs_rendering_providers
   label: Logs rendering providers
   type: string_array
-  description: Log stores the Logs tab reads from, in fallback order. Inherited from the selected add-ons module; blank means the in-cluster Loki store.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: loki
   required: false
@@ -53,7 +53,7 @@
 - id: metrics_rendering_providers
   label: Metrics rendering providers
   type: string_array
-  description: Metric stores the Metrics tab reads from, in fallback order. Inherited from the selected add-ons module; blank means Amazon Managed Prometheus.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: amp
   required: false
@@ -61,7 +61,7 @@
 - id: logs_cloudwatch_log_group
   label: CloudWatch log group
   type: string
-  description: Log group the cluster's collector writes to when Amazon CloudWatch Logs is a selected logs provider. One stream per pod, named namespace/pod/container.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: /aws/containerinsights/my-eks-cluster/application
   required: false
@@ -69,7 +69,7 @@
 - id: prometheus_endpoint
   label: In-cluster Prometheus endpoint
   type: string
-  description: URL of the Prometheus running in the cluster, queried through the Ravion Operator when Prometheus is a selected metrics provider.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: http://prometheus.monitoring.svc.cluster.local:9090
   required: false
@@ -77,7 +77,7 @@
 - id: logs_external_links
   label: Logs vendor links
   type: array
-  description: One entry per logs provider that ships to a vendor rather than rendering in Ravion, as {provider, name, href_prefix}. The Logs tab turns each into an "Open in ..." action pointing at this workload.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: '[{"provider":"datadog","name":"Datadog","href_prefix":"https://app.datadoghq.com/logs?query="}]'
   required: false
@@ -85,7 +85,7 @@
 - id: metrics_external_links
   label: Metrics vendor links
   type: array
-  description: One entry per metrics provider that ships to a vendor rather than rendering in Ravion, as {provider, name, href_prefix}. The Metrics tab turns each into an "Open in ..." action pointing at this workload.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: '[{"provider":"datadog","name":"Datadog","href_prefix":"https://app.datadoghq.com/metric/explorer?query="}]'
   required: false
@@ -98,7 +98,7 @@
 - id: grafana_cloud_logs_query_url
   label: Grafana Cloud logs query URL
   type: string
-  description: Grafana Cloud Loki query endpoint, used when Ravion reads Grafana Cloud logs through the Ravion Operator.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: https://logs-prod-us-central1.grafana.net/loki/api/v1
   required: false
@@ -106,7 +106,7 @@
 - id: grafana_cloud_metrics_query_url
   label: Grafana Cloud metrics query URL
   type: string
-  description: Grafana Cloud Prometheus query endpoint, used when Ravion reads Grafana Cloud metrics through the Ravion Operator.
+  description: From the selected EKS Add-ons module.
   collapsible: true
   placeholder: https://prometheus-prod-01-prod-us-central-0.grafana.net/api/prom
   required: false
@@ -114,7 +114,7 @@
 - id: observability_credentials_secret_name
   label: Observability credentials secret
   type: string
-  description: Name of the Kubernetes Secret in the Ravion Operator namespace holding vendor query credentials. A name only - Ravion never reads the values.
+  description: Kubernetes Secret in the Ravion Operator namespace with vendor query credentials. Ravion never reads the values.
   collapsible: true
   placeholder: ravion-observability-credentials
   required: false

@@ -20,11 +20,12 @@ resource "aws_eks_node_group" "this" {
   node_group_name_prefix = "${var.name}-"
   node_role_arn          = local.node_role_arn
 
-  subnet_ids     = var.subnet_ids
-  capacity_type  = var.capacity_type
-  instance_types = var.instance_types
-  ami_type       = var.ami_type
-  version        = var.kubernetes_version
+  subnet_ids      = var.subnet_ids
+  capacity_type   = var.capacity_type
+  instance_types  = var.instance_types
+  ami_type        = var.ami_type
+  version         = local.track_ami_release ? local.ami_kubernetes_version : var.kubernetes_version
+  release_version = local.track_ami_release ? nonsensitive(data.aws_ssm_parameter.ami_release[0].value) : null
 
   # disk_size is only valid when no launch template is supplied.
   disk_size = local.create_launch_template ? null : var.disk_size

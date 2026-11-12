@@ -1,11 +1,11 @@
-global: false
+global: true
 definition:
   type: rvn-eks-addons
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 0.24.0
-  description: "Ravion-managed domains are checked when the configuration is saved: they require exactly one load balancer, HTTPS on it, and a cluster domain, which defaults to the module ID."
+  version: 1.3.0
+  description: Alarm when targets behind the shared ALBs fail health checks, and send ALB alarms to the actions you choose.
 module:
   inputs:
     - id: cluster
@@ -53,7 +53,7 @@ module:
           type: string
         - collapsible: true
           default: <<ref.stack.output.ravion_runner_security_group_id>>
-          description: Security group attached to the OpenTofu runner for access to the Kubernetes API. Leave blank only when the endpoint is public or the execution environment already provides access.
+          description: Lets the OpenTofu runner reach the Kubernetes API. Only blank for a public endpoint.
           id: ravion_runner_security_group_id
           immutable: true
           label: Ravion Runner security group ID
@@ -78,7 +78,7 @@ module:
           default: << ref.input.system_node_min_size >>
           description: Karpenter and Operator replicas scale down to fit. One system node runs one of each without high availability; use 2 or more for HA.
           id: system_node_count
-          label: System nodes
+          label: Default capacity nodes
           min: 0
           required: false
           type: number
@@ -92,8 +92,13 @@ module:
           type: string_array
       required: true
       type: $ref:rvn-eks-cluster
-    - description: Ravion Operator connects outbound to Ravion for workload, rollout, and node visibility.
-      id: section_ravion_operator
+    - description: Prefix for the load balancers, IAM roles and buckets the add-ons create. Defaults to the cluster name; set it if those names are taken. Up to 23 letters, digits and hyphens.
+      collapsible: true
+      id: name
+      label: Name slug
+      placeholder: my-cluster-eks
+      type: string
+    - id: section_ravion_operator
       label: Ravion EKS Management
       type: section
     - default: true
@@ -103,16 +108,49 @@ module:
       moved_from:
         - beacon_enabled
       type: boolean
+    - default: false
+      description: Low-priority placeholder pods keep spare nodes running, so rollouts and pipeline jobs start without waiting for a new node. They are evicted the moment real pods need the room. The reserved capacity is billed.
+      id: ravion_operator_warm_capacity_enabled
+      label: Warm capacity
+      show_when:
+        ravion_operator_enabled: true
+      type: boolean
+    - collapsible: true
+      default: 8
+      description: Eight fit six pipeline jobs plus a second copy of a two-pod web service during a rollout.
+      id: ravion_operator_warm_capacity_slots
+      label: Warm slots
+      min: 1
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_warm_capacity_enabled: true
+      type: number
+    - collapsible: true
+      default: 100m
+      id: ravion_operator_warm_capacity_cpu
+      label: CPU per slot
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_warm_capacity_enabled: true
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: ravion_operator_warm_capacity_memory
+      label: Memory per slot
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        ravion_operator_enabled: true
+        ravion_operator_warm_capacity_enabled: true
+      type: string
     - description: Shared Application Load Balancers for HTTP and HTTPS workloads. EKS Web services attach through TargetGroupBinding.
       id: section_alb
       label: Application load balancers
       type: section
-    - collapsible: true
-      description: Name used for everything the add-ons create - the shared load balancers and their security groups (<name>-pub, <name>-priv, <name>-pub-nlb, <name>-priv-nlb), the Pod Identity roles, the Loki bucket, the log group, the AMP alias and the Karpenter queue. Defaults to the cluster name. Set it when those names are taken, for example by an ECS cluster with the same name. Up to 23 letters, digits and hyphens.
-      id: name
-      label: Name slug
-      placeholder: my-cluster-eks
-      type: string
     - default: false
       description: "On: Ravion manages the cluster certificate and DNS. Off: attach certificates here. Requires one HTTPS-enabled ALB when on."
       id: use_ravion_managed_domains
@@ -141,7 +179,8 @@ module:
       id: public_alb_creation_enabled
       label: Public ALB
       type: boolean
-    - default: true
+    - collapsible: true
+      default: true
       description: Add an HTTPS listener and redirect HTTP requests to it.
       id: public_alb_https_enabled
       label: HTTPS
@@ -166,7 +205,6 @@ module:
           public_alb_https_enabled: true
           use_ravion_managed_domains: false
     - collapsible: true
-      description: AWS ELB security policy name for the public HTTPS listener.
       id: public_alb_ssl_policy
       label: SSL policy
       placeholder: ELBSecurityPolicy-TLS13-1-2-2021-06
@@ -184,7 +222,6 @@ module:
         public_alb_creation_enabled: true
       type: number
     - collapsible: true
-      description: WAFv2 Web ACL to associate with the public ALB.
       id: public_alb_web_acl_arn
       label: WAF web ACL ARN
       placeholder: arn:aws:wafv2:...
@@ -192,8 +229,7 @@ module:
         public_alb_creation_enabled: true
       type: string
     - collapsible: true
-      default: false
-      description: Write public ALB request logs to S3.
+      default: true
       id: public_alb_access_logs_enabled
       label: Access logs
       show_when:
@@ -219,7 +255,8 @@ module:
             public_alb_creation_enabled: true
             private_alb_creation_enabled: true
           message: Ravion-managed domains require exactly one load balancer.
-    - default: false
+    - collapsible: true
+      default: false
       description: Add an HTTPS listener and redirect HTTP requests to it.
       id: private_alb_https_enabled
       label: HTTPS
@@ -245,7 +282,6 @@ module:
           private_alb_https_enabled: true
           use_ravion_managed_domains: false
     - collapsible: true
-      description: AWS ELB security policy name for the private HTTPS listener.
       id: private_alb_ssl_policy
       label: SSL policy
       placeholder: ELBSecurityPolicy-TLS13-1-2-2021-06
@@ -290,8 +326,7 @@ module:
         private_alb_creation_enabled: true
       type: number
     - collapsible: true
-      default: false
-      description: Write private ALB request logs to S3.
+      default: true
       id: private_alb_access_logs_enabled
       label: Access logs
       show_when:
@@ -311,13 +346,11 @@ module:
       label: Network load balancers
       type: section
     - default: false
-      description: Create an internet-facing Network Load Balancer.
       id: public_nlb_creation_enabled
       label: Public NLB
       type: boolean
     - add_button_label: Add security group ID
       collapsible: true
-      description: Additional security groups for the public NLB.
       id: public_nlb_additional_security_group_ids
       label: Additional security group IDs
       placeholder: sg-...
@@ -326,7 +359,6 @@ module:
       type: string_array
     - collapsible: true
       default: false
-      description: Distribute traffic to healthy targets in every enabled Availability Zone.
       id: public_nlb_cross_zone_load_balancing_enabled
       label: Cross-zone load balancing
       show_when:
@@ -340,9 +372,9 @@ module:
       show_when:
         public_nlb_creation_enabled: true
       type: boolean
-    - add_button_label: Add allocation ID
+    - description: One per public subnet, in subnet order.
+      add_button_label: Add allocation ID
       collapsible: true
-      description: One Elastic IP allocation ID for each public subnet, in matching order.
       id: public_nlb_elastic_ip_allocation_ids
       label: Elastic IP allocation IDs
       placeholder: eipalloc-...
@@ -368,13 +400,11 @@ module:
         public_nlb_access_logs_enabled: true
       type: string
     - default: false
-      description: Create an internal Network Load Balancer.
       id: private_nlb_creation_enabled
       label: Private NLB
       type: boolean
     - add_button_label: Add security group ID
       collapsible: true
-      description: Additional security groups for the private NLB.
       id: private_nlb_additional_security_group_ids
       label: Additional security group IDs
       placeholder: sg-...
@@ -383,30 +413,11 @@ module:
       type: string_array
     - collapsible: true
       default: false
-      description: Distribute traffic to healthy targets in every enabled Availability Zone.
       id: private_nlb_cross_zone_load_balancing_enabled
       label: Cross-zone load balancing
       show_when:
         private_nlb_creation_enabled: true
       type: boolean
-    - collapsible: true
-      default: false
-      description: Assign static Elastic IPs to the private NLB.
-      id: private_nlb_elastic_ips_enabled
-      label: Use elastic IPs
-      show_when:
-        private_nlb_creation_enabled: true
-      type: boolean
-    - add_button_label: Add allocation ID
-      collapsible: true
-      description: Elastic IP allocation IDs for the private NLB, one per subnet.
-      id: private_nlb_elastic_ip_allocation_ids
-      label: Elastic IP allocation IDs
-      placeholder: eipalloc-...
-      show_when:
-        private_nlb_creation_enabled: true
-        private_nlb_elastic_ips_enabled: true
-      type: string_array
     - collapsible: true
       default: false
       description: Write private NLB TLS listener connection logs to S3. AWS does not log TCP or UDP listeners.
@@ -424,14 +435,32 @@ module:
         private_nlb_creation_enabled: true
         private_nlb_access_logs_enabled: true
       type: string
+    - id: section_lb_settings
+      label: Load balancer settings
+      type: section
     - collapsible: true
       default: true
-      description: Prevent accidental deletion of load balancers created by this module.
       id: load_balancer_deletion_protection_enabled
       label: Load balancer deletion protection
       type: boolean
-    - collapsible: true
-      description: AWS Load Balancer Controller Helm chart version without a leading v, for example 3.5.0. The controller is installed when any shared load balancer is enabled.
+    - id: load_balancer_alarm_actions
+      label: ALB alert actions
+      description: Invoked when an ALB alarm (5xx, response time, unhealthy targets) enters ALARM, for example an SNS topic ARN. Empty disables direct notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+    - id: load_balancer_alarm_ok_actions
+      label: ALB recovery actions
+      description: Invoked when an ALB alarm returns to OK. Empty disables direct recovery notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+    - description: Without a leading v.
+      collapsible: true
       id: aws_load_balancer_controller_chart_version
       label: Load balancer controller chart version
       placeholder: 3.5.0
@@ -444,44 +473,6 @@ module:
       id: karpenter_enabled
       label: Karpenter
       type: boolean
-    - default: true
-      id: karpenter_interruption_queue_alarm_creation_enabled
-      label: Interruption queue age alarm
-      description: Detect stalled interruption processing. Disable if monitored elsewhere. CloudWatch charges apply.
-      type: boolean
-      show_when:
-        karpenter_enabled: true
-    - default: 60
-      id: karpenter_interruption_queue_alarm_age_threshold_seconds
-      label: Oldest message threshold (seconds)
-      description: Triggers when the maximum age over one minute reaches this value. Must be below the queue retention period (300 seconds by default).
-      type: number
-      min: 1
-      show_when:
-        karpenter_enabled: true
-        karpenter_interruption_queue_alarm_creation_enabled: true
-    - id: karpenter_interruption_queue_alarm_actions
-      label: Alert actions
-      description: Invoked when entering ALARM, for example an SNS topic ARN. Empty disables direct notifications.
-      type: string_array
-      default: []
-      collapsible: true
-      add_button_label: Add action ARN
-      max_length: 5
-      show_when:
-        karpenter_enabled: true
-        karpenter_interruption_queue_alarm_creation_enabled: true
-    - id: karpenter_interruption_queue_alarm_ok_actions
-      label: Recovery actions
-      description: Invoked when returning to OK. Empty disables direct recovery notifications.
-      type: string_array
-      default: []
-      collapsible: true
-      add_button_label: Add action ARN
-      max_length: 5
-      show_when:
-        karpenter_enabled: true
-        karpenter_interruption_queue_alarm_creation_enabled: true
     - collapsible: true
       description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.1.
       id: karpenter_chart_version
@@ -514,8 +505,9 @@ module:
       show_when:
         karpenter_enabled: true
       type: boolean
-    - default: 0
-      description: Enables alpha static Spot capacity when above zero. Zero removes the pool and disables the feature.
+    - description: Spot nodes Karpenter keeps running ahead of demand. 0 turns this off.
+      collapsible: true
+      default: 0
       id: karpenter_spot_warm_min_instances
       label: Minimum warm Spot instances
       min: 0
@@ -595,6 +587,46 @@ module:
         karpenter_default_node_pool_creation_enabled: true
         karpenter_enabled: true
       type: string
+    - collapsible: true
+      default: true
+      id: karpenter_interruption_queue_alarm_creation_enabled
+      label: Interruption queue age alarm
+      description: Detect stalled interruption processing. Disable if monitored elsewhere. CloudWatch charges apply.
+      type: boolean
+      show_when:
+        karpenter_enabled: true
+    - collapsible: true
+      default: 60
+      id: karpenter_interruption_queue_alarm_age_threshold_seconds
+      label: Oldest message threshold (seconds)
+      description: Triggers when the maximum age over one minute reaches this value. Must be below the queue retention period (300 seconds by default).
+      type: number
+      min: 1
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
+    - id: karpenter_interruption_queue_alarm_actions
+      label: Alert actions
+      description: Invoked when entering ALARM, for example an SNS topic ARN. Empty disables direct notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
+    - id: karpenter_interruption_queue_alarm_ok_actions
+      label: Recovery actions
+      description: Invoked when returning to OK. Empty disables direct recovery notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+      show_when:
+        karpenter_enabled: true
+        karpenter_interruption_queue_alarm_creation_enabled: true
     - id: section_keda
       label: Event-driven autoscaling
       type: section
@@ -603,17 +635,18 @@ module:
       type: boolean
       description: Install the event-driven autoscaler; each workload still needs a scaling trigger.
       default: false
-    - id: keda_namespace
+    - collapsible: true
+      id: keda_namespace
       label: KEDA namespace
       type: string
       default: keda
       show_when:
         keda_enabled: true
-    - id: keda_chart_version
+    - collapsible: true
+      id: keda_chart_version
       label: KEDA chart version
       type: string
       default: 2.20.2
-      description: Verify this version against your cluster's Kubernetes version before enabling.
       show_when:
         keda_enabled: true
     - id: section_cert_manager
@@ -622,19 +655,20 @@ module:
     - id: cert_manager_enabled
       label: cert-manager
       type: boolean
-      description: Issue and renew TLS certificates in the cluster; Issuers and Certificates are configured separately.
+      description: For TLS that ends inside the cluster, such as nginx ingress or mTLS. Load balancer HTTPS doesn't need it. Define Issuers and Certificates with your workloads.
       default: false
-    - id: cert_manager_namespace
+    - collapsible: true
+      id: cert_manager_namespace
       label: cert-manager namespace
       type: string
       default: cert-manager
       show_when:
         cert_manager_enabled: true
-    - id: cert_manager_chart_version
+    - collapsible: true
+      id: cert_manager_chart_version
       label: cert-manager chart version
       type: string
       default: v1.21.2
-      description: Verify this version against your cluster's Kubernetes version before enabling.
       show_when:
         cert_manager_enabled: true
     - id: section_ebs_csi
@@ -653,14 +687,16 @@ module:
       show_when:
         ebs_csi_driver_enabled: true
       type: string
-    - default: true
+    - collapsible: true
+      default: true
       description: Encrypts volumes and allows expansion. Claims without an explicit class use gp3; installation fails if gp3 is managed elsewhere.
       id: ebs_default_storage_class_enabled
       label: Default gp3 storage class
       show_when:
         ebs_csi_driver_enabled: true
       type: boolean
-    - default: true
+    - collapsible: true
+      default: true
       description: Allows larger claims without restarting pods when templates explicitly name the managed gp3 class. Other classes still fail. Requires Kubernetes 1.36+.
       id: statefulset_volume_expansion_enabled
       label: Online StatefulSet volume growth
@@ -711,7 +747,6 @@ module:
           value: otlp
     - collapsible: true
       default: 365
-      description: Number of days logs remain searchable before deletion. Enter 1-3650.
       id: loki_retention_days
       label: Retention (days)
       max: 3650
@@ -729,7 +764,42 @@ module:
         logs_enabled: true
         logs_providers: loki
       type: string
-    - default: 365
+    - collapsible: true
+      default: 200m
+      id: loki_cpu_request
+      label: Loki CPU request
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        logs_enabled: true
+        logs_providers: loki
+      type: string
+    - collapsible: true
+      default: 512Mi
+      id: loki_memory_request
+      label: Loki memory request
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        logs_enabled: true
+        logs_providers: loki
+      type: string
+    - collapsible: true
+      default: 1Gi
+      description: Searches over many streams are what push Loki over it, so raise this first.
+      id: loki_memory_limit
+      label: Loki memory limit
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        logs_enabled: true
+        logs_providers: loki
+      type: string
+    - collapsible: true
+      default: 365
       description: Retention for the module-managed CloudWatch log groups, in days.
       id: cloudwatch_logs_retention_days
       label: CloudWatch retention (days)
@@ -769,8 +839,8 @@ module:
         logs_enabled: true
         logs_providers: grafana_cloud
       type: string
-    - default: datadoghq.com
-      description: Datadog site that receives this cluster's telemetry.
+    - collapsible: true
+      default: datadoghq.com
       id: datadog_site
       label: Datadog site
       show_when:
@@ -790,16 +860,15 @@ module:
           value: ap1.datadoghq.com
         - label: US1-FED (ddog-gov.com)
           value: ddog-gov.com
-    - description: Secrets Manager ARN containing the Datadog API key.
-      id: datadog_api_key_secret_arn
+    - id: datadog_api_key_secret_arn
       label: Datadog API key secret ARN
       placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:datadog-api-key
       show_when:
         logs_enabled: true
         logs_providers: datadog
       type: string
-    - default: us
-      description: New Relic data region used to select the ingestion endpoint.
+    - collapsible: true
+      default: us
       id: new_relic_region
       label: New Relic region
       show_when:
@@ -811,8 +880,7 @@ module:
           value: us
         - label: Europe
           value: eu
-    - description: Secrets Manager ARN containing the New Relic license key.
-      id: new_relic_license_key_secret_arn
+    - id: new_relic_license_key_secret_arn
       label: New Relic license key secret ARN
       placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:new-relic-license-key
       show_when:
@@ -827,8 +895,8 @@ module:
         logs_enabled: true
         logs_providers: opensearch
       type: string
-    - default: ravion-logs
-      description: Prefix used for OpenSearch log indexes.
+    - collapsible: true
+      default: ravion-logs
       id: opensearch_index_prefix
       label: OpenSearch index prefix
       show_when:
@@ -843,8 +911,7 @@ module:
         logs_enabled: true
         logs_providers: splunk
       type: string
-    - description: Secrets Manager ARN containing the Splunk HEC token.
-      id: splunk_hec_token_secret_arn
+    - id: splunk_hec_token_secret_arn
       label: Splunk HEC token secret ARN
       placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:splunk-hec-token
       show_when:
@@ -859,8 +926,7 @@ module:
         logs_enabled: true
         logs_providers: splunk
       type: string
-    - description: HTTPS OTLP/HTTP endpoint that receives logs.
-      id: otlp_logs_endpoint
+    - id: otlp_logs_endpoint
       label: OTLP logs endpoint
       placeholder: https://api.honeycomb.io
       show_when:
@@ -890,291 +956,6 @@ module:
       show_when:
         logs_enabled: true
       type: string_array
-    - description: Optional in-cluster Grafana and Amazon Managed Grafana access. Ravion's Logs and Metrics tabs do not require either option.
-      id: section_grafana
-      label: Grafana
-      type: section
-    - default: false
-      description: Install Grafana in the cluster with data sources for the selected Loki, Prometheus (through Thanos with S3 storage), Amazon Managed Prometheus, and Tempo destinations. Without access turned on, Grafana is reachable only with a port-forward.
-      id: grafana_enabled
-      label: In-cluster Grafana
-      type: boolean
-    - default: false
-      description: Serve Grafana over HTTPS at a hostname, on a shared load balancer or through a Kubernetes Ingress. DNS is not managed.
-      id: grafana_access_enabled
-      label: Access
-      show_when:
-        grafana_enabled: true
-      type: boolean
-    - default: load_balancer
-      description: How Grafana is reached.
-      id: grafana_access_method
-      label: Served through
-      show_when:
-        grafana_access_enabled: true
-        grafana_enabled: true
-      type: string
-      values:
-        - description: A host rule on a shared ALB's HTTPS listener. Needs that load balancer with HTTPS.
-          label: Shared load balancer
-          value: load_balancer
-        - description: An Ingress served by the controller of an ingress class, such as tailscale to put Grafana on a tailnet.
-          label: Kubernetes Ingress
-          value: ingress
-    - default: private
-      description: Which shared load balancer serves Grafana.
-      id: grafana_load_balancer
-      label: Load balancer
-      show_when:
-        grafana_access_enabled: true
-        grafana_access_method: load_balancer
-        grafana_enabled: true
-      type: string
-      values:
-        - description: Internal. Reachable only from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router.
-          label: Private
-          value: private
-        - description: Internet-facing. Anyone can reach the sign-in page.
-          label: Public
-          value: public
-    - description: Ingress class whose controller serves Grafana, such as tailscale, nginx or alb. Leave blank for the cluster's default IngressClass. Install the controller first, such as the Tailscale operator; the AWS Load Balancer Controller refuses an Ingress whose class does not exist yet.
-      id: grafana_ingress_class_name
-      label: Ingress class
-      placeholder: tailscale
-      show_when:
-        grafana_access_enabled: true
-        grafana_access_method: ingress
-        grafana_enabled: true
-      type: string
-    - description: 'Hostname Grafana answers on. On a load balancer, a certificate on it must cover the hostname; point DNS at the load balancer. Through an Ingress, it is the Ingress host and TLS host: for Tailscale, <name>.<tailnet>.ts.net, where <name> becomes the device name.'
-      id: grafana_hostname
-      label: Grafana hostname
-      placeholder: grafana.example.com
-      show_when:
-        grafana_access_enabled: true
-        grafana_enabled: true
-      type: string
-    - collapsible: true
-      description: Explicit rule order on the chosen load balancer's HTTPS listener. Leave blank to let AWS assign the next available priority.
-      id: grafana_listener_rule_priority
-      label: Listener rule priority
-      show_when:
-        grafana_access_enabled: true
-        grafana_access_method: load_balancer
-        grafana_enabled: true
-      type: number
-    - collapsible: true
-      default: {}
-      description: 'Annotations for the Ingress, as JSON, passed to it as they are, such as {"cert-manager.io/cluster-issuer": "letsencrypt"} or {"tailscale.com/tags": "tag:grafana"}.'
-      id: grafana_ingress_annotations
-      label: Ingress annotations
-      show_when:
-        grafana_access_enabled: true
-        grafana_access_method: ingress
-        grafana_enabled: true
-      type: object
-    - collapsible: true
-      description: Kubernetes Secret holding the hostname's certificate, for controllers that read one, such as nginx with cert-manager. Leave blank where the controller provides the certificate, as Tailscale does.
-      id: grafana_ingress_tls_secret_name
-      label: TLS secret
-      placeholder: grafana-tls
-      show_when:
-        grafana_access_enabled: true
-        grafana_access_method: ingress
-        grafana_enabled: true
-      type: string
-    - default: false
-      description: Create an assumable role for querying the selected Amazon Managed Prometheus workspace plus Container Insights and EKS control-plane log groups. No Grafana workspace is created.
-      id: grafana_role_creation_enabled
-      label: Amazon Managed Grafana access
-      show_when:
-        metrics_enabled: true
-      type: boolean
-    - id: section_grafana_sign_in
-      label: Grafana sign-in
-      type: section
-    - default: true
-      description: Grafana's built-in sign-in for local users, including the generated admin. Turning it off removes the login form and password access to the API, so only the providers below can sign in.
-      id: grafana_login_form_enabled
-      label: Username and password
-      show_when:
-        grafana_enabled: true
-      type: boolean
-    - default: Viewer
-      description: Grafana role an account gets the first time it signs in through a provider, unless the provider's role mapping says otherwise.
-      id: grafana_default_role
-      label: Role for new accounts
-      show_when:
-        grafana_enabled: true
-      type: string
-      values:
-        - label: Viewer
-          value: Viewer
-        - label: Editor
-          value: Editor
-        - label: Admin
-          value: Admin
-    - description: Grafana's OAuth providers people can sign in with, each a button on Grafana's sign-in page. Google, GitHub and gitlab.com need allowed domains, organizations, teams or groups, since anyone with an account there could otherwise sign in.
-      id: grafana_auth_providers
-      item_description: Client ID {client_id}
-      item_inputs:
-        - description: Which of Grafana's OAuth providers this is.
-          id: provider
-          label: Provider
-          required: true
-          type: string
-          values:
-            - label: Google
-              value: google
-            - label: GitHub
-              value: github
-            - label: GitLab
-              value: gitlab
-            - label: Microsoft Entra ID
-              value: azuread
-            - label: Okta
-              value: okta
-            - description: Keycloak, Auth0, Authentik, or any OpenID Connect provider
-              label: Generic OAuth
-              value: generic_oauth
-        - description: Name on Grafana's sign-in button.
-          id: name
-          label: Button label
-          placeholder: Keycloak
-          show_when:
-            provider: generic_oauth
-          type: string
-        - description: Client ID of the OAuth application. Leave blank when Secrets below gives it as GF_AUTH_<PROVIDER>_CLIENT_ID. Its redirect URI is https://<hostname>/login/<provider>, for example /login/google or /login/generic_oauth.
-          id: client_id
-          label: Client ID
-          type: string
-        - description: Secrets Manager ARN containing the client secret as plain text. External Secrets reads it into the cluster; it is never a Helm value. Leave blank when Secrets below gives it as GF_AUTH_<PROVIDER>_CLIENT_SECRET.
-          id: client_secret_arn
-          label: Client secret ARN
-          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-oauth-client-secret
-          type: string
-        - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
-          id: tenant_id
-          label: Tenant ID
-          placeholder: 11111111-2222-3333-4444-555555555555
-          show_when:
-            provider: azuread
-          type: string
-        - description: 'Okta: your org URL. GitLab: a self-managed GitLab''s base URL; leave blank for gitlab.com.'
-          id: url
-          label: URL
-          placeholder: https://example.okta.com
-          show_when:
-            provider:
-              - gitlab
-              - okta
-          type: string
-        - description: The provider's OAuth authorization endpoint.
-          id: auth_url
-          label: Authorization URL
-          placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/auth
-          show_when:
-            provider: generic_oauth
-          type: string
-        - description: The provider's OAuth token endpoint.
-          id: token_url
-          label: Token URL
-          placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/token
-          show_when:
-            provider: generic_oauth
-          type: string
-        - description: The provider's user info endpoint.
-          id: api_url
-          label: User info URL
-          placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/userinfo
-          show_when:
-            provider: generic_oauth
-          type: string
-        - description: 'Space-separated scopes to request. Leave blank for the provider''s default in Grafana. For Google Workspace groups, add https://www.googleapis.com/auth/cloud-identity.groups.readonly: openid email profile https://www.googleapis.com/auth/cloud-identity.groups.readonly.'
-          id: scopes
-          label: Scopes
-          placeholder: openid email profile
-          type: string
-        - add_button_label: Add domain
-          description: Email domains whose accounts can sign in. For Google, your Google Workspace domains.
-          id: allowed_domains
-          label: Allowed domains
-          placeholder: example.com
-          type: string_array
-        - add_button_label: Add organization
-          description: GitHub organizations, Entra ID tenant IDs, or the provider's organizations whose members can sign in.
-          id: allowed_organizations
-          label: Allowed organizations
-          placeholder: example-org
-          show_when:
-            provider:
-              - github
-              - azuread
-              - generic_oauth
-          type: string_array
-        - add_button_label: Add group
-          description: Groups whose members can sign in. Google takes Workspace group emails, and needs the Cloud Identity groups scope under Scopes. Entra ID takes group object IDs.
-          id: allowed_groups
-          label: Allowed groups
-          placeholder: grafana-users
-          show_when:
-            provider:
-              - google
-              - gitlab
-              - azuread
-              - okta
-              - generic_oauth
-          type: string_array
-        - add_button_label: Add team ID
-          description: Numeric IDs of teams whose members can sign in.
-          id: team_ids
-          label: Allowed team IDs
-          placeholder: '1234567'
-          show_when:
-            provider:
-              - github
-              - generic_oauth
-          type: string_array
-        - collapsible: true
-          description: 'Grafana''s role_attribute_path: a JMESPath expression over the provider''s user info and groups that returns Admin, Editor or Viewer, applied at every sign-in. Leave blank to give new accounts the default role. For Google Workspace groups, with the groups scope: contains(groups[*], ''grafana-admins@example.com'') && ''Admin'' || ''Viewer''.'
-          id: role_attribute_path
-          label: Role mapping
-          placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
-          show_when:
-            provider:
-              not: azuread
-          type: string
-        - collapsible: true
-          default: {}
-          description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
-          id: settings
-          label: Other Grafana settings
-          type: object
-      item_label: Sign-in provider
-      item_title:
-        template: '{provider}'
-      label: Sign-in providers
-      show_when:
-        grafana_enabled: true
-      type: object_array
-    - description: Plain environment variables passed to Grafana, as an array of {name, value} objects. Grafana reads any setting from GF_<SECTION>_<KEY>, and expands $__env{NAME} in every setting.
-      id: grafana_environment_variables
-      label: Environment variables
-      placeholder: |-
-        - name: GF_LOG_LEVEL
-          value: info
-      show_when:
-        grafana_enabled: true
-      type: array
-    - description: Secret references Grafana reads as environment variables, as an array of {name, value_from} objects. value_from must be a full Secrets Manager or SSM Parameter Store ARN. Ravion never reads these values; the External Secrets Operator resolves them inside the cluster. GF_AUTH_<PROVIDER>_CLIENT_ID and GF_AUTH_<PROVIDER>_CLIENT_SECRET give a sign-in provider its client.
-      id: grafana_secrets
-      label: Secrets
-      placeholder: |-
-        - name: GF_AUTH_GOOGLE_CLIENT_SECRET
-          value_from: arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana-AbCdEf:client_secret::
-      show_when:
-        grafana_enabled: true
-      type: array
     - id: section_metrics
       label: Metrics
       type: section
@@ -1183,10 +964,10 @@ module:
       id: metrics_enabled
       label: Metrics
       type: boolean
-    - add_button_label: Add destination
+    - description: Prometheus fits most clusters; Mimir is for clusters that outgrow it. Each external destination gets a copy.
+      add_button_label: Add destination
       default:
         - prometheus
-      description: Send metrics to one or more destinations. Ravion queries Amazon Managed Prometheus first, then in-cluster Prometheus, in-cluster Mimir and CloudWatch. External destinations each receive a copy. Prometheus suits most clusters; Mimir is for clusters that outgrow one Prometheus, and costs more to run.
       id: metrics_providers
       label: Metrics destinations
       show_when:
@@ -1235,7 +1016,15 @@ module:
         metrics_providers: amp
       type: string
       values: $values:aws/regions
-    - default: 15
+    - description: Assumable role for an Amazon Managed Grafana workspace to query this cluster's metrics and logs. No workspace is created.
+      default: false
+      id: grafana_role_creation_enabled
+      label: Amazon Managed Grafana access
+      show_when:
+        metrics_enabled: true
+      type: boolean
+    - collapsible: true
+      default: 15
       description: Days of recent metrics Prometheus keeps on its own volume, apart from the history in S3.
       id: prometheus_retention_days
       label: Prometheus retention (days)
@@ -1244,7 +1033,8 @@ module:
         metrics_enabled: true
         metrics_providers: prometheus
       type: number
-    - default: 50Gi
+    - collapsible: true
+      default: 50Gi
       description: Persistent volume size as a Kubernetes quantity, for example 50Gi. Requires a working storage class; Ravion clusters normally use the EBS CSI driver.
       id: prometheus_storage_size
       label: Prometheus volume size
@@ -1269,7 +1059,8 @@ module:
         metrics_enabled: true
         metrics_providers: prometheus
       type: boolean
-    - default: 365
+    - collapsible: true
+      default: 365
       description: Days of metrics history Thanos keeps in S3. Its compactor deletes older blocks, not a bucket lifecycle rule.
       id: prometheus_s3_retention_days
       label: S3 retention (days)
@@ -1298,8 +1089,8 @@ module:
         metrics_enabled: true
         metrics_providers: prometheus
       type: string
-    - default: 365
-      description: Days of metrics history Mimir keeps in S3.
+    - collapsible: true
+      default: 365
       id: mimir_retention_days
       label: Mimir retention (days)
       min: 1
@@ -1327,7 +1118,7 @@ module:
       type: string
     - add_button_label: Add availability zone
       collapsible: true
-      description: Three or more availability zones to keep one copy of every sample in each, so losing a whole zone loses nothing. Leave empty to keep the three copies on separate nodes, spread across zones where possible. The cluster's nodes must be able to launch in every zone listed.
+      description: Three or more zones, one copy of every sample in each. Empty spreads copies across nodes. Nodes must be able to launch in every zone listed.
       id: mimir_zones
       label: Mimir availability zones
       placeholder: us-east-1a
@@ -1335,8 +1126,50 @@ module:
         metrics_enabled: true
         metrics_providers: mimir
       type: string_array
+    - collapsible: true
+      default: 3
+      description: Every series is held by three ingesters, so more ingesters each hold less of them. Each runs on its own node.
+      id: mimir_ingester_replicas
+      label: Mimir ingesters
+      min: 3
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: number
+    - collapsible: true
+      default: "1"
+      id: mimir_ingester_cpu
+      label: Ingester CPU request
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - collapsible: true
+      default: 6Gi
+      description: Request and limit of each ingester, at roughly 5-8KiB per series it holds. Series from pods that have gone count until they age out.
+      id: mimir_ingester_memory
+      label: Ingester memory
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: string
+    - collapsible: true
+      description: An ingester refuses new series past this many, so a burst is rejected and retried instead of running every ingester out of memory. Blank for no limit.
+      id: mimir_ingester_max_series
+      label: Series limit per ingester
+      min: 1
+      placeholder: No limit
+      show_when:
+        metrics_enabled: true
+        metrics_providers: mimir
+      type: number
     - default: true
-      description: Collect enhanced Container Insights metrics for pods and containers.
       id: cloudwatch_enhanced_observability_enabled
       label: Enhanced observability
       show_when:
@@ -1394,8 +1227,8 @@ module:
         metrics_enabled: true
         metrics_providers: grafana_cloud
       type: string
-    - default: datadoghq.com
-      description: Datadog site that receives metrics. The logs selection is reused when Datadog Logs is also enabled.
+    - collapsible: true
+      default: datadoghq.com
       id: datadog_metrics_site
       label: Datadog site
       show_when:
@@ -1417,8 +1250,7 @@ module:
           value: ap1.datadoghq.com
         - label: US1-FED (ddog-gov.com)
           value: ddog-gov.com
-    - description: Secrets Manager ARN containing the Datadog API key. The logs credential is reused when Datadog Logs is also enabled.
-      id: datadog_metrics_api_key_secret_arn
+    - id: datadog_metrics_api_key_secret_arn
       label: Datadog API key secret ARN
       placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:datadog-api-key
       show_when:
@@ -1427,8 +1259,8 @@ module:
         metrics_enabled: true
         metrics_providers: datadog
       type: string
-    - default: us
-      description: New Relic data region used to select the ingestion endpoint. The logs selection is reused when New Relic Logs is also enabled.
+    - collapsible: true
+      default: us
       id: new_relic_metrics_region
       label: New Relic region
       show_when:
@@ -1442,8 +1274,7 @@ module:
           value: us
         - label: Europe
           value: eu
-    - description: Secrets Manager ARN containing the New Relic license key. The logs credential is reused when New Relic Logs is also enabled.
-      id: new_relic_metrics_license_key_secret_arn
+    - id: new_relic_metrics_license_key_secret_arn
       label: New Relic license key secret ARN
       placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:new-relic-license-key
       show_when:
@@ -1452,8 +1283,7 @@ module:
         metrics_enabled: true
         metrics_providers: new_relic
       type: string
-    - description: HTTPS OTLP/HTTP endpoint that receives metrics.
-      id: otlp_metrics_endpoint
+    - id: otlp_metrics_endpoint
       label: OTLP metrics endpoint
       placeholder: https://api.honeycomb.io
       show_when:
@@ -1474,8 +1304,8 @@ module:
     - id: section_traces
       label: Traces
       type: section
-    - default: true
-      description: Run an OTLP receiver (gRPC 4317, HTTP 4318) at an in-cluster Service and send workload traces to the selected destinations. While metrics are on, the receiver also takes workload metrics into the metrics destinations, without the curated allow-list, so every series a workload sends is billed. The receiver authenticates no sender, so any pod in the cluster can send spans under any service name.
+    - description: In-cluster OTLP receiver (gRPC 4317, HTTP 4318). Any pod can send to it. With metrics on, it also forwards workload metrics, which are billed per series.
+      default: true
       id: traces_enabled
       label: Traces
       type: boolean
@@ -1484,8 +1314,7 @@ module:
       description: Send every trace to one or more destinations, each a card with its own settings.
       id: traces_destinations
       item_inputs:
-        - description: Where this copy of every trace goes.
-          id: destination
+        - id: destination
           label: Destination
           required: true
           type: string
@@ -1505,7 +1334,6 @@ module:
               label: Custom OTLP endpoint
               value: otlp
         - default: s3
-          description: Where Tempo keeps its trace blocks.
           id: storage_backend
           label: Storage
           show_when:
@@ -1537,7 +1365,7 @@ module:
             destination: tempo
           type: number
         - default: true
-          description: Keep Tempo's volume (write-ahead log, live store and, with local storage, the blocks) on a PersistentVolumeClaim, so spans not yet in a block survive a restart. Needs a StorageClass, such as the EBS CSI driver's gp3. Off, it is a size-limited scratch volume that restarts empty.
+          description: Keep unflushed spans across restarts. Needs a StorageClass such as gp3.
           id: persistence_enabled
           label: Persistent volume
           show_when:
@@ -1561,14 +1389,45 @@ module:
             persistence_enabled: true
           type: string
         - default: false
-          description: Turn on Tempo's metrics generator. It writes service graphs and span metrics (request rate, errors, duration per service) to the in-cluster Prometheus, or to Amazon Managed Prometheus without it, and Grafana's Tempo data source draws its service map from them.
+          description: Writes service graphs and span metrics to Prometheus, which Grafana's service map uses.
           id: metrics_generator_enabled
           label: Service graphs and span metrics
           show_when:
             destination: tempo
           type: boolean
         - collapsible: true
-          description: Version of the grafana-community/tempo Helm chart, for example 3.1.0.
+          id: cpu_request
+          label: CPU request
+          placeholder: 200m
+          patterns:
+            - message: A CPU quantity such as 100m, 0.5, or 2.
+              pattern: ^[0-9]+(\.[0-9]+)?m?$
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
+          id: memory_request
+          label: Memory request
+          placeholder: 512Mi
+          patterns:
+            - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+              pattern: ^[0-9]+(Mi|Gi)$
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
+          description: One pod answers every trace query, so large dashboards are what push it over. Blank for 2Gi.
+          id: memory_limit
+          label: Memory limit
+          placeholder: 2Gi
+          patterns:
+            - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+              pattern: ^[0-9]+(Mi|Gi)$
+          show_when:
+            destination: tempo
+          type: string
+        - collapsible: true
+          description: For example 3.1.0.
           id: chart_version
           label: Chart version
           placeholder: 3.1.0
@@ -1584,7 +1443,7 @@ module:
             destination: tempo
           type: object
         - collapsible: true
-          description: Region X-Ray traces are written to. Leave blank for the cluster's region.
+          description: Blank uses the cluster's region.
           id: region
           label: Region
           placeholder: The cluster's region
@@ -1657,8 +1516,7 @@ module:
           show_when:
             destination: new_relic
           type: string
-        - description: HTTPS OTLP/HTTP endpoint that receives traces.
-          id: endpoint
+        - id: endpoint
           label: OTLP traces endpoint
           placeholder: https://api.honeycomb.io
           show_when:
@@ -1679,6 +1537,326 @@ module:
       show_when:
         traces_enabled: true
       type: object_array
+    - description: Optional in-cluster Grafana and Amazon Managed Grafana access. Ravion's Logs and Metrics tabs do not require either option.
+      id: section_grafana
+      label: Grafana
+      type: section
+    - description: Grafana with data sources for the in-cluster Loki, Prometheus, Mimir and Tempo stores and Amazon Managed Prometheus. Without Access, reach it with a port-forward.
+      default: false
+      id: grafana_enabled
+      label: In-cluster Grafana
+      type: boolean
+    - default: false
+      description: Serve Grafana over HTTPS at a hostname, on a shared load balancer or through a Kubernetes Ingress. DNS is not managed.
+      id: grafana_access_enabled
+      label: Access
+      show_when:
+        grafana_enabled: true
+      type: boolean
+    - default: load_balancer
+      id: grafana_access_method
+      label: Served through
+      show_when:
+        grafana_access_enabled: true
+        grafana_enabled: true
+      type: string
+      values:
+        - description: A host rule on a shared ALB's HTTPS listener. Needs that load balancer with HTTPS.
+          label: Shared load balancer
+          value: load_balancer
+        - description: An Ingress served by the controller of an ingress class, such as tailscale to put Grafana on a tailnet.
+          label: Kubernetes Ingress
+          value: ingress
+    - default: private
+      id: grafana_load_balancer
+      label: Load balancer
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: load_balancer
+        grafana_enabled: true
+      type: string
+      values:
+        - description: Internal. Reachable only from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router.
+          label: Private
+          value: private
+        - description: Internet-facing. Anyone can reach the sign-in page.
+          label: Public
+          value: public
+    - description: Blank uses the default IngressClass. Install its controller first.
+      collapsible: true
+      id: grafana_ingress_class_name
+      label: Ingress class
+      placeholder: tailscale
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: ingress
+        grafana_enabled: true
+      type: string
+    - description: Point DNS at the load balancer, with a certificate that covers it. For Tailscale, `<name>.<tailnet>.ts.net`.
+      id: grafana_hostname
+      label: Grafana hostname
+      placeholder: grafana.example.com
+      show_when:
+        grafana_access_enabled: true
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      description: Explicit rule order on the chosen load balancer's HTTPS listener. Leave blank to let AWS assign the next available priority.
+      id: grafana_listener_rule_priority
+      label: Listener rule priority
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: load_balancer
+        grafana_enabled: true
+      type: number
+    - collapsible: true
+      default: {}
+      description: 'Annotations for the Ingress, as JSON, passed to it as they are, such as {"cert-manager.io/cluster-issuer": "letsencrypt"} or {"tailscale.com/tags": "tag:grafana"}.'
+      id: grafana_ingress_annotations
+      label: Ingress annotations
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: ingress
+        grafana_enabled: true
+      type: object
+    - collapsible: true
+      description: Kubernetes Secret holding the hostname's certificate, for controllers that read one, such as nginx with cert-manager. Leave blank where the controller provides the certificate, as Tailscale does.
+      id: grafana_ingress_tls_secret_name
+      label: TLS secret
+      placeholder: grafana-tls
+      show_when:
+        grafana_access_enabled: true
+        grafana_access_method: ingress
+        grafana_enabled: true
+      type: string
+    - description: Grafana reads any setting from `GF_<SECTION>_<KEY>`.
+      collapsible: true
+      id: grafana_environment_variables
+      label: Environment variables
+      placeholder: |-
+        - name: GF_LOG_LEVEL
+          value: info
+      show_when:
+        grafana_enabled: true
+      type: array
+    - description: '`{name, value_from}` with a Secrets Manager or SSM ARN, read in-cluster. Use `GF_AUTH_<PROVIDER>_CLIENT_SECRET` for a sign-in client.'
+      collapsible: true
+      id: grafana_secrets
+      label: Secrets
+      placeholder: |-
+        - name: GF_AUTH_GOOGLE_CLIENT_SECRET
+          value_from: arn:aws:secretsmanager:us-east-1:123456789012:secret:grafana-AbCdEf:client_secret::
+      show_when:
+        grafana_enabled: true
+      type: array
+    - collapsible: true
+      default: 100m
+      id: grafana_cpu_request
+      label: Grafana CPU request
+      patterns:
+        - message: A CPU quantity such as 100m, 0.5, or 2.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+      show_when:
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: grafana_memory_request
+      label: Grafana memory request
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        grafana_enabled: true
+      type: string
+    - collapsible: true
+      default: 512Mi
+      description: Many dashboards or alert rules need more; Grafana evaluates alert rules itself.
+      id: grafana_memory_limit
+      label: Grafana memory limit
+      patterns:
+        - message: A memory quantity in Mi or Gi, such as 512Mi or 4Gi.
+          pattern: ^[0-9]+(Mi|Gi)$
+      show_when:
+        grafana_enabled: true
+      type: string
+    - id: section_grafana_sign_in
+      label: Grafana sign-in
+      type: section
+    - default: Viewer
+      description: Grafana role an account gets the first time it signs in through an OAuth provider, unless the provider's role mapping says otherwise.
+      id: grafana_default_role
+      label: Role for new accounts
+      show_when:
+        grafana_enabled: true
+      type: string
+      values:
+        - label: Viewer
+          value: Viewer
+        - label: Editor
+          value: Editor
+        - label: Admin
+          value: Admin
+    - description: Without Username and password there's no login form. Google, GitHub and gitlab.com need a domain, org, team or group restriction.
+      default:
+        - provider: basic
+      id: grafana_auth_providers
+      item_description: Client ID {client_id}
+      item_inputs:
+        - id: provider
+          label: Provider
+          required: true
+          type: string
+          values:
+            - description: Grafana's login form for local users, including the generated admin
+              label: Username and password
+              value: basic
+            - label: Google
+              value: google
+            - label: GitHub
+              value: github
+            - label: GitLab
+              value: gitlab
+            - label: Microsoft Entra ID
+              value: azuread
+            - label: Okta
+              value: okta
+            - description: Keycloak, Auth0, Authentik, or any OpenID Connect provider
+              label: Generic OAuth
+              value: generic_oauth
+        - id: name
+          label: Button label
+          placeholder: Keycloak
+          show_when:
+            provider: generic_oauth
+          type: string
+        - description: 'Leave blank when Secrets gives `GF_AUTH_<PROVIDER>_CLIENT_ID`. Redirect URI: `https://<hostname>/login/<provider>`.'
+          id: client_id
+          label: Client ID
+          show_when:
+            provider:
+              not: basic
+          type: string
+        - description: Secrets Manager ARN of the plain-text client secret. Leave blank when Secrets gives `GF_AUTH_<PROVIDER>_CLIENT_SECRET`.
+          id: client_secret_arn
+          label: Client secret ARN
+          placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:grafana-oauth-client-secret
+          show_when:
+            provider:
+              not: basic
+          type: string
+        - description: Directory (tenant) ID of the app registration. Roles come from the app registration's app roles.
+          id: tenant_id
+          label: Tenant ID
+          placeholder: 11111111-2222-3333-4444-555555555555
+          show_when:
+            provider: azuread
+          type: string
+        - description: 'Okta: your org URL. GitLab: a self-managed GitLab''s base URL; leave blank for gitlab.com.'
+          id: url
+          label: URL
+          placeholder: https://example.okta.com
+          show_when:
+            provider:
+              - gitlab
+              - okta
+          type: string
+        - id: auth_url
+          label: Authorization URL
+          placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/auth
+          show_when:
+            provider: generic_oauth
+          type: string
+        - id: token_url
+          label: Token URL
+          placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/token
+          show_when:
+            provider: generic_oauth
+          type: string
+        - id: api_url
+          label: User info URL
+          placeholder: https://sso.example.com/realms/eng/protocol/openid-connect/userinfo
+          show_when:
+            provider: generic_oauth
+          type: string
+        - description: Space-separated. Blank uses Grafana's default. Google Workspace groups also need `https://www.googleapis.com/auth/cloud-identity.groups.readonly`.
+          id: scopes
+          label: Scopes
+          placeholder: openid email profile
+          show_when:
+            provider:
+              not: basic
+          type: string
+        - add_button_label: Add domain
+          description: Email domains whose accounts can sign in. For Google, your Google Workspace domains.
+          id: allowed_domains
+          label: Allowed domains
+          placeholder: example.com
+          show_when:
+            provider:
+              not: basic
+          type: string_array
+        - add_button_label: Add organization
+          description: GitHub organizations, Entra ID tenant IDs, or the provider's organizations whose members can sign in.
+          id: allowed_organizations
+          label: Allowed organizations
+          placeholder: example-org
+          show_when:
+            provider:
+              - github
+              - azuread
+              - generic_oauth
+          type: string_array
+        - add_button_label: Add group
+          description: Groups whose members can sign in. Google takes Workspace group emails, and needs the Cloud Identity groups scope under Scopes. Entra ID takes group object IDs.
+          id: allowed_groups
+          label: Allowed groups
+          placeholder: grafana-users
+          show_when:
+            provider:
+              - google
+              - gitlab
+              - azuread
+              - okta
+              - generic_oauth
+          type: string_array
+        - add_button_label: Add team ID
+          description: Numeric IDs of teams whose members can sign in.
+          id: team_ids
+          label: Allowed team IDs
+          placeholder: '1234567'
+          show_when:
+            provider:
+              - github
+              - generic_oauth
+          type: string_array
+        - collapsible: true
+          description: JMESPath over user info that returns Admin, Editor or Viewer, checked at every sign-in. Blank uses the default role.
+          id: role_attribute_path
+          label: Role mapping
+          placeholder: contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+          show_when:
+            provider:
+              not:
+                - azuread
+                - basic
+          type: string
+        - collapsible: true
+          default: {}
+          description: 'Any other key of Grafana''s [auth.<provider>] section, as JSON, passed through verbatim, such as {"auto_login": "true"}. The client secret goes in the ARN above, never here.'
+          id: settings
+          label: Other Grafana settings
+          show_when:
+            provider:
+              not: basic
+          type: object
+      item_label: Sign-in provider
+      item_title:
+        template: '{provider}'
+      label: Sign-in providers
+      show_when:
+        grafana_enabled: true
+      type: object_array
     - description: Makes referenced Secrets Manager secrets and SSM parameters available as Kubernetes Secrets without sending their values through Ravion.
       id: section_external_secrets
       label: External secrets
@@ -1687,18 +1865,18 @@ module:
       id: eso_enabled
       label: External Secrets Operator
       type: boolean
-    - add_button_label: Add ARN
+    - description: Wildcards allowed. Empty allows every secret and parameter in this account and region.
+      add_button_label: Add ARN
       collapsible: true
-      description: Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the operator may read. Leave empty to allow reading every secret and parameter in this account and region. Add entries to scope the operator down, or to reach other regions and accounts.
       id: eso_secret_and_parameter_arns
       label: Readable secret ARNs
       placeholder: arn:aws:secretsmanager:us-east-2:111122223333:secret:prod/*
       show_when:
         eso_enabled: true
       type: string_array
-    - add_button_label: Add namespace
+    - description: Namespaces whose ExternalSecrets may use the shared stores. Empty allows the namespaces Ravion Operator manages. Add custom service namespaces here.
+      add_button_label: Add namespace
       collapsible: true
-      description: Kubernetes namespaces whose ExternalSecrets may use the shared secret stores. Leave empty to allow the namespaces Ravion Operator manages, or the default service namespace (project and environment given IDs joined with a hyphen) when the Operator manages the whole cluster. Add every namespace an EKS service with a custom namespace uses, and any workloads deployed by other means.
       id: eso_allowed_namespaces
       label: Allowed namespaces
       placeholder: my-namespace
@@ -1714,7 +1892,7 @@ module:
         eso_enabled: true
       type: string
     - collapsible: true
-      description: Kubernetes namespace for External Secrets. It is created if necessary.
+      description: Created if missing.
       id: eso_namespace
       label: Operator namespace
       placeholder: external-secrets
@@ -1778,6 +1956,10 @@ module:
         logs_loki:
           retention_days: '<< module.input.loki_retention_days != nil ? module.input.loki_retention_days : 365 >>'
           s3_bucket_name: << module.input.loki_s3_bucket_name >>
+        loki_resources:
+          cpu_request: << module.input.loki_cpu_request || "200m" >>
+          memory_request: << module.input.loki_memory_request || "512Mi" >>
+          memory_limit: << module.input.loki_memory_limit || "1Gi" >>
         logs_cloudwatch:
           retention_days: '<< module.input.cloudwatch_logs_retention_days != nil ? module.input.cloudwatch_logs_retention_days : 365 >>'
         logs_grafana_cloud:
@@ -1820,6 +2002,15 @@ module:
           s3_bucket_name: << module.input.mimir_s3_bucket_name >>
           storage_class: << module.input.mimir_storage_class >>
           zones: '<< module.input.mimir_zones != nil ? module.input.mimir_zones : [] >>'
+        mimir_ingester_replicas: '<< module.input.mimir_ingester_replicas != nil ? module.input.mimir_ingester_replicas : 3 >>'
+        mimir_ingester_max_series: '<< module.input.mimir_ingester_max_series != nil ? module.input.mimir_ingester_max_series : 0 >>'
+        # Request and limit match, so the kubelet never evicts an ingester first.
+        mimir_ingester_resources:
+          requests:
+            cpu: << module.input.mimir_ingester_cpu || "1" >>
+            memory: << module.input.mimir_ingester_memory || "6Gi" >>
+          limits:
+            memory: << module.input.mimir_ingester_memory || "6Gi" >>
         metrics_cloudwatch:
           enhanced_observability_enabled: '<< module.input.cloudwatch_enhanced_observability_enabled != nil ? module.input.cloudwatch_enhanced_observability_enabled : true >>'
           application_signals_enabled: '<< module.input.cloudwatch_application_signals_enabled != nil ? module.input.cloudwatch_application_signals_enabled : false >>'
@@ -1850,12 +2041,14 @@ module:
           ingress_annotations: '<< module.input.grafana_ingress_annotations != nil ? module.input.grafana_ingress_annotations : {} >>'
           ingress_tls_secret_name: << module.input.grafana_ingress_tls_secret_name >>
           hostname: << module.input.grafana_hostname >>
-        grafana_auth:
-          login_form_enabled: '<< module.input.grafana_login_form_enabled != nil ? module.input.grafana_login_form_enabled : true >>'
-          default_role: << module.input.grafana_default_role || "Viewer" >>
-        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [] >>'
+        grafana_default_role: << module.input.grafana_default_role || "Viewer" >>
+        grafana_auth_providers: '<< module.input.grafana_auth_providers != nil ? module.input.grafana_auth_providers : [{"provider": "basic"}] >>'
         grafana_environment_variables: '<< module.input.grafana_environment_variables != nil ? module.input.grafana_environment_variables : [] >>'
         grafana_secrets: '<< module.input.grafana_secrets != nil ? module.input.grafana_secrets : [] >>'
+        grafana_resources:
+          cpu_request: << module.input.grafana_cpu_request || "100m" >>
+          memory_request: << module.input.grafana_memory_request || "256Mi" >>
+          memory_limit: << module.input.grafana_memory_limit || "512Mi" >>
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
         eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
@@ -1873,11 +2066,19 @@ module:
         ravion_operator_execution_jobs_enabled: true
         ravion_operator_full_management_enabled: true
         ravion_operator_coordinator_enabled: true
+        ravion_operator_warm_capacity:
+          enabled: << module.input.ravion_operator_enabled == true && module.input.ravion_operator_warm_capacity_enabled == true >>
+          replicas: '<< module.input.ravion_operator_warm_capacity_slots != nil ? module.input.ravion_operator_warm_capacity_slots : 8 >>'
+          requests:
+            cpu: << module.input.ravion_operator_warm_capacity_cpu || "100m" >>
+            memory: << module.input.ravion_operator_warm_capacity_memory || "256Mi" >>
         ravion_operator_project_id: << project.id >>
         ravion_operator_environment_id: << environment.id >>
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
+        load_balancer_alarm_actions: '<< module.input.load_balancer_alarm_actions != nil ? module.input.load_balancer_alarm_actions : [] >>'
+        load_balancer_alarm_ok_actions: '<< module.input.load_balancer_alarm_ok_actions != nil ? module.input.load_balancer_alarm_ok_actions : [] >>'
         name: << module.input.name >>
         use_ravion_managed_domains: << module.input.use_ravion_managed_domains >>
         ravion_cluster_name: << module.input.ravion_cluster_name >>
@@ -1915,8 +2116,6 @@ module:
         private_nlb_creation_enabled: << module.input.private_nlb_creation_enabled >>
         private_nlb_security_group_ids: << module.input.private_nlb_additional_security_group_ids >>
         private_nlb_cross_zone_load_balancing_enabled: << module.input.private_nlb_cross_zone_load_balancing_enabled >>
-        private_nlb_elastic_ips_enabled: << module.input.private_nlb_elastic_ips_enabled >>
-        private_nlb_elastic_ip_allocation_ids: << module.input.private_nlb_elastic_ip_allocation_ids >>
         private_nlb_access_logs_enabled: << module.input.private_nlb_access_logs_enabled >>
         private_nlb_access_logs_bucket_arn: << module.input.private_nlb_access_logs_bucket_arn >>
         tags:
@@ -2093,7 +2292,7 @@ module:
 
     ## Certificates
 
-    **cert-manager** is optional and off by default. Enabling it installs the controller, webhook, CA injector and CRDs in **cert-manager namespace**. Components default to On-Demand EC2 placement so certificates keep renewing through Spot interruptions. It creates no Issuers or Certificates; define those alongside the workloads that use them.
+    **cert-manager** is optional and off by default. It is for TLS that ends inside the cluster, such as an nginx ingress, mTLS between pods, or charts that need webhook certificates. HTTPS on the shared load balancers doesn't use it: Ravion-managed domains and ACM certificates terminate TLS at the ALB. Enabling it installs the controller, webhook, CA injector and CRDs in **cert-manager namespace**. Components default to On-Demand EC2 placement so certificates keep renewing through Spot interruptions. It creates no Issuers or Certificates; define those alongside the workloads that use them.
 
     The CRDs are kept when cert-manager is turned off, because deleting them would delete every Certificate and Issuer in the cluster and the Secrets they own. Check for an existing cert-manager installation before enabling: a cluster can run only one.
 
@@ -2117,7 +2316,7 @@ module:
     | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, as the fallback behind the Prometheus stores |
     | **Grafana Cloud / Datadog / New Relic / custom OTLP** | The same collector, one more exporter each | Ships, plus an "Open in ..." link |
 
-    **Traces.** **Traces** runs an OpenTelemetry collector of its own at an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), apart from the one that scrapes the cluster, so a burst of spans never competes with the scrape. Every trace goes to each destination card: Tempo in your cluster, AWS X-Ray (the cluster's region unless another is set), Grafana Cloud Traces, Datadog, New Relic, or any OTLP endpoint. A vendor selected for logs or metrics too shares that signal's site and credential. Spans carry the sending pod's namespace, pod and workload. Point a workload's OpenTelemetry exporter at those outputs: this module injects no agents and restarts no pods, and sampling stays the application's. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
+    **Traces.** **Traces** runs an OpenTelemetry collector of its own at an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), apart from the one that scrapes the cluster, so a burst of spans never competes with the scrape. Every trace goes to each destination card: Tempo in your cluster, AWS X-Ray (the cluster's region unless another is set), Grafana Cloud Traces, Datadog, New Relic, or any OTLP endpoint. A vendor selected for logs or metrics too shares that signal's site and credential. Spans carry the sending pod's namespace, pod and workload. Point a workload's OpenTelemetry exporter at those outputs: this module injects no agents and restarts no pods, and sampling stays the application's. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. While Loki is a logs provider, the same receiver also takes OTLP logs into Loki; pod stdout still comes through Alloy. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
 
     **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode, reachable only inside the cluster and read by the in-cluster Grafana when that is on. Its blocks go to an S3 bucket in your account by default (30 days), or to Tempo's own volume. That volume is a persistent gp3 volume by default, so spans not yet in a block survive a restart, or a scratch volume that restarts empty. Its metrics generator can write service graphs and span metrics to Prometheus for Grafana's service map, and any other chart value can be set as JSON.
 
@@ -2126,7 +2325,7 @@ module:
     - **Shared load balancer** routes the hostname on the HTTPS listener of the shared private or public ALB. The private ALB keeps Grafana inside the VPC and the networks connected to it, such as a VPN or a Tailscale subnet router; the public ALB puts its sign-in page on the internet. Point the hostname's DNS at `private_alb_dns_name` or `public_alb_dns_name`.
     - **Kubernetes Ingress** gives Grafana an Ingress for the hostname with TLS, served by the controller of the ingress class you name, with any annotations it needs. With the Tailscale Kubernetes operator's `tailscale` class and a `<name>.<tailnet>.ts.net` hostname, Grafana becomes one device on the tailnet with a Let's Encrypt certificate, and nothing else in the VPC is reachable through it. Install the class's controller first: the AWS Load Balancer Controller refuses an Ingress whose class does not exist yet.
 
-    **Grafana sign-in** is Grafana's own: username and password for local users, and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI.
+    **Grafana sign-in** is Grafana's own: a list of sign-in providers, username and password for local users (the default) and any of Grafana's OAuth providers side by side (Google, GitHub, GitLab, Microsoft Entra ID, Okta, or any OpenID Connect provider through generic OAuth), each configured under Grafana's own setting names. Without username and password, Grafana has no login form and accepts no password, including the generated admin's. Each provider's client secret is a Secrets Manager ARN that External Secrets reads into the cluster. Register `https://<hostname>/login/<provider>` as the OAuth application's redirect URI.
 
     **Several destinations that render are a fallback chain, not a merge.** Ravion reads the first one that can answer right now - the in-cluster store, then CloudWatch Logs; Amazon Managed Prometheus when selected, then Prometheus through Thanos, then Container Insights - and says which store it is showing. It never merges two of them for the same service, which would show every line twice.
 
@@ -2158,7 +2357,7 @@ module:
 
     Each coordinator requests 500m CPU and 1Gi memory. Ravion's runtime policy always supplies resources for newly created executor Jobs; its current fleet defaults request 100m CPU, 128Mi memory and 1Gi ephemeral storage, with limits of 2 CPU, 2Gi memory and 20Gi ephemeral storage. Nodes still need free resources to schedule the pods. Executor resources are not Helm configuration and can be retuned without a chart or module release; existing Jobs remain immutable. Obsolete raw `executionJobs.resources` and `executionJobs.resourcesSource` Helm values are ignored. Coordinator resources, image-prewarm pod resources and warm-capacity placeholder resources remain independent and locally configurable.
 
-    For predictable start latency, `ravion_operator_warm_capacity.enabled=true` through **Advanced Terraform variables** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`; configure slot requests, replica count and placement accordingly. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
+    For predictable start latency, **Warm capacity** creates immediately preemptible, zero-grace placeholder pods. The eight default slots are sized for six executor requests plus a 100% surge of the default two-pod web service. They guarantee schedulable capacity only when their node placement overlaps those workloads and the workloads have priority greater than the placeholder class's `-10`. They go to the default Karpenter node pool, on its On-Demand capacity when it has any; set the slot count and size here, and other placement through `ravion_operator_warm_capacity.placement` in **Advanced Terraform variables**. To cache executor images as well, set `prewarm.enabled=true` in `ravion_operator_helm_values` and match `prewarm.nodeSelector` and `prewarm.tolerations` to executor nodes. The elected coordinator updates this chart-owned DaemonSet to its running digest after self-updates. New nodes and new digests still require their first image pull; this optional feature requires coordinator mode and an Operator image at least 0.5.11.
 
     **Full-cluster management** is enabled by default with Jobs and grants wildcard Kubernetes RBAC, including CRDs, RBAC, namespaces and custom resources. Different releases deploy in parallel, up to twelve at once by default; two versions of the same release never do, and management commands wait for running deploys. Ravion tunes capacity over the air without a module release. Pin it for this cluster with `ravion_operator_execution_max_concurrent` (1-64) through **Advanced Terraform variables**. Current Operators always serialize per release; namespace lane selection is not supported. To restrict deployments, set `ravion_operator_full_management_enabled=false` and provide `ravion_operator_deploy_namespaces` the same way. Drain existing ownership before changing management scope.
 
@@ -2276,8 +2475,7 @@ module:
     | Existing log bucket    | No       | Creates one          | Store logs in an existing bucket instead of `ravion-loki-<cluster>-<account>` |
     | In-cluster Grafana     | No       | `false`              | Grafana in the cluster, wired to the selected logs, metrics and traces stores |
     | Access                 | No       | `false`              | Grafana over HTTPS at a hostname, on the private (default) or public ALB, or through a Kubernetes Ingress |
-    | Username and password  | No       | `true`               | Grafana's built-in sign-in; off leaves only the providers |
-    | Sign-in providers      | No       | None                 | Any of Google, GitHub, GitLab, Microsoft Entra ID, Okta and generic OAuth |
+    | Sign-in providers      | No       | Username and password | Username and password, and any of Google, GitHub, GitLab, Microsoft Entra ID, Okta and generic OAuth |
     | Grafana read access    | No       | `false`              | Read-only IAM role for Amazon Managed Grafana over the AMP workspace |
     | Ravion EKS Management  | No       | `true`               | Registers the cluster, installs Operator, and enables in-cluster deployments |
     | Public ALB             | No       | `true`               | Shared internet-facing ALB (HTTPS with ACM certificate) |

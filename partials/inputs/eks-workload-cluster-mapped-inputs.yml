@@ -22,12 +22,11 @@
 - id: execution_environment_id
   label: Terraform execution environment
   type: string
-  description: Terraform execution environment inherited from the selected EKS cluster.
   collapsible: true
   default: << ref.input.execution_environment_id >>
   values: $values:ravion/execution_environments
 - id: section_cluster_identity
-  label: EKS cluster
+  label: Cluster connection
   type: section
 - id: cluster_name
   immutable: true

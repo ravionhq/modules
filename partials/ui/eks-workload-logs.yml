@@ -24,13 +24,22 @@
 # deploy pins to `module.input.name` via fullnameOverride. The `app` label is
 # NOT usable here: the charts set app.kubernetes.io/name to the chart name,
 # which is identical for every service deployed from the same chart.
+#
+# A web or worker release with Spot burst on runs a second Deployment,
+# `<name>-spot`, whose pods carry `workload="<name>-spot"`. Its lines are the
+# same application's, so the selector takes both workloads then; a release
+# without Spot burst keeps the exact match. The same `(-spot)?` alternation
+# the pod-metrics partial uses, on a workload label instead of a pod name.
 - id: app
   name: Application logs
   enabled: << module.input.logs_rendering_providers == nil || "loki" in module.input.logs_rendering_providers >>
   source:
     type: eks_loki
     cluster_arn: << module.input.cluster_arn >>
-    selector: '{namespace="<< module.input.namespace >>", workload="<< module.input.name >>"}'
+    selector: >-
+      << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand"
+      ? '{namespace="' + module.input.namespace + '", workload=~"' + module.input.name + '(-spot)?"}'
+      : '{namespace="' + module.input.namespace + '", workload="' + module.input.name + '"}' >>
 # CloudWatch Logs fallback. The add-ons module writes the whole cluster to one
 # group, one stream per pod named `<namespace>/<pod>/<container>`, so the
 # stream prefix is what narrows the group to this workload: pods are
@@ -92,7 +101,9 @@
     href: >-
       << module.input.logs_external_links == nil ? "" :
       reduce(filter(module.input.logs_external_links, #.provider == "grafana_cloud"), #acc + #.href_prefix, "")
-      + "%7Bnamespace%3D%22" + module.input.namespace + "%22%2Cworkload%3D%22" + module.input.name + "%22%7D" >>
+      + "%7Bnamespace%3D%22" + module.input.namespace + "%22%2Cworkload"
+      + (module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand"
+      ? "%3D~%22" + module.input.name + "(-spot)%3F%22%7D" : "%3D%22" + module.input.name + "%22%7D") >>
 - id: app
   name: Open in New Relic
   enabled: >-

@@ -5,6 +5,15 @@
 {{- if and .Values.spotBurst.enabled (gt (int .Values.spotBurst.minReplicas) (int .Values.spotBurst.maxReplicas)) -}}
 {{- fail "spotBurst.minReplicas must not exceed spotBurst.maxReplicas" -}}
 {{- end -}}
+{{- $readiness := .Values.probes.readiness -}}
+{{- $startup := .Values.probes.startup -}}
+{{- if and $readiness.enabled (not $readiness.port) -}}
+{{- fail "probes.readiness.port is required: the worker declares no named container port" -}}
+{{- end -}}
+{{- $startupPort := $startup.port | default $readiness.port -}}
+{{- if and $startup.enabled (not $startupPort) -}}
+{{- fail "probes.startup.port (or probes.readiness.port) is required: the worker declares no named container port" -}}
+{{- end -}}
 {{- $pools := list false -}}
 {{- if .Values.spotBurst.enabled -}}
 {{- $pools = append $pools true -}}
@@ -38,6 +47,7 @@ spec:
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
   selector:
     matchLabels:
       {{- if and .Values.spotBurst.enabled $isSpot }}
@@ -104,6 +114,27 @@ spec:
           {{- with (include "rvn-eks-worker.env" . | trim) }}
           env:
             {{- . | nindent 12 }}
+          {{- end }}
+          {{- if $readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ $readiness.path }}
+              port: {{ $readiness.port }}
+            initialDelaySeconds: {{ $readiness.initialDelaySeconds }}
+            periodSeconds: {{ $readiness.periodSeconds }}
+            timeoutSeconds: {{ $readiness.timeoutSeconds }}
+            failureThreshold: {{ $readiness.failureThreshold }}
+            successThreshold: {{ $readiness.successThreshold }}
+          {{- end }}
+          {{- if $startup.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ $startup.path | default $readiness.path }}
+              port: {{ $startupPort }}
+            initialDelaySeconds: {{ $startup.initialDelaySeconds }}
+            periodSeconds: {{ $startup.periodSeconds }}
+            timeoutSeconds: {{ $startup.timeoutSeconds }}
+            failureThreshold: {{ $startup.failureThreshold }}
           {{- end }}
           {{- with .Values.resources }}
           resources:

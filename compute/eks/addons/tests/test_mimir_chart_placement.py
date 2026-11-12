@@ -3,7 +3,9 @@
 mimir.tftest.hcl pins what the module writes; this checks the chart turns it
 into pods that cannot share a node: the anti-affinity selector must match the
 labels the chart puts on its pods, and the store placement's node affinity must
-survive Helm merging the two value files. Requires Helm, yq v4 and network
+survive Helm merging the value files. It also checks the store-gateways' Go
+memory limit from the resilience values replaces the one the chart derives from
+their memory request. Requires Helm, yq v4 and network
 access to the Grafana chart repository.
 
 Run: python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_mimir_chart_placement.py'
@@ -41,6 +43,13 @@ def anti_affinity(label):
     }]}}
 
 
+# What the resilience values write for the store-gateways: 90% of the 3Gi limit.
+STORE_GATEWAY_RESILIENCE = {
+    "resources": {"requests": {"cpu": "500m", "memory": "2Gi"}, "limits": {"memory": "3Gi"}},
+    "env": [{"name": "GOMEMLIMIT", "value": "2764MiB"}],
+}
+
+
 NODE_AFFINITY = {"nodeAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": {
     "nodeSelectorTerms": [{"matchExpressions": [
         {"key": "karpenter.sh/nodepool", "operator": "In", "values": ["addon-stateful"]},
@@ -64,13 +73,15 @@ class MimirChartPlacementTest(unittest.TestCase):
             }))
             placement = Path(directory) / "placement.json"
             placement.write_text(json.dumps({component: {"affinity": NODE_AFFINITY} for component in COMPONENTS}))
+            resilience = Path(directory) / "resilience.json"
+            resilience.write_text(json.dumps({"store_gateway": STORE_GATEWAY_RESILIENCE}))
             # Helm's own config and cache, so repositories added on the machine
             # running the test cannot get in the way.
             env = {**os.environ, **{name: str(Path(directory) / name) for name in ("HELM_CONFIG_HOME", "HELM_CACHE_HOME", "HELM_DATA_HOME")}}
             rendered = subprocess.run([
                 "helm", "template", RELEASE, "mimir-distributed",
                 "--repo", "https://grafana.github.io/helm-charts", "--version", chart_version(),
-                "--namespace", "ravion-operator", "--values", str(base), "--values", str(placement),
+                "--namespace", "ravion-operator", "--values", str(base), "--values", str(placement), "--values", str(resilience),
                 # Helm's default is older than the chart's kubeVersion floor.
                 "--kube-version", "1.36.0",
             ], text=True, capture_output=True, timeout=180, env=env)
@@ -110,6 +121,13 @@ class MimirChartPlacementTest(unittest.TestCase):
             with self.subTest(component=label):
                 affinity = self.statefulsets[label]["spec"]["template"]["spec"]["affinity"]
                 self.assertEqual(affinity["nodeAffinity"], NODE_AFFINITY["nodeAffinity"])
+
+    def test_store_gateway_go_memory_limit_replaces_the_chart_default(self):
+        container = next(c for c in self.statefulsets["store-gateway"]["spec"]["template"]["spec"]["containers"]
+                         if c["name"] == "store-gateway")
+        limits = [e for e in container["env"] if e["name"] == "GOMEMLIMIT"]
+        self.assertEqual(limits, [{"name": "GOMEMLIMIT", "value": "2764MiB"}],
+                         "the module's GOMEMLIMIT must replace the chart's request-sized one, not sit beside it")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.3.1
-  description: Retain components during updates and clean up retained build resources when the stack is destroyed.
+  version: 0.4.1
+  description: A component document longer than the 16,000 characters Image Builder takes is refused when the configuration is validated, not first at a deploy's plan.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -128,9 +128,12 @@ module:
               - steps
               - document
           type: string
-        - description: Image Builder component document in YAML. Changing it creates a new component, which the next deploy builds with.
+        - description: Image Builder component document in YAML, at most 16,000 characters. Changing it creates a new component, which the next deploy builds with.
           id: data
           label: Component document
+          patterns:
+            - message: A component document can be at most 16,000 characters, the most Image Builder takes inline. Move comments out of the document, or split it into more components.
+              pattern: ^[\s\S]{0,16000}$
           placeholder: |-
             name: provision
             schemaVersion: 1.0
@@ -963,6 +966,15 @@ module:
         description: 'Per-component parameter overrides for this deploy, as {component_name: {parameter_name: value}}. Left out, each component keeps its module-level defaults.'
         default: {}
         required: false
+      - id: parent_image
+        label: Parent image
+        type: string
+        description: An AMI ID to build this deploy on, in place of the module's parent image. Left out, the deploy builds on the module's parent image.
+        default: ''
+        required: false
+        patterns:
+          - message: Use an AMI ID.
+            pattern: ^$|^ami-[0-9a-f]{8,17}$
       - id: extra_tags
         label: Extra tags
         type: keyvalue
@@ -981,9 +993,10 @@ module:
       image_builder_distribution_configuration_arn: << stack.output.image_builder_distribution_configuration_arn >>
       components: << stack.output.component_refs >>
       parent_image: >-
-        << module.input.parent_image_source == "lookup" ?
+        << deploy.input.parent_image ? {"id": deploy.input.parent_image} :
+        (module.input.parent_image_source == "lookup" ?
         {"lookup": {"name": module.input.parent_image_name, "owners": module.input.parent_image_owners}} :
-        {"id": module.input.parent_image} >>
+        {"id": module.input.parent_image}) >>
       block_device_mappings: >-
         << module.input.root_volume_override_enabled ? [{
         "device_name": module.input.root_device_name,
@@ -1079,6 +1092,7 @@ module:
     | Input | Default | What it does |
     | --- | --- | --- |
     | Component parameters | None | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets here, key by key. |
+    | Parent image | None | An AMI ID to build this deploy on in place of the module's parent image, such as the previous release. |
     | Extra tags | None | Tags added to every AMI and snapshot this deploy creates, in every region. |
     | Publish | Off | Grants launch permission `all` on this deploy's AMIs in every region. Off keeps them private. |
 

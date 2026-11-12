@@ -133,7 +133,7 @@ run "managed_domains_issue_certificate_and_prefer_first_domain" {
   variables {
     distributions = {
       main = {
-        managed_domains = ["app.example.com", "www.example.com"]
+        managed_domains = [" app.Example.com. ", "www.example.com", "APP.EXAMPLE.com."]
       }
     }
   }
@@ -151,6 +151,11 @@ run "managed_domains_issue_certificate_and_prefer_first_domain" {
   assert {
     condition     = output.primary_domain == "app.example.com" && output.distribution_primary_domains["main"] == "app.example.com"
     error_message = "The first managed domain must be the primary domain."
+  }
+
+  assert {
+    condition     = output.domains == tolist(["app.example.com", "www.example.com"])
+    error_message = "The output must expose normalized and deduplicated managed domains."
   }
 }
 
@@ -170,6 +175,29 @@ run "byo_aliases_unchanged" {
     condition     = length(module.cdn.managed_certificate_arns) == 0 && output.primary_domain == "www.example.com"
     error_message = "BYO aliases must not create Ravion resources and stay the primary domain."
   }
+
+  assert {
+    condition     = output.domains == tolist(["www.example.com"])
+    error_message = "The output must expose the configured BYO aliases."
+  }
+}
+
+run "distribution_domains_normalize_aliases" {
+  command = plan
+
+  variables {
+    distributions = {
+      main = {
+        aliases             = [" www.Example.com. ", "WWW.example.com", "assets.EXAMPLE.org."]
+        acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/11111111-1111-1111-1111-111111111111"
+      }
+    }
+  }
+
+  assert {
+    condition     = output.domains == tolist(["www.example.com", "assets.example.org"])
+    error_message = "The output must expose normalized and deduplicated BYO aliases."
+  }
 }
 
 run "default_distribution_has_no_managed_resources" {
@@ -178,6 +206,11 @@ run "default_distribution_has_no_managed_resources" {
   assert {
     condition     = length(module.cdn.managed_certificate_arns) == 0 && output.primary_domain == "dbyo.cloudfront.net"
     error_message = "Without custom domains the CloudFront domain name stays the primary domain."
+  }
+
+  assert {
+    condition     = output.domains == tolist([])
+    error_message = "Without custom domains the viewer-domain output must be empty."
   }
 }
 
@@ -204,7 +237,19 @@ run "managed_domains_reject_more_than_ten" {
   variables {
     distributions = {
       main = {
-        managed_domains = [for i in range(11) : "app${i}.example.com"]
+        managed_domains = [
+          "app0.example.com",
+          "app1.example.com",
+          "app2.example.com",
+          "app3.example.com",
+          "app4.example.com",
+          "app5.example.com",
+          "app6.example.com",
+          "app7.example.com",
+          "app8.example.com",
+          "app9.example.com",
+          "app10.example.com",
+        ]
       }
     }
   }

@@ -7,6 +7,9 @@ on:
   push:
     branches:
       - main
+      # Ravion merge queue candidates. The queue waits for the required checks
+      # on the candidate SHA, so every required check must run here.
+      - 'ravion/merge-queue/**'
 
 permissions:
   contents: read
@@ -18,7 +21,7 @@ concurrency:
 jobs:
   validate:
     name: Validate Module Definitions
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-validate/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-module-definitions-validate/interruptible=true
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -43,6 +46,16 @@ jobs:
         run: npm test
         working-directory: tools/ravion-modules
 
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: test/go.sum
+
+      - name: Test deploy environment expression runtime
+        run: go test -run '^(TestDeployEnvironmentVariableAllowlist|TestECSDeployEnvironmentVariableAllowlist)$' -count=1 ./deploy_env_allowlist
+        working-directory: test
+
       - name: Run migration guardrails
         run: node tools/ravion-modules/dist/src/cli.js guardrails
 
@@ -54,13 +67,17 @@ jobs:
 
   publish-plan:
     name: Publish Dry-Run Plan
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish-plan/interruptible=true
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish-plan/interruptible=true
     needs: validate
-    # Fork PRs receive no repository or organization secrets; skip the plan.
+    # "Publish Dry-Run Plan" is a required check, so it also runs on merge
+    # queue candidates. Fork PRs receive no repository or organization
+    # secrets; skip the plan. It never runs on main, where publish takes over.
     if: >-
       ${{
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.fork == false
+        (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.fork == false) ||
+        (github.event_name == 'push' &&
+          startsWith(github.ref, 'refs/heads/ravion/merge-queue/'))
       }}
     permissions:
       contents: read
@@ -96,19 +113,25 @@ jobs:
           sparse-checkout: tools/ravion-modules
           sparse-checkout-cone-mode: true
 
+      # Keep the trusted copy out of the PR checkout so definition discovery doesn't scan it.
+      - name: Move trusted tooling outside the workspace
+        run: |
+          rm -rf "$RUNNER_TEMP/trusted-tools"
+          mv trusted-tools "$RUNNER_TEMP/trusted-tools"
+
       - name: Install trusted tool dependencies
         run: npm ci --ignore-scripts
-        working-directory: trusted-tools/tools/ravion-modules
+        working-directory: ${{ runner.temp }}/trusted-tools/tools/ravion-modules
 
       - name: Build trusted tools
         run: npm run typecheck && ./node_modules/.bin/tsc
-        working-directory: trusted-tools/tools/ravion-modules
+        working-directory: ${{ runner.temp }}/trusted-tools/tools/ravion-modules
 
       - name: Use trusted tools for API calls
         run: |
           rm -rf tools/ravion-modules/dist tools/ravion-modules/node_modules
-          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/dist" tools/ravion-modules/dist
-          ln -s "$GITHUB_WORKSPACE/trusted-tools/tools/ravion-modules/node_modules" tools/ravion-modules/node_modules
+          ln -s "$RUNNER_TEMP/trusted-tools/tools/ravion-modules/dist" tools/ravion-modules/dist
+          ln -s "$RUNNER_TEMP/trusted-tools/tools/ravion-modules/node_modules" tools/ravion-modules/node_modules
 
       - name: Generate publish dry-run plan
         id: publish_plan
@@ -118,6 +141,7 @@ jobs:
           RAVION_API_TOKEN: ${{ secrets.RAVION_API_TOKEN }}
 
       - name: Generate module category source diff
+        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -133,7 +157,7 @@ jobs:
 
       - name: Comment publish dry-run plan
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         with:
           script: |
             const fs = require('node:fs');
@@ -156,6 +180,16 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
+      - name: Show publish dry-run plan
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          if [ -f publish-plan.md ]; then
+            cat publish-plan.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -s publish-plan.err ]; then
+            tail -c 2000 publish-plan.err
+          fi
+
       - name: Fail when publish dry-run plan failed
         if: steps.publish_plan.outcome == 'failure'
         run: exit 1
@@ -169,6 +203,8 @@ jobs:
     name: Publish Module Definitions
     runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=2/memory=4/disk_cache=auto/id=${{ github.run_id }}-module-definitions-publish/interruptible=false
     needs: validate
+    # Side effects (tags, registry publish, README commit, releases, docs
+    # dispatch) only ever run for main, never for merge queue candidates.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write

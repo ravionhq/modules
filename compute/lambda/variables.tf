@@ -385,7 +385,7 @@ variable "log_group_name" {
 variable "log_retention_days" {
   type        = number
   description = "CloudWatch log retention in days. Set to 0 for never expire."
-  default     = 30
+  default     = 365
 
   validation {
     condition = contains([

@@ -300,3 +300,52 @@ run "accepts_two_digit_karpenter_minor_for_warm_spot_count" {
     error_message = "Numeric chart version comparison must accept Karpenter 1.10.0."
   }
 }
+
+run "warm_capacity_defaults_to_on_demand_capacity_in_the_default_node_pool" {
+  command = plan
+  variables {
+    ravion_operator_enabled                 = true
+    ravion_operator_deploy_enabled          = true
+    ravion_operator_execution_jobs_enabled  = true
+    ravion_operator_full_management_enabled = true
+    ravion_operator_warm_capacity           = { enabled = true }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator_warm_capacity[0].values[0]).nodeSelector == { "karpenter.sh/nodepool" = "default", "karpenter.sh/capacity-type" = "on-demand" }
+    error_message = "Warm capacity must default to the default node pool's On-Demand capacity."
+  }
+}
+
+run "warm_capacity_in_a_spot_only_pool_selects_only_the_pool" {
+  command = plan
+  variables {
+    ravion_operator_enabled                 = true
+    ravion_operator_deploy_enabled          = true
+    ravion_operator_execution_jobs_enabled  = true
+    ravion_operator_full_management_enabled = true
+    karpenter_default_node_pool             = { capacity_types = ["spot"] }
+    ravion_operator_warm_capacity           = { enabled = true }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator_warm_capacity[0].values[0]).nodeSelector == { "karpenter.sh/nodepool" = "default" }
+    error_message = "A pool without On-Demand capacity must not be asked for it."
+  }
+}
+
+run "an_explicit_empty_node_selector_is_kept" {
+  command = plan
+  variables {
+    ravion_operator_enabled                 = true
+    ravion_operator_deploy_enabled          = true
+    ravion_operator_execution_jobs_enabled  = true
+    ravion_operator_full_management_enabled = true
+    ravion_operator_warm_capacity           = { enabled = true, placement = { node_selector = {} } }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.ravion_operator_warm_capacity[0].values[0]).nodeSelector == {}
+    error_message = "node_selector = {} must place the slots anywhere."
+  }
+}

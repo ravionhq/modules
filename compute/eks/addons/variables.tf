@@ -527,6 +527,30 @@ variable "load_balancer_deletion_protection_enabled" {
   default     = false
 }
 
+variable "load_balancer_alarm_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when a shared ALB alarm (5xx, response time, unhealthy targets) enters ALARM. Empty disables direct actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.load_balancer_alarm_actions) <= 5 && alltrue([for arn in var.load_balancer_alarm_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
+variable "load_balancer_alarm_ok_actions" {
+  type        = list(string)
+  description = "Action ARNs invoked when a shared ALB alarm returns to OK. Empty disables direct recovery actions."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.load_balancer_alarm_ok_actions) <= 5 && alltrue([for arn in var.load_balancer_alarm_ok_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
 ################################################################################
 # Public ALB
 ################################################################################
@@ -602,7 +626,7 @@ variable "public_alb_ingress_security_group_ids" {
 variable "public_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the public ALB."
-  default     = false
+  default     = true
 }
 
 variable "public_alb_access_logs_bucket_arn" {
@@ -702,7 +726,7 @@ variable "private_alb_ingress_security_group_ids" {
 variable "private_alb_access_logs_enabled" {
   type        = bool
   description = "Enable access logging for the private ALB."
-  default     = false
+  default     = true
 }
 
 variable "private_alb_access_logs_bucket_arn" {
@@ -818,23 +842,6 @@ variable "private_nlb_access_logs_bucket_arn" {
   validation {
     condition     = var.private_nlb_access_logs_bucket_arn == null || can(regex("^arn:aws:s3:::", var.private_nlb_access_logs_bucket_arn))
     error_message = "The private_nlb_access_logs_bucket_arn must be a valid S3 bucket ARN."
-  }
-}
-
-variable "private_nlb_elastic_ips_enabled" {
-  type        = bool
-  description = "Enable static IP addresses for the private NLB using Elastic IPs."
-  default     = false
-}
-
-variable "private_nlb_elastic_ip_allocation_ids" {
-  type        = list(string)
-  description = "A list of Elastic IP allocation IDs for the private NLB, one per subnet."
-  default     = []
-
-  validation {
-    condition     = alltrue([for eip in var.private_nlb_elastic_ip_allocation_ids : can(regex("^eipalloc-", eip))])
-    error_message = "All private_nlb_elastic_ip_allocation_ids must be valid Elastic IP allocation IDs starting with 'eipalloc-'."
   }
 }
 
@@ -1043,7 +1050,7 @@ variable "ravion_operator_warm_capacity" {
       ephemeral_storage = optional(string, "1Gi")
     }), {})
     placement = optional(object({
-      node_selector = optional(map(string), {})
+      node_selector = optional(map(string))
       tolerations = optional(list(object({
         key      = string
         operator = string
@@ -1056,7 +1063,7 @@ variable "ravion_operator_warm_capacity" {
       topology_spread_when_unsatisfiable = optional(string, "ScheduleAnyway")
     }), {})
   })
-  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. Tune replicas, per-slot requests and placement for actual rollout requirements."
+  description = "Optional low-priority placeholder pods that make Karpenter provision capacity before deploys need it. Eight default slots are sized for six executor requests plus a 100% surge for the default two-pod web service. They guarantee schedulable capacity only when their placement overlaps those workloads and those workloads have higher priority. A null node_selector places them in the default Karpenter node pool, on On-Demand capacity when the pool offers it, where rollouts surge On-Demand baselines and executor Jobs land; {} places them anywhere. Tune replicas, per-slot requests and placement for actual rollout requirements."
   default     = {}
 
   validation {
@@ -1380,7 +1387,7 @@ variable "loki_resources" {
     cpu_limit      = optional(string)
     memory_limit   = optional(string, "1Gi")
   })
-  description = "Resource requests and limits for the Loki pod. Sized for a small cluster in single-binary mode; raise the memory limit before raising anything else, because query fan-out over many streams is what pushes Loki over. Null limits are omitted."
+  description = "Resource requests and limits for the Loki pod. Sized for a small cluster in single-binary mode; raise the memory limit before raising anything else, because query fan-out over many streams is what pushes Loki over. Null limits are omitted. GOMEMLIMIT is set to 90% of the memory limit Loki ends up with, including one set in loki_helm_values, when it is in Mi or Gi."
   default     = {}
   nullable    = false
 }
@@ -1493,8 +1500,19 @@ variable "grafana_service_account" {
 
 variable "grafana_helm_values" {
   type        = list(string)
-  description = "Extra YAML documents merged into the grafana/grafana chart values, after the values this module derives (later entries win). The route to an ingress, persistence, an admin password from an existing secret, dashboards, or resources."
+  description = "Extra YAML documents merged into the grafana/grafana chart values, after the values this module derives (later entries win). The route to an admin password from an existing secret, plugins, or a different volume size."
   default     = []
+  nullable    = false
+}
+
+variable "grafana_resources" {
+  type = object({
+    cpu_request    = optional(string, "100m")
+    memory_request = optional(string, "256Mi")
+    memory_limit   = optional(string, "512Mi")
+  })
+  description = "Requests and memory limit for the Grafana pod. Raise the memory for many dashboards or alert rules: Grafana evaluates alert rules itself. Applied only when addon_resilience_enabled is true."
+  default     = {}
   nullable    = false
 }
 
@@ -1509,7 +1527,7 @@ variable "grafana_access" {
     ingress_tls_secret_name = optional(string)
     hostname                = optional(string)
   })
-  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. Install that controller before turning this on: the AWS Load Balancer Controller, which this module runs alongside any shared load balancer, refuses an Ingress whose IngressClass does not exist yet. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth and grafana_auth_providers."
+  description = "Serve the in-cluster Grafana over HTTPS at hostname. method is load_balancer (the default) or ingress. load_balancer routes hostname on a shared ALB's HTTPS listener: load_balancer is private (the default: the internal ALB, reachable from the VPC and networks connected to it, such as a VPN or a Tailscale subnet router) or public (the internet-facing ALB), and a null listener_rule_priority lets AWS assign one. ingress gives Grafana a Kubernetes Ingress for hostname with TLS, served by the controller of ingress_class_name (the cluster's default IngressClass when null), such as tailscale to put Grafana on a tailnet; ingress_annotations and ingress_tls_secret_name are passed to it as they are. Install that controller before turning this on: the AWS Load Balancer Controller, which this module runs alongside any shared load balancer, refuses an Ingress whose IngressClass does not exist yet. DNS is not managed: point hostname at the chosen ALB's DNS name (public_alb_dns_name or private_alb_dns_name), or at what the ingress controller serves it on. Who can sign in is grafana_auth_providers."
   default     = {}
   nullable    = false
 
@@ -1524,18 +1542,15 @@ variable "grafana_access" {
   }
 }
 
-variable "grafana_auth" {
-  type = object({
-    login_form_enabled = optional(bool, true)
-    default_role       = optional(string, "Viewer")
-  })
-  description = "Grafana's own sign-in settings. login_form_enabled keeps username and password sign-in for Grafana's local users, including the generated admin; false removes the login form and HTTP basic auth both. default_role is the role an account gets the first time it signs in through a provider (users.auto_assign_org_role): Viewer, Editor or Admin."
-  default     = {}
+variable "grafana_default_role" {
+  type        = string
+  description = "The Grafana role an account gets the first time it signs in through an OAuth provider (users.auto_assign_org_role): Viewer, Editor or Admin."
+  default     = "Viewer"
   nullable    = false
 
   validation {
-    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_auth.default_role)
-    error_message = "The grafana_auth.default_role must be Viewer, Editor or Admin."
+    condition     = contains(["Viewer", "Editor", "Admin"], var.grafana_default_role)
+    error_message = "The grafana_default_role must be Viewer, Editor or Admin."
   }
 }
 
@@ -1559,19 +1574,32 @@ variable "grafana_auth_providers" {
     settings              = optional(map(string), {})
   }))
   description = <<-EOT
-    OAuth providers people sign in to the in-cluster Grafana with, one entry per provider, each becoming Grafana's [auth.<provider>] section under Grafana's own key names. provider is one of Grafana's own: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    How people sign in to the in-cluster Grafana, one entry per provider. provider is basic or one of Grafana's own OAuth providers: google, github, gitlab, azuread (Microsoft Entra ID), okta, generic_oauth.
+    - basic is username and password for Grafana's local users, including the generated admin, and takes no other field. Without it, Grafana has no login form and accepts no password, HTTP basic auth included.
+    - Each OAuth entry becomes Grafana's [auth.<provider>] section under Grafana's own key names.
     - client_id and client_secret_arn (a Secrets Manager ARN, read through External Secrets) give the provider its client. Leave either out when grafana_secrets gives it as GF_AUTH_<PROVIDER>_CLIENT_ID or GF_AUTH_<PROVIDER>_CLIENT_SECRET.
     - azuread needs tenant_id. okta needs url (the org URL). gitlab takes url for a self-managed GitLab (null uses gitlab.com). generic_oauth needs auth_url and token_url, and takes name (the button label), api_url and scopes.
     - allowed_domains, allowed_groups, allowed_organizations and team_ids restrict who can sign in. Google, GitHub and gitlab.com need one, since anyone with an account there could otherwise sign in.
     - role_attribute_path maps the provider's user info to a Grafana role.
     - settings passes any other key of the section through verbatim.
   EOT
-  default     = []
+  default     = [{ provider = "basic" }]
   nullable    = false
 
   validation {
-    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
-    error_message = "Each grafana_auth_providers entry's provider must be one of: google, github, gitlab, azuread, okta, generic_oauth."
+    condition     = alltrue([for entry in var.grafana_auth_providers : contains(["basic", "google", "github", "gitlab", "azuread", "okta", "generic_oauth"], entry.provider)])
+    error_message = "Each grafana_auth_providers entry's provider must be one of: basic, google, github, gitlab, azuread, okta, generic_oauth."
+  }
+
+  validation {
+    condition = alltrue([
+      for entry in var.grafana_auth_providers : entry.provider != "basic" || (
+        alltrue([for value in [entry.name, entry.client_id, entry.client_secret_arn, entry.tenant_id, entry.url, entry.auth_url, entry.token_url, entry.api_url, entry.scopes, entry.role_attribute_path] : try(trimspace(value), "") == ""]) &&
+        alltrue([for values in [entry.allowed_domains, entry.allowed_groups, entry.allowed_organizations, entry.team_ids] : length(values) == 0]) &&
+        length(entry.settings) == 0
+      )
+    ])
+    error_message = "The basic grafana_auth_providers entry is username and password and takes only provider: clients, endpoints, scopes, restrictions, role mapping and settings belong to OAuth providers."
   }
 
   validation {
@@ -1683,7 +1711,7 @@ variable "traces_destinations" {
   type        = any
   description = <<-EOT
     Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
-    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); helm_values, any other chart values as an object.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); cpu_request, memory_request and memory_limit size the pod (blank for tempo_resources); helm_values, any other chart values as an object.
     - xray: AWS X-Ray, in region (the cluster's when null).
     - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
     - datadog: site and a Secrets Manager ARN holding the API key.
@@ -1714,6 +1742,7 @@ variable "traces_destinations" {
       "destination",
       "retention_days", "storage_backend", "s3_bucket_name", "persistence_enabled", "persistence_size",
       "metrics_generator_enabled", "storage_class", "chart_version", "helm_values",
+      "cpu_request", "memory_request", "memory_limit",
       "region",
       "url", "user", "token_secret_arn",
       "site", "api_key_secret_arn",
@@ -1753,7 +1782,7 @@ variable "tempo_resources" {
     cpu_limit      = optional(string)
     memory_limit   = optional(string, "2Gi")
   })
-  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted."
+  description = "Resource requests and limits for the Tempo pod. Sized for a small cluster in monolithic mode. Null limits are omitted. The tempo destination's cpu_request, memory_request and memory_limit take precedence. GOMEMLIMIT is set to 90% of the memory limit Tempo ends up with, including one set in chart values, when it is in Mi or Gi."
   default     = {}
   nullable    = false
 }
@@ -2155,7 +2184,7 @@ variable "mimir_ingester_resources" {
     requests = object({ cpu = string, memory = string })
     limits   = object({ memory = string })
   })
-  description = "CPU and memory for each of the three Mimir ingesters, which hold recent samples in memory: each holds a copy of every series, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. The memory limit, in Mi or Gi, also sets when an ingester compacts early to drop series from pods that have gone: half the limit at 8KiB a series. Applied, and early compaction turned on, only when addon_resilience_enabled is true."
+  description = "CPU and memory for each Mimir ingester, which hold recent samples in memory: every series is held by three of them, at roughly 5-8KiB per active series. Keep the memory request equal to the limit, so the kubelet never evicts an ingester first under memory pressure. The memory limit, in Mi or Gi, also sets when an ingester compacts early to drop series from pods that have gone: half the limit at 8KiB a series. So does GOMEMLIMIT, at 90% of the limit. Applied, and early compaction turned on, only when addon_resilience_enabled is true."
   default = {
     requests = { cpu = "1", memory = "6Gi" }
     limits   = { memory = "6Gi" }
@@ -2163,9 +2192,46 @@ variable "mimir_ingester_resources" {
   nullable = false
 }
 
+variable "mimir_ingester_replicas" {
+  type        = number
+  description = "Number of Mimir ingesters. Every series is written to three of them, so more ingesters each hold a smaller share of the series and need less memory. At least 3, each on its own node."
+  default     = 3
+  nullable    = false
+
+  validation {
+    condition     = var.mimir_ingester_replicas >= 3 && floor(var.mimir_ingester_replicas) == var.mimir_ingester_replicas
+    error_message = "mimir_ingester_replicas must be a whole number of at least 3."
+  }
+}
+
+variable "mimir_ingester_max_series" {
+  type        = number
+  description = "In-memory series one Mimir ingester holds before it refuses new ones, so a burst of new series is rejected (and retried by the collectors) instead of running every ingester out of memory at once. 0 is no limit, as in Mimir."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.mimir_ingester_max_series >= 0 && floor(var.mimir_ingester_max_series) == var.mimir_ingester_max_series
+    error_message = "mimir_ingester_max_series must be a whole number, 0 for no limit."
+  }
+}
+
+variable "mimir_store_gateway_resources" {
+  type = object({
+    requests = object({ cpu = string, memory = string })
+    limits   = object({ memory = string })
+  })
+  description = "CPU and memory for each of the three Mimir store-gateways, which serve history from S3. GOMEMLIMIT is set to 90% of the memory limit they end up with, including one set in mimir_helm_values, when it is in Mi or Gi; the chart's own default is the memory request, where a heap that outgrows it collects garbage continuously and burns CPU. Applied only when addon_resilience_enabled is true."
+  default = {
+    requests = { cpu = "500m", memory = "2Gi" }
+    limits   = { memory = "3Gi" }
+  }
+  nullable = false
+}
+
 variable "mimir_helm_values" {
   type        = list(string)
-  description = "Extra YAML documents merged into the mimir-distributed chart values, after the values this module derives (later entries win). The route to more ingesters, caches, per-component resources, or a private image registry."
+  description = "Extra YAML documents merged into the mimir-distributed chart values, after the values this module derives (later entries win). The route to caches, other per-component resources, or a private image registry."
   default     = []
   nullable    = false
 }

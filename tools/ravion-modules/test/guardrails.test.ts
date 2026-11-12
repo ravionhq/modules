@@ -24,12 +24,34 @@ describe("migration guardrails", () => {
   it("allows typed colocated definition files beside Terraform modules", async () => {
     const rootPath = await mkdtemp(join(tmpdir(), "ravion-colocated-"));
     await mkdir(join(rootPath, "networking", "vpc"), { recursive: true });
+    await mkdir(join(rootPath, "containers", "ecr"), { recursive: true });
     await writeFile(
       join(rootPath, "networking", "vpc", "ravion-aws-vpc-definition.yml"),
       ["definition:", "  type: ravion-aws-vpc", "  name: AWS VPC", "module: {}", ""].join("\n"),
     );
+    await writeFile(
+      join(rootPath, "containers", "ecr", "rvn-aws-ecr-definition.yml"),
+      ["definition:", "  type: rvn-aws-ecr", "  name: AWS ECR Repository", "module: {}", ""].join("\n"),
+    );
 
     await assert.doesNotReject(runMigrationGuardrails(rootPath));
+  });
+
+  it("allows typed colocated definition files in new module directories", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "ravion-new-module-directory-"));
+    await writeDefinition(rootPath, "newdir", "foo", "rvn-new-module");
+
+    await assert.doesNotReject(runMigrationGuardrails(rootPath));
+  });
+
+  it("rejects typed colocated definition files under tools", async () => {
+    const rootPath = await mkdtemp(join(tmpdir(), "ravion-tools-definition-"));
+    await writeDefinition(rootPath, "tools", "ravion-modules", "rvn-tooling");
+
+    await assert.rejects(
+      runMigrationGuardrails(rootPath),
+      (error) => error instanceof GuardrailError && error.message.includes("rvn-tooling-definition.yml"),
+    );
   });
 
   it("rejects old colocated definition.yml files", async () => {

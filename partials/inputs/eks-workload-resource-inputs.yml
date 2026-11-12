@@ -1,5 +1,5 @@
 - id: section_resources
-  label: Resources
+  label: Container resources
   type: section
 - id: compute_target
   moved_from:

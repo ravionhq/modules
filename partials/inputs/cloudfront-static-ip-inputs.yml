@@ -1,0 +1,33 @@
+- id: anycast_ip_list_mode
+  label: Static IPs
+  type: string
+  default: disabled
+  description: "[AWS approval required](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/request-static-ips.html). Uses all edge locations and IPv4 only."
+  values:
+    - label: Disabled
+      value: disabled
+    - label: Create a static IP list
+      value: create
+    - label: Use an existing static IP list
+      value: existing
+- id: anycast_ip_count
+  label: Static IP count
+  type: number
+  default: 3
+  required: true
+  collapsible: true
+  description: "AWS charges $0.005 per IP/hour, plus normal CloudFront usage. Changing the count replaces the IPs."
+  show_when:
+    anycast_ip_list_mode: create
+  values:
+    - label: 3 IPs - apex DNS (about $11/month)
+      value: 3
+    - label: 21 IPs - allowlisting (about $77/month)
+      value: 21
+- id: anycast_ip_list_id
+  label: Static IP list ID
+  type: string
+  required: true
+  description: Reuse a list in this AWS account to share its IPs and cost across sites.
+  show_when:
+    anycast_ip_list_mode: existing

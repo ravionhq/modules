@@ -57,6 +57,11 @@ run "basic_vpc" {
   command = plan
 
   assert {
+    condition     = length(aws_flow_log.cloudwatch) == 1 && length(aws_cloudwatch_log_group.flow_logs) == 1 && aws_cloudwatch_log_group.flow_logs[0].retention_in_days == 365
+    error_message = "VPC flow logs must default to CloudWatch with one-year retention."
+  }
+
+  assert {
     condition     = aws_vpc.this.cidr_block == "10.0.0.0/16"
     error_message = "VPC CIDR block should default to 10.0.0.0/16"
   }
@@ -378,6 +383,11 @@ run "flow_logs_cloudwatch" {
   assert {
     condition     = length(aws_iam_role.flow_logs) == 1
     error_message = "Should create IAM Role for Flow Logs"
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.flow_logs[0].policy).Statement[0].Resource == ["arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc-flow-logs/test-vpc", "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc-flow-logs/test-vpc:*"]
+    error_message = "Flow-logs role must grant on the log group ARN as well as its log streams."
   }
 
   assert {

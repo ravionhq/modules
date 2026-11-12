@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 2.3.1
-  description: "Cluster names too long for the enabled load balancers are rejected when the configuration is saved, instead of failing the Terraform plan."
+  version: 2.5.0
+  description: Alarm when targets behind the shared ALBs fail health checks.
 module:
   inputs:
     - id: network
@@ -51,7 +51,7 @@ module:
           value: enabled
         - label: Disabled
           value: disabled
-    - default: 90
+    - default: 365
       description: Inherited by services unless they set their own retention. Never expire keeps logs indefinitely.
       id: log_retention_days
       label: Default log retention (days)
@@ -362,7 +362,7 @@ module:
         public_alb_enabled: true
       type: string
     - collapsible: true
-      default: false
+      default: true
       description: Enable public ALB access logging.
       id: public_alb_access_logs_enabled
       label: Access logs
@@ -470,7 +470,7 @@ module:
         private_alb_enabled: true
       type: number
     - collapsible: true
-      default: false
+      default: true
       description: Enable private ALB access logging.
       id: private_alb_access_logs_enabled
       label: Access logs
@@ -623,7 +623,7 @@ module:
       label: Compliance
       type: section
     - default: true
-      description: Keep enabled to detect failed or slow requests on both ALBs. Disable if monitored elsewhere. CloudWatch charges apply; NLBs are excluded.
+      description: Keep enabled to detect failed or slow requests and unhealthy targets on both ALBs. Disable if monitored elsewhere. CloudWatch charges apply; NLBs are excluded.
       id: cloudwatch_alarms_creation_enabled
       label: Create load balancer CloudWatch alarms
       type: boolean
@@ -736,7 +736,7 @@ module:
     | VPC network           | Yes      | —                    | Existing VPC, subnets, AWS account, and region                |
     | ECS cluster name      | Yes      | `{project}-{env}`    | Name prefix for ECS and load balancer resources               |
     | Container insights    | No       | `enhanced`           | Collect enhanced task, service, cluster, and EC2 metrics in CloudWatch |
-    | Default log retention (days) | No | `90`              | Log retention inherited by ECS services in this cluster        |
+    | Default log retention (days) | No | `365`              | Log retention inherited by ECS services in this cluster        |
     | Create load balancer CloudWatch alarms | No | `true` | Adds 5xx and response time alarms on both ALBs               |
     | Fargate               | No       | `true`               | Allow services to use Fargate capacity                        |
     | Fargate Spot          | No       | `true`               | Allow services to use lower-cost interruptible Fargate Spot   |
@@ -796,6 +796,7 @@ module:
         alb_cloudwatch_alarm_elb_5xx_threshold: << module.input.cloudwatch_alarm_elb_5xx_threshold >>
         alb_cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
         alb_cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
+        alb_cloudwatch_alarm_unhealthy_hosts_threshold: '<< module.input.cloudwatch_alarm_unhealthy_hosts_threshold != nil ? module.input.cloudwatch_alarm_unhealthy_hosts_threshold : 0 >>'
         alb_cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
         cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions || [] >>
         cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>

@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   notify:
@@ -15,7 +16,7 @@ jobs:
         contains(fromJSON('["approved", "changes_requested"]'), github.event.review.state) &&
         github.event.pull_request.head.repo.fork == false
       }}
-    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=1/memory=2/disk_cache=auto/id=${{ github.run_id }}-notify-pr-review-notify/interruptible=false
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-notify-pr-review-notify/interruptible=false
     steps:
       - name: Check out reviewer map
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -31,6 +32,8 @@ jobs:
           REVIEWER: ${{ github.event.review.user.login }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
           REQUESTED_REVIEWERS: ${{ toJSON(github.event.pull_request.requested_reviewers) }}
           ASSIGNEES: ${{ toJSON(github.event.pull_request.assignees) }}
           REPOSITORY: ${{ github.repository }}
@@ -73,13 +76,113 @@ jobs:
           PY
           )"
 
-          if [[ "${PR_AUTHOR,,}" != "devin-ai-integration[bot]" && -z "${requested_by_login}" ]]; then
+          # Tembo credits the session's requester as a commit co-author instead of a body line.
+          if [[ -z "${requested_by_login}" && "${PR_AUTHOR,,}" == "tembo[bot]" ]]; then
+            commit_authors_query="$(
+              jq -n \
+                --arg owner "${REPOSITORY%%/*}" \
+                --arg repo "${REPOSITORY#*/}" \
+                --argjson number "${PR_NUMBER}" \
+                '{
+                  query: "query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { commits(first: 100) { nodes { commit { authors(first: 10) { nodes { user { login } } } } } } } } }",
+                  variables: {owner: $owner, repo: $repo, number: $number}
+                }'
+            )"
+            if commit_authors="$(
+              curl --silent --show-error --fail \
+                --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data "${commit_authors_query}" \
+                https://api.github.com/graphql
+            )"; then
+              # GraphQL reports failures with HTTP 200 and an `errors` array.
+              graphql_errors="$(
+                jq -r '
+                  if (.errors | type) == "array" and (.errors | length) > 0 then
+                    [.errors[] | .message // "unknown error"] | join("; ")
+                  elif (.data.repository.pullRequest | type) != "object" then
+                    "pull request missing from response"
+                  else
+                    ""
+                  end
+                ' <<<"${commit_authors}" 2>/dev/null || echo "invalid JSON response"
+              )"
+              if [[ -n "${graphql_errors}" ]]; then
+                echo "::warning::Could not read commit authors to find the Tembo requester: ${graphql_errors}"
+              else
+                requested_by_login="$(
+                  jq -r '
+                    [.data.repository.pullRequest.commits.nodes[]?.commit.authors.nodes[]?.user.login
+                      | select(type == "string" and (endswith("[bot]") | not))]
+                    | first // ""
+                  ' <<<"${commit_authors}"
+                )"
+                if [[ -z "${requested_by_login}" ]]; then
+                  echo "::warning::No human commit author found to identify the Tembo requester"
+                fi
+              fi
+            else
+              echo "::warning::Could not read commit authors to find the Tembo requester"
+            fi
+          fi
+
+          if [[ "${PR_AUTHOR,,}" != "devin-ai-integration[bot]" && "${PR_AUTHOR,,}" != "tembo[bot]" && -z "${requested_by_login}" ]]; then
             exit 0
+          fi
+
+          # Don't DM the requester about approvals once they have approved the PR and added it to the merge queue themselves.
+          skip_login=""
+          if [[ "${review_state}" == "approved" && -n "${requested_by_login}" ]]; then
+            queue_state_query="$(
+              jq -n \
+                --arg owner "${REPOSITORY%%/*}" \
+                --arg repo "${REPOSITORY#*/}" \
+                --argjson number "${PR_NUMBER}" \
+                '{
+                  query: "query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { labels(first: 100) { nodes { name } } latestOpinionatedReviews(first: 100, writersOnly: true) { nodes { state author { login } } } } } }",
+                  variables: {owner: $owner, repo: $repo, number: $number}
+                }'
+            )"
+            if queue_state="$(
+              curl --silent --show-error --fail \
+                --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --data "${queue_state_query}" \
+                https://api.github.com/graphql
+            )"; then
+              requester_queued="$(
+                jq -r --arg requester "${requested_by_login}" '
+                  if (.errors | type) == "array" and (.errors | length) > 0 then
+                    "error: " + ([.errors[] | .message // "unknown error"] | join("; "))
+                  elif (.data.repository.pullRequest | type) != "object" then
+                    "error: pull request missing from response"
+                  else
+                    .data.repository.pullRequest as $pr
+                    | (any($pr.labels.nodes[]?.name; . == "0 - ravion queue" or . == "0 - ravion priority")) as $queued
+                    | (any($pr.latestOpinionatedReviews.nodes[]?;
+                        .state == "APPROVED" and
+                        ((.author.login // "") | ascii_downcase) == ($requester | ascii_downcase))) as $approved
+                    | ($queued and $approved | tostring)
+                  end
+                ' <<<"${queue_state}" 2>/dev/null || echo "error: invalid JSON response"
+              )"
+              case "${requester_queued}" in
+                true)
+                  echo "@${requested_by_login} already approved and queued this PR; not notifying them"
+                  skip_login="${requested_by_login}"
+                  ;;
+                false) ;;
+                *) echo "::warning::Could not check merge queue state: ${requester_queued#error: }" ;;
+              esac
+            else
+              echo "::warning::Could not check merge queue state"
+            fi
           fi
 
           recipients="$(
             jq -cn \
               --arg reviewer "${REVIEWER}" \
+              --arg skip "${skip_login}" \
               --arg requested_by "${requested_by_login}" \
               --argjson requested "${REQUESTED_REVIEWERS}" \
               --argjson assignees "${ASSIGNEES}" '
@@ -88,6 +191,7 @@ jobs:
                   | map(.login)
                   | map(select(type == "string"))
                   | map(select((ascii_downcase) != ($reviewer | ascii_downcase)))
+                  | map(select((ascii_downcase) != ($skip | ascii_downcase)))
                   | reduce .[] as $login
                       ([];
                        if any(.[]; ascii_downcase == ($login | ascii_downcase))
@@ -114,9 +218,9 @@ jobs:
 
           escape_slack_text() {
             local value="$1"
-            value="${value//&/&amp;}"
-            value="${value//</&lt;}"
-            value="${value//>/&gt;}"
+            value="${value//&/\&amp;}"
+            value="${value//</\&lt;}"
+            value="${value//>/\&gt;}"
             printf '%s' "${value}"
           }
 
