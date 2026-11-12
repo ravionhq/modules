@@ -1,12 +1,16 @@
 {{- if .Values.tls.enabled }}
+{{- $tls := .Values.tls -}}
+{{- if not (has $tls.caSource (list "self_signed" "secret" "issuer")) }}
+{{- fail "tls.caSource must be self_signed, secret or issuer" }}
+{{- end }}
+{{- if eq $tls.caSource "self_signed" }}
 {{- /*
 A private CA for this release only. cert-manager generates the CA key inside
 the cluster, and it stays in the CA secret in this namespace. Anyone who can
 create a Certificate naming this Issuer, or read the CA secret, can mint a
 certificate Temporal trusts, so keep those permissions as narrow as namespace
 admin.
-*/ -}}
-{{- $tls := .Values.tls -}}
+*/}}
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -40,6 +44,12 @@ spec:
     name: {{ $tls.issuerName }}-bootstrap
     kind: Issuer
 ---
+{{- end }}
+{{- if ne $tls.caSource "issuer" }}
+{{- /*
+The CA Issuer signing the leaf certificates: with the CA created above, or
+with an existing CA key pair Secret (tls.crt and tls.key) in this namespace.
+*/}}
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -50,6 +60,14 @@ metadata:
 spec:
   ca:
     secretName: {{ $tls.caSecretName }}
+{{- end }}
+{{- $issuerRef := $tls.issuerRef }}
+{{- if ne $tls.caSource "issuer" }}
+{{- $issuerRef = dict "name" $tls.issuerName "kind" "Issuer" "group" "cert-manager.io" }}
+{{- end }}
+{{- if not $issuerRef.name }}
+{{- fail "tls.issuerRef.name is required when tls.caSource is issuer" }}
+{{- end }}
 {{- range $leaf := list $tls.internode $tls.frontend }}
 {{- if not $leaf.dnsNames }}
 {{- fail (printf "tls: dnsNames are required for %s" $leaf.secretName) }}
@@ -79,7 +97,8 @@ spec:
     size: 256
     rotationPolicy: Always
   issuerRef:
-    name: {{ $tls.issuerName }}
-    kind: Issuer
+    name: {{ $issuerRef.name }}
+    kind: {{ $issuerRef.kind }}
+    group: {{ $issuerRef.group }}
 {{- end }}
 {{- end }}

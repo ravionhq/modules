@@ -19,8 +19,7 @@ metadata:
 spec:
   refreshInterval: {{ $db.externalSecret.refreshInterval }}
   secretStoreRef:
-    name: {{ $db.externalSecret.secretStoreName }}
-    kind: {{ $db.externalSecret.secretStoreKind }}
+    {{- include "temporal-resources.secretStoreRef" . | nindent 4 }}
   target:
     name: {{ $db.secretName }}
     creationPolicy: Owner

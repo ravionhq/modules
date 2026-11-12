@@ -6,18 +6,22 @@
 temporal:
   releaseName: temporal
 
+# The External Secrets store every ExternalSecret below reads AWS Secrets
+# Manager through. Values copied this way never enter Helm values, release
+# history or Terraform state.
+externalSecrets:
+  secretStoreName: ravion-aws
+  secretStoreKind: ClusterSecretStore
+
 # ---- Database --------------------
 database:
   # Kubernetes Secret the Temporal servers and schema jobs read the password from.
   secretName: temporal-db
   secretKey: password
-  # Copy the password from AWS Secrets Manager with the External Secrets
-  # Operator, so it never enters Helm values, release history or Terraform
-  # state. Off when the Secret is managed elsewhere.
+  # Copy the password from Secrets Manager. Off when the Secret is managed
+  # elsewhere.
   externalSecret:
     enabled: true
-    secretStoreName: ravion-aws
-    secretStoreKind: ClusterSecretStore
     # Name or ARN of the Secrets Manager secret (JSON) and the key holding the password.
     remoteSecretName: ""
     remoteSecretProperty: password
@@ -29,15 +33,24 @@ database:
     configMapName: temporal-rds-ca
 
 # ---- TLS --------------------
-# A private CA from cert-manager, scoped to this namespace (an Issuer, not a
-# ClusterIssuer). The internode certificate secures traffic between Temporal's
-# services with mutual TLS; the frontend certificate serves SDK clients, the
-# Web UI and the admin tools. Both carry client auth, so the chart's own pods
-# can present them.
+# Certificates from cert-manager. The internode certificate secures traffic
+# between Temporal's services with mutual TLS; the frontend certificate serves
+# SDK clients, the Web UI and the admin tools. Both carry client auth, so the
+# chart's own pods can present them.
+#
+# caSource picks what signs them:
+#   selfSigned  - a CA created here (caSecretName), behind the namespaced Issuer issuerName
+#   secret      - an existing CA key pair Secret (caSecretName), behind issuerName
+#   issuer      - an existing issuer, issuerRef, such as an AWS Private CA issuer
 tls:
   enabled: false
+  caSource: self_signed
   caSecretName: temporal-ca
   issuerName: temporal-ca
+  issuerRef:
+    name: temporal-ca
+    kind: Issuer
+    group: cert-manager.io
   caDuration: 87600h
   caRenewBefore: 8760h
   leafDuration: 2160h
@@ -48,6 +61,72 @@ tls:
   frontend:
     secretName: temporal-frontend-tls
     dnsNames: []
+
+# ---- JWT signing keys --------------------
+# A JWKS document copied from Secrets Manager and served at
+# http://<name>.<namespace>.svc:8080/jwks.json for the frontend's key provider.
+# The keys are public; only this release's pods may reach the server.
+jwks:
+  enabled: false
+  name: temporal-jwks
+  remoteSecretName: ""
+  # JSON key holding the document. Empty: the whole secret string.
+  remoteProperty: ""
+  refreshInterval: 1m
+  replicaCount: 2
+  image: nginxinc/nginx-unprivileged:1.28.1-alpine
+
+# ---- Frontend environment from Secrets Manager --------------------
+# Each item becomes a key of secretName, which the frontend pods reference
+# as an environment variable of the same name.
+frontendEnv:
+  secretName: temporal-frontend-env
+  items: []
+  # - key: MY_VARIABLE
+  #   remoteSecret: arn:aws:secretsmanager:...
+  #   remoteProperty: ""
+
+# ---- Server files from Secrets Manager --------------------
+# Each item becomes a key of secretName, which the server pods mount as a file.
+serverFiles:
+  secretName: temporal-server-files
+  items: []
+
+# ---- Web UI OIDC client --------------------
+# The client ID and secret the Web UI reads as TEMPORAL_AUTH_CLIENT_ID and
+# TEMPORAL_AUTH_CLIENT_SECRET.
+webOidc:
+  enabled: false
+  secretName: temporal-web-oidc
+  remoteSecretName: ""
+  clientIdProperty: client_id
+  clientSecretProperty: client_secret
+  refreshInterval: 1h
+
+# ---- Internal NLB for the frontend --------------------
+# Provisioned by the AWS Load Balancer Controller. TCP passes straight through
+# to the frontend pods, which terminate TLS and check tokens. Client addresses
+# are preserved, so the network policy can admit sourceRanges.
+frontendNlb:
+  enabled: false
+  name: temporal-frontend
+  subnetIds: []
+  sourceRanges: []
+  crossZoneEnabled: true
+  deletionProtectionEnabled: false
+
+# ---- Tailscale --------------------
+# Served by the Tailscale Kubernetes operator: the frontend's gRPC port as a
+# TCP passthrough device, and the Web UI through a Tailscale Ingress (HTTPS).
+tailscale:
+  frontend:
+    enabled: false
+    hostname: temporal-frontend
+    tags: []
+  web:
+    enabled: false
+    hostname: temporal
+    tags: []
 
 # ---- Scheduling --------------------
 priorityClass:
@@ -78,6 +157,8 @@ nodePool:
 networkPolicy:
   enabled: false
   frontendClientNamespaces: []
+  # Extra sources for the frontend, such as the NLB's clients and subnets.
+  frontendClientCidrs: []
   webClientNamespaces: []
   # Extra sources for the Web UI, such as the VPC CIDR an internal load
   # balancer sends from.

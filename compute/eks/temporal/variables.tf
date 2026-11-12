@@ -184,9 +184,9 @@ variable "database_password_secret_property" {
   nullable    = false
 }
 
-variable "database_password_secret_store_name" {
+variable "external_secrets_store_name" {
   type        = string
-  description = "External Secrets ClusterSecretStore that reads Secrets Manager. It must admit this namespace and be allowed to read the secret (and decrypt it, for a customer managed KMS key)."
+  description = "External Secrets ClusterSecretStore that reads Secrets Manager, for the database password, the JWKS key set, the Web UI's OIDC client and the frontend's secret environment and files. It must admit this namespace and be allowed to read each secret (and decrypt it, for a customer managed KMS key)."
   default     = "ravion-aws"
   nullable    = false
 }
@@ -353,14 +353,33 @@ variable "worker" {
 ################################################################################
 
 variable "temporal_namespaces" {
-  type        = map(number)
-  description = "Temporal namespaces created on install, keyed by name, each with how many days closed workflows are kept. Namespaces that already exist are left as they are: change retention with `temporal operator namespace update`."
-  default     = { default = 7 }
+  type = map(object({
+    retention_days    = optional(number, 7)
+    search_attributes = optional(map(string), {})
+  }))
+  description = "Temporal namespaces, keyed by name. After every deploy a job creates each missing namespace, sets its retention (days closed workflows are kept), and registers its custom search attributes (name => type: Keyword, KeywordList, Text, Int, Double, Bool or Datetime). Attributes are only ever added: removing one here leaves it registered. Postgres visibility gives each namespace 10 Keyword slots and 3 of every other type."
+  default     = { default = {} }
   nullable    = false
 
   validation {
-    condition     = alltrue([for name, days in var.temporal_namespaces : can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,254}$", name)) && days >= 1 && days <= 3650 && floor(days) == days])
+    condition     = alltrue([for name, ns in var.temporal_namespaces : can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,254}$", name)) && ns.retention_days >= 1 && ns.retention_days <= 3650 && floor(ns.retention_days) == ns.retention_days])
     error_message = "Each Temporal namespace needs a 2-255 character name of letters, numbers, dots, underscores and hyphens, and whole-day retention between 1 and 3650."
+  }
+
+  validation {
+    condition = alltrue(flatten([for ns in var.temporal_namespaces : [
+      for attr, type in ns.search_attributes :
+      can(regex("^[A-Za-z][A-Za-z0-9_]{0,63}$", attr)) && contains(["Keyword", "KeywordList", "Text", "Int", "Double", "Bool", "Datetime"], type)
+    ]]))
+    error_message = "Search attribute names must be 1-64 letters, numbers and underscores starting with a letter, and each type one of Keyword, KeywordList, Text, Int, Double, Bool or Datetime."
+  }
+
+  validation {
+    condition = alltrue(flatten([for ns in var.temporal_namespaces : [
+      for type, limit in { Keyword = 10, KeywordList = 3, Text = 3, Int = 3, Double = 3, Bool = 3, Datetime = 3 } :
+      length([for t in values(ns.search_attributes) : t if t == type]) <= limit
+    ]]))
+    error_message = "Postgres visibility allows each namespace at most 10 Keyword search attributes and 3 of each other type."
   }
 }
 
@@ -510,13 +529,445 @@ variable "tls_frontend_client_auth_required" {
   nullable    = false
 }
 
+variable "tls_frontend_extra_dns_names" {
+  type        = list(string)
+  description = "More names for the frontend certificate, such as a DNS name you point at the NLB. The tailnet name is added automatically when tailscale_tailnet_domain is set."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for n in var.tls_frontend_extra_dns_names : can(regex("^[a-z0-9*]([a-z0-9.-]{0,251}[a-z0-9])?$", n))])
+    error_message = "Each tls_frontend_extra_dns_names entry must be a DNS name."
+  }
+}
+
+variable "tls_ca_source" {
+  type        = string
+  description = "Certificate authority that issues the frontend and internode certificates. `self_signed` creates a CA in the namespace; `issuer` uses an existing cert-manager Issuer or ClusterIssuer, such as an AWS Private CA issuer; `secret` uses an existing CA key pair Secret in the namespace."
+  default     = "self_signed"
+  nullable    = false
+
+  validation {
+    condition     = contains(["self_signed", "issuer", "secret"], var.tls_ca_source)
+    error_message = "The tls_ca_source must be self_signed, issuer or secret."
+  }
+}
+
+variable "tls_issuer" {
+  type = object({
+    name  = string
+    kind  = optional(string, "ClusterIssuer")
+    group = optional(string, "cert-manager.io")
+  })
+  description = "Existing issuer for tls_ca_source = issuer. For AWS Private CA through aws-privateca-issuer, use kind AWSPCAClusterIssuer or AWSPCAIssuer and group awspca.cert-manager.io."
+  default     = null
+
+  validation {
+    condition     = var.tls_issuer == null || (can(regex("^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", var.tls_issuer.name)) && can(regex("^[A-Z][A-Za-z0-9]*$", var.tls_issuer.kind)) && can(regex("^[a-z0-9.-]+$", var.tls_issuer.group)))
+    error_message = "tls_issuer needs a Kubernetes object name, a kind such as ClusterIssuer, and an API group such as cert-manager.io."
+  }
+}
+
+variable "tls_ca_secret_name" {
+  type        = string
+  description = "For tls_ca_source = secret: a kubernetes.io/tls Secret in the namespace holding the CA certificate (tls.crt) and its private key (tls.key)."
+  default     = null
+
+  validation {
+    condition     = var.tls_ca_secret_name == null || can(regex("^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", var.tls_ca_secret_name))
+    error_message = "The tls_ca_secret_name must be a valid Kubernetes object name."
+  }
+}
+
+################################################################################
+# JWT authorization
+################################################################################
+
+variable "jwt_auth_enabled" {
+  type        = bool
+  description = "Require a JWT on every frontend call, checked by Temporal's default claim mapper and authorizer. The token's permissions claim lists entries of the form <namespace>:<read|write|worker|admin> (system:admin for cluster-wide admin). Requires tls_enabled: Temporal's own components then reach the cluster through an internal frontend with their internode certificates, as admin."
+  default     = false
+  nullable    = false
+}
+
+variable "jwt_auth_audience" {
+  type        = string
+  description = "Audience (aud) the frontend requires in tokens. When null, the audience is not checked."
+  default     = null
+}
+
+variable "jwt_auth_permissions_claim_name" {
+  type        = string
+  description = "Token claim holding the permissions list."
+  default     = "permissions"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_:/.-]{1,128}$", var.jwt_auth_permissions_claim_name))
+    error_message = "The jwt_auth_permissions_claim_name must be 1-128 characters of letters, numbers and _ : / . -"
+  }
+}
+
+variable "jwt_auth_jwks_source" {
+  type        = string
+  description = "Where the frontend reads the signing keys. `url` fetches one or more JWKS URLs, such as an identity provider's; `secrets_manager` syncs a JWKS document from Secrets Manager through External Secrets and serves it inside the namespace, for tokens you sign yourself."
+  default     = "url"
+  nullable    = false
+
+  validation {
+    condition     = contains(["url", "secrets_manager"], var.jwt_auth_jwks_source)
+    error_message = "The jwt_auth_jwks_source must be url or secrets_manager."
+  }
+}
+
+variable "jwt_auth_jwks_urls" {
+  type        = list(string)
+  description = "JWKS URLs for jwt_auth_jwks_source = url. The frontend drops a whole refresh when any of them fails, so list only reliable ones."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for u in var.jwt_auth_jwks_urls : can(regex("^https?://\\S+$", u))])
+    error_message = "Each jwt_auth_jwks_urls entry must be an http(s) URL."
+  }
+}
+
+variable "jwt_auth_jwks_secret_arn" {
+  type        = string
+  description = "Secrets Manager secret holding the JWKS document ({\"keys\": [...]}) for jwt_auth_jwks_source = secrets_manager."
+  default     = null
+
+  validation {
+    condition     = var.jwt_auth_jwks_secret_arn == null || can(regex("^arn:aws[a-z-]*:secretsmanager:", var.jwt_auth_jwks_secret_arn))
+    error_message = "The jwt_auth_jwks_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "jwt_auth_jwks_secret_property" {
+  type        = string
+  description = "JSON key holding the JWKS document inside the secret. When null, the whole secret string is the document."
+  default     = null
+}
+
+variable "jwt_auth_jwks_refresh_interval" {
+  type        = string
+  description = "How often the frontend reloads the signing keys, and how often External Secrets re-reads them from Secrets Manager."
+  default     = "1m"
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.jwt_auth_jwks_refresh_interval))
+    error_message = "The jwt_auth_jwks_refresh_interval must be a duration such as 1m."
+  }
+}
+
+variable "jwt_auth_jwks_server_image" {
+  type        = string
+  description = "Image of the small web server that serves a JWKS document synced from Secrets Manager. It must serve /usr/share/nginx/html on port 8080 as a non-root user."
+  default     = "nginxinc/nginx-unprivileged:1.28.1-alpine"
+  nullable    = false
+}
+
+variable "internal_frontend" {
+  type = object({
+    replicas       = optional(number, 2)
+    cpu_request    = optional(string, "100m")
+    memory_request = optional(string, "256Mi")
+    memory_limit   = optional(string, "512Mi")
+  })
+  description = "Internal frontend, run when jwt_auth_enabled: Temporal's own workers, the admin tools and the setup jobs call it with internode certificates instead of tokens."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = var.internal_frontend.replicas >= 1 && can(regex("^[0-9]+(Mi|Gi)$", var.internal_frontend.memory_request)) && can(regex("^[0-9]+(Mi|Gi)$", var.internal_frontend.memory_limit)) && can(regex("^[0-9]+(\\.[0-9]+)?m?$", var.internal_frontend.cpu_request))
+    error_message = "internal_frontend: replicas must be at least 1, CPU a Kubernetes quantity such as 100m, and memory in Mi or Gi such as 512Mi."
+  }
+}
+
+variable "web_internal_frontend_enabled" {
+  type        = bool
+  description = "Connect the Web UI through the internal frontend with an internode certificate, so it acts as admin without a token. With jwt_auth_enabled the UI otherwise needs each user's token, from OIDC sign-in. Only for a Web UI that already restricts who reaches it."
+  default     = false
+  nullable    = false
+}
+
+################################################################################
+# Frontend customization (custom claim mappers and other server builds)
+################################################################################
+
+variable "frontend_extra_env" {
+  type        = map(string)
+  description = "Plain environment variables for the frontend pods, such as settings for a custom claim mapper in your own server_image."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for k in keys(var.frontend_extra_env) : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", k)) && k != "GOMEMLIMIT"])
+    error_message = "frontend_extra_env names must be valid environment variable names, and GOMEMLIMIT is set by the module."
+  }
+}
+
+variable "frontend_secret_env" {
+  type = map(object({
+    secret_arn = string
+    property   = optional(string)
+  }))
+  description = "Environment variables for the frontend pods read from Secrets Manager, keyed by variable name. External Secrets syncs them into a Kubernetes Secret, so the values stay out of Helm values and Terraform state. Without property, the whole secret string is the value."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for k, v in var.frontend_secret_env : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", k)) && can(regex("^arn:aws[a-z-]*:secretsmanager:", v.secret_arn))])
+    error_message = "frontend_secret_env names must be valid environment variable names, each with a Secrets Manager secret ARN."
+  }
+
+  validation {
+    condition     = length(setintersection(keys(var.frontend_secret_env), keys(var.frontend_extra_env))) == 0
+    error_message = "A variable cannot be in both frontend_extra_env and frontend_secret_env."
+  }
+}
+
+variable "server_secret_files" {
+  type = map(object({
+    secret_arn = string
+    property   = optional(string)
+  }))
+  description = "Secrets Manager secrets mounted as read-only files into the Temporal server pods, keyed by absolute file path, such as a service account key a custom claim mapper reads. Without property, the whole secret string is the file. Files are not refreshed in running pods: restart them after a change."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for path, f in var.server_secret_files : can(regex("^arn:aws[a-z-]*:secretsmanager:", f.secret_arn)) && can(regex("^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$", path)) && !startswith(path, "/etc/temporal/")])
+    error_message = "Each server_secret_files entry needs an absolute file path outside /etc/temporal/ and a Secrets Manager secret ARN."
+  }
+}
+
+################################################################################
+# Internal NLB for the frontend
+################################################################################
+
+variable "frontend_nlb_enabled" {
+  type        = bool
+  description = "Expose the frontend's gRPC port on an internal Network Load Balancer, for clients outside the cluster, such as in a peered VPC. TCP passes straight through, so TLS and token checks still happen at the frontend. Requires the AWS Load Balancer Controller."
+  default     = false
+  nullable    = false
+}
+
+variable "frontend_nlb_name" {
+  type        = string
+  description = "Name of the NLB, unique in the account and region. When null, <cluster name>-<name>, cut to 32 characters."
+  default     = null
+
+  validation {
+    condition     = var.frontend_nlb_name == null || can(regex("^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$", var.frontend_nlb_name))
+    error_message = "The frontend_nlb_name must be 1-32 letters, numbers and hyphens, not starting or ending with a hyphen."
+  }
+}
+
+variable "frontend_nlb_subnet_ids" {
+  type        = list(string)
+  description = "Private subnets for the NLB. When empty, the load balancer controller picks the subnets tagged kubernetes.io/role/internal-elb."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for s in var.frontend_nlb_subnet_ids : can(regex("^subnet-[0-9a-f]+$", s))])
+    error_message = "Each frontend_nlb_subnet_ids entry must be a subnet ID."
+  }
+}
+
+variable "frontend_nlb_source_cidrs" {
+  type        = list(string)
+  description = "CIDR blocks allowed to reach the NLB. They are also admitted to the frontend by the network policy, since the NLB keeps client addresses."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for c in var.frontend_nlb_source_cidrs : can(cidrhost(c, 0))])
+    error_message = "Each frontend_nlb_source_cidrs entry must be a CIDR block."
+  }
+}
+
+variable "frontend_nlb_cross_zone_enabled" {
+  type        = bool
+  description = "Spread NLB traffic across frontend pods in every zone, not only the client's zone. Cross-zone traffic is charged."
+  default     = true
+  nullable    = false
+}
+
+variable "frontend_nlb_deletion_protection_enabled" {
+  type        = bool
+  description = "Protect the NLB from deletion. Turn it off before removing the NLB."
+  default     = false
+  nullable    = false
+}
+
+################################################################################
+# Tailscale
+################################################################################
+
+variable "tailscale_frontend_enabled" {
+  type        = bool
+  description = "Put the frontend's gRPC port on your tailnet through the Tailscale Kubernetes operator. TCP passes straight through, so TLS and token checks still happen at the frontend."
+  default     = false
+  nullable    = false
+}
+
+variable "tailscale_frontend_hostname" {
+  type        = string
+  description = "Tailnet device name for the frontend. When null, <name>-frontend."
+  default     = null
+
+  validation {
+    condition     = var.tailscale_frontend_hostname == null || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.tailscale_frontend_hostname))
+    error_message = "The tailscale_frontend_hostname must be a DNS label of lowercase letters, numbers and hyphens."
+  }
+}
+
+variable "tailscale_frontend_tags" {
+  type        = list(string)
+  description = "Tailscale tags for the frontend's device, such as tag:workflows-grpc. When empty, the operator's default tags. Grant access to the tag in your tailnet policy."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for t in var.tailscale_frontend_tags : can(regex("^tag:[A-Za-z0-9-]+$", t))])
+    error_message = "Each Tailscale tag must look like tag:name."
+  }
+}
+
+variable "tailscale_web_enabled" {
+  type        = bool
+  description = "Serve the Web UI on your tailnet over HTTPS through the Tailscale Kubernetes operator's Ingress."
+  default     = false
+  nullable    = false
+}
+
+variable "tailscale_web_hostname" {
+  type        = string
+  description = "Tailnet device name for the Web UI. When null, the release name."
+  default     = null
+
+  validation {
+    condition     = var.tailscale_web_hostname == null || can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.tailscale_web_hostname))
+    error_message = "The tailscale_web_hostname must be a DNS label of lowercase letters, numbers and hyphens."
+  }
+}
+
+variable "tailscale_web_tags" {
+  type        = list(string)
+  description = "Tailscale tags for the Web UI's device. When empty, the operator's default tags. Grant access to the tag in your tailnet policy."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for t in var.tailscale_web_tags : can(regex("^tag:[A-Za-z0-9-]+$", t))])
+    error_message = "Each Tailscale tag must look like tag:name."
+  }
+}
+
+variable "tailscale_namespace" {
+  type        = string
+  description = "Namespace the Tailscale operator runs its proxies in. The network policies admit it to the frontend and the Web UI."
+  default     = "tailscale"
+  nullable    = false
+}
+
+variable "tailscale_tailnet_domain" {
+  type        = string
+  description = "Your tailnet's MagicDNS domain, such as example-tailnet.ts.net. Used to derive the tailnet addresses in the outputs and the Web UI's OIDC callback URL."
+  default     = null
+
+  validation {
+    condition     = var.tailscale_tailnet_domain == null || can(regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$", var.tailscale_tailnet_domain))
+    error_message = "The tailscale_tailnet_domain must be a domain such as example-tailnet.ts.net."
+  }
+}
+
+################################################################################
+# Web UI sign-in (OIDC)
+################################################################################
+
+variable "web_oidc_enabled" {
+  type        = bool
+  description = "Require sign-in to the Web UI through an OpenID Connect provider."
+  default     = false
+  nullable    = false
+}
+
+variable "web_oidc_provider" {
+  type        = string
+  description = "Identity provider preset. `google` fills the issuer URL and scopes; `okta` and `microsoft_entra` fill the scopes and need your organization's issuer URL; `generic` needs both."
+  default     = "google"
+  nullable    = false
+
+  validation {
+    condition     = contains(["google", "okta", "microsoft_entra", "generic"], var.web_oidc_provider)
+    error_message = "The web_oidc_provider must be google, okta, microsoft_entra or generic."
+  }
+}
+
+variable "web_oidc_issuer_url" {
+  type        = string
+  description = "OIDC issuer URL, overriding the preset: https://<org>.okta.com (or an authorization server) for Okta, https://login.microsoftonline.com/<tenant ID>/v2.0 for Microsoft Entra ID."
+  default     = null
+
+  validation {
+    condition     = var.web_oidc_issuer_url == null || can(regex("^https://\\S+$", var.web_oidc_issuer_url))
+    error_message = "The web_oidc_issuer_url must be an https:// URL."
+  }
+}
+
+variable "web_oidc_scopes" {
+  type        = list(string)
+  description = "Scopes the Web UI requests, overriding the preset."
+  default     = null
+}
+
+variable "web_oidc_client_secret_arn" {
+  type        = string
+  description = "Secrets Manager secret (JSON) holding the OIDC client ID and client secret, synced through External Secrets."
+  default     = null
+
+  validation {
+    condition     = var.web_oidc_client_secret_arn == null || can(regex("^arn:aws[a-z-]*:secretsmanager:", var.web_oidc_client_secret_arn))
+    error_message = "The web_oidc_client_secret_arn must be a Secrets Manager secret ARN."
+  }
+}
+
+variable "web_oidc_client_id_property" {
+  type        = string
+  description = "JSON key of the client ID in the secret."
+  default     = "client_id"
+  nullable    = false
+}
+
+variable "web_oidc_client_secret_property" {
+  type        = string
+  description = "JSON key of the client secret in the secret."
+  default     = "client_secret"
+  nullable    = false
+}
+
+variable "web_oidc_callback_url" {
+  type        = string
+  description = "Callback URL to register with the provider. When null, https://<Web UI host>/auth/sso/callback, from the Tailscale hostname and tailnet domain or the ingress host."
+  default     = null
+
+  validation {
+    condition     = var.web_oidc_callback_url == null || can(regex("^https?://\\S+$", var.web_oidc_callback_url))
+    error_message = "The web_oidc_callback_url must be an http(s) URL."
+  }
+}
+
 ################################################################################
 # Web UI
 ################################################################################
 
 variable "web_enabled" {
   type        = bool
-  description = "Run the Temporal Web UI. It has no sign-in of its own: anyone who can reach it can read and act on every namespace."
+  description = "Run the Temporal Web UI. Without web_oidc_enabled it has no sign-in: anyone who can reach it can read and act on every namespace."
   default     = true
   nullable    = false
 }

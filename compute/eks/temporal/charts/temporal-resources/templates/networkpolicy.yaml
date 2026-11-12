@@ -49,6 +49,10 @@ spec:
           protocol: TCP
       from:
         {{- include "temporal-resources.namespacePeers" $np.frontendClientNamespaces | nindent 8 }}
+        {{- range $np.frontendClientCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -99,4 +103,28 @@ spec:
             matchLabels:
               {{- include "temporal-resources.metricsSelector" . | nindent 14 }}
         {{- end }}
+{{- if .Values.jwks.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.jwks.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "temporal-resources.jwksSelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              {{- include "temporal-resources.temporalSelector" . | nindent 14 }}
+{{- end }}
 {{- end }}

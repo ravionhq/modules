@@ -34,8 +34,38 @@ output "frontend_http_address" {
 }
 
 output "temporal_namespaces" {
-  description = "Temporal namespaces the module creates on install."
+  description = "Temporal namespaces the module creates and keeps configured."
   value       = keys(var.temporal_namespaces)
+}
+
+output "jwt_auth_enabled" {
+  description = "Whether the frontend requires a JWT on every call."
+  value       = var.jwt_auth_enabled
+}
+
+output "internal_frontend_address" {
+  description = "In-cluster address of the internal frontend, for callers with an internode certificate (null unless JWT authorization is on)."
+  value       = var.jwt_auth_enabled ? "${local.internal_frontend_host}:${local.internal_frontend_port}" : null
+}
+
+output "frontend_nlb_hostname" {
+  description = "DNS name of the frontend's internal NLB; clients connect to <hostname>:7233 (null unless the NLB is enabled)."
+  value       = var.frontend_nlb_enabled ? data.aws_lb.frontend[0].dns_name : null
+}
+
+output "tailscale_frontend_address" {
+  description = "Tailnet address of the frontend's gRPC port, host:port: the MagicDNS name when tailscale_tailnet_domain is set, otherwise the device name (null unless enabled)."
+  value       = var.tailscale_frontend_enabled ? "${var.tailscale_tailnet_domain != null ? "${local.tailscale_frontend_hostname}.${var.tailscale_tailnet_domain}" : local.tailscale_frontend_hostname}:${local.frontend_port}" : null
+}
+
+output "tailscale_web_url" {
+  description = "Tailnet URL of the Web UI (null unless enabled with tailscale_tailnet_domain set)."
+  value       = var.web_enabled && var.tailscale_web_enabled && var.tailscale_tailnet_domain != null ? "https://${local.tailscale_web_hostname}.${var.tailscale_tailnet_domain}" : null
+}
+
+output "web_oidc_callback_url" {
+  description = "Callback (redirect) URL to register with the OIDC provider (null unless Web UI sign-in is on)."
+  value       = local.oidc_enabled ? local.oidc_callback_url : null
 }
 
 output "num_history_shards" {
@@ -64,8 +94,18 @@ output "tls_server_name" {
 }
 
 output "tls_ca_secret_name" {
-  description = "Kubernetes Secret in the namespace whose ca.crt is the CA SDK clients trust for the frontend (null when TLS is off). Copy only ca.crt to clients: the Secret also holds the frontend's private key."
+  description = "Kubernetes Secret in the namespace whose ca.crt is the CA SDK clients trust for the frontend, whichever CA issued it (null when TLS is off). Copy only ca.crt to clients: the Secret also holds the frontend's private key."
   value       = var.tls_enabled ? local.tls_frontend_secret : null
+}
+
+output "tls_ca_source" {
+  description = "Certificate authority behind the frontend and internode certificates: self_signed, issuer or secret (null when TLS is off)."
+  value       = var.tls_enabled ? var.tls_ca_source : null
+}
+
+output "tls_issuer" {
+  description = "cert-manager issuer that signs the frontend and internode certificates, as {name, kind, group} (null when TLS is off)."
+  value       = var.tls_enabled ? local.tls_issuer_ref : null
 }
 
 output "database_endpoint" {

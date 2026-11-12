@@ -9,13 +9,44 @@ tls:
     dnsNames: [temporal-internode.temporal.svc]
   frontend:
     dnsNames: [temporal-frontend.temporal.svc, temporal-frontend]
+jwks:
+  enabled: true
+  remoteSecretName: arn:aws:secretsmanager:us-east-1:123456789012:secret:example-jwks-AbCdEf
+frontendEnv:
+  items:
+    - key: CLAIM_MAPPER_SETTING
+      remoteSecret: arn:aws:secretsmanager:us-east-1:123456789012:secret:example-mapper-AbCdEf
+      remoteProperty: setting
+serverFiles:
+  items:
+    - key: file-0
+      remoteSecret: arn:aws:secretsmanager:us-east-1:123456789012:secret:example-key-AbCdEf
+      remoteProperty: ""
+webOidc:
+  enabled: true
+  remoteSecretName: arn:aws:secretsmanager:us-east-1:123456789012:secret:example-oidc-AbCdEf
+frontendNlb:
+  enabled: true
+  name: example-temporal
+  subnetIds: [subnet-0a1b2c3d, subnet-4e5f6a7b]
+  sourceRanges: [10.10.0.0/16]
+tailscale:
+  frontend:
+    enabled: true
+    hostname: workflows-grpc
+    tags: ["tag:workflows-grpc"]
+  web:
+    enabled: true
+    hostname: temporal
+    tags: ["tag:workflows-ui"]
 priorityClass:
   enabled: true
 nodePool:
   enabled: true
 networkPolicy:
   enabled: true
-  frontendClientNamespaces: [apps]
+  frontendClientNamespaces: [apps, tailscale]
+  frontendClientCidrs: [10.10.0.0/16, 10.0.1.0/24]
   webClientCidrs: [10.0.0.0/16]
 metrics:
   otlp:

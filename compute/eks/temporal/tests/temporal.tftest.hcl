@@ -88,14 +88,14 @@ run "defaults_install_both_releases_against_the_database" {
     error_message = "The schema job must run as an ordinary Job so it can read the Secret the resources release creates."
   }
   assert {
-    condition     = yamldecode(helm_release.temporal.values[0]).server.config.namespaces.create && yamldecode(helm_release.temporal.values[0]).server.config.namespaces.namespace[0].name == "default" && yamldecode(helm_release.temporal.values[0]).server.config.namespaces.namespace[0].retention == "7d"
-    error_message = "The default Temporal namespace must be created with 7 days of retention."
+    condition     = !yamldecode(helm_release.temporal.values[0]).server.config.namespaces.create && length(yamldecode(helm_release.temporal.values[0]).extraObjects) == 1 && strcontains(yamldecode(helm_release.temporal.values[0]).extraObjects[0], "namespace create -n 'default' --retention 7d")
+    error_message = "The setup job, not the chart's, must create the default Temporal namespace with 7 days of retention."
   }
   assert {
     condition = (
       yamldecode(helm_release.temporal_resources.values[0]).database.externalSecret.enabled &&
       yamldecode(helm_release.temporal_resources.values[0]).database.externalSecret.remoteSecretName == "arn:aws:secretsmanager:us-east-2:123456789012:secret:temporal-db-AbCdEf" &&
-      yamldecode(helm_release.temporal_resources.values[0]).database.externalSecret.secretStoreName == "ravion-aws" &&
+      yamldecode(helm_release.temporal_resources.values[0]).externalSecrets.secretStoreName == "ravion-aws" &&
       yamldecode(helm_release.temporal_resources.values[0]).database.secretName == "temporal-db"
     )
     error_message = "The password must be synced from Secrets Manager into the Secret Temporal reads."
@@ -338,7 +338,7 @@ run "rejects_fractional_retention" {
   command = plan
 
   variables {
-    temporal_namespaces = { orders = 1.5 }
+    temporal_namespaces = { orders = { retention_days = 1.5 } }
   }
 
   expect_failures = [var.temporal_namespaces]
@@ -352,7 +352,443 @@ run "no_namespaces_skips_the_namespace_job" {
   }
 
   assert {
-    condition     = !yamldecode(helm_release.temporal.values[0]).server.config.namespaces.create && length(output.temporal_namespaces) == 0
-    error_message = "With no namespaces, the namespace job must not run."
+    condition     = length(yamldecode(helm_release.temporal.values[0]).extraObjects) == 0 && length(output.temporal_namespaces) == 0
+    error_message = "With no namespaces, the setup job must not run."
   }
+}
+
+################################################################################
+# Search attributes
+################################################################################
+
+run "search_attributes_are_registered_idempotently_after_each_deploy" {
+  command = plan
+
+  variables {
+    temporal_namespaces = {
+      orders = {
+        retention_days    = 30
+        search_attributes = { CustomerId = "Keyword", Amount = "Double" }
+      }
+    }
+  }
+
+  assert {
+    condition     = yamldecode(yamldecode(helm_release.temporal.values[0]).extraObjects[0]).metadata.annotations["helm.sh/hook"] == "post-install,post-upgrade"
+    error_message = "The setup job must run after every install and upgrade."
+  }
+  assert {
+    condition = alltrue([for line in [
+      "temporal operator namespace describe -n 'orders' >/dev/null 2>&1 || temporal operator namespace create -n 'orders' --retention 30d",
+      "temporal operator namespace update -n 'orders' --retention 30d",
+      "grep -qw 'CustomerId' || temporal operator search-attribute create -n 'orders' --name 'CustomerId' --type Keyword",
+      "grep -qw 'Amount' || temporal operator search-attribute create -n 'orders' --name 'Amount' --type Double",
+    ] : strcontains(yamldecode(yamldecode(helm_release.temporal.values[0]).extraObjects[0]).spec.template.spec.containers[0].args[0], line)])
+    error_message = "The job must create the namespace, apply retention and register only missing attributes."
+  }
+  assert {
+    condition     = yamldecode(yamldecode(helm_release.temporal.values[0]).extraObjects[0]).spec.template.spec.containers[0].env[0].value == "temporal-frontend.temporal.svc:7233"
+    error_message = "Without JWT authorization the job calls the frontend."
+  }
+}
+
+run "defaults_apply_to_namespaces_without_settings" {
+  command = plan
+
+  variables {
+    temporal_namespaces = { orders = {} }
+  }
+
+  assert {
+    condition     = strcontains(yamldecode(helm_release.temporal.values[0]).extraObjects[0], "--retention 7d")
+    error_message = "A namespace without settings keeps 7 days and no custom attributes."
+  }
+}
+
+run "rejects_unknown_search_attribute_types" {
+  command = plan
+
+  variables {
+    temporal_namespaces = { orders = { search_attributes = { CustomerId = "String" } } }
+  }
+
+  expect_failures = [var.temporal_namespaces]
+}
+
+run "rejects_more_attributes_than_postgres_visibility_holds" {
+  command = plan
+
+  variables {
+    temporal_namespaces = { orders = { search_attributes = { A = "Int", B = "Int", C = "Int", D = "Int" } } }
+  }
+
+  expect_failures = [var.temporal_namespaces]
+}
+
+################################################################################
+# Certificate authority
+################################################################################
+
+run "tls_from_an_existing_aws_private_ca_issuer" {
+  command = plan
+
+  variables {
+    tls_enabled   = true
+    tls_ca_source = "issuer"
+    tls_issuer    = { name = "private-ca", kind = "AWSPCAClusterIssuer", group = "awspca.cert-manager.io" }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal_resources.values[0]).tls.caSource == "issuer" && yamldecode(helm_release.temporal_resources.values[0]).tls.issuerRef.kind == "AWSPCAClusterIssuer" && yamldecode(helm_release.temporal_resources.values[0]).tls.issuerRef.group == "awspca.cert-manager.io"
+    error_message = "Leaf certificates must come from the given issuer."
+  }
+  assert {
+    condition     = output.tls_ca_source == "issuer" && output.tls_issuer.name == "private-ca" && output.tls_ca_secret_name == "temporal-frontend-tls"
+    error_message = "Outputs must name the issuer and where clients find its CA."
+  }
+}
+
+run "tls_from_an_existing_ca_secret" {
+  command = plan
+
+  variables {
+    tls_enabled        = true
+    tls_ca_source      = "secret"
+    tls_ca_secret_name = "corp-ca"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal_resources.values[0]).tls.caSecretName == "corp-ca" && output.tls_issuer.kind == "Issuer" && output.tls_issuer.name == "temporal-ca"
+    error_message = "The module's Issuer must sign with the existing CA Secret."
+  }
+}
+
+run "issuer_ca_needs_an_issuer" {
+  command = plan
+
+  variables {
+    tls_enabled   = true
+    tls_ca_source = "issuer"
+  }
+
+  expect_failures = [helm_release.temporal_resources]
+}
+
+################################################################################
+# JWT authorization
+################################################################################
+
+run "jwt_auth_with_identity_provider_keys" {
+  command = plan
+
+  variables {
+    tls_enabled                     = true
+    jwt_auth_enabled                = true
+    jwt_auth_audience               = "temporal"
+    jwt_auth_jwks_urls              = ["https://idp.example.com/.well-known/jwks.json"]
+    jwt_auth_permissions_claim_name = "temporal_permissions"
+  }
+
+  assert {
+    condition = (
+      yamldecode(helm_release.temporal.values[0]).server.config.authorization.authorizer == "default" &&
+      yamldecode(helm_release.temporal.values[0]).server.config.authorization.claimMapper == "default" &&
+      yamldecode(helm_release.temporal.values[0]).server.config.authorization.audience == "temporal" &&
+      yamldecode(helm_release.temporal.values[0]).server.config.authorization.permissionsClaimName == "temporal_permissions" &&
+      yamldecode(helm_release.temporal.values[0]).server.config.authorization.jwtKeyProvider.keySourceURIs[0] == "https://idp.example.com/.well-known/jwks.json"
+    )
+    error_message = "The frontend must check tokens with the default claim mapper and authorizer."
+  }
+  assert {
+    condition     = yamldecode(helm_release.temporal.values[0]).server["internal-frontend"].enabled && yamldecode(helm_release.temporal.values[0]).server["internal-frontend"].replicaCount == 2
+    error_message = "Temporal's own callers need the internal frontend."
+  }
+  assert {
+    condition     = yamldecode(yamldecode(helm_release.temporal.values[0]).extraObjects[0]).spec.template.spec.containers[0].env[0].value == "temporal-internal-frontend.temporal.svc:7236" && yamldecode(yamldecode(helm_release.temporal.values[0]).extraObjects[0]).spec.template.spec.volumes[0].secret.secretName == "temporal-internode-tls"
+    error_message = "The setup job must call the internal frontend with the internode certificate."
+  }
+  assert {
+    condition     = !yamldecode(helm_release.temporal_resources.values[0]).jwks.enabled && output.internal_frontend_address == "temporal-internal-frontend.temporal.svc:7236"
+    error_message = "Keys from a URL need no in-cluster key server."
+  }
+}
+
+run "jwt_auth_with_keys_from_secrets_manager" {
+  command = plan
+
+  variables {
+    tls_enabled              = true
+    jwt_auth_enabled         = true
+    jwt_auth_jwks_source     = "secrets_manager"
+    jwt_auth_jwks_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:jwks-AbCdEf"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal_resources.values[0]).jwks.enabled && yamldecode(helm_release.temporal_resources.values[0]).jwks.remoteSecretName == "arn:aws:secretsmanager:us-east-2:123456789012:secret:jwks-AbCdEf"
+    error_message = "The key set must be synced and served in the namespace."
+  }
+  assert {
+    condition     = yamldecode(helm_release.temporal.values[0]).server.config.authorization.jwtKeyProvider.keySourceURIs == ["http://temporal-jwks.temporal.svc:8080/jwks.json"] && !can(yamldecode(helm_release.temporal.values[0]).server.config.authorization.audience)
+    error_message = "The frontend must read only the in-cluster key server, and skip the audience check when none is set."
+  }
+}
+
+run "jwt_auth_requires_tls" {
+  command = plan
+
+  variables {
+    jwt_auth_enabled   = true
+    jwt_auth_jwks_urls = ["https://idp.example.com/jwks"]
+  }
+
+  expect_failures = [helm_release.temporal_resources]
+}
+
+run "jwt_auth_requires_keys" {
+  command = plan
+
+  variables {
+    tls_enabled      = true
+    jwt_auth_enabled = true
+  }
+
+  expect_failures = [helm_release.temporal_resources]
+}
+
+run "web_ui_as_admin_through_the_internal_frontend" {
+  command = plan
+
+  variables {
+    tls_enabled                   = true
+    jwt_auth_enabled              = true
+    jwt_auth_jwks_urls            = ["https://idp.example.com/jwks"]
+    web_internal_frontend_enabled = true
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal.values[0]).web.temporalAddress == "temporal-internal-frontend.temporal.svc:7236" && yamldecode(helm_release.temporal.values[0]).web.tls.secretName == "temporal-internode-tls" && yamldecode(helm_release.temporal.values[0]).web.tls.serverName == "temporal-internode.temporal.svc"
+    error_message = "The Web UI must reach the internal frontend with the internode certificate."
+  }
+}
+
+################################################################################
+# Frontend customization
+################################################################################
+
+run "custom_claim_mapper_hooks" {
+  command = plan
+
+  variables {
+    server_image       = "registry.example.com/temporal-server:1.32.2-custom"
+    frontend_extra_env = { MAPPER_MODE = "groups" }
+    frontend_secret_env = {
+      MAPPER_TOKEN = { secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:mapper-AbCdEf", property = "token" }
+    }
+    server_secret_files = { "/etc/mapper/key.json" = { secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:key-AbCdEf" } }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal.values[0]).server.image.repository == "registry.example.com/temporal-server" && yamldecode(helm_release.temporal.values[0]).server.image.tag == "1.32.2-custom"
+    error_message = "A custom server image must replace the official one."
+  }
+  assert {
+    condition = (
+      contains([for e in yamldecode(helm_release.temporal.values[0]).server.frontend.additionalEnv : e.name], "MAPPER_MODE") &&
+      one([for e in yamldecode(helm_release.temporal.values[0]).server.frontend.additionalEnv : e.valueFrom.secretKeyRef if e.name == "MAPPER_TOKEN"]).name == "temporal-frontend-env" &&
+      length(yamldecode(helm_release.temporal.values[0]).server.history.additionalEnv) == 1
+    )
+    error_message = "Extra environment must reach the frontend only, secrets through the synced Secret."
+  }
+  assert {
+    condition     = yamldecode(helm_release.temporal_resources.values[0]).frontendEnv.items[0].remoteProperty == "token" && yamldecode(helm_release.temporal_resources.values[0]).serverFiles.items[0].remoteProperty == ""
+    error_message = "Secret values must be synced with their JSON keys."
+  }
+  assert {
+    condition     = one([for m in yamldecode(helm_release.temporal.values[0]).server.additionalVolumeMounts : m if m.mountPath == "/etc/mapper/key.json"]).subPath == "file-0"
+    error_message = "Secret files must be mounted at their paths."
+  }
+}
+
+run "rejects_a_variable_set_twice" {
+  command = plan
+
+  variables {
+    frontend_extra_env  = { TOKEN = "x" }
+    frontend_secret_env = { TOKEN = { secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:t-AbCdEf" } }
+  }
+
+  expect_failures = [var.frontend_secret_env]
+}
+
+################################################################################
+# Internal NLB
+################################################################################
+
+run "internal_nlb_for_the_frontend" {
+  # The NLB is read after the release that creates it, so its name is known
+  # only once applied.
+  command = apply
+
+  override_data {
+    target = data.aws_lb.frontend
+    values = { dns_name = "internal-temporal-123.elb.us-east-2.amazonaws.com" }
+  }
+
+  override_data {
+    target = data.aws_subnet.frontend_nlb
+    values = { cidr_block = "10.20.1.0/24" }
+  }
+
+  variables {
+    frontend_nlb_enabled      = true
+    frontend_nlb_subnet_ids   = ["subnet-0a1b2c3d"]
+    frontend_nlb_source_cidrs = ["10.30.0.0/16"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal_resources.values[0]).frontendNlb.enabled && yamldecode(helm_release.temporal_resources.values[0]).frontendNlb.name == "test-cluster-temporal" && yamldecode(helm_release.temporal_resources.values[0]).frontendNlb.crossZoneEnabled
+    error_message = "The NLB must take a default name and cross-zone balancing."
+  }
+  assert {
+    condition     = toset(yamldecode(helm_release.temporal_resources.values[0]).networkPolicy.frontendClientCidrs) == toset(["10.30.0.0/16", "10.20.1.0/24"])
+    error_message = "The network policy must admit the NLB's clients and its health checks."
+  }
+  assert {
+    condition     = output.frontend_nlb_hostname == "internal-temporal-123.elb.us-east-2.amazonaws.com"
+    error_message = "The NLB hostname must be an output."
+  }
+}
+
+run "internal_nlb_needs_source_cidrs" {
+  command = plan
+
+  variables {
+    frontend_nlb_enabled = true
+  }
+
+  expect_failures = [helm_release.temporal_resources]
+}
+
+################################################################################
+# Tailscale
+################################################################################
+
+run "tailscale_frontend_and_web" {
+  command = plan
+
+  variables {
+    tls_enabled                               = true
+    tailscale_frontend_enabled                = true
+    tailscale_frontend_tags                   = ["tag:workflows-grpc"]
+    tailscale_web_enabled                     = true
+    tailscale_web_tags                        = ["tag:workflows-ui"]
+    tailscale_tailnet_domain                  = "example-tailnet.ts.net"
+    network_policy_frontend_client_namespaces = ["apps"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.temporal_resources.values[0]).tailscale.frontend.hostname == "temporal-frontend" && yamldecode(helm_release.temporal_resources.values[0]).tailscale.web.hostname == "temporal" && yamldecode(helm_release.temporal_resources.values[0]).tailscale.web.tags[0] == "tag:workflows-ui"
+    error_message = "Each Tailscale device must take its default name and tags."
+  }
+  assert {
+    condition     = contains(yamldecode(helm_release.temporal_resources.values[0]).networkPolicy.frontendClientNamespaces, "tailscale")
+    error_message = "The operator's proxies must be admitted when client namespaces are listed."
+  }
+  assert {
+    condition     = contains(yamldecode(helm_release.temporal_resources.values[0]).tls.frontend.dnsNames, "temporal-frontend.example-tailnet.ts.net")
+    error_message = "The frontend certificate must cover its tailnet name."
+  }
+  assert {
+    condition     = output.tailscale_frontend_address == "temporal-frontend.example-tailnet.ts.net:7233" && output.tailscale_web_url == "https://temporal.example-tailnet.ts.net"
+    error_message = "Outputs must give the tailnet addresses."
+  }
+}
+
+################################################################################
+# Web UI sign-in
+################################################################################
+
+run "google_sign_in_on_the_tailnet" {
+  command = plan
+
+  variables {
+    tailscale_web_enabled      = true
+    tailscale_tailnet_domain   = "example-tailnet.ts.net"
+    web_oidc_enabled           = true
+    web_oidc_client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:oidc-AbCdEf"
+  }
+
+  assert {
+    condition = alltrue([for e in [
+      { name = "TEMPORAL_AUTH_ENABLED", value = "true" },
+      { name = "TEMPORAL_AUTH_PROVIDER_URL", value = "https://accounts.google.com" },
+      { name = "TEMPORAL_AUTH_CALLBACK_URL", value = "https://temporal.example-tailnet.ts.net/auth/sso/callback" },
+      { name = "TEMPORAL_AUTH_SCOPES", value = "openid,profile,email" },
+    ] : contains(yamldecode(helm_release.temporal.values[0]).web.additionalEnv, e)])
+    error_message = "The Google preset must fill the issuer and scopes, and the callback must follow the tailnet host."
+  }
+  assert {
+    condition     = yamldecode(helm_release.temporal.values[0]).web.additionalEnvSecretName == "temporal-web-oidc" && yamldecode(helm_release.temporal_resources.values[0]).webOidc.clientIdProperty == "client_id"
+    error_message = "The client ID and secret must come from the synced Secret."
+  }
+  assert {
+    condition     = !contains([for e in yamldecode(helm_release.temporal.values[0]).web.additionalEnv : e.name], "TEMPORAL_AUTH_USE_ID_TOKEN_AS_BEARER")
+    error_message = "Without JWT authorization the UI must not forward ID tokens."
+  }
+  assert {
+    condition     = output.web_oidc_callback_url == "https://temporal.example-tailnet.ts.net/auth/sso/callback"
+    error_message = "The callback URL to register must be an output."
+  }
+}
+
+run "okta_sign_in_forwards_id_tokens_to_the_authorizer" {
+  command = plan
+
+  variables {
+    tls_enabled                 = true
+    jwt_auth_enabled            = true
+    jwt_auth_jwks_urls          = ["https://example.okta.com/oauth2/v1/keys"]
+    web_ingress_enabled         = true
+    web_ingress_host            = "temporal.internal.example.com"
+    web_ingress_certificate_arn = "arn:aws:acm:us-east-2:123456789012:certificate/abc"
+    web_oidc_enabled            = true
+    web_oidc_provider           = "okta"
+    web_oidc_issuer_url         = "https://example.okta.com"
+    web_oidc_client_secret_arn  = "arn:aws:secretsmanager:us-east-2:123456789012:secret:oidc-AbCdEf"
+  }
+
+  assert {
+    condition = alltrue([for e in [
+      { name = "TEMPORAL_AUTH_ISSUER_URL", value = "https://example.okta.com" },
+      { name = "TEMPORAL_AUTH_CALLBACK_URL", value = "https://temporal.internal.example.com/auth/sso/callback" },
+      { name = "TEMPORAL_AUTH_SCOPES", value = "openid,profile,email,offline_access" },
+      { name = "TEMPORAL_AUTH_USE_ID_TOKEN_AS_BEARER", value = "true" },
+    ] : contains(yamldecode(helm_release.temporal.values[0]).web.additionalEnv, e)])
+    error_message = "With the authorizer on, the UI must forward each user's ID token."
+  }
+}
+
+run "okta_needs_an_issuer" {
+  command = plan
+
+  variables {
+    tailscale_web_enabled      = true
+    tailscale_tailnet_domain   = "example-tailnet.ts.net"
+    web_oidc_enabled           = true
+    web_oidc_provider          = "okta"
+    web_oidc_client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:oidc-AbCdEf"
+  }
+
+  expect_failures = [helm_release.temporal_resources]
+}
+
+run "sign_in_needs_a_callback_url" {
+  command = plan
+
+  variables {
+    web_oidc_enabled           = true
+    web_oidc_client_secret_arn = "arn:aws:secretsmanager:us-east-2:123456789012:secret:oidc-AbCdEf"
+  }
+
+  expect_failures = [helm_release.temporal_resources]
 }
