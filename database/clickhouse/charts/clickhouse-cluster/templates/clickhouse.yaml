@@ -1,0 +1,234 @@
+{{- $selector := dict "clickhouse.ravion.com/installation" .Values.name "app.kubernetes.io/component" "clickhouse" -}}
+{{- $grantTarget := include "clickhouse-cluster.grantTarget" . -}}
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseInstallation
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+spec:
+  defaults:
+    templates:
+      podTemplate: clickhouse
+      dataVolumeClaimTemplate: data
+    storageManagement:
+      # The operator creates and grows the volumes itself, so a larger
+      # volumeSize resizes them in place.
+      provisioner: Operator
+      reclaimPolicy: {{ .Values.storage.reclaimPolicy }}
+  configuration:
+    zookeeper:
+      keeper:
+        name: {{ include "clickhouse-cluster.keeperName" . }}
+    users:
+      # Full access, including user and grant management in SQL.
+      {{ .Values.users.admin.username }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.users.admin.secret }}
+            key: password
+      {{ .Values.users.admin.username }}/networks/ip:
+        - "::/0"
+      {{ .Values.users.admin.username }}/profile: default
+      {{ .Values.users.admin.username }}/quota: default
+      {{ .Values.users.admin.username }}/access_management: "1"
+      {{ .Values.users.admin.username }}/named_collection_control: "1"
+      {{ .Values.users.admin.username }}/show_named_collections: "1"
+      {{ .Values.users.admin.username }}/show_named_collections_secrets: "1"
+      # Reads, writes and schema changes for applications and migrations.
+      {{ .Values.users.writer.username }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.users.writer.secret }}
+            key: password
+      {{ .Values.users.writer.username }}/networks/ip:
+        - "::/0"
+      {{ .Values.users.writer.username }}/profile: default
+      {{ .Values.users.writer.username }}/quota: default
+      {{ .Values.users.writer.username }}/grants/query:
+        - "GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, dictGet ON {{ $grantTarget }}"
+        - "GRANT CLUSTER ON *.*"
+      # Read-only queries, held to the reader profile's limits.
+      {{ .Values.users.reader.username }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.users.reader.secret }}
+            key: password
+      {{ .Values.users.reader.username }}/networks/ip:
+        - "::/0"
+      {{ .Values.users.reader.username }}/profile: reader
+      {{ .Values.users.reader.username }}/quota: default
+      {{ .Values.users.reader.username }}/grants/query:
+        - "GRANT SELECT, SHOW, dictGet ON {{ $grantTarget }}"
+    profiles:
+      # readonly 2 lets clients change settings per query, but the constraints
+      # keep each limit between 1 (so 0, unlimited, is refused) and its ceiling.
+      reader/readonly: "2"
+      reader/max_execution_time: {{ .Values.reader.maxExecutionTime | int64 | quote }}
+      reader/max_memory_usage: {{ .Values.reader.maxMemoryUsage | int64 | quote }}
+      reader/max_concurrent_queries_for_user: {{ .Values.reader.maxConcurrentQueries | int64 | quote }}
+      reader/constraints/max_execution_time/min: "1"
+      reader/constraints/max_execution_time/max: {{ .Values.reader.maxExecutionTime | int64 | quote }}
+      reader/constraints/max_memory_usage/min: "1"
+      reader/constraints/max_memory_usage/max: {{ .Values.reader.maxMemoryUsage | int64 | quote }}
+      reader/constraints/max_concurrent_queries_for_user/min: "1"
+      reader/constraints/max_concurrent_queries_for_user/max: {{ .Values.reader.maxConcurrentQueries | int64 | quote }}
+    settings:
+      prometheus/endpoint: /metrics
+      prometheus/port: "9363"
+      prometheus/metrics: "true"
+      prometheus/events: "true"
+      prometheus/asynchronous_metrics: "true"
+      {{- range $key, $value := .Values.clickhouse.settings }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+    {{- if and .Values.coldStorage.enabled .Values.s3.bucket }}
+    files:
+      config.d/cold_storage.xml: |
+        <clickhouse>
+          <storage_configuration>
+            <disks>
+              <!-- Object keys are random, so every replica can share the prefix. -->
+              <s3>
+                <type>s3</type>
+                <endpoint>https://{{ .Values.s3.bucket }}.s3.{{ .Values.s3.region }}.amazonaws.com/cold/</endpoint>
+                <region>{{ .Values.s3.region }}</region>
+                <use_environment_credentials>true</use_environment_credentials>
+              </s3>
+              <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>{{ .Values.coldStorage.cacheSize }}</max_size>
+              </s3_cache>
+            </disks>
+            <policies>
+              <!-- SETTINGS storage_policy = 'tiered' on a table, then
+                   TTL <date column> + INTERVAL <n> DAY TO VOLUME 'cold'. -->
+              <tiered>
+                <volumes>
+                  <hot>
+                    <disk>default</disk>
+                  </hot>
+                  <cold>
+                    <disk>s3_cache</disk>
+                  </cold>
+                </volumes>
+              </tiered>
+            </policies>
+          </storage_configuration>
+        </clickhouse>
+    {{- end }}
+    clusters:
+      - name: {{ .Values.clusterName }}
+        # Queries between shards run as the user who sent them, authenticated
+        # with a secret the operator generates, instead of as `default`.
+        secret:
+          auto: "true"
+        layout:
+          shardsCount: {{ .Values.clickhouse.shards }}
+          replicasCount: {{ .Values.clickhouse.replicas }}
+  templates:
+    podTemplates:
+      - name: clickhouse
+        metadata:
+          labels:
+            {{- toYaml $selector | nindent 12 }}
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9363"
+            prometheus.io/path: /metrics
+            {{- with .Values.passwordAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          {{- with .Values.placement.priorityClass }}
+          {{- if .create }}
+          priorityClassName: {{ .name }}
+          {{- end }}
+          {{- end }}
+          {{- include "clickhouse-cluster.scheduling" . | nindent 10 }}
+          {{- include "clickhouse-cluster.topologySpread" (dict "root" . "selector" $selector "matchLabelKeys" (list "clickhouse.altinity.com/shard")) | nindent 10 }}
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            fsGroup: 101
+            fsGroupChangePolicy: OnRootMismatch
+          containers:
+            - name: clickhouse
+              image: {{ .Values.clickhouse.image }}
+              ports:
+                - name: metrics
+                  containerPort: 9363
+              resources:
+                {{- toYaml .Values.clickhouse.resources | nindent 16 }}
+            {{- if and .Values.backup.enabled .Values.s3.bucket }}
+            # clickhouse-backup in server mode: the scheduled job calls its API
+            # on one replica of each shard. It reads the data volume directly,
+            # so it must run in the same pod as the server.
+            - name: clickhouse-backup
+              image: {{ .Values.backup.image }}
+              args: ["server"]
+              ports:
+                - name: backup-api
+                  containerPort: 7171
+              env:
+                - name: CLICKHOUSE_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: username
+                - name: CLICKHOUSE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: password
+                - name: API_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: username
+                - name: API_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: password
+                - name: API_LISTEN
+                  value: "0.0.0.0:7171"
+                - name: API_CREATE_INTEGRATION_TABLES
+                  value: "true"
+                - name: ALLOW_EMPTY_BACKUPS
+                  value: "true"
+                - name: REMOTE_STORAGE
+                  value: s3
+                - name: S3_BUCKET
+                  value: {{ .Values.s3.bucket | quote }}
+                - name: S3_REGION
+                  value: {{ .Values.s3.region | quote }}
+                # The bucket enforces object ownership, so no ACL is sent.
+                - name: S3_ACL
+                  value: ""
+                # One path per shard; {cluster} and {shard} are server macros.
+                - name: S3_PATH
+                  value: "backup/{cluster}/{shard}"
+                - name: S3_OBJECT_DISK_PATH
+                  value: "backup-object-disks/{cluster}/{shard}"
+                - name: BACKUPS_TO_KEEP_REMOTE
+                  value: {{ .Values.backup.retentionCount | int64 | quote }}
+              resources:
+                {{- toYaml .Values.backup.resources | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/clickhouse
+            {{- end }}
+    volumeClaimTemplates:
+      - name: data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: {{ .Values.storage.storageClassName }}
+          resources:
+            requests:
+              storage: {{ .Values.clickhouse.volumeSize }}

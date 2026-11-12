@@ -1,0 +1,136 @@
+{{- if and .Values.backup.enabled .Values.s3.bucket }}
+# Asks one replica of each shard to back itself up to S3 through its
+# clickhouse-backup sidecar, then waits for every upload to finish. Each shard
+# keeps retentionCount backups; older ones are deleted after each upload. A
+# shard whose replicas all refuse or fail the backup fails the job.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-backup
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+data:
+  backup.sh: |
+    #!/bin/sh
+    set -u
+    stamp=$(date -u +%Y%m%d%H%M%S)
+    name="scheduled-${stamp}"
+    failed=0
+    shard=0
+    while [ "$shard" -lt "$SHARDS" ]; do
+      done_ok=0
+      replica=0
+      while [ "$replica" -lt "$REPLICAS" ] && [ "$done_ok" -eq 0 ]; do
+        api="http://chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}.${NAMESPACE}.svc.cluster.local:7171"
+        echo "shard ${shard}: creating ${name} on replica ${replica}"
+        response=$(curl -sS -f -u "${API_USER}:${API_PASSWORD}" -X POST "${api}/backup/create_remote?name=${name}&delete-source=true") || {
+          echo "shard ${shard}: replica ${replica} refused the backup"
+          replica=$((replica + 1))
+          continue
+        }
+        id=$(printf '%s' "$response" | sed -n 's/.*"operation_id" *: *"\([^"]*\)".*/\1/p')
+        if [ -z "$id" ]; then
+          echo "shard ${shard}: unexpected response: ${response}"
+          replica=$((replica + 1))
+          continue
+        fi
+        while :; do
+          sleep 15
+          status=$(curl -sS -f -u "${API_USER}:${API_PASSWORD}" "${api}/backup/status?operationid=${id}") || continue
+          case "$status" in
+            *'"status":"success"'* | *'"status": "success"'*)
+              echo "shard ${shard}: ${name} uploaded"
+              done_ok=1
+              break
+              ;;
+            *'"status":"error"'* | *'"status": "error"'* | *'"status":"cancel"'* | *'"status": "cancel"'*)
+              echo "shard ${shard}: backup failed: ${status}"
+              break
+              ;;
+          esac
+        done
+        replica=$((replica + 1))
+      done
+      if [ "$done_ok" -ne 1 ]; then
+        failed=1
+      fi
+      shard=$((shard + 1))
+    done
+    exit "$failed"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}-backup
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "clickhouse-cluster.labels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: {{ .Values.backup.jobImage }}
+              command: ["/bin/sh", "/scripts/backup.sh"]
+              env:
+                - name: INSTALLATION
+                  value: {{ .Values.name | quote }}
+                - name: CLUSTER
+                  value: {{ .Values.clusterName | quote }}
+                - name: NAMESPACE
+                  value: {{ .Release.Namespace | quote }}
+                - name: SHARDS
+                  value: {{ .Values.clickhouse.shards | int64 | quote }}
+                - name: REPLICAS
+                  value: {{ .Values.clickhouse.replicas | int64 | quote }}
+                - name: API_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: username
+                - name: API_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: password
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: {{ .Values.name }}-backup
+{{- end }}

@@ -1,0 +1,12 @@
+name: dev
+users:
+  admin: {username: admin, secret: dev-admin}
+  writer: {username: writer, secret: dev-writer}
+  reader: {username: reader, secret: dev-reader}
+operatorFullname: dev-operator
+serviceAccount:
+  name: dev-clickhouse
+clickhouse:
+  replicas: 1
+keeper:
+  replicas: 1

@@ -1,0 +1,61 @@
+{{- if .Values.networkPolicy.enabled }}
+# ClickHouse: any pod in this namespace (other replicas, Keeper, the operator,
+# backups) on every port; the allowed namespaces on HTTP and native; anyone on
+# the metrics port, so a scraper in any namespace works.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.name }}-clickhouse
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      clickhouse.ravion.com/installation: {{ .Values.name }}
+      app.kubernetes.io/component: clickhouse
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+    {{- with .Values.networkPolicy.allowedNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  {{- toYaml . | nindent 18 }}
+      ports:
+        - port: 8123
+          protocol: TCP
+        - port: 9000
+          protocol: TCP
+    {{- end }}
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 9363
+          protocol: TCP
+---
+# Keeper: only this namespace, plus metrics from anywhere.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.name }}-keeper
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      clickhouse.ravion.com/installation: {{ .Values.name }}
+      app.kubernetes.io/component: keeper
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - port: 7000
+          protocol: TCP
+{{- end }}

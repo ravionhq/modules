@@ -1,0 +1,126 @@
+# Name of the ClickHouseInstallation and ClickHouseKeeperInstallation.
+name: clickhouse
+
+# The ClickHouse cluster inside the installation, as named in ON CLUSTER.
+clusterName: main
+
+region: us-east-1
+
+# Annotations whose change restarts ClickHouse to read new passwords.
+passwordAnnotations: {}
+
+# Kubernetes Secrets holding each user's username and password, written by
+# External Secrets from Secrets Manager.
+users:
+  admin:
+    username: admin
+    secret: clickhouse-admin
+  writer:
+    username: writer
+    secret: clickhouse-writer
+  reader:
+    username: reader
+    secret: clickhouse-reader
+
+# The operator release's fullname; its pods are allowed through the network
+# policies.
+operatorFullname: clickhouse-operator
+
+serviceAccount:
+  # Bound to the S3 role through EKS Pod Identity.
+  name: clickhouse
+
+clickhouse:
+  image: clickhouse/clickhouse-server:26.8.36.3
+  shards: 1
+  replicas: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      memory: 4Gi
+  volumeSize: 50Gi
+  # Extra server settings keyed by path, passed to the operator as is.
+  settings: {}
+
+keeper:
+  image: clickhouse/clickhouse-keeper:26.8.36.3
+  replicas: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  volumeSize: 10Gi
+
+storage:
+  storageClassName: gp3
+  # Retain keeps the volumes when the installation is deleted.
+  reclaimPolicy: Retain
+
+placement:
+  # preferred or required.
+  zoneSpread: preferred
+  priorityClass:
+    create: false
+    name: clickhouse
+    value: 1000000
+  nodePool:
+    create: false
+    name: clickhouse
+    nodeClassName: default
+    capacityTypes: [on-demand]
+    instanceCategories: [r, m]
+    architectures: [amd64]
+    cpuLimit: 64
+  # Applied to ClickHouse, Keeper and the jobs; set with the node pool.
+  tolerations: []
+
+database:
+  # Created on every server when set; the writer and reader are scoped to it.
+  name: ""
+  # Replicated or Atomic.
+  engine: Replicated
+
+reader:
+  maxExecutionTime: 60
+  maxMemoryUsage: 4294967296
+  maxConcurrentQueries: 20
+
+# The bucket encrypts objects by default, so nothing here sets encryption.
+s3:
+  bucket: ""
+  region: ""
+
+coldStorage:
+  enabled: false
+  cacheSize: 10Gi
+
+backup:
+  enabled: false
+  schedule: "0 3 * * *"
+  retentionCount: 7
+  image: altinity/clickhouse-backup:2.8.2
+  jobImage: curlimages/curl:8.22.0
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+metrics:
+  podMonitors:
+    enabled: false
+    labels: {}
+  otlp:
+    # OTLP/HTTP base URL; empty runs no collector.
+    endpoint: ""
+    interval: 60s
+    image: otel/opentelemetry-collector-contrib:0.161.0
+
+networkPolicy:
+  enabled: false
+  allowedNamespaces: []

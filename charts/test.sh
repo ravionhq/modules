@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration clickhouse-cluster clickhouse-secrets)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -40,6 +40,7 @@ done
 chart_path() {
   case "$1" in
     karpenter-resources | warm-capacity | ebs-storage | thanos | statefulset-volume-migration) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    clickhouse-cluster | clickhouse-secrets) echo "${CHARTS_DIR}/../database/clickhouse/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -1151,6 +1152,86 @@ test_ebs_storage() {
     "$(count "${class_only}" StorageClass) $(count "${class_only}" MutatingAdmissionPolicy) $(count "${class_only}" Deployment)"
 }
 
+test_clickhouse_cluster() {
+  local chart=clickhouse-cluster
+  local ci default full minimal chi chk
+  ci="$(chart_path "${chart}")/ci"
+  default="$(render "${chart}" default -n analytics -f "${ci}/default-values.yaml")"
+  full="$(render "${chart}" full -n analytics -f "${ci}/full-values.yaml")"
+  minimal="$(render "${chart}" minimal -n dev -f "${ci}/minimal-values.yaml")"
+  chi='.[] | select(.kind == "ClickHouseInstallation")'
+  chk='.[] | select(.kind == "ClickHouseKeeperInstallation")'
+
+  assert_eq "${chart}: installation uses its own Keeper" \
+    "analytics-keeper" \
+    "$(q "${default}" "${chi} | .spec.configuration.zookeeper.keeper.name")"
+  assert_eq "${chart}: default layout is one shard of two replicas and three Keeper nodes" \
+    "1 2 3" \
+    "$(q "${default}" "${chi} | .spec.configuration.clusters[0].layout.shardsCount") $(q "${default}" "${chi} | .spec.configuration.clusters[0].layout.replicasCount") $(q "${default}" "${chk} | .spec.configuration.clusters[0].layout.replicasCount")"
+  assert_eq "${chart}: passwords come from Secrets, never values" \
+    "analytics-admin analytics-writer analytics-reader" \
+    "$(q "${default}" "${chi} | .spec.configuration.users[\"admin/password\"].valueFrom.secretKeyRef.name") $(q "${default}" "${chi} | .spec.configuration.users[\"writer/password\"].valueFrom.secretKeyRef.name") $(q "${default}" "${chi} | .spec.configuration.users[\"reader/password\"].valueFrom.secretKeyRef.name")"
+  assert_eq "${chart}: writer and reader are scoped to the database" \
+    'GRANT SELECT, SHOW, dictGet ON `events`.*' \
+    "$(q "${default}" "${chi} | .spec.configuration.users[\"reader/grants/query\"][0]")"
+  assert_eq "${chart}: reader limits refuse 0 (unlimited)" \
+    "2 1 60" \
+    "$(q "${default}" "${chi} | .spec.configuration.profiles[\"reader/readonly\"]") $(q "${default}" "${chi} | .spec.configuration.profiles[\"reader/constraints/max_execution_time/min\"]") $(q "${default}" "${chi} | .spec.configuration.profiles[\"reader/constraints/max_execution_time/max\"]")"
+  assert_eq "${chart}: operator grows and keeps volumes" \
+    "Operator Retain Operator Retain" \
+    "$(q "${default}" "${chi} | .spec.defaults.storageManagement.provisioner") $(q "${default}" "${chi} | .spec.defaults.storageManagement.reclaimPolicy") $(q "${default}" "${chk} | .spec.defaults.storageManagement.provisioner") $(q "${default}" "${chk} | .spec.defaults.storageManagement.reclaimPolicy")"
+  assert_eq "${chart}: cold tier points at the bucket's cold prefix" \
+    "1" \
+    "$(q "${default}" "${chi} | .spec.configuration.files[\"config.d/cold_storage.xml\"] | test(\"https://analytics-clickhouse-example.s3.us-east-2.amazonaws.com/cold/\") | select(.) | 1")"
+  assert_eq "${chart}: backup sidecar shares the data volume and writes per shard" \
+    "/var/lib/clickhouse backup/{cluster}/{shard}" \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].volumeMounts[0].mountPath") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_PATH\") | .value")"
+  assert_eq "${chart}: replicas of a shard spread across zones and never share a node" \
+    "ScheduleAnyway DoNotSchedule clickhouse.altinity.com/shard" \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[1].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].matchLabelKeys[0]")"
+  assert_eq "${chart}: defaults render a backup CronJob and a database Job, nothing optional" \
+    "1 1 0 0 0 0 0" \
+    "$(count "${default}" CronJob) $(count "${default}" Job) $(count "${default}" NetworkPolicy) $(count "${default}" PodMonitor) $(count "${default}" NodePool) $(count "${default}" PriorityClass) $(count "${default}" Deployment)"
+
+  assert_eq "${chart}: required zone spread refuses a second replica in a zone" \
+    "DoNotSchedule" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].whenUnsatisfiable")"
+  assert_eq "${chart}: dedicated pool pins and tolerates" \
+    "analytics-analytics-clickhouse clickhouse.ravion.com/dedicated" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.nodeSelector[\"karpenter.sh/nodepool\"]") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.tolerations[0].key")"
+  assert_eq "${chart}: optional resources render when enabled" \
+    "2 3 1 1 1" \
+    "$(count "${full}" NetworkPolicy) $(count "${full}" PodMonitor) $(count "${full}" NodePool) $(count "${full}" PriorityClass) $(count "${full}" Deployment)"
+  assert_eq "${chart}: allowed namespaces reach only HTTP and native" \
+    "apps,jobs 8123,9000" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].from[0].namespaceSelector.matchExpressions[0].values | join(",")') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports | map(.port) | join(",")')"
+  assert_eq "${chart}: Atomic database is created ON CLUSTER" \
+    "Atomic" \
+    "$(q "${full}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "ENGINE") | .value')"
+
+  assert_eq "${chart}: without a bucket there is no backup, cold tier or database job" \
+    "0 0  1" \
+    "$(count "${minimal}" CronJob) $(count "${minimal}" Job) $(q "${minimal}" "${chi} | .spec.configuration.files") $(q "${minimal}" "${chi} | .spec.templates.podTemplates[0].spec.containers | length")"
+}
+
+test_clickhouse_secrets() {
+  local chart=clickhouse-secrets
+  local ci default store
+  ci="$(chart_path "${chart}")/ci"
+  default="$(render "${chart}" default -f "${ci}/default-values.yaml")"
+  store="$(render "${chart}" store -f "${ci}/cluster-store-values.yaml")"
+
+  assert_eq "${chart}: one ExternalSecret per user through a namespaced SecretStore" \
+    "1 2 SecretStore" \
+    "$(count "${default}" SecretStore) $(count "${default}" ExternalSecret) $(q "${default}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.kind' | head -1)"
+  assert_eq "${chart}: Secrets survive their ExternalSecret" \
+    "Retain" \
+    "$(q "${default}" '.[] | select(.kind == "ExternalSecret") | .spec.target.deletionPolicy' | head -1)"
+  assert_eq "${chart}: a named ClusterSecretStore is used, not created" \
+    "0 ClusterSecretStore shared-aws-secrets" \
+    "$(count "${store}" SecretStore) $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.kind') $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.name')"
+}
+
 ################################################################################
 
 for chart in "${CHARTS[@]}"; do
@@ -1165,6 +1246,8 @@ for chart in "${CHARTS[@]}"; do
     ebs-storage) test_ebs_storage ;;
     thanos) test_thanos ;;
     statefulset-volume-migration) test_statefulset_volume_migration ;;
+    clickhouse-cluster) test_clickhouse_cluster ;;
+    clickhouse-secrets) test_clickhouse_secrets ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

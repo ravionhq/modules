@@ -1,0 +1,22 @@
+# AWS region of the Secrets Manager secrets.
+region: us-east-1
+
+# How often External Secrets re-reads each secret.
+refreshInterval: 1h
+
+# Changing it makes External Secrets refresh every secret at once.
+passwordVersion: "1"
+
+store:
+  # Create a namespaced SecretStore. Without an auth block it uses the External
+  # Secrets controller's own AWS credentials.
+  create: true
+  name: clickhouse-aws-secrets-manager
+  # SecretStore when created here, ClusterSecretStore to use an existing one.
+  kind: SecretStore
+
+# One entry per Kubernetes Secret: name is the Secret, remoteKey the Secrets
+# Manager secret whose JSON keys become the Secret's keys.
+secrets: []
+#  - name: analytics-admin
+#    remoteKey: clickhouse/my-cluster/analytics/analytics/admin
