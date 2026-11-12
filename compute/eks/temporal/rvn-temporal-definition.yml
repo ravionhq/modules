@@ -1,0 +1,684 @@
+global: false
+definition:
+  type: rvn-temporal
+  name: Temporal
+  description: Self-hosted Temporal on an EKS cluster, with its persistence and visibility stores on Aurora PostgreSQL.
+release:
+  version: 0.1.0
+  description: Run a self-hosted Temporal cluster on EKS backed by Aurora PostgreSQL, with zone spread, disruption budgets, network policies, optional TLS, a dedicated node pool, an internal Web UI and metrics.
+module:
+  inputs:
+    - id: section_cluster
+      label: EKS cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-eks-cluster
+      required: true
+      mapped_inputs:
+        - id: section_aws
+          label: AWS account & region
+          type: section
+        - default: << ref.input.aws_account_id >>
+          id: aws_account_id
+          immutable: true
+          label: AWS account
+          type: string
+          values: $values:ravion/aws_accounts
+        - default: << ref.input.aws_region >>
+          id: aws_region
+          immutable: true
+          label: Region
+          type: string
+          values: $values:aws/regions
+        - collapsible: true
+          default: << ref.input.execution_environment_id >>
+          description: For a private cluster endpoint, choose one in the cluster VPC; the cluster's Ravion Runner security group is attached for each run.
+          id: execution_environment_id
+          label: Terraform execution environment
+          type: string
+          values: $values:ravion/execution_environments
+        - id: section_cluster_details
+          label: Cluster details
+          type: section
+        - default: <<ref.stack.output.cluster_name>>
+          id: cluster_name
+          immutable: true
+          label: EKS cluster name
+          placeholder: my-eks-cluster
+          required: true
+          type: string
+        - collapsible: true
+          default: <<ref.stack.output.ravion_runner_role_arn>>
+          description: IAM role Terraform assumes when authenticating to the Kubernetes API.
+          id: ravion_runner_role_arn
+          label: Ravion Runner role ARN
+          placeholder: arn:aws:iam::123456789012:role/my-eks-cluster-ravion-runner
+          type: string
+        - collapsible: true
+          default: <<ref.stack.output.ravion_runner_security_group_id>>
+          description: Lets the OpenTofu runner reach the Kubernetes API. Only blank for a public endpoint.
+          id: ravion_runner_security_group_id
+          immutable: true
+          label: Ravion Runner security group ID
+          placeholder: sg-0123456789abcdef0
+          type: string
+    - id: section_database
+      label: Database
+      type: section
+    - id: database
+      immutable: true
+      label: Aurora PostgreSQL cluster
+      description: Its allowed security groups must include the EKS cluster security group.
+      type: $ref:rvn-aurora
+      required: true
+      mapped_inputs:
+        - default: <<ref.stack.output.cluster_identifier>>
+          id: database_cluster_identifier
+          immutable: true
+          label: DB cluster identifier
+          placeholder: my-temporal-db
+          required: true
+          type: string
+        - default: <<ref.stack.output.cluster_master_user_secret_arn>>
+          description: Secret holding the database credentials as JSON. Blank when the password comes from an existing Kubernetes Secret.
+          id: database_password_secret_arn
+          label: Credentials secret ARN
+          placeholder: arn:aws:secretsmanager:us-east-1:123456789012:secret:my-db-AbCdEf
+          required: false
+          type: string
+    - default: external_secrets
+      id: database_password_source
+      label: Password source
+      required: true
+      type: string
+      values:
+        - label: Secrets Manager, through External Secrets
+          value: external_secrets
+          description: Needs the External Secrets Operator, such as from EKS Add-ons, with this namespace allowed.
+        - label: Existing Kubernetes Secret
+          value: kubernetes_secret
+          description: A Secret in the namespace with the password under the key password.
+    - collapsible: true
+      default: ravion-aws
+      description: Must allow this namespace and be able to read the secret.
+      id: database_password_secret_store_name
+      label: ClusterSecretStore
+      show_when:
+        database_password_source: external_secrets
+      type: string
+    - collapsible: true
+      description: Blank uses <release name>-db.
+      id: database_password_kubernetes_secret_name
+      label: Password Secret name
+      patterns:
+        - message: A Kubernetes object name of lowercase letters, numbers, dots and hyphens.
+          pattern: ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$
+      type: string
+    - collapsible: true
+      description: Blank uses the cluster's master user.
+      id: database_username
+      label: Database user
+      type: string
+    - collapsible: true
+      default: temporal
+      id: database_name
+      immutable: true
+      label: Persistence database
+      patterns:
+        - message: Lowercase letters, numbers and underscores, not starting with a number.
+          pattern: ^[a-z_][a-z0-9_]{0,62}$
+      type: string
+    - collapsible: true
+      default: temporal_visibility
+      id: visibility_database_name
+      immutable: true
+      label: Visibility database
+      patterns:
+        - message: Lowercase letters, numbers and underscores, not starting with a number.
+          pattern: ^[a-z_][a-z0-9_]{0,62}$
+      type: string
+    - collapsible: true
+      default: true
+      description: Creates both databases if missing and runs schema migrations on every deploy.
+      id: database_schema_management_enabled
+      label: Manage schema
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Verifies the database certificate against the RDS CA bundle.
+      id: database_tls_enabled
+      label: Database TLS
+      type: boolean
+    - collapsible: true
+      default: 20
+      description: Per server pod. Size the database's max_connections for every pod together.
+      id: database_max_connections
+      label: Max connections
+      max: 1000
+      min: 1
+      type: number
+    - collapsible: true
+      default: 10
+      description: Per server pod.
+      id: visibility_database_max_connections
+      label: Max visibility connections
+      max: 1000
+      min: 1
+      type: number
+    - id: section_release
+      label: Helm release
+      type: section
+    - default: temporal
+      description: Prefixes every Service, such as <name>-frontend.
+      id: name
+      immutable: true
+      label: Release name
+      patterns:
+        - message: 1-30 lowercase letters, numbers and hyphens. Start with a letter and end with a letter or number.
+          pattern: ^[a-z]([a-z0-9-]{0,28}[a-z0-9])?$
+      required: true
+      type: string
+    - default: temporal
+      id: namespace
+      immutable: true
+      label: Namespace
+      patterns:
+        - message: 1-63 lowercase letters, numbers and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+      required: true
+      type: string
+    - collapsible: true
+      default: true
+      description: Turn off when the namespace is managed elsewhere.
+      id: namespace_creation_enabled
+      label: Create namespace
+      type: boolean
+    - collapsible: true
+      default: 1.8.0
+      description: The temporalio/helm-charts temporal chart. 1.8.0 or newer.
+      id: chart_version
+      label: Chart version
+      patterns:
+        - message: A version such as 1.8.0.
+          pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+      type: string
+    - collapsible: true
+      default: temporalio/server:1.32.2
+      id: server_image
+      label: Server image
+      type: string
+    - collapsible: true
+      default: temporalio/admin-tools:1.32.2
+      description: Runs the schema migrations. Keep it on the server's Temporal version.
+      id: admin_tools_image
+      label: Admin tools image
+      type: string
+    - collapsible: true
+      default: info
+      id: log_level
+      label: Log level
+      type: string
+      values:
+        - label: Debug
+          value: debug
+        - label: Info
+          value: info
+        - label: Warn
+          value: warn
+        - label: Error
+          value: error
+    - id: section_temporal
+      label: Temporal
+      type: section
+    - default: 512
+      description: Cannot change after the first deploy. 512 suits most teams; use 2048 or more for very high throughput.
+      id: num_history_shards
+      immutable: true
+      label: History shards
+      max: 65536
+      min: 1
+      required: true
+      type: number
+    - default:
+        default: "7"
+      description: Namespace name and retention in days. Created on deploy; existing namespaces are left unchanged.
+      id: temporal_namespaces
+      label: Namespaces
+      type: keyvalue
+    - id: section_services
+      label: Services
+      type: section
+    - default: 2
+      id: frontend_replicas
+      label: Frontend replicas
+      min: 1
+      type: number
+    - default: 2
+      description: Owns the history shards and does most of the work. Scale it first.
+      id: history_replicas
+      label: History replicas
+      min: 1
+      type: number
+    - default: 2
+      id: matching_replicas
+      label: Matching replicas
+      min: 1
+      type: number
+    - default: 1
+      id: worker_replicas
+      label: Worker replicas
+      min: 1
+      type: number
+    - collapsible: true
+      default: 250m
+      id: frontend_cpu_request
+      label: Frontend CPU request
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: frontend_memory_request
+      label: Frontend memory request
+      type: string
+    - collapsible: true
+      default: 512Mi
+      description: In Mi or Gi. GOMEMLIMIT is set to 90% of it.
+      id: frontend_memory_limit
+      label: Frontend memory limit
+      type: string
+    - collapsible: true
+      default: 500m
+      id: history_cpu_request
+      label: History CPU request
+      type: string
+    - collapsible: true
+      default: 1Gi
+      id: history_memory_request
+      label: History memory request
+      type: string
+    - collapsible: true
+      default: 2Gi
+      description: In Mi or Gi. History caches workflows in memory, so give it room.
+      id: history_memory_limit
+      label: History memory limit
+      type: string
+    - collapsible: true
+      default: 250m
+      id: matching_cpu_request
+      label: Matching CPU request
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: matching_memory_request
+      label: Matching memory request
+      type: string
+    - collapsible: true
+      default: 512Mi
+      description: In Mi or Gi.
+      id: matching_memory_limit
+      label: Matching memory limit
+      type: string
+    - collapsible: true
+      default: 100m
+      id: worker_cpu_request
+      label: Worker CPU request
+      type: string
+    - collapsible: true
+      default: 256Mi
+      id: worker_memory_request
+      label: Worker memory request
+      type: string
+    - collapsible: true
+      default: 512Mi
+      description: In Mi or Gi.
+      id: worker_memory_limit
+      label: Worker memory limit
+      type: string
+    - id: section_placement
+      label: Placement and resilience
+      type: section
+    - default: preferred
+      id: topology_spread
+      label: Zone and node spread
+      type: string
+      values:
+        - label: Preferred
+          value: preferred
+          description: Spread replicas when possible.
+        - label: Required
+          value: required
+          description: Never stack replicas; needs nodes in every zone.
+        - label: Off
+          value: "off"
+    - default: true
+      description: Node drains take at most one replica of each service at a time.
+      id: pod_disruption_budgets_enabled
+      label: Pod disruption budgets
+      type: boolean
+    - default: false
+      description: Ranks Temporal above other workloads under node pressure.
+      id: priority_class_creation_enabled
+      label: Create priority class
+      type: boolean
+    - collapsible: true
+      description: Blank uses <release name>-critical when created, or none otherwise.
+      id: priority_class_name
+      label: Priority class name
+      type: string
+    - default: false
+      description: A tainted Karpenter NodePool for Temporal alone. Needs Karpenter.
+      id: node_pool_creation_enabled
+      label: Dedicated node pool
+      type: boolean
+    - collapsible: true
+      default: default
+      id: node_pool_ec2_node_class_name
+      label: EC2NodeClass
+      show_when:
+        node_pool_creation_enabled: true
+      type: string
+    - collapsible: true
+      default:
+        - on-demand
+      description: Spot is not recommended; a reclaim moves history shards mid-flight.
+      id: node_pool_capacity_types
+      label: Capacity types
+      show_when:
+        node_pool_creation_enabled: true
+      type: string_array
+    - collapsible: true
+      default:
+        - c
+        - m
+        - r
+      id: node_pool_instance_categories
+      label: Instance categories
+      show_when:
+        node_pool_creation_enabled: true
+      type: string_array
+    - collapsible: true
+      default:
+        - amd64
+      id: node_pool_architectures
+      label: Architectures
+      show_when:
+        node_pool_creation_enabled: true
+      type: string_array
+    - collapsible: true
+      default: 32
+      id: node_pool_cpu_limit
+      label: CPU limit
+      min: 1
+      show_when:
+        node_pool_creation_enabled: true
+      type: number
+    - id: section_network
+      label: Network access
+      type: section
+    - default: true
+      description: Closes internal ports to everything outside the release. Needs a CNI that enforces NetworkPolicy.
+      id: network_policy_enabled
+      label: Network policies
+      type: boolean
+    - add_button_label: Add namespace
+      default: []
+      description: Blank allows every namespace.
+      id: network_policy_frontend_client_namespaces
+      label: Frontend client namespaces
+      placeholder: my-app
+      show_when:
+        network_policy_enabled: true
+      type: string_array
+    - add_button_label: Add namespace
+      collapsible: true
+      default: []
+      description: Blank allows every namespace.
+      id: network_policy_metrics_namespaces
+      label: Metrics scraper namespaces
+      placeholder: monitoring
+      show_when:
+        network_policy_enabled: true
+      type: string_array
+    - default: false
+      description: Mutual TLS between services and TLS on the frontend, from a private CA. Needs cert-manager.
+      id: tls_enabled
+      label: TLS
+      type: boolean
+    - collapsible: true
+      default: false
+      description: Clients must present a certificate from the private CA.
+      id: tls_frontend_client_auth_required
+      label: Require client certificates
+      show_when:
+        tls_enabled: true
+      type: boolean
+    - id: section_web
+      label: Web UI
+      type: section
+    - default: true
+      description: Has no sign-in of its own. Keep it private.
+      id: web_enabled
+      label: Web UI
+      type: boolean
+    - collapsible: true
+      default: 1
+      id: web_replicas
+      label: Replicas
+      min: 1
+      show_when:
+        web_enabled: true
+      type: number
+    - default: false
+      description: With the alb class, an internal Application Load Balancer.
+      id: web_ingress_enabled
+      label: Ingress
+      show_when:
+        web_enabled: true
+      type: boolean
+    - collapsible: true
+      default: alb
+      id: web_ingress_class_name
+      label: Ingress class
+      show_when:
+        web_ingress_enabled: true
+      type: string
+    - id: web_ingress_host
+      label: Host name
+      placeholder: temporal.internal.example.com
+      show_when:
+        web_ingress_enabled: true
+      type: string
+    - description: Serves HTTPS on the internal ALB. Blank serves HTTP.
+      id: web_ingress_certificate_arn
+      label: ACM certificate ARN
+      placeholder: arn:aws:acm:us-east-1:123456789012:certificate/...
+      show_when:
+        web_ingress_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: Merged over the module's annotations.
+      id: web_ingress_annotations
+      label: Ingress annotations
+      show_when:
+        web_ingress_enabled: true
+      type: keyvalue
+    - id: section_metrics
+      label: Metrics
+      type: section
+    - default: true
+      id: metrics_prometheus_annotations_enabled
+      label: Prometheus scrape annotations
+      type: boolean
+    - default: false
+      description: Needs the Prometheus Operator CRDs.
+      id: metrics_service_monitor_enabled
+      label: ServiceMonitors
+      type: boolean
+    - description: Pushes server metrics over OTLP gRPC, such as to the EKS Add-ons otlp_grpc_endpoint output. Blank pushes nothing.
+      id: metrics_otlp_endpoint
+      label: OTLP endpoint
+      placeholder: http://otel-collector.monitoring.svc.cluster.local:4317
+      type: string
+    - id: section_advanced_values
+      label: Advanced
+      type: section
+    - add_button_label: Add values document
+      collapsible: true
+      default: []
+      description: YAML documents applied last to the upstream chart, for settings without a field here.
+      id: helm_values
+      label: Extra chart values
+      type: string_array
+    - $include: ../../../partials/inputs/misc-section.yml
+    - $include: ../../../partials/inputs/tags.yml
+    - $include: ../../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../../partials/templates/opentofu-stack-with-runner-security-group.yml
+    with:
+      base_path: compute/eks/temporal
+      runner_security_group_id: << module.input.ravion_runner_security_group_id >>
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        cluster_name: << module.input.cluster_name >>
+        region: << module.input.aws_region >>
+        ravion_runner_role_arn: << module.input.ravion_runner_role_arn || null >>
+        name: << module.input.name >>
+        namespace: << module.input.namespace >>
+        namespace_creation_enabled: << module.input.namespace_creation_enabled >>
+        chart_version: << module.input.chart_version || "1.8.0" >>
+        server_image: << module.input.server_image || "temporalio/server:1.32.2" >>
+        admin_tools_image: << module.input.admin_tools_image || "temporalio/admin-tools:1.32.2" >>
+        log_level: << module.input.log_level || "info" >>
+        num_history_shards: << module.input.num_history_shards >>
+        temporal_namespaces: '<< module.input.temporal_namespaces != nil ? module.input.temporal_namespaces : {} >>'
+        database_cluster_identifier: << module.input.database_cluster_identifier >>
+        database_username: << module.input.database_username || null >>
+        database_password_source: << module.input.database_password_source >>
+        database_password_secret_arn: << module.input.database_password_secret_arn || null >>
+        database_password_secret_store_name: << module.input.database_password_secret_store_name || "ravion-aws" >>
+        database_password_kubernetes_secret_name: << module.input.database_password_kubernetes_secret_name || null >>
+        database_name: << module.input.database_name >>
+        visibility_database_name: << module.input.visibility_database_name >>
+        database_schema_management_enabled: << module.input.database_schema_management_enabled >>
+        database_tls_enabled: << module.input.database_tls_enabled >>
+        database_max_connections: << module.input.database_max_connections >>
+        visibility_database_max_connections: << module.input.visibility_database_max_connections >>
+        frontend:
+          replicas: << module.input.frontend_replicas >>
+          cpu_request: << module.input.frontend_cpu_request >>
+          memory_request: << module.input.frontend_memory_request >>
+          memory_limit: << module.input.frontend_memory_limit >>
+        history:
+          replicas: << module.input.history_replicas >>
+          cpu_request: << module.input.history_cpu_request >>
+          memory_request: << module.input.history_memory_request >>
+          memory_limit: << module.input.history_memory_limit >>
+        matching:
+          replicas: << module.input.matching_replicas >>
+          cpu_request: << module.input.matching_cpu_request >>
+          memory_request: << module.input.matching_memory_request >>
+          memory_limit: << module.input.matching_memory_limit >>
+        worker:
+          replicas: << module.input.worker_replicas >>
+          cpu_request: << module.input.worker_cpu_request >>
+          memory_request: << module.input.worker_memory_request >>
+          memory_limit: << module.input.worker_memory_limit >>
+        topology_spread: << module.input.topology_spread >>
+        pod_disruption_budgets_enabled: << module.input.pod_disruption_budgets_enabled >>
+        priority_class_creation_enabled: << module.input.priority_class_creation_enabled >>
+        priority_class_name: << module.input.priority_class_name || null >>
+        node_pool_creation_enabled: << module.input.node_pool_creation_enabled >>
+        node_pool:
+          ec2_node_class_name: << module.input.node_pool_ec2_node_class_name || "default" >>
+          capacity_types: '<< module.input.node_pool_capacity_types != nil && len(module.input.node_pool_capacity_types) > 0 ? module.input.node_pool_capacity_types : ["on-demand"] >>'
+          instance_categories: '<< module.input.node_pool_instance_categories != nil && len(module.input.node_pool_instance_categories) > 0 ? module.input.node_pool_instance_categories : ["c", "m", "r"] >>'
+          architectures: '<< module.input.node_pool_architectures != nil && len(module.input.node_pool_architectures) > 0 ? module.input.node_pool_architectures : ["amd64"] >>'
+          cpu_limit: '<< module.input.node_pool_cpu_limit != nil ? module.input.node_pool_cpu_limit : 32 >>'
+        network_policy_enabled: << module.input.network_policy_enabled >>
+        network_policy_frontend_client_namespaces: '<< module.input.network_policy_frontend_client_namespaces != nil ? module.input.network_policy_frontend_client_namespaces : [] >>'
+        network_policy_metrics_namespaces: '<< module.input.network_policy_metrics_namespaces != nil ? module.input.network_policy_metrics_namespaces : [] >>'
+        tls_enabled: << module.input.tls_enabled >>
+        tls_frontend_client_auth_required: << module.input.tls_frontend_client_auth_required == true >>
+        web_enabled: << module.input.web_enabled >>
+        web:
+          replicas: '<< module.input.web_replicas != nil ? module.input.web_replicas : 1 >>'
+        web_ingress_enabled: << module.input.web_enabled == true && module.input.web_ingress_enabled == true >>
+        web_ingress_class_name: << module.input.web_ingress_class_name || "alb" >>
+        web_ingress_host: << module.input.web_ingress_host || null >>
+        web_ingress_certificate_arn: << module.input.web_ingress_certificate_arn || null >>
+        web_ingress_annotations: '<< module.input.web_ingress_annotations != nil ? module.input.web_ingress_annotations : {} >>'
+        metrics_prometheus_annotations_enabled: << module.input.metrics_prometheus_annotations_enabled >>
+        metrics_service_monitor_enabled: << module.input.metrics_service_monitor_enabled >>
+        metrics_otlp_endpoint: << module.input.metrics_otlp_endpoint || null >>
+        helm_values: '<< module.input.helm_values != nil ? module.input.helm_values : [] >>'
+        tags:
+          # Resolved from the stack template's directory.
+          $include: ../stack/ravion-tags.yml
+  readme: |-
+    Self-hosted [Temporal](https://temporal.io) on an existing EKS cluster, with its persistence and visibility stores on an Aurora PostgreSQL cluster.
+
+    ## Overview
+
+    Temporal installs the official [temporalio/helm-charts](https://github.com/temporalio/helm-charts) chart, pinned to a version, and everything a production deployment needs around it:
+
+    - The database password, copied from Secrets Manager into a Kubernetes Secret by the External Secrets Operator, so it never enters Helm values, release history or Terraform state.
+    - TLS to the database, verified against the RDS CA bundle.
+    - A schema job that creates both databases and runs Temporal's migrations on every deploy, and a job that creates your Temporal namespaces.
+    - Replicas spread across zones and nodes, PodDisruptionBudgets, graceful shutdown drains, and a Go memory limit under each container limit.
+    - Network policies that close Temporal's internal ports to the rest of the cluster.
+    - Optionally: mutual TLS from a private CA, a dedicated Karpenter node pool, a priority class, an internal Web UI load balancer, ServiceMonitors, and an OTLP metrics forwarder.
+
+    Terraform source: [ravionhq/modules/compute/eks/temporal](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/eks/temporal)
+
+    ## Prerequisites
+
+    - An **EKS Cluster** module, and **EKS Add-ons** with the EBS CSI driver.
+    - An **Aurora Database** module running Aurora PostgreSQL. Add the EKS cluster security group to its **Allowed security groups**.
+    - For the default password source, the External Secrets Operator from **EKS Add-ons**, with this namespace in its **Allowed namespaces**. If you narrowed the operator's IAM scope to specific secrets, include the database secret, and its KMS key if it is customer managed.
+    - For **TLS**, cert-manager. For **Dedicated node pool**, Karpenter. Both come with **EKS Add-ons**.
+
+    ## Connecting
+
+    SDK clients and the `temporal` CLI in the cluster connect to the `frontend_address` output, such as `temporal-frontend.temporal.svc:7233`:
+
+    ```yaml
+    env:
+      - name: TEMPORAL_ADDRESS
+        value: << modules.temporal.output.frontend_address >>
+      - name: TEMPORAL_NAMESPACE
+        value: default
+    ```
+
+    With **TLS** on, clients connect with TLS, verify the server name in `tls_server_name`, and trust the `ca.crt` of the Secret named in `tls_ca_secret_name`. Copy only `ca.crt` to clients: that Secret also holds the frontend's private key. With **Require client certificates**, clients must also present a certificate issued by the same CA.
+
+    The frontend has no authentication of its own unless you configure an authorizer through **Extra chart values**. Keep it private to the cluster, and use **Frontend client namespaces** to limit which namespaces can reach it.
+
+    ## History shards
+
+    **History shards** is fixed for the life of the cluster. Changing it later means a new database and moving your workflows. Temporal recommends a power of two. 512 suits most teams. Choose 2048 or more if you expect thousands of workflow state transitions per second.
+
+    ## Sizing
+
+    The defaults run two replicas of the frontend, history and matching services and one worker, plus one Web UI, for about 2 CPUs and 3.5 GiB of memory requested. Scale history first: it owns the shards and does most of the work. Each server pod opens up to **Max connections** plus **Max visibility connections** to the database, so make sure the database's `max_connections` covers every pod.
+
+    ## Password rotation
+
+    Temporal reads the database password when a server starts. If the password changes, for example through Secrets Manager rotation, existing connections keep working, but new ones fail until the pods restart. Aurora's managed master user secret rotates every 7 days by default. Prefer a secret without automatic rotation, such as the Aurora module's named master secret, or restart the Temporal Deployments after each rotation.
+
+    ## Web UI
+
+    The Web UI has no sign-in by default: anyone who reaches it can read and act on every namespace. It is a ClusterIP Service unless you turn on **Ingress**. With the `alb` class, the ingress is an internal Application Load Balancer, reachable only from the VPC and networks connected to it. To add single sign-on, set the UI's `TEMPORAL_AUTH_*` environment variables through **Extra chart values**.
+
+    ## Metrics
+
+    Every server exposes Prometheus metrics on port 9090, annotated for scrapers that discover pods by annotation. For a cluster whose metrics pipeline receives OTLP instead, such as **EKS Add-ons**, set **OTLP endpoint**: a small forwarder in the namespace scrapes the servers and pushes the main request, persistence, task queue, shard and workflow metrics.
+
+    ## Upgrades
+
+    Upgrade the chart and the images together, one Temporal minor version at a time, as Temporal requires. The schema job migrates the databases before the new servers start.
+
+    ## Not included
+
+    Archival, Elasticsearch visibility, multi-cluster replication and authorization are not configured by this module. Set them through **Extra chart values** if you need them.

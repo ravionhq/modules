@@ -1,0 +1,85 @@
+{{- if .Values.tls.enabled }}
+{{- /*
+A private CA for this release only. cert-manager generates the CA key inside
+the cluster, and it stays in the CA secret in this namespace. Anyone who can
+create a Certificate naming this Issuer, or read the CA secret, can mint a
+certificate Temporal trusts, so keep those permissions as narrow as namespace
+admin.
+*/ -}}
+{{- $tls := .Values.tls -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tls.caSecretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ printf "%s Temporal CA" .Values.temporal.releaseName }}
+  secretName: {{ $tls.caSecretName }}
+  duration: {{ $tls.caDuration }}
+  renewBefore: {{ $tls.caRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # Renewal re-signs the same key, so certificates it already issued keep
+    # verifying while they renew.
+    rotationPolicy: Never
+  issuerRef:
+    name: {{ $tls.issuerName }}-bootstrap
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ $tls.caSecretName }}
+{{- range $leaf := list $tls.internode $tls.frontend }}
+{{- if not $leaf.dnsNames }}
+{{- fail (printf "tls: dnsNames are required for %s" $leaf.secretName) }}
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $leaf.secretName }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+spec:
+  secretName: {{ $leaf.secretName }}
+  commonName: {{ first $leaf.dnsNames }}
+  dnsNames:
+    {{- toYaml $leaf.dnsNames | nindent 4 }}
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+  duration: {{ $tls.leafDuration }}
+  renewBefore: {{ $tls.leafRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: {{ $tls.issuerName }}
+    kind: Issuer
+{{- end }}
+{{- end }}

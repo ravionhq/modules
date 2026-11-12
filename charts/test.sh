@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration temporal-resources)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -40,6 +40,7 @@ done
 chart_path() {
   case "$1" in
     karpenter-resources | warm-capacity | ebs-storage | thanos | statefulset-volume-migration) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    temporal-resources) echo "${CHARTS_DIR}/../compute/eks/temporal/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -1152,6 +1153,55 @@ test_ebs_storage() {
 }
 
 ################################################################################
+# temporal-resources (compute/eks/temporal)
+################################################################################
+
+test_temporal_resources() {
+  local chart="temporal-resources"
+  local default full existing deploy
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  full="$(render "${chart}" full --values "$(chart_path "${chart}")/ci/full-values.yaml")"
+  existing="$(render "${chart}" existing --values "$(chart_path "${chart}")/ci/existing-secret-values.yaml")"
+  deploy='.[] | select(.kind == "Deployment") | .spec.template.spec'
+
+  assert_eq "${chart}: defaults render the password ExternalSecret and the RDS CA bundle only" \
+    "1 1 0 0 0" \
+    "$(count "${default}" ExternalSecret) $(count "${default}" ConfigMap) $(count "${default}" NetworkPolicy) $(count "${default}" Certificate) $(count "${default}" Deployment)"
+  assert_eq "${chart}: the ExternalSecret reads the password key of the given secret" \
+    "temporal-db password arn:aws:secretsmanager:us-east-1:123456789012:secret:example-db-AbCdEf password" \
+    "$(q "${default}" '.[] | select(.kind == "ExternalSecret") | [.spec.target.name, .spec.data[0].secretKey, .spec.data[0].remoteRef.key, .spec.data[0].remoteRef.property] | join(" ")')"
+  assert_eq "${chart}: the CA bundle ships the RDS certificates" \
+    "true" \
+    "$(q "${default}" '.[] | select(.kind == "ConfigMap") | .data."rds-global-bundle.pem" | test("BEGIN CERTIFICATE")')"
+  assert_eq "${chart}: an existing Secret renders nothing" \
+    "0" "$(q "${existing}" 'length')"
+  expect_template_failure "${chart}" "${chart}: the ExternalSecret requires a secret" \
+    --set database.externalSecret.remoteSecretName=
+  assert_eq "${chart}: TLS issues a CA and two leaf certificates from a namespaced Issuer" \
+    "3 2 temporal-ca" \
+    "$(count "${full}" Certificate) $(count "${full}" Issuer) $(q "${full}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | .spec.issuerRef.name')"
+  assert_eq "${chart}: leaf certificates carry server and client auth" \
+    "server auth,client auth" \
+    "$(q "${full}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-internode-tls") | [.spec.usages[2], .spec.usages[3]] | join(",")')"
+  expect_template_failure "${chart}" "${chart}: TLS requires certificate names" \
+    --set tls.enabled=true
+  assert_eq "${chart}: the NodePool is on-demand, tainted and never expires nodes" \
+    "on-demand ravion.com/dedicated Never 1" \
+    "$(q "${full}" '.[] | select(.kind == "NodePool") | [(.spec.template.spec.requirements[] | select(.key == "karpenter.sh/capacity-type") | .values[0]), .spec.template.spec.taints[0].key, .spec.template.spec.expireAfter, .spec.disruption.budgets[0].nodes] | join(" ")')"
+  assert_eq "${chart}: network policies select only the Temporal release" \
+    "4 temporal" \
+    "$(count "${full}" NetworkPolicy) $(q "${full}" '[.[] | select(.kind == "NetworkPolicy") | .spec.podSelector.matchLabels."app.kubernetes.io/instance"] | unique | join(",")')"
+  assert_eq "${chart}: listed client namespaces and CIDRs reach the frontend and Web UI" \
+    "apps 10.0.0.0/16" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-frontend") | .spec.ingress[0].from[0].namespaceSelector.matchLabels."kubernetes.io/metadata.name"') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-web") | .spec.ingress[0].from[1].ipBlock.cidr')"
+  assert_eq "${chart}: the metrics forwarder runs non-root on the dedicated nodes" \
+    "true true temporal temporal-critical" \
+    "$(q "${full}" "${deploy} | .securityContext.runAsNonRoot") $(q "${full}" "${deploy} | .containers[0].securityContext.readOnlyRootFilesystem") $(q "${full}" "${deploy} | .nodeSelector.\"karpenter.sh/nodepool\"") $(q "${full}" "${deploy} | .priorityClassName")"
+  expect_template_failure "${chart}" "${chart}: the metrics forwarder requires an endpoint" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set metrics.otlp.enabled=true
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -1165,6 +1215,7 @@ for chart in "${CHARTS[@]}"; do
     ebs-storage) test_ebs_storage ;;
     thanos) test_thanos ;;
     statefulset-volume-migration) test_statefulset_volume_migration ;;
+    temporal-resources) test_temporal_resources ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1

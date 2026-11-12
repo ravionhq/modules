@@ -1,0 +1,24 @@
+temporal:
+  releaseName: temporal
+database:
+  externalSecret:
+    remoteSecretName: arn:aws:secretsmanager:us-east-1:123456789012:secret:example-db-AbCdEf
+tls:
+  enabled: true
+  internode:
+    dnsNames: [temporal-internode.temporal.svc]
+  frontend:
+    dnsNames: [temporal-frontend.temporal.svc, temporal-frontend]
+priorityClass:
+  enabled: true
+nodePool:
+  enabled: true
+networkPolicy:
+  enabled: true
+  frontendClientNamespaces: [apps]
+  webClientCidrs: [10.0.0.0/16]
+metrics:
+  otlp:
+    enabled: true
+    endpoint: http://otel-collector.monitoring.svc.cluster.local:4317
+    keep: [service_requests, service_latency]

@@ -1,0 +1,106 @@
+# All values are supplied by the compute/eks/temporal Terraform module.
+
+# The upstream Temporal release this chart supports. Its pods carry
+# app.kubernetes.io/name=temporal and app.kubernetes.io/instance=<releaseName>,
+# and its Services are prefixed with <releaseName> (fullnameOverride).
+temporal:
+  releaseName: temporal
+
+# ---- Database --------------------
+database:
+  # Kubernetes Secret the Temporal servers and schema jobs read the password from.
+  secretName: temporal-db
+  secretKey: password
+  # Copy the password from AWS Secrets Manager with the External Secrets
+  # Operator, so it never enters Helm values, release history or Terraform
+  # state. Off when the Secret is managed elsewhere.
+  externalSecret:
+    enabled: true
+    secretStoreName: ravion-aws
+    secretStoreKind: ClusterSecretStore
+    # Name or ARN of the Secrets Manager secret (JSON) and the key holding the password.
+    remoteSecretName: ""
+    remoteSecretProperty: password
+    refreshInterval: 1h
+  # ConfigMap holding the RDS global CA bundle (files/rds-global-bundle.pem),
+  # mounted so the database connection verifies the server certificate.
+  caBundle:
+    enabled: true
+    configMapName: temporal-rds-ca
+
+# ---- TLS --------------------
+# A private CA from cert-manager, scoped to this namespace (an Issuer, not a
+# ClusterIssuer). The internode certificate secures traffic between Temporal's
+# services with mutual TLS; the frontend certificate serves SDK clients, the
+# Web UI and the admin tools. Both carry client auth, so the chart's own pods
+# can present them.
+tls:
+  enabled: false
+  caSecretName: temporal-ca
+  issuerName: temporal-ca
+  caDuration: 87600h
+  caRenewBefore: 8760h
+  leafDuration: 2160h
+  leafRenewBefore: 720h
+  internode:
+    secretName: temporal-internode-tls
+    dnsNames: []
+  frontend:
+    secretName: temporal-frontend-tls
+    dnsNames: []
+
+# ---- Scheduling --------------------
+priorityClass:
+  enabled: false
+  name: temporal-critical
+  value: 1000000
+
+# A Karpenter NodePool for Temporal alone. Its taint keeps other pods off, and
+# the Temporal pods select it by name and tolerate the taint.
+nodePool:
+  enabled: false
+  name: temporal
+  ec2NodeClassName: default
+  capacityTypes: ["on-demand"]
+  instanceCategories: ["c", "m", "r"]
+  architectures: ["amd64"]
+  cpuLimit: 32
+  consolidateAfter: 1h
+  taint:
+    key: ravion.com/dedicated
+    value: temporal
+
+# ---- Network policy --------------------
+# Selects only this release's pods. Temporal's services reach each other on
+# every port; from elsewhere, only the frontend's gRPC and HTTP ports, the Web
+# UI and the metrics port are reachable. An empty namespace list admits every
+# namespace in the cluster.
+networkPolicy:
+  enabled: false
+  frontendClientNamespaces: []
+  webClientNamespaces: []
+  # Extra sources for the Web UI, such as the VPC CIDR an internal load
+  # balancer sends from.
+  webClientCidrs: []
+  metricsNamespaces: []
+
+# ---- Metrics forwarder --------------------
+# Scrapes the servers' Prometheus port and pushes the samples over OTLP gRPC,
+# for clusters whose metrics pipeline receives OTLP rather than scraping pods.
+metrics:
+  otlp:
+    enabled: false
+    # host:port, or http(s)://host:port.
+    endpoint: ""
+    scrapeInterval: 30s
+    # Metric families kept, without the _bucket/_sum/_count/_total suffixes.
+    # Empty keeps everything.
+    keep: []
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+    goMemLimit: 450MiB

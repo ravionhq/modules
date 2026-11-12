@@ -1,0 +1,45 @@
+{{- $db := .Values.database -}}
+{{- if $db.externalSecret.enabled }}
+{{- if not $db.externalSecret.remoteSecretName }}
+{{- fail "database.externalSecret.remoteSecretName is required when database.externalSecret.enabled is true" }}
+{{- end }}
+{{- /*
+The External Secrets Operator copies the password into a Kubernetes Secret.
+The upstream chart reads it through existingSecret, so the password never
+appears in Helm values or release history. Temporal reads it when a server
+starts: after the password changes, restart the server pods.
+*/}}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ $db.secretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ $db.externalSecret.refreshInterval }}
+  secretStoreRef:
+    name: {{ $db.externalSecret.secretStoreName }}
+    kind: {{ $db.externalSecret.secretStoreKind }}
+  target:
+    name: {{ $db.secretName }}
+    creationPolicy: Owner
+  data:
+    - secretKey: {{ $db.secretKey }}
+      remoteRef:
+        key: {{ $db.externalSecret.remoteSecretName | quote }}
+        property: {{ $db.externalSecret.remoteSecretProperty | quote }}
+{{- end }}
+{{- if $db.caBundle.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $db.caBundle.configMapName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+data:
+  rds-global-bundle.pem: |-
+{{ .Files.Get "files/rds-global-bundle.pem" | trim | indent 4 }}
+{{- end }}
