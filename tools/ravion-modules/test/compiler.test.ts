@@ -1854,7 +1854,7 @@ describe("compiler", () => {
   it("defaults every build module to automatic sandbox sizing with a fixed-size opt-out", async () => {
     const definitions = (await compileAllDefinitions(repoRoot)).filter(({ module }) => module.build);
     assert.deepEqual(definitions.map(({ type }) => type).sort(), [
-      "rvn-aws-static", "rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-ecs-worker",
+      "rvn-aws-static", "rvn-ec2-service", "rvn-ecs-jobs", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-ecs-worker",
       "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker", "rvn-lambda",
     ]);
 

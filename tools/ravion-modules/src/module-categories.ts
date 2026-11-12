@@ -28,7 +28,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Worker",
     description: "For queue consumers, scheduled jobs, and background processes without public endpoints.",
     sortOrder: 30,
-    definitionTypes: ["rvn-ec2-service", "rvn-ecs-worker", "rvn-eks-cron", "rvn-eks-worker"],
+    definitionTypes: ["rvn-ec2-service", "rvn-ecs-jobs", "rvn-ecs-worker", "rvn-eks-cron", "rvn-eks-worker"],
   },
   {
     givenId: "function",
