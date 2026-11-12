@@ -108,7 +108,16 @@ output "cloudwatch_alarm_arns" {
     elb_5xx              = aws_cloudwatch_metric_alarm.elb_5xx[0].arn
     target_5xx           = aws_cloudwatch_metric_alarm.target_5xx[0].arn
     target_response_time = aws_cloudwatch_metric_alarm.target_response_time[0].arn
+    unhealthy_hosts      = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].arn
   } : {}
+}
+
+output "cloudwatch_alarm_notification_actions" {
+  description = "Actions every CloudWatch alarm runs when it fires (alarm) and when it recovers (ok). Both lists are empty when alarms are disabled."
+  value = {
+    alarm = local.create_cloudwatch_alarms ? sort(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_actions) : []
+    ok    = local.create_cloudwatch_alarms ? sort(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].ok_actions) : []
+  }
 }
 
 ################################################################################

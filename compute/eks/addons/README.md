@@ -906,6 +906,8 @@ failed during initialization have no provider resources to migrate.
 | ravion_operator_project_id / ravion_operator_environment_id / ravion_operator_aws_account_record_id | Ravion record ids recorded on the agent when its credential is minted. Optional. | `string` | `null` | no |
 | public_subnet_ids | Public subnets for internet-facing load balancers. Required when the public ALB or public NLB is enabled. | `list(string)` | `[]` | no |
 | load_balancer_deletion_protection_enabled | Deletion protection on the shared load balancers. | `bool` | `false` | no |
+| load_balancer_alarm_actions | Action ARNs (up to 5) invoked when a shared ALB alarm (5xx, response time, unhealthy targets) enters ALARM. | `list(string)` | `[]` | no |
+| load_balancer_alarm_ok_actions | Action ARNs (up to 5) invoked when a shared ALB alarm returns to OK. | `list(string)` | `[]` | no |
 | name | Name slug for everything the stack creates: load balancers and security groups (`<name>-pub`, `<name>-priv`, `<name>-pub-nlb`, `<name>-priv-nlb`), Pod Identity roles, Loki bucket, log group, AMP alias, Karpenter queue; defaults to the cluster name. Up to 23 characters. | `string` | `null` | no |
 | public_alb_creation_enabled / private_alb_creation_enabled | Create a shared public / private ALB. | `bool` | `false` | no |
 | public_alb_https_enabled / private_alb_https_enabled | HTTPS listener (with HTTP→HTTPS redirect). | `bool` | `false` | no |

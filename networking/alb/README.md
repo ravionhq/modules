@@ -13,7 +13,7 @@ This module creates an AWS Application Load Balancer (ALB) with HTTP and HTTPS l
 - SNI support with additional SSL certificates
 - TLS 1.3 support with modern SSL policies
 - Security hardening (invalid header dropping, desync mitigation)
-- CloudWatch alarms enabled by default for load balancer 5xx, target 5xx, and target response time
+- CloudWatch alarms enabled by default for load balancer 5xx, target 5xx, target response time, and unhealthy targets in any attached target group
 
 ## Usage
 
@@ -341,10 +341,11 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| cloudwatch_alarms_creation_enabled | Create alarms for ELB 5xx, target 5xx, and target response time | `bool` | `true` | no |
+| cloudwatch_alarms_creation_enabled | Create alarms for ELB 5xx, target 5xx, target response time, and unhealthy targets | `bool` | `true` | no |
 | cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
 | cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum per period) above which the alarm fires | `number` | `10` | no |
 | cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime in seconds above which the alarm fires (> 0) | `number` | `1` | no |
+| cloudwatch_alarm_unhealthy_hosts_threshold | UnHealthyHostCount (maximum across every attached target group, via a Metrics Insights query) above which the alarm fires (>= 0) | `number` | `0` | no |
 | cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
 | cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
 | cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |
@@ -389,7 +390,8 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 
 | Name | Description |
 |------|-------------|
-| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `elb_5xx`, `target_5xx`, and `target_response_time` (empty when disabled) |
+| cloudwatch_alarm_arns | Map of alarm ARNs keyed by `elb_5xx`, `target_5xx`, `target_response_time`, and `unhealthy_hosts` (empty when disabled) |
+| cloudwatch_alarm_notification_actions | Actions every alarm runs when it fires (`alarm`) and when it recovers (`ok`); both empty when disabled |
 
 ## Architecture
 

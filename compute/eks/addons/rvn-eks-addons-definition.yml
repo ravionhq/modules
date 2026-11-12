@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.2.0
-  description: While Loki is a logs provider, the OTLP collector now takes OTLP logs into Loki instead of answering /v1/logs with 404.
+  version: 1.3.0
+  description: Alarm when targets behind the shared ALBs fail health checks, and send ALB alarms to the actions you choose.
 module:
   inputs:
     - id: cluster
@@ -443,6 +443,22 @@ module:
       id: load_balancer_deletion_protection_enabled
       label: Load balancer deletion protection
       type: boolean
+    - id: load_balancer_alarm_actions
+      label: ALB alert actions
+      description: Invoked when an ALB alarm (5xx, response time, unhealthy targets) enters ALARM, for example an SNS topic ARN. Empty disables direct notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+    - id: load_balancer_alarm_ok_actions
+      label: ALB recovery actions
+      description: Invoked when an ALB alarm returns to OK. Empty disables direct recovery notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
     - description: Without a leading v.
       collapsible: true
       id: aws_load_balancer_controller_chart_version
@@ -2061,6 +2077,8 @@ module:
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
+        load_balancer_alarm_actions: '<< module.input.load_balancer_alarm_actions != nil ? module.input.load_balancer_alarm_actions : [] >>'
+        load_balancer_alarm_ok_actions: '<< module.input.load_balancer_alarm_ok_actions != nil ? module.input.load_balancer_alarm_ok_actions : [] >>'
         name: << module.input.name >>
         use_ravion_managed_domains: << module.input.use_ravion_managed_domains >>
         ravion_cluster_name: << module.input.ravion_cluster_name >>

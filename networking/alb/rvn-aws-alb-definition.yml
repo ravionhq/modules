@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.4.0
-  description: Enable ALB access logs by default for new instances. Also fix large-response plans with AWS provider 6.69.1.
+  version: 1.5.0
+  description: Alarm when targets behind the load balancer fail health checks, including target groups attached after the load balancer was created.
 module:
   inputs:
     - id: network
@@ -163,7 +163,7 @@ module:
     - id: cloudwatch_alarms_creation_enabled
       label: Create CloudWatch alarms
       type: boolean
-      description: Keep enabled to detect failed or slow requests. Disable if another system provides equivalent monitoring. CloudWatch charges apply.
+      description: Keep enabled to detect failed or slow requests and unhealthy targets. Disable if another system provides equivalent monitoring. CloudWatch charges apply.
       default: true
     - $include: ../../partials/inputs/alb-cloudwatch-alarm-inputs.yml
     - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
@@ -189,6 +189,7 @@ module:
         cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
         cloudwatch_alarm_target_5xx_threshold: << module.input.cloudwatch_alarm_target_5xx_threshold >>
         cloudwatch_alarm_target_response_time_threshold: << module.input.cloudwatch_alarm_target_response_time_threshold >>
+        cloudwatch_alarm_unhealthy_hosts_threshold: '<< module.input.cloudwatch_alarm_unhealthy_hosts_threshold != nil ? module.input.cloudwatch_alarm_unhealthy_hosts_threshold : 0 >>'
         cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
         cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions || [] >>
         deletion_protection_enabled: << module.input.deletion_protection_enabled >>
@@ -327,10 +328,11 @@ module:
     | Load balancer 5xx | HTTPCode_ELB_5XX_Count (sum) | The load balancer itself returns more 5xx responses than the threshold in a period, such as 502 or 503 from unreachable targets or the fixed 503 for unmatched routes |
     | Target 5xx | HTTPCode_Target_5XX_Count (sum) | Targets return more 5xx responses than the threshold in a period |
     | Target response time | TargetResponseTime (average) | Targets take longer than the threshold, in seconds, to respond |
+    | Unhealthy targets | UnHealthyHostCount (maximum) | More targets than the threshold fail health checks in any target group attached to the load balancer |
 
     Each alarm must breach for the configured number of consecutive evaluation periods before it fires, and missing data is treated as not breaching, so an idle load balancer never alarms. Add SNS topic ARNs as Alarm actions and OK actions to be notified. Alarm ARNs are exposed as the `cloudwatch_alarm_arns` stack output.
 
-    The alarms use the load balancer dimension only. Health-based metrics such as unhealthy host count are reported per target group, and target groups belong to the services that attach to this load balancer, so alarm on those from the service modules.
+    The request alarms use the load balancer dimension only. Unhealthy host count is reported per target group, and target groups belong to the services that attach to this load balancer, so the unhealthy targets alarm uses a CloudWatch Metrics Insights query over every target group behind the load balancer. Target groups attached later are covered without changing this module.
 
     ## Configuration
 

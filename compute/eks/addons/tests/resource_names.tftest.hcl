@@ -140,3 +140,34 @@ run "public_alb_web_acl_arn_associates_waf" {
     error_message = "Setting public_alb_web_acl_arn must associate that WAF web ACL with the public ALB."
   }
 }
+
+run "shared_albs_alarm_on_unhealthy_targets" {
+  command = plan
+  variables {
+    load_balancer_alarm_actions    = ["arn:aws:sns:us-east-2:123456789012:alerts"]
+    load_balancer_alarm_ok_actions = ["arn:aws:sns:us-east-2:123456789012:recovered"]
+  }
+
+  assert {
+    condition     = contains(keys(module.public_alb[0].cloudwatch_alarm_arns), "unhealthy_hosts") && contains(keys(module.private_alb[0].cloudwatch_alarm_arns), "unhealthy_hosts")
+    error_message = "Both shared ALBs must alarm on unhealthy targets."
+  }
+
+  assert {
+    condition     = one(module.public_alb[0].cloudwatch_alarm_notification_actions.alarm) == "arn:aws:sns:us-east-2:123456789012:alerts" && one(module.private_alb[0].cloudwatch_alarm_notification_actions.alarm) == "arn:aws:sns:us-east-2:123456789012:alerts"
+    error_message = "Both shared ALBs' alarms must notify load_balancer_alarm_actions when they fire."
+  }
+
+  assert {
+    condition     = one(module.public_alb[0].cloudwatch_alarm_notification_actions.ok) == "arn:aws:sns:us-east-2:123456789012:recovered" && one(module.private_alb[0].cloudwatch_alarm_notification_actions.ok) == "arn:aws:sns:us-east-2:123456789012:recovered"
+    error_message = "Both shared ALBs' alarms must notify load_balancer_alarm_ok_actions when they recover."
+  }
+}
+
+run "load_balancer_alarm_actions_must_be_arns" {
+  command = plan
+  variables {
+    load_balancer_alarm_actions = ["alerts"]
+  }
+  expect_failures = [var.load_balancer_alarm_actions]
+}
