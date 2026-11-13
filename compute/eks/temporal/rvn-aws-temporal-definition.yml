@@ -1,6 +1,6 @@
 global: false
 definition:
-  type: rvn-temporal
+  type: rvn-aws-temporal
   name: Temporal
   description: Self-hosted Temporal on an EKS cluster, with its persistence and visibility stores on Aurora PostgreSQL.
 release:
