@@ -1,0 +1,426 @@
+{{- $selector := dict "clickhouse.ravion.com/installation" .Values.name "app.kubernetes.io/component" "clickhouse" -}}
+{{- $grantTarget := include "clickhouse-cluster.grantTarget" . -}}
+{{- $tlsDir := include "clickhouse-cluster.tlsMountPath" . -}}
+{{- $plaintext := not (and .Values.tls.enabled .Values.tls.disablePlaintextPorts) -}}
+{{- $coldStorage := and .Values.coldStorage.enabled .Values.s3.bucket -}}
+{{- $internal := and .Values.tls.enabled .Values.tls.internal -}}
+{{- $backup := and .Values.backup.enabled .Values.s3.bucket -}}
+{{- $keeperName := include "clickhouse-cluster.keeperName" . -}}
+apiVersion: clickhouse.altinity.com/v1
+kind: ClickHouseInstallation
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+spec:
+  defaults:
+    templates:
+      podTemplate: clickhouse
+      dataVolumeClaimTemplate: data
+      {{- if .Values.tls.enabled }}
+      serviceTemplate: clickhouse
+      {{- end }}
+    storageManagement:
+      # The operator creates and grows the volumes itself, so a larger
+      # volumeSize resizes them in place.
+      provisioner: Operator
+      reclaimPolicy: {{ .Values.storage.reclaimPolicy }}
+  configuration:
+    zookeeper:
+      {{- if $internal }}
+      # Keeper's TLS client port on each node, verified against the CA. Named
+      # here rather than found through the Keeper reference, so the servers
+      # never fall back to the plaintext port while Keeper rolls to TLS.
+      nodes:
+        {{- range $replica := until (int .Values.keeper.replicas) }}
+        - host: {{ printf "chk-%s-keeper-0-%d-client" $keeperName $replica }}
+          port: 2281
+          secure: "yes"
+        {{- end }}
+      {{- else }}
+      keeper:
+        name: {{ $keeperName }}
+      {{- end }}
+    users:
+      # Full access, including user and grant management in SQL.
+      {{ .Values.users.admin.username }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.users.admin.secret }}
+            key: password
+      {{ .Values.users.admin.username }}/networks/ip:
+        - "::/0"
+      {{ .Values.users.admin.username }}/profile: default
+      {{ .Values.users.admin.username }}/quota: default
+      {{ .Values.users.admin.username }}/access_management: "1"
+      {{ .Values.users.admin.username }}/named_collection_control: "1"
+      {{ .Values.users.admin.username }}/show_named_collections: "1"
+      {{ .Values.users.admin.username }}/show_named_collections_secrets: "1"
+      # Reads, writes and schema changes for applications and migrations.
+      {{ .Values.users.writer.username }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.users.writer.secret }}
+            key: password
+      {{ .Values.users.writer.username }}/networks/ip:
+        - "::/0"
+      {{ .Values.users.writer.username }}/profile: default
+      {{ .Values.users.writer.username }}/quota: default
+      {{ .Values.users.writer.username }}/grants/query:
+        - "GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW, dictGet ON {{ $grantTarget }}"
+        - "GRANT CLUSTER ON *.*"
+      # Read-only queries, held to the reader profile's limits.
+      {{ .Values.users.reader.username }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.users.reader.secret }}
+            key: password
+      {{ .Values.users.reader.username }}/networks/ip:
+        - "::/0"
+      {{ .Values.users.reader.username }}/profile: reader
+      {{ .Values.users.reader.username }}/quota: default
+      {{ .Values.users.reader.username }}/grants/query:
+        - "GRANT SELECT, SHOW, dictGet ON {{ $grantTarget }}"
+    profiles:
+      # readonly 2 lets clients change settings per query, but the constraints
+      # keep each limit between 1 (so 0, unlimited, is refused) and its ceiling.
+      reader/readonly: "2"
+      reader/max_execution_time: {{ .Values.reader.maxExecutionTime | int64 | quote }}
+      reader/max_memory_usage: {{ .Values.reader.maxMemoryUsage | int64 | quote }}
+      reader/max_concurrent_queries_for_user: {{ .Values.reader.maxConcurrentQueries | int64 | quote }}
+      reader/constraints/max_execution_time/min: "1"
+      reader/constraints/max_execution_time/max: {{ .Values.reader.maxExecutionTime | int64 | quote }}
+      reader/constraints/max_memory_usage/min: "1"
+      reader/constraints/max_memory_usage/max: {{ .Values.reader.maxMemoryUsage | int64 | quote }}
+      reader/constraints/max_concurrent_queries_for_user/min: "1"
+      reader/constraints/max_concurrent_queries_for_user/max: {{ .Values.reader.maxConcurrentQueries | int64 | quote }}
+    settings:
+      prometheus/endpoint: /metrics
+      prometheus/port: "9363"
+      prometheus/metrics: "true"
+      prometheus/events: "true"
+      prometheus/asynchronous_metrics: "true"
+      {{- if .Values.tls.enabled }}
+      tcp_port_secure: "9440"
+      https_port: "8443"
+      {{- end }}
+      {{- if $internal }}
+      # Replicas fetch parts from each other over HTTPS on 9010. ClickHouse
+      # refuses to start with both interserver ports, so 9009 is removed.
+      interserver_http_port: _removed_
+      interserver_https_port: "9010"
+      {{- end }}
+      {{- range $key, $value := .Values.clickhouse.settings }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+    {{- if or $coldStorage .Values.tls.enabled }}
+    files:
+    {{- end }}
+    {{- if $internal }}
+      # The name other replicas reach this one by for interserver HTTPS: its
+      # own per-replica Service, as the operator sets for interserver HTTP.
+      config.d/interserver_tls.xml: |
+        <clickhouse>
+          <interserver_https_host from_env="CLICKHOUSE_INTERSERVER_HOST"/>
+        </clickhouse>
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+      # The server certificate for 9440 and 8443, reloaded when the mounted
+      # Secret changes. As a client (distributed queries to other servers over
+      # 9440), ClickHouse trusts the same CA on top of the system CAs, which
+      # S3 still needs.
+      config.d/tls.xml: |
+        <clickhouse>
+          <openSSL>
+            <server>
+              <certificateFile>{{ $tlsDir }}/tls.crt</certificateFile>
+              <privateKeyFile>{{ $tlsDir }}/tls.key</privateKeyFile>
+              <verificationMode>none</verificationMode>
+              <loadDefaultCAFile>false</loadDefaultCAFile>
+              <cacheSessions>true</cacheSessions>
+              <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+              <preferServerCiphers>true</preferServerCiphers>
+            </server>
+            <client>
+              <caConfig>{{ $tlsDir }}/ca.crt</caConfig>
+              <loadDefaultCAFile>true</loadDefaultCAFile>
+              <verificationMode>relaxed</verificationMode>
+              <cacheSessions>true</cacheSessions>
+              <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+              <preferServerCiphers>true</preferServerCiphers>
+              <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+              </invalidCertificateHandler>
+            </client>
+          </openSSL>
+        </clickhouse>
+    {{- end }}
+    {{- if $coldStorage }}
+      config.d/cold_storage.xml: |
+        <clickhouse>
+          <storage_configuration>
+            <disks>
+              <!-- Object keys are random, so every replica can share the prefix. -->
+              <s3>
+                <type>s3</type>
+                <endpoint>https://{{ .Values.s3.bucket }}.s3.{{ .Values.s3.region }}.amazonaws.com/cold/</endpoint>
+                <region>{{ .Values.s3.region }}</region>
+                <use_environment_credentials>true</use_environment_credentials>
+              </s3>
+              <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>{{ .Values.coldStorage.cacheSize }}</max_size>
+              </s3_cache>
+            </disks>
+            <policies>
+              <!-- SETTINGS storage_policy = 'tiered' on a table, then
+                   TTL <date column> + INTERVAL <n> DAY TO VOLUME 'cold'. -->
+              <tiered>
+                <volumes>
+                  <hot>
+                    <disk>default</disk>
+                  </hot>
+                  <cold>
+                    <disk>s3_cache</disk>
+                  </cold>
+                </volumes>
+              </tiered>
+            </policies>
+          </storage_configuration>
+        </clickhouse>
+    {{- end }}
+    clusters:
+      - name: {{ .Values.clusterName }}
+        # Queries between shards run as the user who sent them, authenticated
+        # with a secret the operator generates, instead of as `default`.
+        secret:
+          auto: "true"
+        {{- if .Values.tls.enabled }}
+        # Opens 9440 and 8443 on the pods, and remote_servers reach the other
+        # servers on 9440 over TLS. The operator then talks to the servers
+        # over HTTPS once 8123 is closed, and moves the probes to 8443.
+        secure: "yes"
+        {{- if not $plaintext }}
+        # Closes 9000 and 8123 on the servers, their pods and Services.
+        insecure: "no"
+        {{- end }}
+        # The operator connects over HTTPS and verifies each server's
+        # certificate and name against the CA. It reads ca.crt on every
+        # reconcile, so a renewed CA needs no operator restart.
+        security:
+          clickhouse:
+            tls:
+              verify: Strict
+              rootCASecretRef:
+                name: {{ .Values.tls.serverSecretName }}
+                key: ca.crt
+        {{- end }}
+        layout:
+          shardsCount: {{ .Values.clickhouse.shards }}
+          replicasCount: {{ .Values.clickhouse.replicas }}
+  templates:
+    podTemplates:
+      - name: clickhouse
+        metadata:
+          labels:
+            {{- toYaml $selector | nindent 12 }}
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9363"
+            prometheus.io/path: /metrics
+            {{- with .Values.passwordAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          {{- with .Values.placement.priorityClass }}
+          {{- if .create }}
+          priorityClassName: {{ .name }}
+          {{- end }}
+          {{- end }}
+          {{- include "clickhouse-cluster.scheduling" . | nindent 10 }}
+          {{- include "clickhouse-cluster.topologySpread" (dict "root" . "selector" $selector "matchLabelKeys" (list "clickhouse.altinity.com/shard")) | nindent 10 }}
+          {{- include "clickhouse-cluster.antiAffinity" (dict "root" . "selector" $selector "matchLabelKeys" (list "clickhouse.altinity.com/shard")) | nindent 10 }}
+          {{- if .Values.tls.enabled }}
+          # Mounted as a directory, not with subPath, so a renewed certificate
+          # reaches the running server.
+          volumes:
+            - name: tls
+              secret:
+                secretName: {{ .Values.tls.serverSecretName }}
+                defaultMode: 0440
+          {{- end }}
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            fsGroup: 101
+            fsGroupChangePolicy: OnRootMismatch
+          containers:
+            - name: clickhouse
+              image: {{ .Values.clickhouse.image }}
+              ports:
+                - name: metrics
+                  containerPort: 9363
+                {{- if $internal }}
+                - name: interserver-tls
+                  containerPort: 9010
+                {{- end }}
+              {{- if $internal }}
+              env:
+                # chi-<installation>-<cluster>-<shard>-<replica>, from the
+                # labels the operator puts on each pod.
+                - name: CLICKHOUSE_SHARD
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['clickhouse.altinity.com/shard']
+                - name: CLICKHOUSE_REPLICA
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['clickhouse.altinity.com/replica']
+                - name: CLICKHOUSE_INTERSERVER_HOST
+                  value: {{ printf "chi-%s-%s-$(CLICKHOUSE_SHARD)-$(CLICKHOUSE_REPLICA)" .Values.name .Values.clusterName | quote }}
+              {{- end }}
+              resources:
+                {{- toYaml .Values.clickhouse.resources | nindent 16 }}
+              {{- if .Values.tls.enabled }}
+              volumeMounts:
+                - name: tls
+                  mountPath: {{ $tlsDir }}
+                  readOnly: true
+              {{- end }}
+            {{- if and .Values.backup.enabled .Values.s3.bucket }}
+            # clickhouse-backup in server mode: the scheduled job calls its API
+            # on one replica of each shard. It reads the data volume directly,
+            # so it must run in the same pod as the server.
+            - name: clickhouse-backup
+              image: {{ .Values.backup.image }}
+              {{- if .Values.tls.enabled }}
+              # clickhouse-backup reads its API certificate only at startup.
+              # The liveness probe fails once cert-manager has renewed the
+              # mounted certificate after this start, so the kubelet restarts
+              # the sidecar onto the new one.
+              command: ["/bin/sh", "-c", "touch /tmp/started && exec /bin/clickhouse-backup server"]
+              livenessProbe:
+                exec:
+                  command: ["/bin/sh", "-c", "[ ! {{ $tlsDir }}/..data -nt /tmp/started ]"]
+                initialDelaySeconds: 60
+                periodSeconds: 60
+                failureThreshold: 1
+              {{- else }}
+              args: ["server"]
+              {{- end }}
+              ports:
+                - name: backup-api
+                  containerPort: 7171
+              env:
+                - name: CLICKHOUSE_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: username
+                - name: CLICKHOUSE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: password
+                {{- if .Values.tls.enabled }}
+                # The server over TLS on localhost, verified against the CA.
+                - name: CLICKHOUSE_PORT
+                  value: "9440"
+                - name: CLICKHOUSE_SECURE
+                  value: "true"
+                - name: CLICKHOUSE_TLS_CA
+                  value: {{ printf "%s/ca.crt" $tlsDir | quote }}
+                {{- end }}
+                - name: API_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: username
+                - name: API_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.users.admin.secret }}
+                      key: password
+                - name: API_LISTEN
+                  value: "0.0.0.0:7171"
+                {{- if .Values.tls.enabled }}
+                - name: API_SECURE
+                  value: "true"
+                - name: API_CERTIFICATE_FILE
+                  value: {{ printf "%s/tls.crt" $tlsDir | quote }}
+                - name: API_PRIVATE_KEY_FILE
+                  value: {{ printf "%s/tls.key" $tlsDir | quote }}
+                {{- end }}
+                - name: API_CREATE_INTEGRATION_TABLES
+                  value: "true"
+                - name: ALLOW_EMPTY_BACKUPS
+                  value: "true"
+                - name: REMOTE_STORAGE
+                  value: s3
+                - name: S3_BUCKET
+                  value: {{ .Values.s3.bucket | quote }}
+                - name: S3_REGION
+                  value: {{ .Values.s3.region | quote }}
+                # The bucket enforces object ownership, so no ACL is sent.
+                - name: S3_ACL
+                  value: ""
+                # One path per installation and shard; {cluster} and {shard}
+                # are server macros.
+                - name: S3_PATH
+                  value: {{ printf "backup/%s/{cluster}/{shard}" .Values.backup.pathPrefix | quote }}
+                - name: S3_OBJECT_DISK_PATH
+                  value: {{ printf "backup-object-disks/%s/{cluster}/{shard}" .Values.backup.pathPrefix | quote }}
+                - name: BACKUPS_TO_KEEP_REMOTE
+                  value: {{ .Values.backup.retentionCount | int64 | quote }}
+              resources:
+                {{- toYaml .Values.backup.resources | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/clickhouse
+                {{- if .Values.tls.enabled }}
+                - name: tls
+                  mountPath: {{ $tlsDir }}
+                  readOnly: true
+                {{- end }}
+            {{- end }}
+    {{- if .Values.tls.enabled }}
+    # Replaces the operator's default Service of the same name, so it carries
+    # the TLS ports (and drops the plaintext ones once they are closed).
+    serviceTemplates:
+      - name: clickhouse
+        spec:
+          type: ClusterIP
+          clusterIP: None
+          ports:
+            {{- if $plaintext }}
+            - name: http
+              port: 8123
+              targetPort: 8123
+              protocol: TCP
+            - name: tcp
+              port: 9000
+              targetPort: 9000
+              protocol: TCP
+            {{- end }}
+            - name: https
+              port: 8443
+              targetPort: 8443
+              protocol: TCP
+            - name: secureclient
+              port: 9440
+              targetPort: 9440
+              protocol: TCP
+    {{- end }}
+    volumeClaimTemplates:
+      - name: data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: {{ .Values.storage.storageClassName }}
+          resources:
+            requests:
+              storage: {{ .Values.clickhouse.volumeSize }}

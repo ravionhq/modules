@@ -1,0 +1,130 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+Once a policy selects a pod, Kubernetes drops the ingress no policy allows.
+These select only the Temporal release's pods. Its services reach each other
+on every port; membership, history and matching ports are closed to everything
+else. Enforcement needs a CNI that implements NetworkPolicy, such as the
+Amazon VPC CNI with network policy turned on.
+*/ -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $name := .Values.temporal.releaseName -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-internal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "temporal-resources.temporalSelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "temporal-resources.temporalSelector" . | nindent 14 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "temporal-resources.temporalSelector" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 7233
+          protocol: TCP
+        - port: 7243
+          protocol: TCP
+      from:
+        {{- include "temporal-resources.namespacePeers" $np.frontendClientNamespaces | nindent 8 }}
+        {{- range $np.frontendClientCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "temporal-resources.temporalSelector" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        {{- include "temporal-resources.namespacePeers" $np.webClientNamespaces | nindent 8 }}
+        {{- range $np.webClientCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "temporal-resources.temporalSelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 9090
+          protocol: TCP
+      from:
+        {{- include "temporal-resources.namespacePeers" $np.metricsNamespaces | nindent 8 }}
+        {{- if .Values.metrics.otlp.enabled }}
+        - podSelector:
+            matchLabels:
+              {{- include "temporal-resources.metricsSelector" . | nindent 14 }}
+        {{- end }}
+{{- if .Values.jwks.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.jwks.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "temporal-resources.jwksSelector" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              {{- include "temporal-resources.temporalSelector" . | nindent 14 }}
+{{- end }}
+{{- end }}

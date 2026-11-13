@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.3.0
-  description: Alarm when targets behind the shared ALBs fail health checks, and send ALB alarms to the actions you choose.
+  version: 1.4.0
+  description: Mimir's distributors compress what they send to ingesters with snappy, cutting the inter-zone traffic of the write path several times over.
 module:
   inputs:
     - id: cluster

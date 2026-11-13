@@ -1,0 +1,15 @@
+region: us-east-2
+secrets:
+  - name: analytics-admin
+    remoteKey: clickhouse/test-cluster/analytics/analytics/admin
+tls:
+  enabled: true
+  installation: analytics
+  caSource: issuer
+  issuerRef:
+    name: private-ca
+    kind: AWSPCAClusterIssuer
+    group: awspca.cert-manager.io
+  serverSecretName: analytics-server-tls
+  dnsNames:
+    - clickhouse-analytics.analytics.svc.cluster.local

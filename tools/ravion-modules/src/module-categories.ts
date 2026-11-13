@@ -28,7 +28,7 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Worker",
     description: "For queue consumers, scheduled jobs, and background processes without public endpoints.",
     sortOrder: 30,
-    definitionTypes: ["rvn-ec2-service", "rvn-ecs-jobs", "rvn-ecs-worker", "rvn-eks-cron", "rvn-eks-worker"],
+    definitionTypes: ["rvn-ec2-service", "rvn-ecs-jobs", "rvn-ecs-worker", "rvn-eks-cron", "rvn-eks-worker", "rvn-aws-temporal"],
   },
   {
     givenId: "function",
@@ -47,9 +47,9 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
   {
     givenId: "database",
     name: "Database",
-    description: "For relational data such as PostgreSQL or MySQL, including connection pooling.",
+    description: "For relational data such as PostgreSQL or MySQL, including connection pooling, and analytical data such as ClickHouse.",
     sortOrder: 60,
-    definitionTypes: ["rvn-aurora", "rvn-planetscale-vitess", "rvn-rds", "rvn-rds-proxy"],
+    definitionTypes: ["rvn-aurora", "rvn-aws-clickhouse", "rvn-planetscale-vitess", "rvn-rds", "rvn-rds-proxy"],
   },
   {
     givenId: "cache",

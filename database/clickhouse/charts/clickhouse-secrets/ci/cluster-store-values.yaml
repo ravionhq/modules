@@ -1,0 +1,8 @@
+region: us-east-2
+store:
+  create: false
+  name: shared-aws-secrets
+  kind: ClusterSecretStore
+secrets:
+  - name: analytics-reader
+    remoteKey: clickhouse/test-cluster/analytics/analytics/reader

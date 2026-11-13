@@ -7,6 +7,8 @@ on:
     paths:
       - 'charts/**'
       - 'compute/eks/addons/charts/**'
+      - 'compute/eks/temporal/charts/**'
+      - 'database/clickhouse/charts/**'
       - 'compute/eks/addons/mimir.tf'
       - 'compute/eks/addons/variables.tf'
       - 'compute/eks/addons/tests/test_mimir_chart_placement.py'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'charts/**'
       - 'compute/eks/addons/charts/**'
+      - 'compute/eks/temporal/charts/**'
+      - 'database/clickhouse/charts/**'
       - 'compute/eks/addons/mimir.tf'
       - 'compute/eks/addons/variables.tf'
       - 'compute/eks/addons/tests/test_mimir_chart_placement.py'

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration temporal-resources clickhouse-cluster clickhouse-secrets)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -40,6 +40,8 @@ done
 chart_path() {
   case "$1" in
     karpenter-resources | warm-capacity | ebs-storage | thanos | statefulset-volume-migration) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    temporal-resources) echo "${CHARTS_DIR}/../compute/eks/temporal/charts/$1" ;;
+    clickhouse-cluster | clickhouse-secrets) echo "${CHARTS_DIR}/../database/clickhouse/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -1151,6 +1153,288 @@ test_ebs_storage() {
     "$(count "${class_only}" StorageClass) $(count "${class_only}" MutatingAdmissionPolicy) $(count "${class_only}" Deployment)"
 }
 
+test_clickhouse_cluster() {
+  local chart=clickhouse-cluster
+  local ci default full minimal prefixed nodes chi chk
+  ci="$(chart_path "${chart}")/ci"
+  default="$(render "${chart}" default -n analytics -f "${ci}/default-values.yaml")"
+  full="$(render "${chart}" full -n analytics -f "${ci}/full-values.yaml")"
+  minimal="$(render "${chart}" minimal -n dev -f "${ci}/minimal-values.yaml")"
+  prefixed="$(render "${chart}" prefixed -n analytics -f "${ci}/default-values.yaml" --set backup.pathPrefix=team-a/analytics)"
+  nodes="$(render "${chart}" nodes -n analytics -f "${ci}/default-values.yaml" --set placement.nodeSpread=required)"
+  chi='.[] | select(.kind == "ClickHouseInstallation")'
+  chk='.[] | select(.kind == "ClickHouseKeeperInstallation")'
+
+  assert_eq "${chart}: installation uses its own Keeper" \
+    "analytics-keeper" \
+    "$(q "${default}" "${chi} | .spec.configuration.zookeeper.keeper.name")"
+  assert_eq "${chart}: default layout is one shard of two replicas and three Keeper nodes" \
+    "1 2 3" \
+    "$(q "${default}" "${chi} | .spec.configuration.clusters[0].layout.shardsCount") $(q "${default}" "${chi} | .spec.configuration.clusters[0].layout.replicasCount") $(q "${default}" "${chk} | .spec.configuration.clusters[0].layout.replicasCount")"
+  assert_eq "${chart}: passwords come from Secrets, never values" \
+    "analytics-admin analytics-writer analytics-reader" \
+    "$(q "${default}" "${chi} | .spec.configuration.users[\"admin/password\"].valueFrom.secretKeyRef.name") $(q "${default}" "${chi} | .spec.configuration.users[\"writer/password\"].valueFrom.secretKeyRef.name") $(q "${default}" "${chi} | .spec.configuration.users[\"reader/password\"].valueFrom.secretKeyRef.name")"
+  assert_eq "${chart}: writer and reader are scoped to the database" \
+    'GRANT SELECT, SHOW, dictGet ON `events`.*' \
+    "$(q "${default}" "${chi} | .spec.configuration.users[\"reader/grants/query\"][0]")"
+  assert_eq "${chart}: reader limits refuse 0 (unlimited)" \
+    "2 1 60" \
+    "$(q "${default}" "${chi} | .spec.configuration.profiles[\"reader/readonly\"]") $(q "${default}" "${chi} | .spec.configuration.profiles[\"reader/constraints/max_execution_time/min\"]") $(q "${default}" "${chi} | .spec.configuration.profiles[\"reader/constraints/max_execution_time/max\"]")"
+  assert_eq "${chart}: operator grows and keeps volumes" \
+    "Operator Retain Operator Retain" \
+    "$(q "${default}" "${chi} | .spec.defaults.storageManagement.provisioner") $(q "${default}" "${chi} | .spec.defaults.storageManagement.reclaimPolicy") $(q "${default}" "${chk} | .spec.defaults.storageManagement.provisioner") $(q "${default}" "${chk} | .spec.defaults.storageManagement.reclaimPolicy")"
+  assert_eq "${chart}: cold tier points at the bucket's cold prefix" \
+    "1" \
+    "$(q "${default}" "${chi} | .spec.configuration.files[\"config.d/cold_storage.xml\"] | test(\"https://analytics-clickhouse-example.s3.us-east-2.amazonaws.com/cold/\") | select(.) | 1")"
+  assert_eq "${chart}: backup sidecar shares the data volume and writes per installation and shard" \
+    "/var/lib/clickhouse backup/clickhouse/{cluster}/{shard}" \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].volumeMounts[0].mountPath") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_PATH\") | .value")"
+  assert_eq "${chart}: a backup run is bounded and fails instead of holding later runs" \
+    "0 21900 21600 Forbid" \
+    "$(q "${default}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.backoffLimit') $(q "${default}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.activeDeadlineSeconds') $(q "${default}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].env[] | select(.name == "TIMEOUT") | .value') $(q "${default}" '.[] | select(.kind == "CronJob") | .spec.concurrencyPolicy')"
+  assert_eq "${chart}: the backup script bounds every request and status polling" \
+    "1 1 1" \
+    "$(q "${default}" '.[] | select(.kind == "ConfigMap" and .metadata.name == "analytics-backup") | .data["backup.sh"] | test("--max-time 60") | select(.) | 1') $(q "${default}" '.[] | select(.kind == "ConfigMap" and .metadata.name == "analytics-backup") | .data["backup.sh"] | test("deadline") | select(.) | 1') $(q "${default}" '.[] | select(.kind == "ConfigMap" and .metadata.name == "analytics-backup") | .data["backup.sh"] | test("status_errors\" -ge 20") | select(.) | 1')"
+  assert_eq "${chart}: a backup path prefix keeps installations apart in a shared bucket" \
+    "backup/team-a/analytics/{cluster}/{shard} backup-object-disks/team-a/analytics/{cluster}/{shard}" \
+    "$(q "${prefixed}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_PATH\") | .value") $(q "${prefixed}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_OBJECT_DISK_PATH\") | .value")"
+  assert_eq "${chart}: by default replicas of a shard and Keeper nodes prefer separate nodes, so two nodes are enough" \
+    "kubernetes.io/hostname clickhouse.altinity.com/shard  kubernetes.io/hostname " \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.matchLabelKeys[0]") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution")"
+  assert_eq "${chart}: required node spread never puts them on one node" \
+    "kubernetes.io/hostname clickhouse.altinity.com/shard  kubernetes.io/hostname " \
+    "$(q "${nodes}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${nodes}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys[0]") $(q "${nodes}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution") $(q "${nodes}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${nodes}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution")"
+  assert_eq "${chart}: required zone spread keeps them in separate zones and still prefers separate nodes" \
+    "topology.kubernetes.io/zone topology.kubernetes.io/zone kubernetes.io/hostname" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey")"
+  assert_eq "${chart}: replicas of a shard spread across zones and never share a node" \
+    "ScheduleAnyway DoNotSchedule clickhouse.altinity.com/shard" \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[1].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].matchLabelKeys[0]")"
+  assert_eq "${chart}: defaults render a backup CronJob and a database Job, nothing optional" \
+    "1 1 0 0 0 0 0" \
+    "$(count "${default}" CronJob) $(count "${default}" Job) $(count "${default}" NetworkPolicy) $(count "${default}" PodMonitor) $(count "${default}" NodePool) $(count "${default}" PriorityClass) $(count "${default}" Deployment)"
+
+  assert_eq "${chart}: required zone spread refuses a second replica in a zone" \
+    "DoNotSchedule" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].whenUnsatisfiable")"
+  assert_eq "${chart}: dedicated pool pins and tolerates" \
+    "analytics-analytics-clickhouse clickhouse.ravion.com/dedicated" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.nodeSelector[\"karpenter.sh/nodepool\"]") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.tolerations[0].key")"
+  assert_eq "${chart}: optional resources render when enabled" \
+    "2 3 1 1 1" \
+    "$(count "${full}" NetworkPolicy) $(count "${full}" PodMonitor) $(count "${full}" NodePool) $(count "${full}" PriorityClass) $(count "${full}" Deployment)"
+  assert_eq "${chart}: allowed namespaces reach only HTTP and native" \
+    "apps,jobs 8123,9000" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].from[0].namespaceSelector.matchExpressions[0].values | join(",")') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].ports | map(.port) | join(",")')"
+  assert_eq "${chart}: Atomic database is created ON CLUSTER" \
+    "Atomic" \
+    "$(q "${full}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "ENGINE") | .value')"
+
+  assert_eq "${chart}: without a bucket there is no backup, cold tier or database job" \
+    "0 0  1" \
+    "$(count "${minimal}" CronJob) $(count "${minimal}" Job) $(q "${minimal}" "${chi} | .spec.configuration.files") $(q "${minimal}" "${chi} | .spec.templates.podTemplates[0].spec.containers | length")"
+
+  local tls keep_plain
+  tls="$(render "${chart}" tls -n analytics -f "${ci}/tls-values.yaml")"
+  keep_plain="$(render "${chart}" tls-plain -n analytics -f "${ci}/full-values.yaml" --set tls.enabled=true)"
+
+  assert_eq "${chart}: TLS off renders no certificates, service template or cluster security" \
+    "0 0  " \
+    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(q "${default}" "${chi} | .spec.templates.serviceTemplates") $(q "${default}" "${chi} | .spec.configuration.clusters[0].security")"
+  assert_eq "${chart}: TLS opens 9440 and 8443 and marks the cluster secure" \
+    "9440 8443 yes" \
+    "$(q "${tls}" "${chi} | .spec.configuration.settings.tcp_port_secure") $(q "${tls}" "${chi} | .spec.configuration.settings.https_port") $(q "${tls}" "${chi} | .spec.configuration.clusters[0].secure")"
+  assert_eq "${chart}: the operator verifies the servers against the certificate Secret's CA" \
+    "Strict analytics-server-tls ca.crt" \
+    "$(q "${tls}" "${chi} | .spec.configuration.clusters[0].security.clickhouse.tls.verify") $(q "${tls}" "${chi} | .spec.configuration.clusters[0].security.clickhouse.tls.rootCASecretRef.name") $(q "${tls}" "${chi} | .spec.configuration.clusters[0].security.clickhouse.tls.rootCASecretRef.key")"
+  assert_eq "${chart}: openSSL serves the mounted certificate and trusts the CA as a client" \
+    "1 1" \
+    "$(q "${tls}" "${chi} | .spec.configuration.files[\"config.d/tls.xml\"] | test(\"<certificateFile>/etc/clickhouse-server/tls/tls.crt</certificateFile>\") | select(.) | 1") $(q "${tls}" "${chi} | .spec.configuration.files[\"config.d/tls.xml\"] | test(\"<caConfig>/etc/clickhouse-server/tls/ca.crt</caConfig>\") | select(.) | 1")"
+  assert_eq "${chart}: TLS keeps the cold tier config beside it" \
+    "1" \
+    "$(q "${tls}" "${chi} | .spec.configuration.files | has(\"config.d/cold_storage.xml\") | select(.) | 1")"
+  assert_eq "${chart}: certificate Secret is mounted as a directory in the server and backup sidecar" \
+    "analytics-server-tls /etc/clickhouse-server/tls /etc/clickhouse-server/tls" \
+    "$(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.volumes[] | select(.name == \"tls\") | .secret.secretName") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[0].volumeMounts[] | select(.name == \"tls\") | .mountPath") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].volumeMounts[] | select(.name == \"tls\") | .mountPath")"
+  assert_eq "${chart}: backup sidecar reaches the server over TLS on 9440" \
+    "9440 true /etc/clickhouse-server/tls/ca.crt" \
+    "$(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"CLICKHOUSE_PORT\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"CLICKHOUSE_SECURE\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"CLICKHOUSE_TLS_CA\") | .value")"
+  assert_eq "${chart}: backup sidecar serves its API over HTTPS and restarts after a renewal" \
+    "true /etc/clickhouse-server/tls/tls.crt 1 1" \
+    "$(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"API_SECURE\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"API_CERTIFICATE_FILE\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].livenessProbe.exec.command[2] | test(\"-nt /tmp/started\") | select(.) | 1") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].command[2] | test(\"touch /tmp/started\") | select(.) | 1")"
+  assert_eq "${chart}: backup job calls the API over HTTPS with only the CA mounted" \
+    "https --cacert /tls/ca.crt ca.crt" \
+    "$(q "${tls}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].env[] | select(.name == "SCHEME") | .value') $(q "${tls}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].env[] | select(.name == "CURL_TLS") | .value') $(q "${tls}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.volumes[] | select(.name == "tls-ca") | .secret.items | map(.key) | join(",")')"
+  assert_eq "${chart}: closing plaintext marks the cluster insecure no and drops 8123 and 9000 from the Service" \
+    "no clickhouse 8443,9440 None" \
+    "$(q "${tls}" "${chi} | .spec.configuration.clusters[0].insecure") $(q "${tls}" "${chi} | .spec.defaults.templates.serviceTemplate") $(q "${tls}" "${chi} | .spec.templates.serviceTemplates[0].spec.ports | map(.port) | join(\",\")") $(q "${tls}" "${chi} | .spec.templates.serviceTemplates[0].spec.clusterIP")"
+  assert_eq "${chart}: internal TLS moves replication to interserver HTTPS on 9010 named after each replica's Service" \
+    "_removed_ 9010 9010 chi-analytics-main-\$(CLICKHOUSE_SHARD)-\$(CLICKHOUSE_REPLICA) 1" \
+    "$(q "${tls}" "${chi} | .spec.configuration.settings.interserver_http_port") $(q "${tls}" "${chi} | .spec.configuration.settings.interserver_https_port") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[0].ports[] | select(.name == \"interserver-tls\") | .containerPort") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[0].env[] | select(.name == \"CLICKHOUSE_INTERSERVER_HOST\") | .value") $(q "${tls}" "${chi} | .spec.configuration.files[\"config.d/interserver_tls.xml\"] | test(\"from_env=.CLICKHOUSE_INTERSERVER_HOST.\") | select(.) | 1")"
+  assert_eq "${chart}: internal TLS points ClickHouse at each Keeper node's TLS client port" \
+    "3 chk-analytics-keeper-keeper-0-2-client 2281 yes " \
+    "$(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes | length") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes[2].host") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes[0].port") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes[0].secure") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.keeper")"
+  assert_eq "${chart}: internal TLS runs Keeper secure with the mounted certificate" \
+    "yes analytics-server-tls 1" \
+    "$(q "${tls}" "${chk} | .spec.configuration.clusters[0].secure") $(q "${tls}" "${chk} | .spec.templates.podTemplates[0].spec.volumes[0].secret.secretName") $(q "${tls}" "${chk} | .spec.configuration.files[\"config.d/tls.xml\"] | test(\"<caConfig>/etc/clickhouse-server/tls/ca.crt</caConfig>\") | select(.) | 1")"
+  assert_eq "${chart}: client namespaces reach only the TLS ports once plaintext is closed" \
+    "8443,9440 8443,9440" \
+    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[0].ports | map(.port) | join(",")') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].ports | map(.port) | join(",")')"
+  assert_eq "${chart}: replicas reach each other only on interserver HTTPS, and 7171 only from the backup job and the operator" \
+    "9010 backup analytics-operator 7171" \
+    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports[0].port') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[2].from[0].podSelector.matchLabels["app.kubernetes.io/component"]') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[2].from[1].podSelector.matchLabels["app.kubernetes.io/instance"]') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[2].ports[0].port')"
+  assert_eq "${chart}: with internal TLS ClickHouse reaches Keeper only on 2281, the operator on both client ports" \
+    "2281 2181,2281" \
+    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-keeper") | .spec.ingress[1].ports | map(.port) | join(",")') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-keeper") | .spec.ingress[2].ports | map(.port) | join(",")')"
+  assert_eq "${chart}: without internal TLS replication stays on 9009 and Keeper is found by reference" \
+    "9009 analytics-keeper 8123,9000,8443,9440" \
+    "$(q "${keep_plain}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports[0].port') $(q "${keep_plain}" "${chi} | .spec.configuration.zookeeper.keeper.name") $(q "${keep_plain}" "${chi} | .spec.templates.serviceTemplates[0].spec.ports | map(.port) | join(\",\")")"
+}
+
+test_clickhouse_secrets() {
+  local chart=clickhouse-secrets
+  local ci default store tls issuer secret_ca
+  ci="$(chart_path "${chart}")/ci"
+  default="$(render "${chart}" default -f "${ci}/default-values.yaml")"
+  store="$(render "${chart}" store -f "${ci}/cluster-store-values.yaml")"
+  tls="$(render "${chart}" tls -n analytics -f "${ci}/tls-values.yaml")"
+  issuer="$(render "${chart}" tls-issuer -n analytics -f "${ci}/tls-issuer-values.yaml")"
+  secret_ca="$(render "${chart}" tls-secret -n analytics -f "${ci}/tls-values.yaml" --set tls.caSource=secret --set tls.caSecretName=corp-ca)"
+
+  assert_eq "${chart}: one ExternalSecret per user through a namespaced SecretStore" \
+    "1 2 SecretStore" \
+    "$(count "${default}" SecretStore) $(count "${default}" ExternalSecret) $(q "${default}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.kind' | head -1)"
+  assert_eq "${chart}: Secrets survive their ExternalSecret" \
+    "Retain" \
+    "$(q "${default}" '.[] | select(.kind == "ExternalSecret") | .spec.target.deletionPolicy' | head -1)"
+  assert_eq "${chart}: a named ClusterSecretStore is used, not created" \
+    "0 ClusterSecretStore shared-aws-secrets" \
+    "$(count "${store}" SecretStore) $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.kind') $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.name')"
+  assert_eq "${chart}: TLS off renders no certificates" \
+    "0 0 0" \
+    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(q "${default}" '[.[] | select(.kind == "Job" and .metadata.labels["app.kubernetes.io/component"] == "tls")] | length')"
+  assert_eq "${chart}: self-signed CA bootstraps a CA Issuer that signs the server certificate" \
+    "2 2 analytics-ca-bootstrap analytics-ca" \
+    "$(count "${tls}" Certificate) $(count "${tls}" Issuer) $(q "${tls}" '.[] | select(.kind == "Certificate" and .spec.isCA) | .spec.issuerRef.name') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.issuerRef.name')"
+  assert_eq "${chart}: server certificate takes its names from the values, the first as common name" \
+    "clickhouse-analytics.analytics.svc.cluster.local 3 server auth" \
+    "$(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.commonName') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames | length') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.usages[1]')"
+  assert_eq "${chart}: a hook job holds the release until the certificate Secret exists" \
+    "post-install,post-upgrade analytics-server-tls" \
+    "$(q "${tls}" '.[] | select(.kind == "Job" and .metadata.labels["app.kubernetes.io/component"] == "tls") | .metadata.annotations["helm.sh/hook"]') $(q "${tls}" '.[] | select(.kind == "Job" and .metadata.labels["app.kubernetes.io/component"] == "tls") | .spec.template.spec.volumes[0].secret.secretName')"
+  assert_eq "${chart}: a hook job holds the release until every Secret holds the expected version" \
+    "post-install,post-upgrade 2 secret_version 1" \
+    "$(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .metadata.annotations["helm.sh/hook"]') $(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .spec.template.spec.volumes | length') $(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .spec.template.spec.volumes[0].secret.items[0].key') $(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .spec.template.spec.containers[0].env[] | select(.name == "EXPECTED") | .value')"
+  assert_eq "${chart}: an existing issuer signs the server certificate with no CA of its own" \
+    "1 0 private-ca AWSPCAClusterIssuer awspca.cert-manager.io" \
+    "$(count "${issuer}" Certificate) $(count "${issuer}" Issuer) $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.name') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.kind') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.group')"
+  assert_eq "${chart}: an existing CA secret backs the chart's CA Issuer" \
+    "1 1 corp-ca" \
+    "$(count "${secret_ca}" Certificate) $(count "${secret_ca}" Issuer) $(q "${secret_ca}" '.[] | select(.kind == "Issuer") | .spec.ca.secretName')"
+
+  expect_template_failure "${chart}" "${chart}: rejects an unknown CA source" \
+    -f "${ci}/tls-values.yaml" --set tls.caSource=acme
+  expect_template_failure "${chart}" "${chart}: rejects the issuer CA source without an issuer name" \
+    -f "${ci}/tls-values.yaml" --set tls.caSource=issuer
+  expect_template_failure "${chart}" "${chart}: rejects a certificate without names" \
+    -f "${ci}/tls-values.yaml" --set tls.dnsNames=null
+}
+
+################################################################################
+# temporal-resources (compute/eks/temporal)
+################################################################################
+
+test_temporal_resources() {
+  local chart="temporal-resources"
+  local default full existing issuer secret_ca deploy jwks
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  full="$(render "${chart}" full --values "$(chart_path "${chart}")/ci/full-values.yaml")"
+  existing="$(render "${chart}" existing --values "$(chart_path "${chart}")/ci/existing-secret-values.yaml")"
+  issuer="$(render "${chart}" issuer --values "$(chart_path "${chart}")/ci/issuer-ca-values.yaml")"
+  secret_ca="$(render "${chart}" secret-ca --values "$(chart_path "${chart}")/ci/secret-ca-values.yaml")"
+  deploy='.[] | select(.kind == "Deployment" and .metadata.name == "temporal-metrics") | .spec.template.spec'
+  jwks='.[] | select(.kind == "Deployment" and .metadata.name == "temporal-jwks") | .spec.template.spec'
+
+  assert_eq "${chart}: defaults render the password ExternalSecret and the RDS CA bundle only" \
+    "1 1 0 0 0" \
+    "$(count "${default}" ExternalSecret) $(count "${default}" ConfigMap) $(count "${default}" NetworkPolicy) $(count "${default}" Certificate) $(count "${default}" Deployment)"
+  assert_eq "${chart}: the ExternalSecret reads the password key of the given secret" \
+    "temporal-db password arn:aws:secretsmanager:us-east-1:123456789012:secret:example-db-AbCdEf password" \
+    "$(q "${default}" '.[] | select(.kind == "ExternalSecret") | [.spec.target.name, .spec.data[0].secretKey, .spec.data[0].remoteRef.key, .spec.data[0].remoteRef.property] | join(" ")')"
+  assert_eq "${chart}: the CA bundle ships the RDS certificates" \
+    "true" \
+    "$(q "${default}" '.[] | select(.kind == "ConfigMap") | .data."rds-global-bundle.pem" | test("BEGIN CERTIFICATE")')"
+  assert_eq "${chart}: an existing Secret renders nothing" \
+    "0" "$(q "${existing}" 'length')"
+  expect_template_failure "${chart}" "${chart}: the ExternalSecret requires a secret" \
+    --set database.externalSecret.remoteSecretName=
+  assert_eq "${chart}: TLS issues a CA and two leaf certificates from a namespaced Issuer" \
+    "3 2 temporal-ca" \
+    "$(count "${full}" Certificate) $(count "${full}" Issuer) $(q "${full}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | .spec.issuerRef.name')"
+  assert_eq "${chart}: leaf certificates carry server and client auth" \
+    "server auth,client auth" \
+    "$(q "${full}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-internode-tls") | [.spec.usages[2], .spec.usages[3]] | join(",")')"
+  expect_template_failure "${chart}" "${chart}: TLS requires certificate names" \
+    --set tls.enabled=true
+  assert_eq "${chart}: the NodePool is on-demand, tainted and never expires nodes" \
+    "on-demand ravion.com/dedicated Never 1" \
+    "$(q "${full}" '.[] | select(.kind == "NodePool") | [(.spec.template.spec.requirements[] | select(.key == "karpenter.sh/capacity-type") | .values[0]), .spec.template.spec.taints[0].key, .spec.template.spec.expireAfter, .spec.disruption.budgets[0].nodes] | join(" ")')"
+  assert_eq "${chart}: network policies select only the Temporal release and the key server" \
+    "5 temporal" \
+    "$(count "${full}" NetworkPolicy) $(q "${full}" '[.[] | select(.kind == "NetworkPolicy" and .metadata.name != "temporal-jwks") | .spec.podSelector.matchLabels."app.kubernetes.io/instance"] | unique | join(",")')"
+  assert_eq "${chart}: listed client namespaces and CIDRs reach the frontend and Web UI" \
+    "apps 10.0.0.0/16" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-frontend") | .spec.ingress[0].from[0].namespaceSelector.matchLabels."kubernetes.io/metadata.name"') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-web") | .spec.ingress[0].from[1].ipBlock.cidr')"
+  assert_eq "${chart}: the metrics forwarder runs non-root on the dedicated nodes" \
+    "true true temporal temporal-critical" \
+    "$(q "${full}" "${deploy} | .securityContext.runAsNonRoot") $(q "${full}" "${deploy} | .containers[0].securityContext.readOnlyRootFilesystem") $(q "${full}" "${deploy} | .nodeSelector.\"karpenter.sh/nodepool\"") $(q "${full}" "${deploy} | .priorityClassName")"
+  expect_template_failure "${chart}" "${chart}: the metrics forwarder requires an endpoint" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set metrics.otlp.enabled=true
+
+  # Certificate authority choices.
+  assert_eq "${chart}: an existing issuer signs the leaves, with no CA or Issuer created" \
+    "2 0 example-pca AWSPCAClusterIssuer awspca.cert-manager.io" \
+    "$(count "${issuer}" Certificate) $(count "${issuer}" Issuer) $(q "${issuer}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | [.spec.issuerRef.name, .spec.issuerRef.kind, .spec.issuerRef.group] | join(" ")')"
+  assert_eq "${chart}: an existing CA Secret backs the module's Issuer" \
+    "2 1 my-ca-key-pair temporal-ca" \
+    "$(count "${secret_ca}" Certificate) $(count "${secret_ca}" Issuer) $(q "${secret_ca}" '.[] | select(.kind == "Issuer") | .spec.ca.secretName') $(q "${secret_ca}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | .spec.issuerRef.name')"
+  expect_template_failure "${chart}" "${chart}: an issuer CA requires an issuer name" \
+    --values "$(chart_path "${chart}")/ci/issuer-ca-values.yaml" --set tls.issuerRef.name=
+
+  # JWT key server.
+  assert_eq "${chart}: the key server serves the synced JWKS non-root and read-only" \
+    "jwks.json temporal-jwks true true" \
+    "$(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-jwks") | .spec.data[0].secretKey') $(q "${full}" "${jwks} | .volumes[0].secret.secretName") $(q "${full}" "${jwks} | .securityContext.runAsNonRoot") $(q "${full}" "${jwks} | .containers[0].securityContext.readOnlyRootFilesystem")"
+  assert_eq "${chart}: only the Temporal release reaches the key server" \
+    "temporal" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-jwks") | .spec.ingress[0].from[0].podSelector.matchLabels."app.kubernetes.io/instance"')"
+  expect_template_failure "${chart}" "${chart}: the key server requires a secret" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set jwks.enabled=true
+
+  # Secrets for the frontend, the server pods and the Web UI.
+  assert_eq "${chart}: frontend environment, server files and the OIDC client are synced" \
+    "CLAIM_MAPPER_SETTING:setting file-0: TEMPORAL_AUTH_CLIENT_ID:client_id,TEMPORAL_AUTH_CLIENT_SECRET:client_secret" \
+    "$(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-frontend-env") | [.spec.data[] | .secretKey + ":" + (.remoteRef.property // "")] | join(",")') $(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-server-files") | [.spec.data[] | .secretKey + ":" + (.remoteRef.property // "")] | join(",")') $(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-web-oidc") | [.spec.data[] | .secretKey + ":" + .remoteRef.property] | join(",")')"
+  expect_template_failure "${chart}" "${chart}: OIDC requires a client secret" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set webOidc.enabled=true
+
+  # Exposure.
+  assert_eq "${chart}: the frontend NLB is internal, IP-targeted, client-preserving and source-limited" \
+    "service.k8s.aws/nlb internal ip preserve_client_ip.enabled=true 10.10.0.0/16 frontend" \
+    "$(q "${full}" '.[] | select(.kind == "Service" and .metadata.name == "temporal-frontend-nlb") | [.spec.loadBalancerClass, .metadata.annotations."service.beta.kubernetes.io/aws-load-balancer-scheme", .metadata.annotations."service.beta.kubernetes.io/aws-load-balancer-nlb-target-type", .metadata.annotations."service.beta.kubernetes.io/aws-load-balancer-target-group-attributes", .spec.loadBalancerSourceRanges[0], .spec.selector."app.kubernetes.io/component"] | join(" ")')"
+  expect_template_failure "${chart}" "${chart}: the NLB requires source ranges" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set frontendNlb.enabled=true
+  assert_eq "${chart}: the frontend is a tagged tailnet device on port 7233" \
+    "tailscale workflows-grpc tag:workflows-grpc 7233" \
+    "$(q "${full}" '.[] | select(.kind == "Service" and .metadata.name == "temporal-frontend-tailscale") | [.spec.loadBalancerClass, .metadata.annotations."tailscale.com/hostname", .metadata.annotations."tailscale.com/tags", .spec.ports[0].port] | join(" ")')"
+  assert_eq "${chart}: the Web UI is a tagged Tailscale Ingress with HTTPS" \
+    "tailscale temporal temporal-web tag:workflows-ui" \
+    "$(q "${full}" '.[] | select(.kind == "Ingress") | [.spec.ingressClassName, .spec.tls[0].hosts[0], .spec.defaultBackend.service.name, .metadata.annotations."tailscale.com/tags"] | join(" ")')"
+  assert_eq "${chart}: the NLB's sources reach the frontend through the network policy" \
+    "10.10.0.0/16,10.0.1.0/24" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-frontend") | [.spec.ingress[0].from[] | select(.ipBlock) | .ipBlock.cidr] | join(",")')"
+}
+
 ################################################################################
 
 for chart in "${CHARTS[@]}"; do
@@ -1165,6 +1449,9 @@ for chart in "${CHARTS[@]}"; do
     ebs-storage) test_ebs_storage ;;
     thanos) test_thanos ;;
     statefulset-volume-migration) test_statefulset_volume_migration ;;
+    temporal-resources) test_temporal_resources ;;
+    clickhouse-cluster) test_clickhouse_cluster ;;
+    clickhouse-secrets) test_clickhouse_secrets ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1
