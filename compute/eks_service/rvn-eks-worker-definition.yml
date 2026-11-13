@@ -4,8 +4,8 @@ definition:
   name: EKS Worker
   description: Background worker on EKS for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.1.0
-  description: Stop a crashing rollout from replacing healthy pods. New pods must stay ready for a minimum time before they count as available, and workers that serve an HTTP health endpoint can gate rollouts on it.
+  version: 1.2.0
+  description: Require selected pipeline-provided environment variables on every deploy.
 module:
   inputs:
     - id: section_cluster
@@ -432,6 +432,8 @@ module:
 
     Use **Deploy-provided environment variables** to allow a pipeline deploy step to set selected plain values. They cannot replace a Runtime environment variable or Runtime secret.
 
+    Set `deploy_environment_variable_required_names` to names such as `RELEASE_ID` to require every pipeline deploy to supply exactly one non-empty value for each name. Required names are also allowed for deploy-time injection and cannot replace a Runtime environment variable or Runtime secret.
+
     Use **Runtime secrets** for sensitive values, as an array of `{name, value_from}` objects - the same shape as ECS. `value_from` must be a full Secrets Manager or SSM Parameter Store ARN, including the JSON-key extraction suffix when you want a single key out of a JSON secret.
 
     Ravion never reads these values. The ARNs travel to the chart as references, the chart renders an `ExternalSecret`, and the External Secrets Operator materializes the Kubernetes Secret in the cluster. No secret value reaches Ravion, the Helm values document, or the Helm release history.
@@ -528,6 +530,7 @@ module:
     | Runtime environment variables | No | - | Array of {name, value} objects |
     | Runtime secrets | No | - | Array of {name, value_from} ARN references |
     | Deploy-provided environment variables | No | - | Names a pipeline deploy step may set to plain values |
+    | Required deploy-provided environment variables | No | [] | Names every deploy must supply exactly once with a non-empty value |
     | Create IAM role | No | false | Create an IAM role for the workload and bind it to its pods through EKS Pod Identity |
     | IAM role name | No | {service}-task | Explicit role name, for a service whose ECS task role already holds the default |
     | IAM policy ARNs | No | [] | Managed policy ARNs attached to the workload role |
