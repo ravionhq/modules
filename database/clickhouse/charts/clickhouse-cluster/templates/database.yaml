@@ -1,0 +1,118 @@
+{{- if .Values.database.name }}
+# Creates the database on every server once all of them have joined the
+# cluster. Runs after each install and upgrade; CREATE ... IF NOT EXISTS makes
+# a rerun a no-op. Replicas added later get the database from the operator,
+# which copies schemas to new replicas.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-create-database
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: create-database
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 1500
+  template:
+    metadata:
+      labels:
+        {{- include "clickhouse-cluster.labels" . | nindent 8 }}
+        app.kubernetes.io/component: create-database
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+      containers:
+        - name: create-database
+          image: {{ .Values.clickhouse.image }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -u
+              {{- if .Values.tls.enabled }}
+              # Over TLS on 9440, verifying the server against the CA.
+              cat >/tmp/client.xml <<'EOF'
+              <config>
+                <openSSL>
+                  <client>
+                    <caConfig>/etc/clickhouse-client/tls/ca.crt</caConfig>
+                    <loadDefaultCAFile>false</loadDefaultCAFile>
+                    <verificationMode>relaxed</verificationMode>
+                    <invalidCertificateHandler>
+                      <name>RejectCertificateHandler</name>
+                    </invalidCertificateHandler>
+                  </client>
+                </openSSL>
+              </config>
+              EOF
+              client() {
+                clickhouse-client --config-file /tmp/client.xml --secure --port 9440 --host "clickhouse-${INSTALLATION}" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
+              }
+              {{- else }}
+              client() {
+                clickhouse-client --host "clickhouse-${INSTALLATION}" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
+              }
+              {{- end }}
+              expected=$((SHARDS * REPLICAS))
+              until [ "$(client --query "SELECT count() FROM system.clusters WHERE cluster = '${CLUSTER}'" 2>/dev/null)" = "$expected" ]; do
+                echo "waiting for ${expected} servers in cluster ${CLUSTER}"
+                sleep 10
+              done
+              if [ "$ENGINE" = "Replicated" ]; then
+                query="CREATE DATABASE IF NOT EXISTS \`${DATABASE}\` ON CLUSTER '${CLUSTER}' ENGINE = Replicated('/clickhouse/databases/${DATABASE}', '{shard}', '{replica}')"
+              else
+                query="CREATE DATABASE IF NOT EXISTS \`${DATABASE}\` ON CLUSTER '${CLUSTER}' ENGINE = Atomic"
+              fi
+              until client --distributed_ddl_task_timeout 300 --query "$query"; do
+                echo "retrying CREATE DATABASE ${DATABASE}"
+                sleep 15
+              done
+              echo "database ${DATABASE} exists on cluster ${CLUSTER}"
+          env:
+            - name: INSTALLATION
+              value: {{ .Values.name | quote }}
+            - name: CLUSTER
+              value: {{ .Values.clusterName | quote }}
+            - name: DATABASE
+              value: {{ .Values.database.name | quote }}
+            - name: ENGINE
+              value: {{ .Values.database.engine | quote }}
+            - name: SHARDS
+              value: {{ .Values.clickhouse.shards | int64 | quote }}
+            - name: REPLICAS
+              value: {{ .Values.clickhouse.replicas | int64 | quote }}
+            {{- include "clickhouse-cluster.adminEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          {{- if .Values.tls.enabled }}
+          volumeMounts:
+            - name: tls-ca
+              mountPath: /etc/clickhouse-client/tls
+              readOnly: true
+          {{- end }}
+      {{- if .Values.tls.enabled }}
+      # Only the CA from the server certificate Secret, not its key.
+      volumes:
+        - name: tls-ca
+          secret:
+            secretName: {{ .Values.tls.serverSecretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+      {{- end }}
+{{- end }}

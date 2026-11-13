@@ -1,0 +1,5 @@
+apiVersion: v2
+name: clickhouse-secrets
+description: External Secrets resources that copy ClickHouse user credentials from AWS Secrets Manager into Kubernetes Secrets.
+type: application
+version: 0.1.0

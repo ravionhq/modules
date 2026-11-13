@@ -1,0 +1,6 @@
+region: us-east-2
+secrets:
+  - name: analytics-admin
+    remoteKey: clickhouse/test-cluster/analytics/analytics/admin
+  - name: analytics-operator
+    remoteKey: clickhouse/test-cluster/analytics/analytics/operator

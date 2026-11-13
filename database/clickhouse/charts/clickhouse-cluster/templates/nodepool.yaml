@@ -1,0 +1,53 @@
+{{- with .Values.placement.nodePool }}
+{{- if .create }}
+# Nodes for this installation alone. The taint keeps other pods off them, so a
+# noisy neighbour cannot starve a server. Karpenter only removes a node once it
+# is empty: consolidating a busy node would restart a server and, with EBS,
+# pin its replacement to the volume's zone anyway. Nodes never expire by age,
+# for the same reason; replace them deliberately, one at a time.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        clickhouse.ravion.com/installation: {{ $.Values.name }}
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ .nodeClassName }}
+      taints:
+        - key: clickhouse.ravion.com/dedicated
+          value: {{ $.Values.name }}
+          effect: NoSchedule
+      expireAfter: Never
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+            {{- toYaml .capacityTypes | nindent 12 }}
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values:
+            {{- toYaml .instanceCategories | nindent 12 }}
+        - key: kubernetes.io/arch
+          operator: In
+          values:
+            {{- toYaml .architectures | nindent 12 }}
+        - key: kubernetes.io/os
+          operator: In
+          values: [linux]
+  limits:
+    cpu: {{ .cpuLimit | int64 | quote }}
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 10m
+    budgets:
+      - nodes: "1"
+{{- end }}
+{{- end }}

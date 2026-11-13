@@ -1,0 +1,5 @@
+apiVersion: v2
+name: clickhouse-cluster
+description: A replicated ClickHouse installation with ClickHouse Keeper, scheduled S3 backups and an S3 cold tier, managed by the Altinity clickhouse-operator.
+type: application
+version: 0.1.0

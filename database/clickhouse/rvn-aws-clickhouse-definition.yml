@@ -1,0 +1,763 @@
+global: false
+definition:
+  type: rvn-aws-clickhouse
+  name: ClickHouse
+  description: Self-hosted, replicated ClickHouse on an EKS cluster, with ClickHouse Keeper, scheduled S3 backups and an S3 cold tier, all in your own AWS account.
+release:
+  version: 0.1.0
+  description: Run replicated ClickHouse on your EKS cluster with generated users, scheduled S3 backups, an S3 cold tier, Prometheus metrics and TLS from your choice of CA.
+module:
+  inputs:
+    - id: cluster
+      immutable: true
+      label: EKS cluster
+      type: $ref:rvn-eks-cluster
+      required: true
+      mapped_inputs:
+        - id: section_aws
+          label: AWS account & region
+          type: section
+        - default: << ref.input.aws_account_id >>
+          id: aws_account_id
+          immutable: true
+          label: AWS account
+          type: string
+          values: $values:ravion/aws_accounts
+        - default: << ref.input.aws_region >>
+          id: aws_region
+          immutable: true
+          label: Region
+          type: string
+          values: $values:aws/regions
+        - collapsible: true
+          default: << ref.input.execution_environment_id >>
+          description: For a private cluster endpoint, choose one in the cluster VPC; the cluster's Ravion Runner security group is attached for each run.
+          id: execution_environment_id
+          label: Terraform execution environment
+          type: string
+          values: $values:ravion/execution_environments
+        - id: section_cluster
+          label: Cluster details
+          type: section
+        - default: <<ref.stack.output.cluster_name>>
+          id: cluster_name
+          immutable: true
+          label: EKS cluster name
+          placeholder: my-eks-cluster
+          required: true
+          type: string
+        - collapsible: true
+          default: <<ref.stack.output.ravion_runner_role_arn>>
+          description: IAM role Terraform assumes when authenticating to the Kubernetes API.
+          id: ravion_runner_role_arn
+          label: Ravion Runner role ARN
+          placeholder: arn:aws:iam::123456789012:role/my-eks-cluster-ravion-runner
+          type: string
+        - collapsible: true
+          default: <<ref.stack.output.ravion_runner_security_group_id>>
+          description: Lets the OpenTofu runner reach the Kubernetes API. Only blank for a public endpoint.
+          id: ravion_runner_security_group_id
+          immutable: true
+          label: Ravion Runner security group ID
+          placeholder: sg-0123456789abcdef0
+          type: string
+
+    - id: section_installation
+      label: Installation
+      type: section
+    - id: name
+      immutable: true
+      label: Name
+      type: string
+      description: Prefixes the installation's Services, Secrets, bucket and IAM role.
+      required: true
+      default: <<module.given_id>>
+      patterns:
+        - message: 1-24 lowercase letters, digits and hyphens. Start with a letter and end with a letter or digit.
+          pattern: ^[a-z]([a-z0-9-]{0,22}[a-z0-9])?$
+    - id: namespace
+      immutable: true
+      label: Namespace
+      type: string
+      required: true
+      default: <<module.given_id>>
+      patterns:
+        - message: 1-63 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$
+    - id: namespace_creation_enabled
+      label: Create namespace
+      type: boolean
+      description: Turn off when the namespace is managed elsewhere.
+      collapsible: true
+      default: true
+
+    - id: section_clickhouse
+      label: ClickHouse servers
+      type: section
+    - id: shard_count
+      label: Shards
+      type: number
+      description: One shard scales a long way; adding shards later means redistributing data.
+      default: 1
+      min: 1
+      max: 64
+    - id: replica_count
+      label: Replicas per shard
+      type: number
+      description: 2 or more keeps data available while a node or zone is down.
+      default: 2
+      min: 1
+      max: 10
+    - id: clickhouse_cpu
+      label: CPU per server
+      type: string
+      description: Kubernetes CPU request, such as 2 or 500m.
+      default: "1"
+      patterns:
+        - message: A CPU quantity such as 2, 0.5 or 500m.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+    - id: clickhouse_memory
+      label: Memory per server
+      type: string
+      description: Request and limit. ClickHouse uses up to 90% of it.
+      default: 4Gi
+      patterns:
+        - message: A memory quantity such as 4Gi or 512Mi.
+          pattern: ^[0-9]+(Mi|Gi)$
+    - id: clickhouse_volume_size
+      label: Volume per server
+      type: string
+      description: Raising it grows the volumes in place.
+      default: 50Gi
+      patterns:
+        - message: A size such as 50Gi or 1Ti.
+          pattern: ^[0-9]+(Mi|Gi|Ti)$
+    - id: clickhouse_image
+      label: ClickHouse image
+      type: string
+      description: Pin an LTS release. Keep Keeper on the same release.
+      collapsible: true
+      default: clickhouse/clickhouse-server:26.8.36.3
+    - id: storage_class_name
+      label: StorageClass
+      type: string
+      description: Must allow volume expansion. Applies to Keeper too.
+      collapsible: true
+      default: gp3
+    - id: volume_reclaim_policy
+      label: Volumes on delete
+      type: string
+      collapsible: true
+      default: Retain
+      values:
+        - label: Keep
+          value: Retain
+        - label: Delete
+          value: Delete
+    - id: clickhouse_settings
+      label: Server settings
+      type: keyvalue
+      description: Keyed by path, such as max_concurrent_queries or logger/level.
+      collapsible: true
+      required: false
+
+    - id: section_keeper
+      label: ClickHouse Keeper
+      type: section
+    - id: keeper_replica_count
+      label: Keeper nodes
+      type: number
+      default: 3
+      values:
+        - label: 1 (development only)
+          value: 1
+        - label: "3"
+          value: 3
+        - label: "5"
+          value: 5
+    - id: keeper_cpu
+      label: CPU per Keeper node
+      type: string
+      default: 250m
+      collapsible: true
+      patterns:
+        - message: A CPU quantity such as 2, 0.5 or 500m.
+          pattern: ^[0-9]+(\.[0-9]+)?m?$
+    - id: keeper_memory
+      label: Memory per Keeper node
+      type: string
+      default: 1Gi
+      collapsible: true
+      patterns:
+        - message: A memory quantity such as 1Gi or 512Mi.
+          pattern: ^[0-9]+(Mi|Gi)$
+    - id: keeper_volume_size
+      label: Volume per Keeper node
+      type: string
+      default: 10Gi
+      collapsible: true
+      patterns:
+        - message: A size such as 10Gi.
+          pattern: ^[0-9]+(Mi|Gi|Ti)$
+    - id: keeper_image
+      label: Keeper image
+      type: string
+      collapsible: true
+      default: clickhouse/clickhouse-keeper:26.8.36.3
+
+    - id: section_users
+      label: Database and users
+      type: section
+    - id: database_name
+      label: Database
+      type: string
+      description: Created on every server; the writer and reader are scoped to it. Blank grants them every database.
+      required: false
+      placeholder: events
+      patterns:
+        - message: Letters, digits and underscores, starting with a letter or underscore.
+          pattern: ^[A-Za-z_][A-Za-z0-9_]{0,62}$
+    - id: database_engine
+      label: Database engine
+      type: string
+      collapsible: true
+      default: Replicated
+      values:
+        - label: Replicated
+          description: Table DDL reaches every replica on its own
+          value: Replicated
+        - label: Atomic
+          description: Every DDL statement needs ON CLUSTER
+          value: Atomic
+    - id: reader_max_execution_time_seconds
+      label: Reader query timeout (seconds)
+      type: number
+      description: The reader may lower its limits per query, never raise them.
+      default: 60
+      min: 1
+    - id: reader_max_memory_usage_mib
+      label: Reader memory per query (MiB)
+      type: number
+      default: 4096
+      min: 1
+    - id: reader_max_concurrent_queries
+      label: Reader concurrent queries
+      type: number
+      default: 20
+      min: 1
+    - id: password_version
+      label: Password version
+      type: number
+      description: Bump to generate new passwords for every user. ClickHouse restarts to apply them.
+      collapsible: true
+      default: 1
+      min: 1
+    - id: secrets_name_prefix
+      label: Secrets Manager prefix
+      type: string
+      description: Blank uses clickhouse/<cluster>/<namespace>/<name>.
+      collapsible: true
+      required: false
+    - id: secrets_kms_key_arn
+      label: Secrets KMS key ARN
+      type: string
+      description: Blank uses the AWS managed key. External Secrets needs kms:Decrypt on it.
+      collapsible: true
+      required: false
+    - id: external_secrets_cluster_secret_store_name
+      label: ClusterSecretStore
+      type: string
+      description: Blank creates a namespaced SecretStore using the External Secrets controller's own AWS access.
+      collapsible: true
+      required: false
+      placeholder: ravion-aws
+    - id: secrets_recovery_window_in_days
+      label: Secret recovery window (days)
+      type: number
+      description: 0 deletes at once so the names can be reused.
+      collapsible: true
+      default: 7
+      min: 0
+      max: 30
+
+    - id: section_backups
+      label: Backups and cold tier
+      type: section
+    - id: backup_enabled
+      label: Scheduled backups
+      type: boolean
+      default: true
+    - id: backup_schedule
+      label: Backup schedule
+      type: string
+      description: Cron, in UTC.
+      default: 0 3 * * *
+      show_when:
+        backup_enabled: true
+    - id: backup_retention_count
+      label: Backups to keep
+      type: number
+      description: Per shard. Older backups are deleted after each upload.
+      default: 7
+      min: 1
+      show_when:
+        backup_enabled: true
+    - id: backup_timeout_seconds
+      label: Backup time limit
+      type: number
+      description: Seconds a run may take for every shard together before it fails, so the next run can start.
+      default: 21600
+      min: 600
+      collapsible: true
+      show_when:
+        backup_enabled: true
+    - id: backup_path_prefix
+      label: Backup path prefix
+      type: string
+      description: Inside the bucket, under backup/. Blank uses <namespace>/<name>. Keep it stable; restores look under it.
+      required: false
+      collapsible: true
+      show_when:
+        backup_enabled: true
+    - id: cold_storage_enabled
+      label: S3 cold tier
+      type: boolean
+      description: Adds a `tiered` storage policy; a table's TTL can move old parts to its `cold` volume.
+      default: true
+    - id: cold_storage_cache_size
+      label: Cold tier read cache
+      type: string
+      description: Taken from each server's volume.
+      collapsible: true
+      default: 10Gi
+      show_when:
+        cold_storage_enabled: true
+      patterns:
+        - message: A size such as 10Gi.
+          pattern: ^[0-9]+(Mi|Gi|Ti)$
+    - id: s3_bucket_creation_enabled
+      label: Create bucket
+      type: boolean
+      description: Turn off to use an existing bucket.
+      collapsible: true
+      default: true
+    - id: s3_bucket_name
+      label: Bucket name
+      type: string
+      description: Blank generates one. Required for an existing bucket.
+      collapsible: true
+      required: false
+    - id: s3_kms_key_arn
+      label: Bucket KMS key ARN
+      type: string
+      description: Blank uses SSE-S3.
+      collapsible: true
+      required: false
+    - id: s3_noncurrent_version_expiration_days
+      label: Keep old object versions (days)
+      type: number
+      collapsible: true
+      default: 30
+      min: 1
+    - id: s3_force_destroy
+      label: Delete bucket contents on destroy
+      type: boolean
+      description: Destroying the module then deletes every backup.
+      collapsible: true
+      default: false
+
+    - id: section_placement
+      label: Placement
+      type: section
+    - id: zone_spread
+      label: Zone spread
+      type: string
+      default: preferred
+      values:
+        - label: Preferred
+          description: Spread replicas across zones when capacity allows
+          value: preferred
+        - label: Required
+          description: Never schedule two replicas of a shard, or two Keeper nodes, in one zone
+          value: required
+    - id: node_spread
+      label: Node spread
+      type: string
+      default: preferred
+      values:
+        - label: Preferred
+          description: Separate nodes when there are enough; the defaults fit two nodes
+          value: preferred
+        - label: Required
+          description: Never two replicas of a shard, or two Keeper nodes, on one node. Use in production on 3+ nodes
+          value: required
+    - id: priority_class_enabled
+      label: High scheduling priority
+      type: boolean
+      description: Evict and preempt other workloads before ClickHouse.
+      default: false
+    - id: dedicated_node_pool_enabled
+      label: Dedicated nodes
+      type: boolean
+      description: A tainted Karpenter NodePool for this installation alone. Needs Karpenter.
+      default: false
+    - id: dedicated_node_pool_node_class_name
+      label: EC2NodeClass
+      type: string
+      default: default
+      show_when:
+        dedicated_node_pool_enabled: true
+    - id: dedicated_node_pool_capacity_types
+      label: Capacity types
+      type: string_array
+      default: [on-demand]
+      show_when:
+        dedicated_node_pool_enabled: true
+      values:
+        - label: On-Demand
+          value: on-demand
+        - label: Spot
+          value: spot
+    - id: dedicated_node_pool_instance_categories
+      label: Instance categories
+      type: string_array
+      description: Memory-optimized (r) suits ClickHouse best.
+      default: [r, m]
+      show_when:
+        dedicated_node_pool_enabled: true
+    - id: dedicated_node_pool_architectures
+      label: Architectures
+      type: string_array
+      default: [amd64]
+      show_when:
+        dedicated_node_pool_enabled: true
+      values:
+        - label: amd64
+          value: amd64
+        - label: arm64
+          value: arm64
+    - id: dedicated_node_pool_cpu_limit
+      label: Node pool CPU limit
+      type: number
+      default: 64
+      min: 1
+      show_when:
+        dedicated_node_pool_enabled: true
+
+    - id: section_network
+      label: Network
+      type: section
+    - id: network_policy_enabled
+      label: Network policies
+      type: boolean
+      description: Needs a CNI that enforces them, such as the VPC CNI with its network policy agent on.
+      default: false
+    - id: network_policy_allowed_namespaces
+      label: Client namespaces
+      type: string_array
+      description: May reach ClickHouse on 8123 and 9000, and on 8443 and 9440 with TLS. Its own namespace always can.
+      add_button_label: Add namespace
+      default: []
+      show_when:
+        network_policy_enabled: true
+
+    - id: section_tls
+      label: TLS
+      type: section
+    - id: tls_enabled
+      label: TLS
+      type: boolean
+      description: Native protocol over TLS on 9440 and HTTPS on 8443, with a certificate from cert-manager, which the EKS Add-ons module installs.
+      default: true
+    - id: tls_disable_plaintext_ports
+      label: Close plaintext ports
+      type: boolean
+      description: Closes 9000 and 8123, so every client must use TLS.
+      default: true
+      show_when:
+        tls_enabled: true
+    - id: tls_internal_enabled
+      label: Internal TLS
+      type: boolean
+      description: Replication between replicas, ClickHouse to Keeper, and Raft between Keeper nodes over TLS.
+      default: true
+      show_when:
+        tls_enabled: true
+    - id: tls_ca_source
+      label: Certificate authority
+      type: string
+      default: self_signed
+      show_when:
+        tls_enabled: true
+      values:
+        - label: Self-signed CA
+          value: self_signed
+          description: Created in the namespace.
+        - label: Existing issuer
+          value: issuer
+          description: A cert-manager Issuer or ClusterIssuer, such as AWS Private CA.
+        - label: Existing CA secret
+          value: secret
+          description: A CA key pair Secret in the namespace.
+    - id: tls_issuer_name
+      label: Issuer name
+      type: string
+      placeholder: private-ca
+      show_when:
+        tls_enabled: true
+        tls_ca_source: issuer
+    - id: tls_issuer_kind
+      label: Issuer kind
+      type: string
+      description: AWSPCAClusterIssuer or AWSPCAIssuer for AWS Private CA.
+      default: ClusterIssuer
+      show_when:
+        tls_enabled: true
+        tls_ca_source: issuer
+    - id: tls_issuer_group
+      label: Issuer group
+      type: string
+      description: awspca.cert-manager.io for AWS Private CA.
+      default: cert-manager.io
+      show_when:
+        tls_enabled: true
+        tls_ca_source: issuer
+    - id: tls_ca_secret_name
+      label: CA secret name
+      type: string
+      description: A kubernetes.io/tls Secret with the CA's tls.crt and tls.key.
+      show_when:
+        tls_enabled: true
+        tls_ca_source: secret
+    - id: tls_extra_dns_names
+      label: Extra certificate names
+      type: string_array
+      description: More names for the server certificate, such as a DNS name for a load balancer.
+      add_button_label: Add name
+      collapsible: true
+      default: []
+      show_when:
+        tls_enabled: true
+
+    - id: section_metrics
+      label: Metrics
+      type: section
+    - id: metrics_otlp_endpoint
+      label: OTLP endpoint
+      type: string
+      description: Pushes ClickHouse, Keeper and operator metrics over OTLP/HTTP, such as the EKS Add-ons module's otlp_http_endpoint. Blank pushes none.
+      required: false
+      placeholder: http://ravion-otel-otlp.monitoring.svc.cluster.local:4318
+    - id: metrics_otlp_interval
+      label: OTLP scrape interval
+      type: string
+      collapsible: true
+      default: 60s
+    - id: metrics_pod_monitors_enabled
+      label: Prometheus Operator PodMonitors
+      type: boolean
+      description: Needs the monitoring.coreos.com CRDs.
+      default: false
+    - id: metrics_pod_monitor_labels
+      label: PodMonitor labels
+      type: keyvalue
+      collapsible: true
+      required: false
+      show_when:
+        metrics_pod_monitors_enabled: true
+
+    - id: section_operator
+      label: Operator
+      type: section
+    - id: operator_chart_version
+      label: Operator chart version
+      type: string
+      description: Altinity clickhouse-operator.
+      collapsible: true
+      default: 0.27.4
+    - id: operator_crds_management_enabled
+      label: Manage CRDs
+      type: boolean
+      description: With several installations on one cluster, keep this on for only the one with the newest operator.
+      collapsible: true
+      default: true
+
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-with-runner-security-group.yml
+    with:
+      base_path: database/clickhouse
+      runner_security_group_id: << module.input.ravion_runner_security_group_id >>
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        cluster_name: << module.input.cluster_name >>
+        region: << module.input.aws_region >>
+        ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
+        name: << module.input.name >>
+        namespace: << module.input.namespace >>
+        namespace_creation_enabled: << module.input.namespace_creation_enabled >>
+        operator_chart_version: << module.input.operator_chart_version >>
+        operator_crds_management_enabled: << module.input.operator_crds_management_enabled >>
+        clickhouse_image: << module.input.clickhouse_image >>
+        shard_count: << module.input.shard_count >>
+        replica_count: << module.input.replica_count >>
+        clickhouse_resources:
+          cpu_request: << module.input.clickhouse_cpu >>
+          memory_request: << module.input.clickhouse_memory >>
+          memory_limit: << module.input.clickhouse_memory >>
+        clickhouse_volume_size: << module.input.clickhouse_volume_size >>
+        storage_class_name: << module.input.storage_class_name >>
+        volume_reclaim_policy: << module.input.volume_reclaim_policy >>
+        clickhouse_settings: << module.input.clickhouse_settings >>
+        keeper_image: << module.input.keeper_image >>
+        keeper_replica_count: << module.input.keeper_replica_count >>
+        keeper_resources:
+          cpu_request: << module.input.keeper_cpu >>
+          memory_request: << module.input.keeper_memory >>
+          memory_limit: << module.input.keeper_memory >>
+        keeper_volume_size: << module.input.keeper_volume_size >>
+        zone_spread: << module.input.zone_spread >>
+        node_spread: << module.input.node_spread || "preferred" >>
+        priority_class:
+          enabled: << module.input.priority_class_enabled >>
+        dedicated_node_pool:
+          enabled: << module.input.dedicated_node_pool_enabled >>
+          node_class_name: << module.input.dedicated_node_pool_node_class_name >>
+          capacity_types: << module.input.dedicated_node_pool_capacity_types >>
+          instance_categories: << module.input.dedicated_node_pool_instance_categories >>
+          architectures: << module.input.dedicated_node_pool_architectures >>
+          cpu_limit: << module.input.dedicated_node_pool_cpu_limit >>
+        network_policy_enabled: << module.input.network_policy_enabled >>
+        network_policy_allowed_namespaces: << module.input.network_policy_allowed_namespaces >>
+        tls_enabled: << module.input.tls_enabled != false >>
+        tls_disable_plaintext_ports: << module.input.tls_disable_plaintext_ports != false >>
+        tls_internal_enabled: << module.input.tls_internal_enabled != false >>
+        tls_ca_source: << module.input.tls_ca_source || "self_signed" >>
+        tls_issuer: >-
+          << module.input.tls_ca_source == "issuer" && module.input.tls_issuer_name ? {"name": module.input.tls_issuer_name,
+          "kind": module.input.tls_issuer_kind || "ClusterIssuer", "group": module.input.tls_issuer_group || "cert-manager.io"} : nil >>
+        tls_ca_secret_name: << module.input.tls_ca_secret_name || null >>
+        tls_extra_dns_names: '<< module.input.tls_extra_dns_names != nil ? module.input.tls_extra_dns_names : [] >>'
+        database_name: << module.input.database_name >>
+        database_engine: << module.input.database_engine >>
+        secrets_name_prefix: << module.input.secrets_name_prefix >>
+        secrets_kms_key_arn: << module.input.secrets_kms_key_arn >>
+        secrets_recovery_window_in_days: << module.input.secrets_recovery_window_in_days >>
+        password_version: << module.input.password_version >>
+        external_secrets:
+          cluster_secret_store_name: << module.input.external_secrets_cluster_secret_store_name >>
+        reader_limits:
+          max_execution_time_seconds: << module.input.reader_max_execution_time_seconds >>
+          max_memory_usage_mib: << module.input.reader_max_memory_usage_mib >>
+          max_concurrent_queries: << module.input.reader_max_concurrent_queries >>
+        s3_bucket_creation_enabled: << module.input.s3_bucket_creation_enabled >>
+        s3_bucket_name: << module.input.s3_bucket_name >>
+        s3_kms_key_arn: << module.input.s3_kms_key_arn >>
+        s3_noncurrent_version_expiration_days: << module.input.s3_noncurrent_version_expiration_days >>
+        s3_force_destroy: << module.input.s3_force_destroy >>
+        backup_enabled: << module.input.backup_enabled >>
+        backup_schedule: << module.input.backup_schedule >>
+        backup_retention_count: << module.input.backup_retention_count >>
+        backup_timeout_seconds: << module.input.backup_timeout_seconds || 21600 >>
+        backup_path_prefix: << module.input.backup_path_prefix || null >>
+        cold_storage_enabled: << module.input.cold_storage_enabled >>
+        cold_storage_cache_size: << module.input.cold_storage_cache_size >>
+        metrics_pod_monitors_enabled: << module.input.metrics_pod_monitors_enabled >>
+        metrics_pod_monitor_labels: << module.input.metrics_pod_monitor_labels >>
+        metrics_otlp_endpoint: << module.input.metrics_otlp_endpoint >>
+        metrics_otlp_interval: << module.input.metrics_otlp_interval >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+  readme: |-
+    Self-hosted ClickHouse on your EKS cluster: replicated servers, ClickHouse Keeper, generated users, scheduled S3 backups and an S3 cold tier. Every byte stays in your AWS account.
+
+    ## Overview
+
+    ClickHouse runs on the cluster you select, managed by the open-source [Altinity clickhouse-operator](https://github.com/Altinity/clickhouse-operator). The module installs the operator into the installation's namespace, a ClickHouse Keeper ensemble for replication, and a ClickHouse cluster of the shards and replicas you choose. It creates admin, writer and reader users with generated passwords in AWS Secrets Manager, an encrypted S3 bucket for backups and cold data, and the IAM role ClickHouse uses to reach it.
+
+    Terraform source: [ravionhq/modules/database/clickhouse](https://github.com/ravionhq/modules/tree/$local.module_tag/database/clickhouse)
+
+    ## Prerequisites
+
+    - An **EKS Cluster** module, with the `eks-pod-identity-agent` add-on.
+    - An **EKS Add-ons** module with the **EBS CSI driver** (for the `gp3` StorageClass), **External Secrets** and **cert-manager** turned on. cert-manager issues the TLS certificates, which are on by default.
+    - OpenTofu 1.11 or newer: passwords are written through write-only arguments and never reach Terraform state.
+
+    ## Connecting
+
+    Applications in the cluster connect to the `host` output over TLS on 8443 (HTTPS) or 9440 (native). With **Close plaintext ports** off, 8123 (HTTP) and 9000 (native) are open too, and with **TLS** off only those. Each user's Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`, `reader_secret_arn`) is JSON with `username`, `password`, `host`, `http_port`, `native_port`, `https_port`, `secure_native_port`, `secure`, `database` and `cluster` (ports that are closed are null), so a workload can read its credentials from there. The same values are in Kubernetes Secrets in the installation's namespace (`writer_kubernetes_secret_name` and so on).
+
+    | User | Use it for | Access |
+    | ---- | ---------- | ------ |
+    | admin | Operations, user management | Everything |
+    | writer | Applications that insert data, and schema migrations | Read, write and DDL on the database, ON CLUSTER |
+    | reader | Dashboards and APIs | Read only, with a query timeout, a memory cap and a concurrency cap it cannot raise |
+
+    With a **Database** set, the writer and reader are scoped to it. The default `Replicated` engine copies `CREATE TABLE` and `ALTER` to every replica on its own; with `Atomic`, add `ON CLUSTER main` to every DDL statement. Either way, use `ReplicatedMergeTree` (or `ReplicatedReplacingMergeTree` and so on) for tables whose data should be replicated.
+
+    To rotate every password, bump **Password version**. The secrets get new values, and ClickHouse and the operator restart to use them; clients must read the new values too.
+
+    ## TLS
+
+    TLS is on by default. cert-manager is required; the EKS Add-ons module installs it. Every server serves the native protocol over TLS on 9440 and HTTPS on 8443 with a certificate cert-manager issues and renews, and ClickHouse picks up a renewed certificate without a restart. Clients verify the server name in `tls_server_name` and trust the `ca.crt` of the Secret named in `tls_ca_secret_name`. Copy only `ca.crt` to clients: that Secret also holds the server's private key.
+
+    | Option | Default | What it does |
+    | ------ | ------- | ------------ |
+    | **TLS** | On | 9440 and 8443, queries between shards over TLS, the operator connects over HTTPS and verifies every server against the CA, and the backup sidecar serves its API over HTTPS. |
+    | **Close plaintext ports** | On | Closes 9000 and 8123 on the servers, their pods and the Service. The operator, probes, backups and the database job use the TLS ports. |
+    | **Internal TLS** | On | Replicas fetch parts from each other over HTTPS on 9010 instead of HTTP on 9009, ClickHouse reaches Keeper on its TLS port 2281, and Keeper nodes run Raft over TLS. Turning it on or off restarts Keeper and ClickHouse one pod at a time; replicas briefly lose Keeper while it rolls. |
+
+    Changing any of them rewrites the connection details in the Secrets Manager secrets, without changing the passwords.
+
+    | Certificate authority | What it is |
+    | --------------------- | ---------- |
+    | Self-signed CA | The default. cert-manager creates a CA in the namespace. Its key never leaves the cluster. |
+    | Existing issuer | A cert-manager Issuer or ClusterIssuer you already run. For AWS Private CA, install [aws-privateca-issuer](https://github.com/cert-manager/aws-privateca-issuer), give it `acm-pca:DescribeCertificateAuthority`, `acm-pca:IssueCertificate` and `acm-pca:GetCertificate` on the CA through EKS Pod Identity, create an `AWSPCAClusterIssuer`, and set **Issuer kind** to `AWSPCAClusterIssuer` and **Issuer group** to `awspca.cert-manager.io`. |
+    | Existing CA secret | A `kubernetes.io/tls` Secret in the namespace holding your CA's `tls.crt` and `tls.key`. |
+
+    The Keeper plaintext client port (2181) stays open for its liveness probe, which speaks four-letter words that Keeper does not serve over TLS; with **Network policies** on, only Keeper and the operator can reach it.
+
+    ## Shards and replicas
+
+    Start with one shard. A single server handles billions of rows, and growing a shard is a matter of CPU, memory and volume size. Adding shards later means new tables or redistributing data, so only add them when one server cannot hold the data. Two replicas per shard keep the data available while a node or zone is down; replicas of a shard, and Keeper nodes, go on different nodes when there are enough, so the defaults fit a two-node cluster. For production, run three or more nodes and set **Node spread** to Required, so losing a node never takes a shard or the Keeper majority with it. With **Zone spread** set to Required they never share a zone either, which needs at least as many zones as replicas and Keeper nodes.
+
+    ## Backups
+
+    Each ClickHouse pod runs [clickhouse-backup](https://github.com/Altinity/clickhouse-backup) beside the server. On the **Backup schedule**, a job asks one replica of every shard to back up to `s3://<bucket>/backup/<prefix>/main/<shard>/` and waits until the upload finishes; the job fails if any shard fails or the run passes **Backup time limit**. `<prefix>` is **Backup path prefix**, `<namespace>/<name>` by default, so installations sharing a bucket stay apart; restore with the same prefix. Each shard keeps **Backups to keep** backups.
+
+    To restore, open a shell in one replica of each shard and run:
+
+    ```bash
+    kubectl -n <namespace> exec -it chi-<name>-main-<shard>-0-0 -c clickhouse-backup -- clickhouse-backup list remote
+    kubectl -n <namespace> exec -it chi-<name>-main-<shard>-0-0 -c clickhouse-backup -- clickhouse-backup restore_remote <backup name>
+    ```
+
+    Restore on one replica per shard; the other replicas fetch the data through replication. Add `--table=<database>.<table>` to restore one table.
+
+    ## Cold tier
+
+    With **S3 cold tier** on, the servers have a storage policy named `tiered` with a `hot` volume (the EBS volume) and a `cold` volume on S3, read through a local cache. Opt a table in and move old parts with a TTL:
+
+    ```sql
+    CREATE TABLE events (...)
+    ENGINE = ReplicatedMergeTree
+    ORDER BY (...)
+    TTL timestamp + INTERVAL 30 DAY TO VOLUME 'cold'
+    SETTINGS storage_policy = 'tiered';
+    ```
+
+    Tables keep the `default` policy unless they opt in.
+
+    ## Metrics
+
+    ClickHouse (port 9363), Keeper (port 7000) and the operator (port 9999) serve Prometheus metrics, and their pods carry `prometheus.io/scrape` annotations. **Prometheus Operator PodMonitors** creates PodMonitors for a Prometheus that uses them. **OTLP endpoint** runs a small OpenTelemetry collector that scrapes the three and pushes over OTLP/HTTP, for example to the EKS Add-ons module's `otlp_http_endpoint`, which forwards to the metrics destinations chosen there.
+
+    ## Several installations on one cluster
+
+    Each installation runs its own operator, which watches only its namespace. The operator's CRDs are cluster-wide, so turn **Manage CRDs** off on all but one installation, the one with the newest operator.
+
+    ## Deleting
+
+    Volumes are kept by default when the installation is removed (**Volumes on delete**). The bucket and its backups are kept unless **Delete bucket contents on destroy** is on.
