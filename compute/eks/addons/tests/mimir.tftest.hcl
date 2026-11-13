@@ -88,6 +88,13 @@ run "mimir_runs_classic_on_s3_with_three_copies" {
     error_message = "Mimir must keep three copies of every sample on three ingesters."
   }
 
+  # Distributors send each sample to three ingesters, mostly in other zones;
+  # Mimir sends that uncompressed unless told otherwise.
+  assert {
+    condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.ingester_client.grpc_client_config.grpc_compression == "snappy"
+    error_message = "Distributors must compress what they send to ingesters."
+  }
+
   assert {
     condition     = yamldecode(helm_release.mimir[0].values[0]).mimir.structuredConfig.multitenancy_enabled == false
     error_message = "One cluster is one tenant: writers and readers must not need a tenant header."
