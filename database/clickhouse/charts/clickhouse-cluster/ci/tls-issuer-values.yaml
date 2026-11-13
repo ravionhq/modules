@@ -1,0 +1,17 @@
+name: analytics
+region: us-east-2
+users:
+  admin: {username: admin, secret: analytics-admin}
+  writer: {username: writer, secret: analytics-writer}
+  reader: {username: reader, secret: analytics-reader}
+operatorFullname: analytics-operator
+serviceAccount:
+  name: analytics-clickhouse
+tls:
+  enabled: true
+  caSource: issuer
+  issuerRef:
+    name: private-ca
+    kind: AWSPCAClusterIssuer
+    group: awspca.cert-manager.io
+  serverSecretName: analytics-server-tls

@@ -5,7 +5,7 @@ definition:
   description: Self-hosted, replicated ClickHouse on an EKS cluster, with ClickHouse Keeper, scheduled S3 backups and an S3 cold tier, all in your own AWS account.
 release:
   version: 0.1.0
-  description: Run replicated ClickHouse on your EKS cluster with generated users, scheduled S3 backups, an S3 cold tier and Prometheus metrics.
+  description: Run replicated ClickHouse on your EKS cluster with generated users, scheduled S3 backups, an S3 cold tier, Prometheus metrics and TLS from your choice of CA.
 module:
   inputs:
     - id: cluster
@@ -427,11 +427,82 @@ module:
     - id: network_policy_allowed_namespaces
       label: Client namespaces
       type: string_array
-      description: May reach ClickHouse on 8123 and 9000. Its own namespace always can.
+      description: May reach ClickHouse on 8123 and 9000, and on 8443 and 9440 with TLS. Its own namespace always can.
       add_button_label: Add namespace
       default: []
       show_when:
         network_policy_enabled: true
+
+    - id: section_tls
+      label: TLS
+      type: section
+    - id: tls_enabled
+      label: TLS
+      type: boolean
+      description: Native protocol over TLS on 9440 and HTTPS on 8443, with a certificate from cert-manager. Needs cert-manager.
+      default: false
+    - id: tls_disable_plaintext_ports
+      label: Close plaintext ports
+      type: boolean
+      description: Closes 9000 and 8123, so every client must use TLS.
+      default: false
+      show_when:
+        tls_enabled: true
+    - id: tls_ca_source
+      label: Certificate authority
+      type: string
+      default: self_signed
+      show_when:
+        tls_enabled: true
+      values:
+        - label: Self-signed CA
+          value: self_signed
+          description: Created in the namespace.
+        - label: Existing issuer
+          value: issuer
+          description: A cert-manager Issuer or ClusterIssuer, such as AWS Private CA.
+        - label: Existing CA secret
+          value: secret
+          description: A CA key pair Secret in the namespace.
+    - id: tls_issuer_name
+      label: Issuer name
+      type: string
+      placeholder: private-ca
+      show_when:
+        tls_enabled: true
+        tls_ca_source: issuer
+    - id: tls_issuer_kind
+      label: Issuer kind
+      type: string
+      description: AWSPCAClusterIssuer or AWSPCAIssuer for AWS Private CA.
+      default: ClusterIssuer
+      show_when:
+        tls_enabled: true
+        tls_ca_source: issuer
+    - id: tls_issuer_group
+      label: Issuer group
+      type: string
+      description: awspca.cert-manager.io for AWS Private CA.
+      default: cert-manager.io
+      show_when:
+        tls_enabled: true
+        tls_ca_source: issuer
+    - id: tls_ca_secret_name
+      label: CA secret name
+      type: string
+      description: A kubernetes.io/tls Secret with the CA's tls.crt and tls.key.
+      show_when:
+        tls_enabled: true
+        tls_ca_source: secret
+    - id: tls_extra_dns_names
+      label: Extra certificate names
+      type: string_array
+      description: More names for the server certificate, such as a DNS name for a load balancer.
+      add_button_label: Add name
+      collapsible: true
+      default: []
+      show_when:
+        tls_enabled: true
 
     - id: section_metrics
       label: Metrics
@@ -524,6 +595,14 @@ module:
           cpu_limit: << module.input.dedicated_node_pool_cpu_limit >>
         network_policy_enabled: << module.input.network_policy_enabled >>
         network_policy_allowed_namespaces: << module.input.network_policy_allowed_namespaces >>
+        tls_enabled: << module.input.tls_enabled == true >>
+        tls_disable_plaintext_ports: << module.input.tls_disable_plaintext_ports == true >>
+        tls_ca_source: << module.input.tls_ca_source || "self_signed" >>
+        tls_issuer: >-
+          << module.input.tls_ca_source == "issuer" && module.input.tls_issuer_name ? {"name": module.input.tls_issuer_name,
+          "kind": module.input.tls_issuer_kind || "ClusterIssuer", "group": module.input.tls_issuer_group || "cert-manager.io"} : nil >>
+        tls_ca_secret_name: << module.input.tls_ca_secret_name || null >>
+        tls_extra_dns_names: '<< module.input.tls_extra_dns_names != nil ? module.input.tls_extra_dns_names : [] >>'
         database_name: << module.input.database_name >>
         database_engine: << module.input.database_engine >>
         secrets_name_prefix: << module.input.secrets_name_prefix >>
@@ -569,7 +648,7 @@ module:
 
     ## Connecting
 
-    Applications in the cluster connect to the `host` output on port 8123 (HTTP) or 9000 (native). Each user's Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`, `reader_secret_arn`) is JSON with `username`, `password`, `host`, `http_port`, `native_port`, `database` and `cluster`, so a workload can read its credentials from there. The same values are in Kubernetes Secrets in the installation's namespace (`writer_kubernetes_secret_name` and so on).
+    Applications in the cluster connect to the `host` output on port 8123 (HTTP) or 9000 (native), or over TLS on 8443 (HTTPS) and 9440 (native) when **TLS** is on. Each user's Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`, `reader_secret_arn`) is JSON with `username`, `password`, `host`, `http_port`, `native_port`, `database` and `cluster`, so a workload can read its credentials from there. The same values are in Kubernetes Secrets in the installation's namespace (`writer_kubernetes_secret_name` and so on).
 
     | User | Use it for | Access |
     | ---- | ---------- | ------ |
@@ -580,6 +659,20 @@ module:
     With a **Database** set, the writer and reader are scoped to it. The default `Replicated` engine copies `CREATE TABLE` and `ALTER` to every replica on its own; with `Atomic`, add `ON CLUSTER main` to every DDL statement. Either way, use `ReplicatedMergeTree` (or `ReplicatedReplacingMergeTree` and so on) for tables whose data should be replicated.
 
     To rotate every password, bump **Password version**. The secrets get new values, and ClickHouse and the operator restart to use them; clients must read the new values too.
+
+    ## TLS
+
+    With **TLS** on, every server serves the native protocol over TLS on 9440 and HTTPS on 8443, with a certificate cert-manager issues and renews; cert-manager must be installed, as it is with the EKS Add-ons module. Clients verify the server name in `tls_server_name` and trust the `ca.crt` of the Secret named in `tls_ca_secret_name`. Copy only `ca.crt` to clients: that Secret also holds the server's private key. Queries between shards also travel over TLS.
+
+    **Close plaintext ports** closes 9000 and 8123, so clients must use TLS; the operator, probes, backups and the database job move to the TLS ports on their own. The connection details in the Secrets Manager secrets keep listing the plaintext ports, so read the ports from the `https_port` and `secure_native_port` outputs instead.
+
+    | Certificate authority | What it is |
+    | --------------------- | ---------- |
+    | Self-signed CA | cert-manager creates a CA in the namespace. Its key never leaves the cluster. |
+    | Existing issuer | A cert-manager Issuer or ClusterIssuer you already run. For AWS Private CA, install [aws-privateca-issuer](https://github.com/cert-manager/aws-privateca-issuer), give it `acm-pca:DescribeCertificateAuthority`, `acm-pca:IssueCertificate` and `acm-pca:GetCertificate` on the CA through EKS Pod Identity, create an `AWSPCAClusterIssuer`, and set **Issuer kind** to `AWSPCAClusterIssuer` and **Issuer group** to `awspca.cert-manager.io`. |
+    | Existing CA secret | A `kubernetes.io/tls` Secret in the namespace holding your CA's `tls.crt` and `tls.key`. |
+
+    Traffic between ClickHouse and Keeper, and replication between replicas (port 9009), stay unencrypted inside the namespace in this version.
 
     ## Shards and replicas
 

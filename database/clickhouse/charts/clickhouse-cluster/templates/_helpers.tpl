@@ -79,3 +79,31 @@ topologySpreadConstraints:
 *.*
 {{- end -}}
 {{- end -}}
+
+{{/*
+Names on the server certificate: the installation's Service (first, as the
+common name), every replica's pod as remote_servers and the backup job address
+them, localhost for the backup sidecar, and any extra names. Rendered as a YAML
+list.
+*/}}
+{{- define "clickhouse-cluster.tlsDnsNames" -}}
+{{- $ns := .Release.Namespace -}}
+{{- $hosts := list (printf "clickhouse-%s" .Values.name) -}}
+{{- range $shard := until (int .Values.clickhouse.shards) -}}
+{{- range $replica := until (int $.Values.clickhouse.replicas) -}}
+{{- $hosts = append $hosts (printf "chi-%s-%s-%d-%d" $.Values.name $.Values.clusterName $shard $replica) -}}
+{{- end -}}
+{{- end -}}
+{{- $names := list -}}
+{{- range $host := $hosts -}}
+{{- $names = concat $names (list (printf "%s.%s.svc.cluster.local" $host $ns) (printf "%s.%s.svc" $host $ns) (printf "%s.%s" $host $ns) $host) -}}
+{{- end -}}
+{{- $names = append $names "localhost" -}}
+{{- $names = concat $names .Values.tls.extraDnsNames -}}
+{{- toYaml (uniq $names) -}}
+{{- end -}}
+
+{{/* Where the server certificate Secret is mounted in ClickHouse pods. */}}
+{{- define "clickhouse-cluster.tlsMountPath" -}}
+/etc/clickhouse-server/tls
+{{- end -}}

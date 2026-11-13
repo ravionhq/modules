@@ -1,0 +1,100 @@
+{{- if .Values.tls.enabled }}
+{{- $tls := .Values.tls -}}
+{{- if not (has $tls.caSource (list "self_signed" "secret" "issuer")) }}
+{{- fail "tls.caSource must be self_signed, secret or issuer" }}
+{{- end }}
+{{- if eq $tls.caSource "self_signed" }}
+{{- /*
+A private CA for this installation only. cert-manager generates the CA key
+inside the cluster, and it stays in the CA Secret in this namespace. Anyone who
+can create a Certificate naming this Issuer, or read the CA Secret, can mint a
+certificate clients trust, so keep those permissions as narrow as namespace
+admin.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}-bootstrap
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tls
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tls.caSecretName }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tls
+spec:
+  isCA: true
+  commonName: {{ printf "%s ClickHouse CA" .Values.name }}
+  secretName: {{ $tls.caSecretName }}
+  duration: {{ $tls.caDuration }}
+  renewBefore: {{ $tls.caRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # Renewal re-signs the same key, so certificates it already issued keep
+    # verifying while they renew.
+    rotationPolicy: Never
+  issuerRef:
+    name: {{ $tls.issuerName }}-bootstrap
+    kind: Issuer
+---
+{{- end }}
+{{- if ne $tls.caSource "issuer" }}
+{{- /*
+The CA Issuer signing the server certificate: with the CA created above, or
+with an existing CA key pair Secret (tls.crt and tls.key) in this namespace.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tls
+spec:
+  ca:
+    secretName: {{ $tls.caSecretName }}
+---
+{{- end }}
+{{- $issuerRef := $tls.issuerRef }}
+{{- if ne $tls.caSource "issuer" }}
+{{- $issuerRef = dict "name" $tls.issuerName "kind" "Issuer" "group" "cert-manager.io" }}
+{{- end }}
+{{- if not $issuerRef.name }}
+{{- fail "tls.issuerRef.name is required when tls.caSource is issuer" }}
+{{- end }}
+{{- $dnsNames := include "clickhouse-cluster.tlsDnsNames" . | fromYamlArray }}
+# One certificate for every server: ClickHouse reloads it from the mounted
+# Secret when cert-manager renews it, without a restart.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tls.serverSecretName }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tls
+spec:
+  secretName: {{ $tls.serverSecretName }}
+  commonName: {{ first $dnsNames }}
+  dnsNames:
+    {{- toYaml $dnsNames | nindent 4 }}
+  usages:
+    - digital signature
+    - server auth
+  duration: {{ $tls.leafDuration }}
+  renewBefore: {{ $tls.leafRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: {{ $issuerRef.name }}
+    kind: {{ $issuerRef.kind }}
+    group: {{ $issuerRef.group }}
+{{- end }}

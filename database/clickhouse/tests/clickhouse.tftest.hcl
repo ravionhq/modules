@@ -279,6 +279,186 @@ run "metrics_options_reach_the_cluster_chart" {
   }
 }
 
+run "tls_is_off_by_default" {
+  command = plan
+
+  assert {
+    condition     = !yamldecode(helm_release.cluster.values[0]).tls.enabled && output.tls_ca_secret_name == null && output.https_port == null && output.native_port == 9000 && output.http_port == 8123
+    error_message = "TLS must be off by default, with only the plaintext ports."
+  }
+}
+
+run "tls_with_a_self_signed_ca" {
+  command = plan
+
+  variables {
+    tls_enabled         = true
+    tls_extra_dns_names = ["clickhouse.example.internal"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.enabled && yamldecode(helm_release.cluster.values[0]).tls.caSource == "self_signed" && !yamldecode(helm_release.cluster.values[0]).tls.disablePlaintextPorts
+    error_message = "TLS must reach the chart with a self-signed CA and the plaintext ports still open."
+  }
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.issuerName == "analytics-ca" && yamldecode(helm_release.cluster.values[0]).tls.caSecretName == "analytics-ca" && yamldecode(helm_release.cluster.values[0]).tls.serverSecretName == "analytics-server-tls"
+    error_message = "The CA, its Issuer and the server certificate must be named after the installation."
+  }
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.extraDnsNames == ["clickhouse.example.internal"]
+    error_message = "Extra DNS names must reach the chart."
+  }
+  assert {
+    condition     = output.tls_enabled && output.https_port == 8443 && output.secure_native_port == 9440 && output.native_port == 9000 && output.http_port == 8123
+    error_message = "TLS adds the secure ports beside the plaintext ones."
+  }
+  assert {
+    condition     = output.tls_server_name == "clickhouse-analytics.analytics.svc.cluster.local" && output.tls_ca_secret_name == "analytics-server-tls" && output.tls_ca_source == "self_signed"
+    error_message = "Clients must verify the Service name and trust the server certificate Secret's ca.crt."
+  }
+  assert {
+    condition     = output.tls_issuer.name == "analytics-ca" && output.tls_issuer.kind == "Issuer" && output.tls_issuer.group == "cert-manager.io"
+    error_message = "The module's own CA Issuer must sign the server certificate."
+  }
+}
+
+run "tls_with_an_existing_issuer" {
+  command = plan
+
+  variables {
+    tls_enabled   = true
+    tls_ca_source = "issuer"
+    tls_issuer = {
+      name  = "private-ca"
+      kind  = "AWSPCAClusterIssuer"
+      group = "awspca.cert-manager.io"
+    }
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.caSource == "issuer" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.name == "private-ca" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.kind == "AWSPCAClusterIssuer" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.group == "awspca.cert-manager.io"
+    error_message = "An existing issuer must reach the chart as is."
+  }
+  assert {
+    condition     = output.tls_ca_source == "issuer" && output.tls_issuer.name == "private-ca" && output.tls_issuer.kind == "AWSPCAClusterIssuer"
+    error_message = "The outputs must name the existing issuer."
+  }
+}
+
+run "tls_issuer_kind_and_group_default_to_a_cert_manager_cluster_issuer" {
+  command = plan
+
+  variables {
+    tls_enabled   = true
+    tls_ca_source = "issuer"
+    tls_issuer    = { name = "corp-ca" }
+  }
+
+  assert {
+    condition     = output.tls_issuer.kind == "ClusterIssuer" && output.tls_issuer.group == "cert-manager.io"
+    error_message = "tls_issuer kind and group must default to a cert-manager ClusterIssuer."
+  }
+}
+
+run "tls_with_an_existing_ca_secret" {
+  command = plan
+
+  variables {
+    tls_enabled        = true
+    tls_ca_source      = "secret"
+    tls_ca_secret_name = "corp-ca"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.caSource == "secret" && yamldecode(helm_release.cluster.values[0]).tls.caSecretName == "corp-ca" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.name == "analytics-ca"
+    error_message = "The module's CA Issuer must sign with the existing CA secret."
+  }
+  assert {
+    condition     = output.tls_ca_source == "secret" && output.tls_ca_secret_name == "analytics-server-tls"
+    error_message = "Clients still trust the server certificate Secret's ca.crt."
+  }
+}
+
+run "tls_with_plaintext_ports_closed" {
+  command = plan
+
+  variables {
+    tls_enabled                 = true
+    tls_disable_plaintext_ports = true
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.disablePlaintextPorts
+    error_message = "Closing the plaintext ports must reach the chart."
+  }
+  assert {
+    condition     = output.http_port == null && output.native_port == null && output.http_endpoint == null && output.https_endpoint == "https://clickhouse-analytics.analytics.svc.cluster.local:8443"
+    error_message = "With the plaintext ports closed, only the TLS endpoints are output."
+  }
+}
+
+run "tls_issuer_source_needs_an_issuer" {
+  command = plan
+
+  variables {
+    tls_enabled   = true
+    tls_ca_source = "issuer"
+  }
+
+  expect_failures = [helm_release.cluster]
+}
+
+run "tls_secret_source_needs_a_secret_name" {
+  command = plan
+
+  variables {
+    tls_enabled   = true
+    tls_ca_source = "secret"
+  }
+
+  expect_failures = [helm_release.cluster]
+}
+
+run "closing_plaintext_ports_needs_tls" {
+  command = plan
+
+  variables {
+    tls_disable_plaintext_ports = true
+  }
+
+  expect_failures = [helm_release.cluster]
+}
+
+run "unknown_tls_ca_source_is_rejected" {
+  command = plan
+
+  variables {
+    tls_ca_source = "acme"
+  }
+
+  expect_failures = [var.tls_ca_source]
+}
+
+run "invalid_tls_issuer_is_rejected" {
+  command = plan
+
+  variables {
+    tls_issuer = { name = "Private_CA", kind = "clusterissuer" }
+  }
+
+  expect_failures = [var.tls_issuer]
+}
+
+run "invalid_tls_extra_dns_name_is_rejected" {
+  command = plan
+
+  variables {
+    tls_extra_dns_names = ["not a name"]
+  }
+
+  expect_failures = [var.tls_extra_dns_names]
+}
+
 run "invalid_name_is_rejected" {
   command = plan
 

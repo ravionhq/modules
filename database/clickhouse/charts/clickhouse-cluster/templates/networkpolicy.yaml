@@ -1,7 +1,8 @@
 {{- if .Values.networkPolicy.enabled }}
 # ClickHouse: any pod in this namespace (other replicas, Keeper, the operator,
-# backups) on every port; the allowed namespaces on HTTP and native; anyone on
-# the metrics port, so a scraper in any namespace works.
+# backups) on every port; the allowed namespaces on HTTP and native, and their
+# TLS ports when TLS is on (only those once the plaintext ports are closed);
+# anyone on the metrics port, so a scraper in any namespace works.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -26,10 +27,18 @@ spec:
                 values:
                   {{- toYaml . | nindent 18 }}
       ports:
+        {{- if not (and $.Values.tls.enabled $.Values.tls.disablePlaintextPorts) }}
         - port: 8123
           protocol: TCP
         - port: 9000
           protocol: TCP
+        {{- end }}
+        {{- if $.Values.tls.enabled }}
+        - port: 8443
+          protocol: TCP
+        - port: 9440
+          protocol: TCP
+        {{- end }}
     {{- end }}
     - from:
         - namespaceSelector: {}

@@ -24,6 +24,30 @@ locals {
   service_host = "clickhouse-${var.name}.${var.namespace}.svc.cluster.local"
 
   ################################################################################
+  # TLS
+  ################################################################################
+
+  plaintext_ports_open = !(var.tls_enabled && var.tls_disable_plaintext_ports)
+
+  # Server certificate. Its ca.crt is the CA clients trust, whichever CA
+  # issued it.
+  tls_server_secret = "${var.name}-server-tls"
+
+  # The module's own Issuer signs with a CA it creates (self_signed) or with an
+  # existing CA key pair Secret (secret). An existing issuer is used as is.
+  tls_module_issuer_name = "${var.name}-ca"
+  tls_issuer_ref = var.tls_ca_source == "issuer" && var.tls_issuer != null ? {
+    name  = var.tls_issuer.name
+    kind  = var.tls_issuer.kind
+    group = var.tls_issuer.group
+    } : {
+    name  = local.tls_module_issuer_name
+    kind  = "Issuer"
+    group = "cert-manager.io"
+  }
+  tls_ca_key_pair_secret = var.tls_ca_source == "secret" ? coalesce(var.tls_ca_secret_name, "${var.name}-ca") : "${var.name}-ca"
+
+  ################################################################################
   # Users
   ################################################################################
 

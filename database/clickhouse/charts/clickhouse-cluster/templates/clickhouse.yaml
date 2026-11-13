@@ -1,5 +1,8 @@
 {{- $selector := dict "clickhouse.ravion.com/installation" .Values.name "app.kubernetes.io/component" "clickhouse" -}}
 {{- $grantTarget := include "clickhouse-cluster.grantTarget" . -}}
+{{- $tlsDir := include "clickhouse-cluster.tlsMountPath" . -}}
+{{- $plaintext := not (and .Values.tls.enabled .Values.tls.disablePlaintextPorts) -}}
+{{- $coldStorage := and .Values.coldStorage.enabled .Values.s3.bucket -}}
 apiVersion: clickhouse.altinity.com/v1
 kind: ClickHouseInstallation
 metadata:
@@ -12,6 +15,9 @@ spec:
     templates:
       podTemplate: clickhouse
       dataVolumeClaimTemplate: data
+      {{- if .Values.tls.enabled }}
+      serviceTemplate: clickhouse
+      {{- end }}
     storageManagement:
       # The operator creates and grows the volumes itself, so a larger
       # volumeSize resizes them in place.
@@ -80,11 +86,48 @@ spec:
       prometheus/metrics: "true"
       prometheus/events: "true"
       prometheus/asynchronous_metrics: "true"
+      {{- if .Values.tls.enabled }}
+      tcp_port_secure: "9440"
+      https_port: "8443"
+      {{- end }}
       {{- range $key, $value := .Values.clickhouse.settings }}
       {{ $key }}: {{ $value | quote }}
       {{- end }}
-    {{- if and .Values.coldStorage.enabled .Values.s3.bucket }}
+    {{- if or $coldStorage .Values.tls.enabled }}
     files:
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+      # The server certificate for 9440 and 8443, reloaded when the mounted
+      # Secret changes. As a client (distributed queries to other servers over
+      # 9440), ClickHouse trusts the same CA on top of the system CAs, which
+      # S3 still needs.
+      config.d/tls.xml: |
+        <clickhouse>
+          <openSSL>
+            <server>
+              <certificateFile>{{ $tlsDir }}/tls.crt</certificateFile>
+              <privateKeyFile>{{ $tlsDir }}/tls.key</privateKeyFile>
+              <verificationMode>none</verificationMode>
+              <loadDefaultCAFile>false</loadDefaultCAFile>
+              <cacheSessions>true</cacheSessions>
+              <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+              <preferServerCiphers>true</preferServerCiphers>
+            </server>
+            <client>
+              <caConfig>{{ $tlsDir }}/ca.crt</caConfig>
+              <loadDefaultCAFile>true</loadDefaultCAFile>
+              <verificationMode>relaxed</verificationMode>
+              <cacheSessions>true</cacheSessions>
+              <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+              <preferServerCiphers>true</preferServerCiphers>
+              <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+              </invalidCertificateHandler>
+            </client>
+          </openSSL>
+        </clickhouse>
+    {{- end }}
+    {{- if $coldStorage }}
       config.d/cold_storage.xml: |
         <clickhouse>
           <storage_configuration>
@@ -126,6 +169,16 @@ spec:
         # with a secret the operator generates, instead of as `default`.
         secret:
           auto: "true"
+        {{- if .Values.tls.enabled }}
+        # Opens 9440 and 8443 on the pods, and remote_servers reach the other
+        # servers on 9440 over TLS. The operator then talks to the servers
+        # over HTTPS once 8123 is closed, and moves the probes to 8443.
+        secure: "yes"
+        {{- if not $plaintext }}
+        # Closes 9000 and 8123 on the servers, their pods and Services.
+        insecure: "no"
+        {{- end }}
+        {{- end }}
         layout:
           shardsCount: {{ .Values.clickhouse.shards }}
           replicasCount: {{ .Values.clickhouse.replicas }}
@@ -151,6 +204,15 @@ spec:
           {{- end }}
           {{- include "clickhouse-cluster.scheduling" . | nindent 10 }}
           {{- include "clickhouse-cluster.topologySpread" (dict "root" . "selector" $selector "matchLabelKeys" (list "clickhouse.altinity.com/shard")) | nindent 10 }}
+          {{- if .Values.tls.enabled }}
+          # Mounted as a directory, not with subPath, so a renewed certificate
+          # reaches the running server.
+          volumes:
+            - name: tls
+              secret:
+                secretName: {{ .Values.tls.serverSecretName }}
+                defaultMode: 0440
+          {{- end }}
           securityContext:
             runAsUser: 101
             runAsGroup: 101
@@ -164,6 +226,12 @@ spec:
                   containerPort: 9363
               resources:
                 {{- toYaml .Values.clickhouse.resources | nindent 16 }}
+              {{- if .Values.tls.enabled }}
+              volumeMounts:
+                - name: tls
+                  mountPath: {{ $tlsDir }}
+                  readOnly: true
+              {{- end }}
             {{- if and .Values.backup.enabled .Values.s3.bucket }}
             # clickhouse-backup in server mode: the scheduled job calls its API
             # on one replica of each shard. It reads the data volume directly,
@@ -185,6 +253,15 @@ spec:
                     secretKeyRef:
                       name: {{ .Values.users.admin.secret }}
                       key: password
+                {{- if .Values.tls.enabled }}
+                # The server over TLS on localhost, verified against the CA.
+                - name: CLICKHOUSE_PORT
+                  value: "9440"
+                - name: CLICKHOUSE_SECURE
+                  value: "true"
+                - name: CLICKHOUSE_TLS_CA
+                  value: {{ printf "%s/ca.crt" $tlsDir | quote }}
+                {{- end }}
                 - name: API_USERNAME
                   valueFrom:
                     secretKeyRef:
@@ -222,7 +299,40 @@ spec:
               volumeMounts:
                 - name: data
                   mountPath: /var/lib/clickhouse
+                {{- if .Values.tls.enabled }}
+                - name: tls
+                  mountPath: {{ $tlsDir }}
+                  readOnly: true
+                {{- end }}
             {{- end }}
+    {{- if .Values.tls.enabled }}
+    # Replaces the operator's default Service of the same name, so it carries
+    # the TLS ports (and drops the plaintext ones once they are closed).
+    serviceTemplates:
+      - name: clickhouse
+        spec:
+          type: ClusterIP
+          clusterIP: None
+          ports:
+            {{- if $plaintext }}
+            - name: http
+              port: 8123
+              targetPort: 8123
+              protocol: TCP
+            - name: tcp
+              port: 9000
+              targetPort: 9000
+              protocol: TCP
+            {{- end }}
+            - name: https
+              port: 8443
+              targetPort: 8443
+              protocol: TCP
+            - name: secureclient
+              port: 9440
+              targetPort: 9440
+              protocol: TCP
+    {{- end }}
     volumeClaimTemplates:
       - name: data
         spec:

@@ -8,18 +8,33 @@ output "host" {
 }
 
 output "http_port" {
-  description = "ClickHouse HTTP interface port."
-  value       = 8123
+  description = "ClickHouse HTTP interface port (null when tls_disable_plaintext_ports closes it)."
+  value       = local.plaintext_ports_open ? 8123 : null
 }
 
 output "native_port" {
-  description = "ClickHouse native protocol port."
-  value       = 9000
+  description = "ClickHouse native protocol port (null when tls_disable_plaintext_ports closes it)."
+  value       = local.plaintext_ports_open ? 9000 : null
 }
 
 output "http_endpoint" {
-  description = "In-cluster URL of the HTTP interface."
-  value       = "http://${local.service_host}:8123"
+  description = "In-cluster URL of the HTTP interface (null when tls_disable_plaintext_ports closes it)."
+  value       = local.plaintext_ports_open ? "http://${local.service_host}:8123" : null
+}
+
+output "https_port" {
+  description = "ClickHouse HTTPS interface port (null when TLS is off)."
+  value       = var.tls_enabled ? 8443 : null
+}
+
+output "secure_native_port" {
+  description = "ClickHouse native protocol port over TLS (null when TLS is off)."
+  value       = var.tls_enabled ? 9440 : null
+}
+
+output "https_endpoint" {
+  description = "In-cluster URL of the HTTPS interface (null when TLS is off)."
+  value       = var.tls_enabled ? "https://${local.service_host}:8443" : null
 }
 
 output "cluster" {
@@ -40,6 +55,35 @@ output "namespace" {
 output "installation_name" {
   description = "Name of the ClickHouseInstallation resource."
   value       = var.name
+}
+
+################################################################################
+# TLS
+################################################################################
+
+output "tls_enabled" {
+  description = "Whether ClickHouse serves TLS on 9440 and 8443."
+  value       = var.tls_enabled
+}
+
+output "tls_server_name" {
+  description = "Name clients verify the server certificate against (null when TLS is off)."
+  value       = var.tls_enabled ? local.service_host : null
+}
+
+output "tls_ca_secret_name" {
+  description = "Kubernetes Secret in the namespace whose ca.crt is the CA clients trust, whichever CA issued it (null when TLS is off). Copy only ca.crt to clients: the Secret also holds the server's private key."
+  value       = var.tls_enabled ? local.tls_server_secret : null
+}
+
+output "tls_ca_source" {
+  description = "Certificate authority behind the server certificate: self_signed, issuer or secret (null when TLS is off)."
+  value       = var.tls_enabled ? var.tls_ca_source : null
+}
+
+output "tls_issuer" {
+  description = "cert-manager issuer that signs the server certificate, as {name, kind, group} (null when TLS is off)."
+  value       = var.tls_enabled ? local.tls_issuer_ref : null
 }
 
 ################################################################################

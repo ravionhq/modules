@@ -36,9 +36,30 @@ spec:
             - -c
             - |
               set -u
+              {{- if .Values.tls.enabled }}
+              # Over TLS on 9440, verifying the server against the CA.
+              cat >/tmp/client.xml <<'EOF'
+              <config>
+                <openSSL>
+                  <client>
+                    <caConfig>/etc/clickhouse-client/tls/ca.crt</caConfig>
+                    <loadDefaultCAFile>false</loadDefaultCAFile>
+                    <verificationMode>relaxed</verificationMode>
+                    <invalidCertificateHandler>
+                      <name>RejectCertificateHandler</name>
+                    </invalidCertificateHandler>
+                  </client>
+                </openSSL>
+              </config>
+              EOF
+              client() {
+                clickhouse-client --config-file /tmp/client.xml --secure --port 9440 --host "clickhouse-${INSTALLATION}" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
+              }
+              {{- else }}
               client() {
                 clickhouse-client --host "clickhouse-${INSTALLATION}" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
               }
+              {{- end }}
               expected=$((SHARDS * REPLICAS))
               until [ "$(client --query "SELECT count() FROM system.clusters WHERE cluster = '${CLUSTER}'" 2>/dev/null)" = "$expected" ]; do
                 echo "waiting for ${expected} servers in cluster ${CLUSTER}"
@@ -78,4 +99,20 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
+          {{- if .Values.tls.enabled }}
+          volumeMounts:
+            - name: tls-ca
+              mountPath: /etc/clickhouse-client/tls
+              readOnly: true
+          {{- end }}
+      {{- if .Values.tls.enabled }}
+      # Only the CA from the server certificate Secret, not its key.
+      volumes:
+        - name: tls-ca
+          secret:
+            secretName: {{ .Values.tls.serverSecretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+      {{- end }}
 {{- end }}

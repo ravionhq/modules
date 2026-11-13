@@ -316,13 +316,81 @@ variable "network_policy_enabled" {
 
 variable "network_policy_allowed_namespaces" {
   type        = list(string)
-  description = "Namespaces whose pods may reach ClickHouse on its HTTP and native ports when network policies are on. Pods in the installation's own namespace are always allowed."
+  description = "Namespaces whose pods may reach ClickHouse on its HTTP and native ports (and their TLS ports, with tls_enabled) when network policies are on. Pods in the installation's own namespace are always allowed."
   default     = []
   nullable    = false
 
   validation {
     condition     = alltrue([for namespace in var.network_policy_allowed_namespaces : can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", namespace))])
     error_message = "Each network_policy_allowed_namespaces entry must be a valid Kubernetes namespace name."
+  }
+}
+
+################################################################################
+# TLS
+################################################################################
+
+variable "tls_enabled" {
+  type        = bool
+  description = "Serve the native protocol over TLS on 9440 and HTTPS on 8443, with a server certificate from cert-manager, and send distributed queries between servers over TLS. Requires cert-manager, such as from the EKS Add-ons module. Clients then trust the ca.crt in the Secret named by the tls_ca_secret_name output."
+  default     = false
+  nullable    = false
+}
+
+variable "tls_disable_plaintext_ports" {
+  type        = bool
+  description = "With tls_enabled, close the plaintext native (9000) and HTTP (8123) ports, so every client must use TLS. The operator, probes, backups and the database job switch to the secure ports."
+  default     = false
+  nullable    = false
+}
+
+variable "tls_ca_source" {
+  type        = string
+  description = "Certificate authority that issues the server certificate. `self_signed` creates a CA in the namespace; `issuer` uses an existing cert-manager Issuer or ClusterIssuer, such as an AWS Private CA issuer; `secret` uses an existing CA key pair Secret in the namespace."
+  default     = "self_signed"
+  nullable    = false
+
+  validation {
+    condition     = contains(["self_signed", "issuer", "secret"], var.tls_ca_source)
+    error_message = "The tls_ca_source must be self_signed, issuer or secret."
+  }
+}
+
+variable "tls_issuer" {
+  type = object({
+    name  = string
+    kind  = optional(string, "ClusterIssuer")
+    group = optional(string, "cert-manager.io")
+  })
+  description = "Existing issuer for tls_ca_source = issuer. It must put the CA in the certificate Secret's ca.crt. For AWS Private CA through aws-privateca-issuer, use kind AWSPCAClusterIssuer or AWSPCAIssuer and group awspca.cert-manager.io."
+  default     = null
+
+  validation {
+    condition     = var.tls_issuer == null || (can(regex("^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", var.tls_issuer.name)) && can(regex("^[A-Z][A-Za-z0-9]*$", var.tls_issuer.kind)) && can(regex("^[a-z0-9.-]+$", var.tls_issuer.group)))
+    error_message = "tls_issuer needs a Kubernetes object name, a kind such as ClusterIssuer, and an API group such as cert-manager.io."
+  }
+}
+
+variable "tls_ca_secret_name" {
+  type        = string
+  description = "For tls_ca_source = secret: a kubernetes.io/tls Secret in the namespace holding the CA certificate (tls.crt) and its private key (tls.key)."
+  default     = null
+
+  validation {
+    condition     = var.tls_ca_secret_name == null || can(regex("^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", var.tls_ca_secret_name))
+    error_message = "The tls_ca_secret_name must be a valid Kubernetes object name."
+  }
+}
+
+variable "tls_extra_dns_names" {
+  type        = list(string)
+  description = "More names for the server certificate, such as a DNS name you point at a load balancer. The Service, every replica's pod and localhost are always included."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for n in var.tls_extra_dns_names : can(regex("^[a-z0-9*]([a-z0-9.-]{0,251}[a-z0-9])?$", n))])
+    error_message = "Each tls_extra_dns_names entry must be a DNS name."
   }
 }
 

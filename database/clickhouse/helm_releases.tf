@@ -8,7 +8,8 @@
 #   2. <name>-operator  The Altinity clickhouse-operator, watching only this
 #                       namespace (upstream chart, pinned).
 #   3. <name>           ClickHouse Keeper, the ClickHouse installation, the
-#                       backup schedule and the rest (local chart).
+#                       backup schedule, the TLS certificates and the rest
+#                       (local chart).
 #
 # The operator reads its own ClickHouse credentials once, at startup, so its
 # container also references that Secret: Kubernetes holds the pod until the
@@ -268,7 +269,35 @@ resource "helm_release" "cluster" {
       enabled           = var.network_policy_enabled
       allowedNamespaces = var.network_policy_allowed_namespaces
     }
+
+    tls = {
+      enabled               = var.tls_enabled
+      disablePlaintextPorts = var.tls_disable_plaintext_ports
+      caSource              = var.tls_ca_source
+      # The module's own Issuer (self_signed and secret), and the CA key pair
+      # it signs with.
+      issuerName       = local.tls_module_issuer_name
+      caSecretName     = local.tls_ca_key_pair_secret
+      issuerRef        = local.tls_issuer_ref
+      serverSecretName = local.tls_server_secret
+      extraDnsNames    = var.tls_extra_dns_names
+    }
   })]
+
+  lifecycle {
+    precondition {
+      condition     = !var.tls_enabled || var.tls_ca_source != "issuer" || var.tls_issuer != null
+      error_message = "tls_issuer is required when tls_ca_source is issuer."
+    }
+    precondition {
+      condition     = !var.tls_enabled || var.tls_ca_source != "secret" || var.tls_ca_secret_name != null
+      error_message = "tls_ca_secret_name is required when tls_ca_source is secret."
+    }
+    precondition {
+      condition     = var.tls_enabled || !var.tls_disable_plaintext_ports
+      error_message = "tls_disable_plaintext_ports requires tls_enabled."
+    }
+  }
 
   depends_on = [
     helm_release.operator,
