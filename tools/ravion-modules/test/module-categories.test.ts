@@ -55,6 +55,13 @@ describe("module categories", () => {
     );
   });
 
+  it("groups ClickHouse with databases", () => {
+    assert.deepEqual(
+      getModuleCategoriesForDefinitionType("rvn-aws-clickhouse").map((category) => category.givenId),
+      ["database"],
+    );
+  });
+
   it("groups EKS infrastructure definitions with clusters", () => {
     for (const definitionType of ["rvn-eks-cluster", "rvn-eks-addons"]) {
       assert.deepEqual(
