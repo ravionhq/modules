@@ -248,6 +248,7 @@ resource "helm_release" "cluster" {
 
     placement = {
       zoneSpread = var.zone_spread
+      nodeSpread = var.node_spread
       priorityClass = {
         create = var.priority_class.enabled
         name   = "${var.namespace}-${var.name}-clickhouse"

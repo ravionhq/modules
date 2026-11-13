@@ -63,6 +63,9 @@ storage:
 placement:
   # preferred or required.
   zoneSpread: preferred
+  # preferred or required: whether replicas of a shard, and Keeper nodes,
+  # may share a node when there are too few nodes.
+  nodeSpread: preferred
   priorityClass:
     create: false
     name: clickhouse

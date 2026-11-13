@@ -58,29 +58,45 @@ topologySpreadConstraints:
 {{- end -}}
 
 {{/*
-Required separation the spread above cannot guarantee (maxSkew only balances
-counts): no two pods sharing the selector, and the values of matchLabelKeys
-(a ClickHouse shard), on one node, nor in one zone when zoneSpread is required.
-Takes the same dict as topologySpread.
+Separation the spread above cannot guarantee (maxSkew only balances counts):
+pods sharing the selector, and the values of matchLabelKeys (a ClickHouse
+shard), on different nodes, strictly when nodeSpread is required and as far as
+the nodes allow when it is preferred; and in different zones when zoneSpread
+is required. Takes the same dict as topologySpread.
 */}}
-{{- define "clickhouse-cluster.antiAffinity" -}}
-{{- $keys := list "kubernetes.io/hostname" -}}
-{{- if eq .root.Values.placement.zoneSpread "required" -}}
-{{- $keys = append $keys "topology.kubernetes.io/zone" -}}
+{{- define "clickhouse-cluster.antiAffinityTerm" -}}
+topologyKey: {{ .topologyKey }}
+labelSelector:
+  matchLabels:
+    {{- toYaml .selector | nindent 4 }}
+{{- with .matchLabelKeys }}
+matchLabelKeys:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end -}}
+
+{{- define "clickhouse-cluster.antiAffinity" -}}
+{{- $nodeRequired := eq .root.Values.placement.nodeSpread "required" -}}
+{{- $zoneRequired := eq .root.Values.placement.zoneSpread "required" -}}
+{{- $node := dict "topologyKey" "kubernetes.io/hostname" "selector" .selector "matchLabelKeys" .matchLabelKeys -}}
+{{- $zone := dict "topologyKey" "topology.kubernetes.io/zone" "selector" .selector "matchLabelKeys" .matchLabelKeys -}}
 affinity:
   podAntiAffinity:
+    {{- if or $nodeRequired $zoneRequired }}
     requiredDuringSchedulingIgnoredDuringExecution:
-      {{- range $keys }}
-      - topologyKey: {{ . }}
-        labelSelector:
-          matchLabels:
-            {{- toYaml $.selector | nindent 12 }}
-        {{- with $.matchLabelKeys }}
-        matchLabelKeys:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
+      {{- if $nodeRequired }}
+      - {{- include "clickhouse-cluster.antiAffinityTerm" $node | nindent 8 }}
       {{- end }}
+      {{- if $zoneRequired }}
+      - {{- include "clickhouse-cluster.antiAffinityTerm" $zone | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- if not $nodeRequired }}
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          {{- include "clickhouse-cluster.antiAffinityTerm" $node | nindent 10 }}
+    {{- end }}
 {{- end -}}
 
 {{/* Environment variables carrying the admin credentials. */}}

@@ -118,10 +118,15 @@ tables whose data should be replicated.
 Start with one shard: a single ClickHouse server handles billions of rows, and a shard grows with CPU,
 memory and volume size. Adding shards later means creating new tables or redistributing existing data, so
 add shards only when one server cannot hold the data. Two replicas per shard keep data available while a
-node or zone is down. Two replicas of one shard, and two Keeper nodes, are never scheduled on the same node
-(required pod anti-affinity), so the cluster needs at least as many nodes as replicas per shard and Keeper
-nodes. With `zone_spread = "required"`, they are never in the same zone either, which needs at least as
-many zones as replicas per shard and Keeper nodes (3 by default).
+node or zone is down.
+
+Replicas of one shard, and Keeper nodes, go on different nodes when there are enough (`node_spread =
+"preferred"`, the default), so the defaults (2 replicas, 3 Keeper nodes) fit the EKS cluster module's
+default two-node group; with two nodes, two Keeper nodes share one. **For production, run three or more
+nodes and set `node_spread = "required"`**: two replicas of a shard, or two Keeper nodes, are then never
+scheduled on one node, so losing a node never takes a shard or the Keeper majority with it. That needs at
+least as many nodes as replicas per shard and Keeper nodes. With `zone_spread = "required"`, they are never
+in the same zone either, which needs as many zones.
 
 ## Backups and restore
 
@@ -283,7 +288,8 @@ its backups are kept unless `s3_force_destroy` is set. Credential secrets stay r
 | keeper_replica_count | Keeper nodes. 3 tolerates losing one; 1 has no redundancy and suits development only. | `number` | `3` | no |
 | keeper_resources | Requests and limits for each Keeper node. | `object({ cpu_request = optional(string, "250m") cpu_limit = optional(string) memory_request = optional(string, "512Mi") memory_limit = optional(string, "1Gi") })` | `{}` | no |
 | keeper_volume_size | Size of each Keeper node's volume (logs and snapshots). | `string` | `"10Gi"` | no |
-| zone_spread | How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required never puts two replicas of a shard, or two Keeper nodes, in one zone. They never share a node either way. | `string` | `"preferred"` | no |
+| zone_spread | How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required never puts two replicas of a shard, or two Keeper nodes, in one zone. | `string` | `"preferred"` | no |
+| node_spread | How replicas of a shard, and Keeper nodes, spread across nodes: preferred puts them on different nodes when there are enough, so the defaults fit a two-node cluster; required never puts two on one node, and needs at least as many nodes as replicas per shard and Keeper nodes (3 by default). Use required in production on three or more nodes. | `string` | `"preferred"` | no |
 | priority_class | Create a PriorityClass for ClickHouse and Keeper so they are preempted and evicted after ordinary workloads. | `object({ enabled = optional(bool, false) value = optional(number, 1000000) })` | `{}` | no |
 | dedicated_node_pool | Run ClickHouse and Keeper on a tainted Karpenter NodePool of their own. Needs Karpenter and an EC2NodeClass on the cluster. | `object({ enabled = optional(bool, false) node_class_name = optional(string, "default") capacity_types = optional(list(string), ["on-demand"]) instance_categories = optional(list(string), ["r", "m"]) architectures = optional(list(string), ["amd64"]) cpu_limit = optional(number, 64) })` | `{}` | no |
 | network_policy_enabled | Restrict ingress to ClickHouse and Keeper with NetworkPolicies. Needs a CNI that enforces them (for the VPC CNI, turn on its network policy agent). | `bool` | `false` | no |

@@ -334,6 +334,38 @@ run "short_backup_timeout_is_rejected" {
   expect_failures = [var.backup_timeout_seconds]
 }
 
+run "node_spread_defaults_to_preferred" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).placement.nodeSpread == "preferred" && yamldecode(helm_release.cluster.values[0]).placement.zoneSpread == "preferred"
+    error_message = "Node and zone spread must default to preferred, so the defaults fit a two-node cluster."
+  }
+}
+
+run "required_node_spread_reaches_the_chart" {
+  command = plan
+
+  variables {
+    node_spread = "required"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).placement.nodeSpread == "required"
+    error_message = "node_spread must reach the chart."
+  }
+}
+
+run "unknown_node_spread_is_rejected" {
+  command = plan
+
+  variables {
+    node_spread = "strict"
+  }
+
+  expect_failures = [var.node_spread]
+}
+
 run "metrics_options_reach_the_cluster_chart" {
   command = plan
 

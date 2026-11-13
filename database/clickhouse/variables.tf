@@ -249,13 +249,25 @@ variable "keeper_volume_size" {
 
 variable "zone_spread" {
   type        = string
-  description = "How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required never puts two replicas of a shard, or two Keeper nodes, in one zone. They never share a node either way."
+  description = "How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required never puts two replicas of a shard, or two Keeper nodes, in one zone."
   default     = "preferred"
   nullable    = false
 
   validation {
     condition     = contains(["preferred", "required"], var.zone_spread)
     error_message = "zone_spread must be preferred or required."
+  }
+}
+
+variable "node_spread" {
+  type        = string
+  description = "How replicas of a shard, and Keeper nodes, spread across nodes: preferred puts them on different nodes when there are enough, so the defaults fit a two-node cluster; required never puts two on one node, and needs at least as many nodes as replicas per shard and Keeper nodes (3 by default). Use required in production on three or more nodes."
+  default     = "preferred"
+  nullable    = false
+
+  validation {
+    condition     = contains(["preferred", "required"], var.node_spread)
+    error_message = "node_spread must be preferred or required."
   }
 }
 

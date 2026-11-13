@@ -1154,12 +1154,13 @@ test_ebs_storage() {
 
 test_clickhouse_cluster() {
   local chart=clickhouse-cluster
-  local ci default full minimal prefixed chi chk
+  local ci default full minimal prefixed nodes chi chk
   ci="$(chart_path "${chart}")/ci"
   default="$(render "${chart}" default -n analytics -f "${ci}/default-values.yaml")"
   full="$(render "${chart}" full -n analytics -f "${ci}/full-values.yaml")"
   minimal="$(render "${chart}" minimal -n dev -f "${ci}/minimal-values.yaml")"
   prefixed="$(render "${chart}" prefixed -n analytics -f "${ci}/default-values.yaml" --set backup.pathPrefix=team-a/analytics)"
+  nodes="$(render "${chart}" nodes -n analytics -f "${ci}/default-values.yaml" --set placement.nodeSpread=required)"
   chi='.[] | select(.kind == "ClickHouseInstallation")'
   chk='.[] | select(.kind == "ClickHouseKeeperInstallation")'
 
@@ -1196,12 +1197,15 @@ test_clickhouse_cluster() {
   assert_eq "${chart}: a backup path prefix keeps installations apart in a shared bucket" \
     "backup/team-a/analytics/{cluster}/{shard} backup-object-disks/team-a/analytics/{cluster}/{shard}" \
     "$(q "${prefixed}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_PATH\") | .value") $(q "${prefixed}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_OBJECT_DISK_PATH\") | .value")"
-  assert_eq "${chart}: replicas of a shard and Keeper nodes never share a node" \
-    "kubernetes.io/hostname clickhouse.altinity.com/shard 1 kubernetes.io/hostname 1" \
-    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys[0]") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | length") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | length")"
-  assert_eq "${chart}: required zone spread also keeps them in separate zones" \
-    "topology.kubernetes.io/zone topology.kubernetes.io/zone" \
-    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey")"
+  assert_eq "${chart}: by default replicas of a shard and Keeper nodes prefer separate nodes, so two nodes are enough" \
+    "kubernetes.io/hostname clickhouse.altinity.com/shard  kubernetes.io/hostname " \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.matchLabelKeys[0]") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution")"
+  assert_eq "${chart}: required node spread never puts them on one node" \
+    "kubernetes.io/hostname clickhouse.altinity.com/shard  kubernetes.io/hostname " \
+    "$(q "${nodes}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${nodes}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys[0]") $(q "${nodes}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution") $(q "${nodes}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${nodes}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution")"
+  assert_eq "${chart}: required zone spread keeps them in separate zones and still prefers separate nodes" \
+    "topology.kubernetes.io/zone topology.kubernetes.io/zone kubernetes.io/hostname" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey")"
   assert_eq "${chart}: replicas of a shard spread across zones and never share a node" \
     "ScheduleAnyway DoNotSchedule clickhouse.altinity.com/shard" \
     "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[1].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].matchLabelKeys[0]")"

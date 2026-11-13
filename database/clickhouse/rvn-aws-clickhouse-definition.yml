@@ -380,6 +380,17 @@ module:
         - label: Required
           description: Never schedule two replicas of a shard, or two Keeper nodes, in one zone
           value: required
+    - id: node_spread
+      label: Node spread
+      type: string
+      default: preferred
+      values:
+        - label: Preferred
+          description: Separate nodes when there are enough; the defaults fit two nodes
+          value: preferred
+        - label: Required
+          description: Never two replicas of a shard, or two Keeper nodes, on one node. Use in production on 3+ nodes
+          value: required
     - id: priority_class_enabled
       label: High scheduling priority
       type: boolean
@@ -608,6 +619,7 @@ module:
           memory_limit: << module.input.keeper_memory >>
         keeper_volume_size: << module.input.keeper_volume_size >>
         zone_spread: << module.input.zone_spread >>
+        node_spread: << module.input.node_spread || "preferred" >>
         priority_class:
           enabled: << module.input.priority_class_enabled >>
         dedicated_node_pool:
@@ -709,7 +721,7 @@ module:
 
     ## Shards and replicas
 
-    Start with one shard. A single server handles billions of rows, and growing a shard is a matter of CPU, memory and volume size. Adding shards later means new tables or redistributing data, so only add them when one server cannot hold the data. Two replicas per shard keep the data available while a node or zone is down; replicas of a shard, and Keeper nodes, never share a node, so the cluster needs at least that many nodes. With **Zone spread** set to Required they never share a zone either, which needs at least as many zones as replicas and Keeper nodes.
+    Start with one shard. A single server handles billions of rows, and growing a shard is a matter of CPU, memory and volume size. Adding shards later means new tables or redistributing data, so only add them when one server cannot hold the data. Two replicas per shard keep the data available while a node or zone is down; replicas of a shard, and Keeper nodes, go on different nodes when there are enough, so the defaults fit a two-node cluster. For production, run three or more nodes and set **Node spread** to Required, so losing a node never takes a shard or the Keeper majority with it. With **Zone spread** set to Required they never share a zone either, which needs at least as many zones as replicas and Keeper nodes.
 
     ## Backups
 
