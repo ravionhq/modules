@@ -302,6 +302,23 @@ module:
       min: 1
       show_when:
         backup_enabled: true
+    - id: backup_timeout_seconds
+      label: Backup time limit
+      type: number
+      description: Seconds a run may take for every shard together before it fails, so the next run can start.
+      default: 21600
+      min: 600
+      collapsible: true
+      show_when:
+        backup_enabled: true
+    - id: backup_path_prefix
+      label: Backup path prefix
+      type: string
+      description: Inside the bucket, under backup/. Blank uses <namespace>/<name>. Keep it stable; restores look under it.
+      required: false
+      collapsible: true
+      show_when:
+        backup_enabled: true
     - id: cold_storage_enabled
       label: S3 cold tier
       type: boolean
@@ -361,7 +378,7 @@ module:
           description: Spread replicas across zones when capacity allows
           value: preferred
         - label: Required
-          description: Never schedule two replicas of a shard in one zone
+          description: Never schedule two replicas of a shard, or two Keeper nodes, in one zone
           value: required
     - id: priority_class_enabled
       label: High scheduling priority
@@ -631,6 +648,8 @@ module:
         backup_enabled: << module.input.backup_enabled >>
         backup_schedule: << module.input.backup_schedule >>
         backup_retention_count: << module.input.backup_retention_count >>
+        backup_timeout_seconds: << module.input.backup_timeout_seconds || 21600 >>
+        backup_path_prefix: << module.input.backup_path_prefix || null >>
         cold_storage_enabled: << module.input.cold_storage_enabled >>
         cold_storage_cache_size: << module.input.cold_storage_cache_size >>
         metrics_pod_monitors_enabled: << module.input.metrics_pod_monitors_enabled >>
@@ -690,11 +709,11 @@ module:
 
     ## Shards and replicas
 
-    Start with one shard. A single server handles billions of rows, and growing a shard is a matter of CPU, memory and volume size. Adding shards later means new tables or redistributing data, so only add them when one server cannot hold the data. Two replicas per shard keep the data available while a node or zone is down; replicas of a shard are spread across zones and never share a node.
+    Start with one shard. A single server handles billions of rows, and growing a shard is a matter of CPU, memory and volume size. Adding shards later means new tables or redistributing data, so only add them when one server cannot hold the data. Two replicas per shard keep the data available while a node or zone is down; replicas of a shard, and Keeper nodes, never share a node, so the cluster needs at least that many nodes. With **Zone spread** set to Required they never share a zone either, which needs at least as many zones as replicas and Keeper nodes.
 
     ## Backups
 
-    Each ClickHouse pod runs [clickhouse-backup](https://github.com/Altinity/clickhouse-backup) beside the server. On the **Backup schedule**, a job asks one replica of every shard to back up to `s3://<bucket>/backup/main/<shard>/` and waits until the upload finishes; the job fails if any shard fails. Each shard keeps **Backups to keep** backups.
+    Each ClickHouse pod runs [clickhouse-backup](https://github.com/Altinity/clickhouse-backup) beside the server. On the **Backup schedule**, a job asks one replica of every shard to back up to `s3://<bucket>/backup/<prefix>/main/<shard>/` and waits until the upload finishes; the job fails if any shard fails or the run passes **Backup time limit**. `<prefix>` is **Backup path prefix**, `<namespace>/<name>` by default, so installations sharing a bucket stay apart; restore with the same prefix. Each shard keeps **Backups to keep** backups.
 
     To restore, open a shell in one replica of each shard and run:
 

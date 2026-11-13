@@ -98,7 +98,13 @@ generates, not as the built-in `default` user.
 
 Bump `password_version`. Every user gets a new password in Secrets Manager, External Secrets refreshes the
 Kubernetes Secrets at once, and the operator and ClickHouse pods restart (one at a time) to read them.
-Clients must read the new values; expect a short window where clients holding the old password fail.
+They restart only after the Kubernetes Secrets hold the new values: each secret carries a `secret_version`,
+and the secrets release waits until every synced Secret has the expected one. Clients must read the new
+values; expect a short window where clients holding the old password fail.
+
+The Kubernetes Secrets belong to their ExternalSecrets (`creationPolicy: Owner`), so removing the module
+removes them too and leaves no credentials behind. Terraform removes that release after ClickHouse and the
+operator, so nothing still running needs them then.
 
 ## Database engine
 
@@ -112,16 +118,22 @@ tables whose data should be replicated.
 Start with one shard: a single ClickHouse server handles billions of rows, and a shard grows with CPU,
 memory and volume size. Adding shards later means creating new tables or redistributing existing data, so
 add shards only when one server cannot hold the data. Two replicas per shard keep data available while a
-node or zone is down. With `zone_spread = "required"`, two replicas of one shard are never scheduled in the
-same zone.
+node or zone is down. Two replicas of one shard, and two Keeper nodes, are never scheduled on the same node
+(required pod anti-affinity), so the cluster needs at least as many nodes as replicas per shard and Keeper
+nodes. With `zone_spread = "required"`, they are never in the same zone either, which needs at least as
+many zones as replicas per shard and Keeper nodes (3 by default).
 
 ## Backups and restore
 
 Each ClickHouse pod runs `clickhouse-backup server` next to the server, reading the same volume. On
 `backup_schedule` (UTC) a CronJob asks one replica of each shard to run `create_remote`, waits until the
-upload finishes, and fails if any shard has no successful backup. Backups land in
-`s3://<bucket>/backup/main/<shard>/`, parts on the cold tier in `backup-object-disks/`, and each shard
-keeps `backup_retention_count` backups. Watch the CronJob's failed jobs to alert on missed backups.
+upload finishes, and fails if any shard has no successful backup. Every request has a time limit, and a
+run that has not finished within `backup_timeout_seconds` (6 hours by default) fails, so a stuck sidecar
+never holds back the next scheduled run. Backups land in `s3://<bucket>/backup/<prefix>/main/<shard>/`,
+parts on the cold tier in `backup-object-disks/<prefix>/main/<shard>/`, and each shard keeps
+`backup_retention_count` backups. `<prefix>` is `backup_path_prefix`, `<namespace>/<name>` by default, so
+installations sharing a bucket never touch each other's backups; keep it stable, since restores look under
+the current prefix. Watch the CronJob's failed jobs to alert on missed backups.
 
 To restore a shard, run on one of its replicas:
 
@@ -133,7 +145,8 @@ kubectl -n <namespace> exec -it chi-<name>-main-<shard>-0-0 -c clickhouse-backup
 Repeat for every shard with the same backup name. The other replicas of each shard catch up through
 replication. Add `--table=<database>.<table>` to restore a single table, or `--rm` to drop existing tables
 first. To rebuild after losing the cluster, create the installation again with the same bucket
-(`s3_bucket_creation_enabled = false`, `s3_bucket_name = "<bucket>"`) and restore.
+(`s3_bucket_creation_enabled = false`, `s3_bucket_name = "<bucket>"`) and the same `backup_path_prefix`,
+and restore.
 
 ## Cold tier
 
@@ -270,7 +283,7 @@ its backups are kept unless `s3_force_destroy` is set. Credential secrets stay r
 | keeper_replica_count | Keeper nodes. 3 tolerates losing one; 1 has no redundancy and suits development only. | `number` | `3` | no |
 | keeper_resources | Requests and limits for each Keeper node. | `object({ cpu_request = optional(string, "250m") cpu_limit = optional(string) memory_request = optional(string, "512Mi") memory_limit = optional(string, "1Gi") })` | `{}` | no |
 | keeper_volume_size | Size of each Keeper node's volume (logs and snapshots). | `string` | `"10Gi"` | no |
-| zone_spread | How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required refuses to schedule two replicas of a shard in one zone. | `string` | `"preferred"` | no |
+| zone_spread | How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required never puts two replicas of a shard, or two Keeper nodes, in one zone. They never share a node either way. | `string` | `"preferred"` | no |
 | priority_class | Create a PriorityClass for ClickHouse and Keeper so they are preempted and evicted after ordinary workloads. | `object({ enabled = optional(bool, false) value = optional(number, 1000000) })` | `{}` | no |
 | dedicated_node_pool | Run ClickHouse and Keeper on a tainted Karpenter NodePool of their own. Needs Karpenter and an EC2NodeClass on the cluster. | `object({ enabled = optional(bool, false) node_class_name = optional(string, "default") capacity_types = optional(list(string), ["on-demand"]) instance_categories = optional(list(string), ["r", "m"]) architectures = optional(list(string), ["amd64"]) cpu_limit = optional(number, 64) })` | `{}` | no |
 | network_policy_enabled | Restrict ingress to ClickHouse and Keeper with NetworkPolicies. Needs a CNI that enforces them (for the VPC CNI, turn on its network policy agent). | `bool` | `false` | no |
@@ -298,6 +311,8 @@ its backups are kept unless `s3_force_destroy` is set. Credential secrets stay r
 | backup_enabled | Back up every shard to S3 on a schedule with clickhouse-backup. | `bool` | `true` | no |
 | backup_schedule | Cron schedule for backups, in UTC. | `string` | `"0 3 * * *"` | no |
 | backup_retention_count | Backups kept in S3 per shard. Older ones are deleted after each successful upload. | `number` | `7` | no |
+| backup_timeout_seconds | How long one scheduled backup run may take for every shard together. A run that has not finished by then fails, so the next schedule can start and the failed Job can raise an alert. | `number` | `21600` | no |
+| backup_path_prefix | Prefix inside the bucket for this installation's backups: they go to backup/<prefix>/main/<shard>/ and backup-object-disks/<prefix>/main/<shard>/. Null uses <namespace>/<name>, unique per cluster. Keep it stable: changing it starts a new backup history, and restores look under the current prefix. | `string` | `null` | no |
 | backup_image | clickhouse-backup image, including its tag. | `string` | `"altinity/clickhouse-backup:2.8.2"` | no |
 | backup_resources | Requests and limits for the clickhouse-backup sidecar in each ClickHouse pod. | `object({ cpu_request = optional(string, "100m") memory_request = optional(string, "256Mi") memory_limit = optional(string, "1Gi") })` | `{}` | no |
 | backup_job_image | Image the scheduled backup job runs to call each shard's clickhouse-backup API. Needs sh and curl. | `string` | `"curlimages/curl:8.22.0"` | no |

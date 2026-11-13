@@ -243,6 +243,7 @@ spec:
           {{- end }}
           {{- include "clickhouse-cluster.scheduling" . | nindent 10 }}
           {{- include "clickhouse-cluster.topologySpread" (dict "root" . "selector" $selector "matchLabelKeys" (list "clickhouse.altinity.com/shard")) | nindent 10 }}
+          {{- include "clickhouse-cluster.antiAffinity" (dict "root" . "selector" $selector "matchLabelKeys" (list "clickhouse.altinity.com/shard")) | nindent 10 }}
           {{- if .Values.tls.enabled }}
           # Mounted as a directory, not with subPath, so a renewed certificate
           # reaches the running server.
@@ -367,11 +368,12 @@ spec:
                 # The bucket enforces object ownership, so no ACL is sent.
                 - name: S3_ACL
                   value: ""
-                # One path per shard; {cluster} and {shard} are server macros.
+                # One path per installation and shard; {cluster} and {shard}
+                # are server macros.
                 - name: S3_PATH
-                  value: "backup/{cluster}/{shard}"
+                  value: {{ printf "backup/%s/{cluster}/{shard}" .Values.backup.pathPrefix | quote }}
                 - name: S3_OBJECT_DISK_PATH
-                  value: "backup-object-disks/{cluster}/{shard}"
+                  value: {{ printf "backup-object-disks/%s/{cluster}/{shard}" .Values.backup.pathPrefix | quote }}
                 - name: BACKUPS_TO_KEEP_REMOTE
                   value: {{ .Values.backup.retentionCount | int64 | quote }}
               resources:

@@ -14,6 +14,13 @@ data:
   backup.sh: |
     #!/bin/sh
     set -u
+    # Every request is bounded, and the whole run stops at TIMEOUT seconds, so
+    # a stuck sidecar fails this job instead of holding later backups back
+    # (the CronJob forbids overlapping runs).
+    deadline=$(( $(date +%s) + TIMEOUT ))
+    api_call() {
+      curl ${CURL_TLS} -sS -f --connect-timeout 10 --max-time 60 -u "${API_USER}:${API_PASSWORD}" "$@"
+    }
     stamp=$(date -u +%Y%m%d%H%M%S)
     name="scheduled-${stamp}"
     failed=0
@@ -24,7 +31,7 @@ data:
       while [ "$replica" -lt "$REPLICAS" ] && [ "$done_ok" -eq 0 ]; do
         api="${SCHEME}://chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}.${NAMESPACE}.svc.cluster.local:7171"
         echo "shard ${shard}: creating ${name} on replica ${replica}"
-        response=$(curl ${CURL_TLS} -sS -f -u "${API_USER}:${API_PASSWORD}" -X POST "${api}/backup/create_remote?name=${name}&delete-source=true") || {
+        response=$(api_call -X POST "${api}/backup/create_remote?name=${name}&delete-source=true") || {
           echo "shard ${shard}: replica ${replica} refused the backup"
           replica=$((replica + 1))
           continue
@@ -35,9 +42,25 @@ data:
           replica=$((replica + 1))
           continue
         fi
+        # The backup is running on this replica now, so another replica must
+        # not start the same one: if its status cannot be read, the shard
+        # fails rather than moving on.
+        status_errors=0
         while :; do
+          if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "shard ${shard}: ${name} did not finish within ${TIMEOUT}s"
+            break
+          fi
           sleep 15
-          status=$(curl ${CURL_TLS} -sS -f -u "${API_USER}:${API_PASSWORD}" "${api}/backup/status?operationid=${id}") || continue
+          status=$(api_call "${api}/backup/status?operationid=${id}") || {
+            status_errors=$((status_errors + 1))
+            if [ "$status_errors" -ge 20 ]; then
+              echo "shard ${shard}: replica ${replica} stopped answering"
+              break
+            fi
+            continue
+          }
+          status_errors=0
           case "$status" in
             *'"status":"success"'* | *'"status": "success"'*)
               echo "shard ${shard}: ${name} uploaded"
@@ -50,7 +73,8 @@ data:
               ;;
           esac
         done
-        replica=$((replica + 1))
+        # Once a replica accepted the backup, a failure there fails the shard.
+        break
       done
       if [ "$done_ok" -ne 1 ]; then
         failed=1
@@ -75,7 +99,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 1
+      backoffLimit: 0
+      # Backstop for the script's own deadline.
+      activeDeadlineSeconds: {{ add .Values.backup.timeoutSeconds 300 }}
       template:
         metadata:
           labels:
@@ -112,6 +138,8 @@ spec:
                 - name: CURL_TLS
                   value: ""
                 {{- end }}
+                - name: TIMEOUT
+                  value: {{ .Values.backup.timeoutSeconds | int64 | quote }}
                 - name: SHARDS
                   value: {{ .Values.clickhouse.shards | int64 | quote }}
                 - name: REPLICAS

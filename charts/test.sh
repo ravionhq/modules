@@ -1154,11 +1154,12 @@ test_ebs_storage() {
 
 test_clickhouse_cluster() {
   local chart=clickhouse-cluster
-  local ci default full minimal chi chk
+  local ci default full minimal prefixed chi chk
   ci="$(chart_path "${chart}")/ci"
   default="$(render "${chart}" default -n analytics -f "${ci}/default-values.yaml")"
   full="$(render "${chart}" full -n analytics -f "${ci}/full-values.yaml")"
   minimal="$(render "${chart}" minimal -n dev -f "${ci}/minimal-values.yaml")"
+  prefixed="$(render "${chart}" prefixed -n analytics -f "${ci}/default-values.yaml" --set backup.pathPrefix=team-a/analytics)"
   chi='.[] | select(.kind == "ClickHouseInstallation")'
   chk='.[] | select(.kind == "ClickHouseKeeperInstallation")'
 
@@ -1183,9 +1184,24 @@ test_clickhouse_cluster() {
   assert_eq "${chart}: cold tier points at the bucket's cold prefix" \
     "1" \
     "$(q "${default}" "${chi} | .spec.configuration.files[\"config.d/cold_storage.xml\"] | test(\"https://analytics-clickhouse-example.s3.us-east-2.amazonaws.com/cold/\") | select(.) | 1")"
-  assert_eq "${chart}: backup sidecar shares the data volume and writes per shard" \
-    "/var/lib/clickhouse backup/{cluster}/{shard}" \
+  assert_eq "${chart}: backup sidecar shares the data volume and writes per installation and shard" \
+    "/var/lib/clickhouse backup/clickhouse/{cluster}/{shard}" \
     "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].volumeMounts[0].mountPath") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_PATH\") | .value")"
+  assert_eq "${chart}: a backup run is bounded and fails instead of holding later runs" \
+    "0 21900 21600 Forbid" \
+    "$(q "${default}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.backoffLimit') $(q "${default}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.activeDeadlineSeconds') $(q "${default}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].env[] | select(.name == "TIMEOUT") | .value') $(q "${default}" '.[] | select(.kind == "CronJob") | .spec.concurrencyPolicy')"
+  assert_eq "${chart}: the backup script bounds every request and status polling" \
+    "1 1 1" \
+    "$(q "${default}" '.[] | select(.kind == "ConfigMap" and .metadata.name == "analytics-backup") | .data["backup.sh"] | test("--max-time 60") | select(.) | 1') $(q "${default}" '.[] | select(.kind == "ConfigMap" and .metadata.name == "analytics-backup") | .data["backup.sh"] | test("deadline") | select(.) | 1') $(q "${default}" '.[] | select(.kind == "ConfigMap" and .metadata.name == "analytics-backup") | .data["backup.sh"] | test("status_errors\" -ge 20") | select(.) | 1')"
+  assert_eq "${chart}: a backup path prefix keeps installations apart in a shared bucket" \
+    "backup/team-a/analytics/{cluster}/{shard} backup-object-disks/team-a/analytics/{cluster}/{shard}" \
+    "$(q "${prefixed}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_PATH\") | .value") $(q "${prefixed}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"S3_OBJECT_DISK_PATH\") | .value")"
+  assert_eq "${chart}: replicas of a shard and Keeper nodes never share a node" \
+    "kubernetes.io/hostname clickhouse.altinity.com/shard 1 kubernetes.io/hostname 1" \
+    "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys[0]") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | length") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey") $(q "${default}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | length")"
+  assert_eq "${chart}: required zone spread also keeps them in separate zones" \
+    "topology.kubernetes.io/zone topology.kubernetes.io/zone" \
+    "$(q "${full}" "${chi} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey") $(q "${full}" "${chk} | .spec.templates.podTemplates[0].spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey")"
   assert_eq "${chart}: replicas of a shard spread across zones and never share a node" \
     "ScheduleAnyway DoNotSchedule clickhouse.altinity.com/shard" \
     "$(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[1].whenUnsatisfiable") $(q "${default}" "${chi} | .spec.templates.podTemplates[0].spec.topologySpreadConstraints[0].matchLabelKeys[0]")"
@@ -1291,7 +1307,7 @@ test_clickhouse_secrets() {
     "$(count "${store}" SecretStore) $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.kind') $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.name')"
   assert_eq "${chart}: TLS off renders no certificates" \
     "0 0 0" \
-    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(count "${default}" Job)"
+    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(q "${default}" '[.[] | select(.kind == "Job" and .metadata.labels["app.kubernetes.io/component"] == "tls")] | length')"
   assert_eq "${chart}: self-signed CA bootstraps a CA Issuer that signs the server certificate" \
     "2 2 analytics-ca-bootstrap analytics-ca" \
     "$(count "${tls}" Certificate) $(count "${tls}" Issuer) $(q "${tls}" '.[] | select(.kind == "Certificate" and .spec.isCA) | .spec.issuerRef.name') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.issuerRef.name')"
@@ -1300,7 +1316,10 @@ test_clickhouse_secrets() {
     "$(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.commonName') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames | length') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.usages[1]')"
   assert_eq "${chart}: a hook job holds the release until the certificate Secret exists" \
     "post-install,post-upgrade analytics-server-tls" \
-    "$(q "${tls}" '.[] | select(.kind == "Job") | .metadata.annotations["helm.sh/hook"]') $(q "${tls}" '.[] | select(.kind == "Job") | .spec.template.spec.volumes[0].secret.secretName')"
+    "$(q "${tls}" '.[] | select(.kind == "Job" and .metadata.labels["app.kubernetes.io/component"] == "tls") | .metadata.annotations["helm.sh/hook"]') $(q "${tls}" '.[] | select(.kind == "Job" and .metadata.labels["app.kubernetes.io/component"] == "tls") | .spec.template.spec.volumes[0].secret.secretName')"
+  assert_eq "${chart}: a hook job holds the release until every Secret holds the expected version" \
+    "post-install,post-upgrade 2 secret_version 1" \
+    "$(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .metadata.annotations["helm.sh/hook"]') $(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .spec.template.spec.volumes | length') $(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .spec.template.spec.volumes[0].secret.items[0].key') $(q "${default}" '.[] | select(.kind == "Job" and .metadata.name == "test-release-synced") | .spec.template.spec.containers[0].env[] | select(.name == "EXPECTED") | .value')"
   assert_eq "${chart}: an existing issuer signs the server certificate with no CA of its own" \
     "1 0 private-ca AWSPCAClusterIssuer awspca.cert-manager.io" \
     "$(count "${issuer}" Certificate) $(count "${issuer}" Issuer) $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.name') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.kind') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.group')"

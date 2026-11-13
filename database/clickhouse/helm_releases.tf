@@ -47,6 +47,13 @@ resource "helm_release" "secrets" {
     region          = local.region
     refreshInterval = var.external_secrets.refresh_interval
     passwordVersion = tostring(local.connection_version)
+    # The release waits until every Kubernetes Secret holds this version, so
+    # the operator and ClickHouse restart for a new password only after
+    # External Secrets has copied it.
+    syncWait = {
+      image          = var.backup_job_image
+      timeoutSeconds = var.helm_timeout_seconds
+    }
     store = {
       create = var.external_secrets.cluster_secret_store_name == null
       name   = coalesce(var.external_secrets.cluster_secret_store_name, "${var.name}-aws-secrets-manager")
@@ -283,6 +290,8 @@ resource "helm_release" "cluster" {
       enabled        = var.backup_enabled
       schedule       = var.backup_schedule
       retentionCount = var.backup_retention_count
+      timeoutSeconds = var.backup_timeout_seconds
+      pathPrefix     = local.backup_path_prefix
       image          = var.backup_image
       jobImage       = var.backup_job_image
       resources = {

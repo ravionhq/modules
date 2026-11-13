@@ -4,8 +4,16 @@ region: us-east-1
 # How often External Secrets re-reads each secret.
 refreshInterval: 1h
 
-# Changing it makes External Secrets refresh every secret at once.
+# Changing it makes External Secrets refresh every secret at once. It is also
+# the secret_version every synced Secret must hold before the release finishes.
 passwordVersion: "1"
+
+# Job that holds the release until every Kubernetes Secret holds
+# passwordVersion in its secret_version key.
+syncWait:
+  enabled: true
+  image: curlimages/curl:8.22.0
+  timeoutSeconds: 1800
 
 store:
   # Create a namespaced SecretStore. Without an auth block it uses the External

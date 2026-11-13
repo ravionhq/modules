@@ -57,6 +57,32 @@ topologySpreadConstraints:
     {{- end }}
 {{- end -}}
 
+{{/*
+Required separation the spread above cannot guarantee (maxSkew only balances
+counts): no two pods sharing the selector, and the values of matchLabelKeys
+(a ClickHouse shard), on one node, nor in one zone when zoneSpread is required.
+Takes the same dict as topologySpread.
+*/}}
+{{- define "clickhouse-cluster.antiAffinity" -}}
+{{- $keys := list "kubernetes.io/hostname" -}}
+{{- if eq .root.Values.placement.zoneSpread "required" -}}
+{{- $keys = append $keys "topology.kubernetes.io/zone" -}}
+{{- end -}}
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      {{- range $keys }}
+      - topologyKey: {{ . }}
+        labelSelector:
+          matchLabels:
+            {{- toYaml $.selector | nindent 12 }}
+        {{- with $.matchLabelKeys }}
+        matchLabelKeys:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
+{{- end -}}
+
 {{/* Environment variables carrying the admin credentials. */}}
 {{- define "clickhouse-cluster.adminEnv" -}}
 - name: CLICKHOUSE_USER

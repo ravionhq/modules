@@ -249,7 +249,7 @@ variable "keeper_volume_size" {
 
 variable "zone_spread" {
   type        = string
-  description = "How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required refuses to schedule two replicas of a shard in one zone."
+  description = "How replicas of a shard, and Keeper nodes, spread across availability zones: preferred spreads when capacity allows, required never puts two replicas of a shard, or two Keeper nodes, in one zone. They never share a node either way."
   default     = "preferred"
   nullable    = false
 
@@ -584,6 +584,29 @@ variable "backup_retention_count" {
   validation {
     condition     = var.backup_retention_count >= 1 && floor(var.backup_retention_count) == var.backup_retention_count
     error_message = "backup_retention_count must be a whole number of 1 or more."
+  }
+}
+
+variable "backup_timeout_seconds" {
+  type        = number
+  description = "How long one scheduled backup run may take for every shard together. A run that has not finished by then fails, so the next schedule can start and the failed Job can raise an alert."
+  default     = 21600
+  nullable    = false
+
+  validation {
+    condition     = var.backup_timeout_seconds >= 600 && floor(var.backup_timeout_seconds) == var.backup_timeout_seconds
+    error_message = "backup_timeout_seconds must be a whole number of at least 600."
+  }
+}
+
+variable "backup_path_prefix" {
+  type        = string
+  description = "Prefix inside the bucket for this installation's backups: they go to backup/<prefix>/main/<shard>/ and backup-object-disks/<prefix>/main/<shard>/. Null uses <namespace>/<name>, unique per cluster. Keep it stable: changing it starts a new backup history, and restores look under the current prefix."
+  default     = null
+
+  validation {
+    condition     = var.backup_path_prefix == null || can(regex("^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$", coalesce(var.backup_path_prefix, "-")))
+    error_message = "backup_path_prefix must be path segments of letters, digits, '.', '_' or '-', separated by '/', with no leading or trailing '/'."
   }
 }
 

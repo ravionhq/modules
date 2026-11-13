@@ -87,6 +87,9 @@ resource "aws_secretsmanager_secret_version" "user" {
     secure             = var.tls_enabled
     database           = coalesce(var.database_name, "default")
     cluster            = local.cluster_layout_name
+    # Lets the secrets release wait until the Kubernetes Secrets hold this
+    # version before anything that reads them restarts.
+    secret_version = tostring(local.connection_version)
   })
   secret_string_wo_version = local.connection_version
 }

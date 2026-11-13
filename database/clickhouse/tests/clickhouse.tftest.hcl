@@ -75,7 +75,7 @@ run "defaults_install_a_replicated_cluster_with_backups_and_a_cold_tier" {
     error_message = "Passwords must be written through the write-only argument to their own secret, versioned by password_version."
   }
   assert {
-    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 7
+    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16)
     error_message = "The connection details must be versioned by password_version and the TLS settings."
   }
   assert {
@@ -256,13 +256,82 @@ run "rotating_passwords_bumps_the_secret_version_and_restarts_pods" {
   }
 
   assert {
-    condition     = aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 2 && aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == 11
+    condition     = aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 2 && aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 2, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16)
     error_message = "A new password_version must write new passwords and rewrite the connection details."
   }
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.operator.values[0]).podAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.secrets.values[0]).passwordVersion == "11"
+    condition     = yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.operator.values[0]).podAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.secrets.values[0]).passwordVersion == tostring(parseint(substr(sha256(jsonencode({ password_version = 2, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16))
     error_message = "A new password_version must refresh the secrets and restart ClickHouse and the operator."
   }
+}
+
+run "changing_the_database_rewrites_the_connection_details_but_not_the_passwords" {
+  command = plan
+
+  variables {
+    database_name = "events"
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = false, database = "events" })), 0, 7), 16) && aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version != parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16)
+    error_message = "A database change must rewrite the connection details."
+  }
+  assert {
+    condition     = aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 1 && yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "1"
+    error_message = "A database change must not write new passwords or restart for one."
+  }
+}
+
+run "the_secrets_release_waits_for_the_synced_version" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.secrets.values[0]).syncWait.timeoutSeconds == 1800 && yamldecode(helm_release.secrets.values[0]).passwordVersion == tostring(parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16))
+    error_message = "The secrets release must wait, within the Helm timeout, for the version the connection details are written with."
+  }
+}
+
+run "backups_are_bounded_and_kept_apart_per_installation" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).backup.pathPrefix == "analytics/analytics" && yamldecode(helm_release.cluster.values[0]).backup.timeoutSeconds == 21600
+    error_message = "Backups must default to a <namespace>/<name> prefix and a six-hour limit."
+  }
+}
+
+run "a_backup_path_prefix_and_timeout_reach_the_chart" {
+  command = plan
+
+  variables {
+    backup_path_prefix     = "team-a/analytics"
+    backup_timeout_seconds = 3600
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).backup.pathPrefix == "team-a/analytics" && yamldecode(helm_release.cluster.values[0]).backup.timeoutSeconds == 3600
+    error_message = "backup_path_prefix and backup_timeout_seconds must reach the chart."
+  }
+}
+
+run "invalid_backup_path_prefix_is_rejected" {
+  command = plan
+
+  variables {
+    backup_path_prefix = "/team a/"
+  }
+
+  expect_failures = [var.backup_path_prefix]
+}
+
+run "short_backup_timeout_is_rejected" {
+  command = plan
+
+  variables {
+    backup_timeout_seconds = 60
+  }
+
+  expect_failures = [var.backup_timeout_seconds]
 }
 
 run "metrics_options_reach_the_cluster_chart" {
@@ -320,7 +389,7 @@ run "tls_off" {
     error_message = "Without TLS the operator keeps choosing the scheme itself."
   }
   assert {
-    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 4 && aws_secretsmanager_secret_version.password["admin"].secret_string_wo_version == 1
+    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = false, plaintext_ports_open = true, database = "default" })), 0, 7), 16) && aws_secretsmanager_secret_version.password["admin"].secret_string_wo_version == 1
     error_message = "Turning TLS off rewrites the connection details but not the passwords."
   }
 }
@@ -368,11 +437,11 @@ run "tls_with_a_self_signed_ca" {
     error_message = "The module's own CA Issuer must sign the server certificate."
   }
   assert {
-    condition     = aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == 5 && aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 1
+    condition     = aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = true, database = "default" })), 0, 7), 16) && aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 1
     error_message = "Turning TLS on must rewrite the connection details but not the passwords."
   }
   assert {
-    condition     = yamldecode(helm_release.secrets.values[0]).passwordVersion == "5" && yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "1"
+    condition     = yamldecode(helm_release.secrets.values[0]).passwordVersion == tostring(parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = true, database = "default" })), 0, 7), 16)) && yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "1"
     error_message = "Turning TLS on must refresh the Kubernetes Secrets without restarting for a password change."
   }
 }
@@ -451,7 +520,7 @@ run "tls_with_plaintext_ports_closed" {
     error_message = "With the plaintext ports closed, only the TLS endpoints are output."
   }
   assert {
-    condition     = aws_secretsmanager_secret_version.user["reader"].secret_string_wo_version == 7 && aws_secretsmanager_secret_version.password["reader"].secret_string_wo_version == 1
+    condition     = aws_secretsmanager_secret_version.user["reader"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16) && aws_secretsmanager_secret_version.password["reader"].secret_string_wo_version == 1
     error_message = "Closing the plaintext ports must rewrite the connection details but not the passwords."
   }
 }
@@ -473,7 +542,7 @@ run "tls_internal_names_keeper_on_the_certificate" {
     error_message = "With internal TLS the certificate must name the Keeper Service and every Keeper node's Services."
   }
   assert {
-    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 7
+    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == parseint(substr(sha256(jsonencode({ password_version = 1, tls_enabled = true, plaintext_ports_open = false, database = "default" })), 0, 7), 16)
     error_message = "Internal TLS does not change the client ports, so the connection details keep their version."
   }
 }

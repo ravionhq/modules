@@ -50,9 +50,16 @@ locals {
   tls_internal = var.tls_enabled && var.tls_internal_enabled
 
   # Version of the connection details written to each user secret: changes
-  # with password_version and with every setting that changes the ports, never
-  # otherwise. The low two bits are the TLS settings.
-  connection_version = var.password_version * 4 + (var.tls_enabled ? 1 : 0) + (var.tls_enabled && var.tls_disable_plaintext_ports ? 2 : 0)
+  # with password_version and with every other value in them (the ports and
+  # the database), never otherwise. Write-only contents cannot trigger a write
+  # on their own, so everything they hold besides the password goes in here.
+  connection_details = {
+    password_version     = var.password_version
+    tls_enabled          = var.tls_enabled
+    plaintext_ports_open = local.plaintext_ports_open
+    database             = coalesce(var.database_name, "default")
+  }
+  connection_version = parseint(substr(sha256(jsonencode(local.connection_details)), 0, 7), 16)
 
   # Every name the server certificate covers, each in its short, namespace,
   # svc and cluster-local forms: the installation's Service (first, as the
@@ -108,6 +115,8 @@ locals {
   ################################################################################
 
   s3_enabled = var.backup_enabled || var.cold_storage_enabled
+
+  backup_path_prefix = coalesce(var.backup_path_prefix, "${var.namespace}/${var.name}")
 
   s3_bucket_name = !local.s3_enabled ? null : (
     var.s3_bucket_creation_enabled ? aws_s3_bucket.this[0].bucket : data.aws_s3_bucket.existing[0].bucket

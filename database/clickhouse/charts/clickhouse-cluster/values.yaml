@@ -102,6 +102,11 @@ backup:
   enabled: false
   schedule: "0 3 * * *"
   retentionCount: 7
+  # How long one run may take for every shard together before it fails.
+  timeoutSeconds: 21600
+  # Prefix inside the bucket for this installation's backups, so several
+  # installations can share one bucket.
+  pathPrefix: clickhouse
   image: altinity/clickhouse-backup:2.8.2
   jobImage: curlimages/curl:8.22.0
   resources:
