@@ -194,3 +194,8 @@ output "region" {
   description = "AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "cloudwatch_alarm_arns" {
+  description = "Map of CloudWatch alarm ARNs created by this module. Empty when alarms are disabled or no load balancer is attached."
+  value       = local.unhealthy_hosts_alarm_enabled ? { unhealthy_hosts = aws_cloudwatch_metric_alarm.unhealthy_hosts[0].arn } : {}
+}

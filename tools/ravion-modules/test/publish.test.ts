@@ -127,7 +127,7 @@ describe("publish", () => {
           type: "ravion-aws-vpc",
           name: "AWS VPC",
           description: "AWS VPC and subnets.",
-          isGlobalPublished: false,
+          organizationId: "organization-1",
         },
       ],
       versionsByDefinitionId: { vpc: [createRemoteVersion({ config: compiled.module })] },
@@ -151,7 +151,7 @@ describe("publish", () => {
           type: "ravion-aws-vpc",
           name: "AWS VPC",
           description: "AWS VPC and subnets.",
-          isGlobalPublished: false,
+          organizationId: "organization-1",
         },
       ],
       versionsByDefinitionId: {
@@ -177,7 +177,7 @@ describe("publish", () => {
           type: "ravion-aws-vpc",
           name: "AWS VPC",
           description: "AWS VPC and subnets.",
-          isGlobalPublished: false,
+          organizationId: "organization-1",
         },
       ],
     });
@@ -212,6 +212,55 @@ describe("publish", () => {
       { id: "definition-1", isGlobalPublished: true },
       { id: "definition-1", isGlobalPublished: true },
     ]);
+
+    const repeatedResult = await publishDefinitions([compiled], client, { dryRun: false });
+    assert.deepEqual(repeatedResult.items.map(({ action }) => action), ["skip-version"]);
+    assert.equal(client.patchedDefinitions.length, 2);
+  });
+
+  for (const organizationId of [undefined, null]) {
+    for (const dryRun of [true, false]) {
+      it(`does not republish a global definition with organizationId=${organizationId} (dryRun=${dryRun})`, async () => {
+        const compiled = createCompiledDefinition({ global: true });
+        const client = new MockRavionClient({
+          definitions: [{
+            id: "vpc",
+            type: "ravion-aws-vpc",
+            name: "AWS VPC",
+            description: "AWS VPC and subnets.",
+            ...(organizationId === undefined ? {} : { organizationId }),
+          }],
+          versionsByDefinitionId: { vpc: [createRemoteVersion({ config: compiled.module })] },
+        });
+
+        const result = await publishDefinitions([compiled], client, { dryRun });
+
+        assert.deepEqual(result.items.map(({ action }) => action), ["skip-version"]);
+        assert.doesNotMatch(formatPublishPlanMarkdown(result), /isGlobalPublished/);
+        assert.deepEqual(client.patchedDefinitions, []);
+      });
+    }
+  }
+
+  it("plans and publishes an explicitly global organization-scoped definition", async () => {
+    const compiled = createCompiledDefinition({ global: true });
+    const client = new MockRavionClient({
+      definitions: [{
+        id: "vpc",
+        type: "ravion-aws-vpc",
+        name: "AWS VPC",
+        description: "AWS VPC and subnets.",
+        organizationId: "organization-1",
+      }],
+      versionsByDefinitionId: { vpc: [createRemoteVersion({ config: compiled.module })] },
+    });
+
+    const plan = await publishDefinitions([compiled], client);
+    assert.match(formatPublishPlanMarkdown(plan), /-isGlobalPublished: false\n\+isGlobalPublished: true/);
+    assert.deepEqual(client.patchedDefinitions, []);
+
+    await publishDefinitions([compiled], client, { dryRun: false });
+    assert.deepEqual(client.patchedDefinitions, [{ id: "vpc", isGlobalPublished: true }]);
   });
 
   it("validates pending module versions through the server dry-run API", async () => {
@@ -291,10 +340,9 @@ describe("publish", () => {
 
     const result = await publishDefinitions([createCompiledDefinition()], client, { dryRun: false });
 
-    assert.deepEqual(result.items.map(({ action }) => action), ["patch-definition", "create-version", "patch-definition"]);
+    assert.deepEqual(result.items.map(({ action }) => action), ["patch-definition", "create-version"]);
     assert.deepEqual(client.patchedDefinitions, [
       { id: "vpc", type: "ravion-aws-vpc", name: "AWS VPC", description: "AWS VPC and subnets." },
-      { id: "vpc", isGlobalPublished: true },
     ]);
   });
 
@@ -820,7 +868,15 @@ describe("publish", () => {
 
   it("handles duplicate version responses as an idempotent skip when the remote config matches", async () => {
     const compiled = createCompiledDefinition();
-    const client = new MockRavionClient({ definitions: [{ id: "vpc", type: "ravion-aws-vpc", name: "AWS VPC", description: "AWS VPC and subnets." }] });
+    const client = new MockRavionClient({
+      definitions: [{
+        id: "vpc",
+        type: "ravion-aws-vpc",
+        name: "AWS VPC",
+        description: "AWS VPC and subnets.",
+        organizationId: "organization-1",
+      }],
+    });
     client.onCreateVersion = async (input) => {
       client.versionsByDefinitionId[input.moduleDefinitionId] = [createRemoteVersion({ config: compiled.module })];
       throw new Error("Duplicate version already exists");
@@ -940,7 +996,7 @@ class MockRavionClient implements RavionModuleApiClient {
 
   async createModuleDefinition(input: ModuleDefinitionInput): Promise<RemoteModuleDefinition> {
     this.createdDefinitions.push(input);
-    const definition = { id: `definition-${this.definitions.length + 1}`, ...input };
+    const definition = { id: `definition-${this.definitions.length + 1}`, organizationId: "organization-1", ...input };
     this.definitions.push(definition);
     return definition;
   }
@@ -954,8 +1010,9 @@ class MockRavionClient implements RavionModuleApiClient {
       if (definition.id !== input.id) {
         return definition;
       }
-      const updated = { ...definition, ...input };
-      if (input.isGlobalPublished === true) {
+      const { isGlobalPublished, ...metadata } = input;
+      const updated = { ...definition, ...metadata };
+      if (isGlobalPublished === true) {
         const { organizationId: _organizationId, ...globalDefinition } = updated;
         return globalDefinition;
       }

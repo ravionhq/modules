@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.1.0
-  description: Removing Prometheus or Thanos now deletes their volumes instead of leaving them billed.
+  version: 1.4.0
+  description: Mimir's distributors compress what they send to ingesters with snappy, cutting the inter-zone traffic of the write path several times over.
 module:
   inputs:
     - id: cluster
@@ -443,6 +443,22 @@ module:
       id: load_balancer_deletion_protection_enabled
       label: Load balancer deletion protection
       type: boolean
+    - id: load_balancer_alarm_actions
+      label: ALB alert actions
+      description: Invoked when an ALB alarm (5xx, response time, unhealthy targets) enters ALARM, for example an SNS topic ARN. Empty disables direct notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
+    - id: load_balancer_alarm_ok_actions
+      label: ALB recovery actions
+      description: Invoked when an ALB alarm returns to OK. Empty disables direct recovery notifications.
+      type: string_array
+      default: []
+      collapsible: true
+      add_button_label: Add action ARN
+      max_length: 5
     - description: Without a leading v.
       collapsible: true
       id: aws_load_balancer_controller_chart_version
@@ -2061,6 +2077,8 @@ module:
         ravion_operator_aws_account_record_id: << module.input.aws_account_id >>
         public_subnet_ids: << module.input.public_subnet_ids >>
         load_balancer_deletion_protection_enabled: << module.input.load_balancer_deletion_protection_enabled >>
+        load_balancer_alarm_actions: '<< module.input.load_balancer_alarm_actions != nil ? module.input.load_balancer_alarm_actions : [] >>'
+        load_balancer_alarm_ok_actions: '<< module.input.load_balancer_alarm_ok_actions != nil ? module.input.load_balancer_alarm_ok_actions : [] >>'
         name: << module.input.name >>
         use_ravion_managed_domains: << module.input.use_ravion_managed_domains >>
         ravion_cluster_name: << module.input.ravion_cluster_name >>
@@ -2298,7 +2316,7 @@ module:
     | **Amazon CloudWatch (Container Insights)** | The amazon-cloudwatch-observability add-on's metrics half | Renders, as the fallback behind the Prometheus stores |
     | **Grafana Cloud / Datadog / New Relic / custom OTLP** | The same collector, one more exporter each | Ships, plus an "Open in ..." link |
 
-    **Traces.** **Traces** runs an OpenTelemetry collector of its own at an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), apart from the one that scrapes the cluster, so a burst of spans never competes with the scrape. Every trace goes to each destination card: Tempo in your cluster, AWS X-Ray (the cluster's region unless another is set), Grafana Cloud Traces, Datadog, New Relic, or any OTLP endpoint. A vendor selected for logs or metrics too shares that signal's site and credential. Spans carry the sending pod's namespace, pod and workload. Point a workload's OpenTelemetry exporter at those outputs: this module injects no agents and restarts no pods, and sampling stays the application's. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
+    **Traces.** **Traces** runs an OpenTelemetry collector of its own at an in-cluster Service on the OTLP ports (`otlp_grpc_endpoint`, `otlp_http_endpoint`), apart from the one that scrapes the cluster, so a burst of spans never competes with the scrape. Every trace goes to each destination card: Tempo in your cluster, AWS X-Ray (the cluster's region unless another is set), Grafana Cloud Traces, Datadog, New Relic, or any OTLP endpoint. A vendor selected for logs or metrics too shares that signal's site and credential. Spans carry the sending pod's namespace, pod and workload. Point a workload's OpenTelemetry exporter at those outputs: this module injects no agents and restarts no pods, and sampling stays the application's. While metrics are on, the same receiver takes workload metrics into the metrics destinations; the curated allow-list covers only what the collector scrapes, so every series a workload sends is billed. While Loki is a logs provider, the same receiver also takes OTLP logs into Loki; pod stdout still comes through Alloy. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, and they reach the destinations as sent. Every workload in the cluster is trusted with the trace data; restrict who reaches the collector with a NetworkPolicy when that does not hold.
 
     **Tempo in your cluster** is the traces counterpart of the in-cluster log store: Tempo in monolithic mode, reachable only inside the cluster and read by the in-cluster Grafana when that is on. Its blocks go to an S3 bucket in your account by default (30 days), or to Tempo's own volume. That volume is a persistent gp3 volume by default, so spans not yet in a block survive a restart, or a scratch volume that restarts empty. Its metrics generator can write service graphs and span metrics to Prometheus for Grafana's service map, and any other chart value can be set as JSON.
 

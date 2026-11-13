@@ -1054,13 +1054,13 @@ run "alb_cloudwatch_alarms_enabled" {
   }
 
   assert {
-    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && alltrue([for k in ["elb_5xx", "target_5xx", "target_response_time"] : contains(keys(output.public_alb_cloudwatch_alarm_arns), k)])
-    error_message = "Public ALB should expose the three alarm ARNs when alarms are enabled"
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 4 && alltrue([for k in ["elb_5xx", "target_5xx", "target_response_time", "unhealthy_hosts"] : contains(keys(output.public_alb_cloudwatch_alarm_arns), k)])
+    error_message = "Public ALB should expose the four alarm ARNs when alarms are enabled"
   }
 
   assert {
-    condition     = length(output.private_alb_cloudwatch_alarm_arns) == 3 && alltrue([for k in ["elb_5xx", "target_5xx", "target_response_time"] : contains(keys(output.private_alb_cloudwatch_alarm_arns), k)])
-    error_message = "Private ALB should expose the three alarm ARNs when alarms are enabled"
+    condition     = length(output.private_alb_cloudwatch_alarm_arns) == 4 && alltrue([for k in ["elb_5xx", "target_5xx", "target_response_time", "unhealthy_hosts"] : contains(keys(output.private_alb_cloudwatch_alarm_arns), k)])
+    error_message = "Private ALB should expose the four alarm ARNs when alarms are enabled"
   }
 }
 
@@ -1074,7 +1074,7 @@ run "alb_cloudwatch_alarms_only_for_enabled_albs" {
   }
 
   assert {
-    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && length(output.private_alb_cloudwatch_alarm_arns) == 0
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 4 && length(output.private_alb_cloudwatch_alarm_arns) == 0
     error_message = "Alarms should only exist for load balancers that are created"
   }
 }
@@ -1113,7 +1113,7 @@ run "alb_cloudwatch_alarms_enabled_by_default" {
   }
 
   assert {
-    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && length(output.private_alb_cloudwatch_alarm_arns) == 3
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 4 && length(output.private_alb_cloudwatch_alarm_arns) == 4
     error_message = "Expected alarms to be enabled by default, including null input"
   }
 }
@@ -1129,7 +1129,7 @@ run "alb_cloudwatch_alarms_null_uses_default" {
   }
 
   assert {
-    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 3 && length(output.private_alb_cloudwatch_alarm_arns) == 3
+    condition     = length(output.public_alb_cloudwatch_alarm_arns) == 4 && length(output.private_alb_cloudwatch_alarm_arns) == 4
     error_message = "Expected alarms to be enabled by default, including null input"
   }
 }

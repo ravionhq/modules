@@ -167,6 +167,11 @@ locals {
           kafka   = { address = null, topic = null, auto_create_topic_default_partitions = null }
         }
         distributor = { remote_timeout = null }
+        # Distributors decompress each write and send it to three ingesters,
+        # mostly in other zones. Mimir sends that uncompressed by default, so
+        # the stream is several times the size of what was written and is paid
+        # for again as inter-zone traffic. Snappy costs a little CPU.
+        ingester_client = { grpc_client_config = { grpc_compression = "snappy" } }
         ingester = merge(
           {
             push_grpc_method_enabled = null

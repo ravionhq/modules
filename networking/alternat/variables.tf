@@ -227,3 +227,64 @@ variable "dynamodb_gateway_endpoint_enabled" {
   description = "Create a free DynamoDB gateway endpoint on the managed route tables so DynamoDB traffic bypasses the NAT. Disable if the VPC already has one."
   default     = false
 }
+
+################################################################################
+# CloudWatch alarms
+################################################################################
+
+variable "cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create an error-rate alarm on each alterNAT Lambda function: the autoscaling hook and every connectivity tester."
+  default     = true
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_error_rate_threshold" {
+  type        = number
+  description = "Invocation error percentage at or above which an alarm fires."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_error_rate_threshold > 0 && var.cloudwatch_alarm_error_rate_threshold <= 100
+    error_message = "Error rate threshold must be greater than 0 and at most 100 percent."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "Metric aggregation period in seconds. Lambda publishes metrics at one-minute resolution."
+  default     = 300
+  nullable    = false
+
+  validation {
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "Alarm period must be 60, 300, 900, or 3600 seconds."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "Consecutive breaching periods required to alarm."
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1 && floor(var.cloudwatch_alarm_evaluation_periods) == var.cloudwatch_alarm_evaluation_periods && var.cloudwatch_alarm_evaluation_periods * var.cloudwatch_alarm_period <= 86400
+    error_message = "Evaluation periods must be a positive integer covering at most one day."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "Action ARNs, such as SNS topics in the module's region, notified when an alarm fires."
+  default     = []
+  nullable    = false
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "Action ARNs notified when an alarm recovers."
+  default     = []
+  nullable    = false
+}

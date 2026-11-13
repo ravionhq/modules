@@ -238,6 +238,77 @@ variable "listener_rule_conditions" {
 # ECR Repository
 ################################################################################
 
+################################################################################
+# CloudWatch Alarms
+################################################################################
+
+variable "cloudwatch_alarms_creation_enabled" {
+  type        = bool
+  description = "Create a CloudWatch alarm on unhealthy targets in the workload's target group. Applies only when listener_arn is set."
+  default     = true
+  nullable    = false
+}
+
+variable "cloudwatch_alarm_unhealthy_hosts_threshold" {
+  type        = number
+  description = "Number of unhealthy targets (UnHealthyHostCount, maximum per period) above which the alarm fires. 0 fires on the first unhealthy target."
+  default     = 0
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_unhealthy_hosts_threshold >= 0
+    error_message = "The cloudwatch_alarm_unhealthy_hosts_threshold must be at least 0."
+  }
+}
+
+variable "cloudwatch_alarm_evaluation_periods" {
+  type        = number
+  description = "The number of consecutive periods that must breach the threshold."
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.cloudwatch_alarm_evaluation_periods >= 1
+    error_message = "The cloudwatch_alarm_evaluation_periods must be at least 1."
+  }
+}
+
+variable "cloudwatch_alarm_period" {
+  type        = number
+  description = "The period in seconds over which the statistic is applied. ALB metrics are published every minute, so 60 is the shortest useful period."
+  default     = 300
+  nullable    = false
+
+  validation {
+    condition     = contains([60, 300, 900, 3600], var.cloudwatch_alarm_period)
+    error_message = "The cloudwatch_alarm_period must be one of: 60, 300, 900, or 3600 seconds."
+  }
+}
+
+variable "cloudwatch_alarm_actions" {
+  type        = list(string)
+  description = "ARNs to notify when the alarm enters ALARM, for example an SNS topic."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.cloudwatch_alarm_actions) <= 5 && alltrue([for arn in var.cloudwatch_alarm_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
+variable "cloudwatch_ok_actions" {
+  type        = list(string)
+  description = "ARNs to notify when the alarm returns to OK."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.cloudwatch_ok_actions) <= 5 && alltrue([for arn in var.cloudwatch_ok_actions : can(regex("^arn:", arn))])
+    error_message = "Specify at most five action ARNs."
+  }
+}
+
 variable "ecr_repository_creation_enabled" {
   type        = bool
   description = "Create an ECR repository for this workload's container image. When true, a repository is provisioned via the containers/ecr submodule."

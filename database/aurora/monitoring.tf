@@ -178,3 +178,31 @@ resource "aws_cloudwatch_metric_alarm" "cluster_storage" {
   ok_actions    = var.cloudwatch_ok_actions
   tags          = local.tags
 }
+
+# Local storage holds temporary tables, sort and hash spills, and logs, and does
+# not grow with the cluster volume: running out fails queries even while the
+# volume has room. PostgreSQL has no remaining-volume metric, so this is also
+# its free space alarm. Minimum across instances catches the one closest to
+# full. Serverless v2 instances do not publish the metric; provisioned ones do.
+resource "aws_cloudwatch_metric_alarm" "free_local_storage" {
+  count = local.create_cloudwatch_alarms ? 1 : 0
+
+  alarm_name          = "${var.name}-aurora-free-local-storage"
+  alarm_description   = "Aurora instance local storage for ${var.name}"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = var.cloudwatch_alarm_evaluation_periods
+  metric_name         = "FreeLocalStorage"
+  namespace           = "AWS/RDS"
+  period              = max(300, var.cloudwatch_alarm_period)
+  statistic           = "Minimum"
+  threshold           = var.cloudwatch_alarm_local_storage_threshold
+  treat_missing_data  = "missing"
+
+  dimensions = {
+    DBClusterIdentifier = aws_rds_cluster.this.cluster_identifier
+  }
+
+  alarm_actions = var.cloudwatch_alarm_actions
+  ok_actions    = var.cloudwatch_ok_actions
+  tags          = local.tags
+}

@@ -219,10 +219,11 @@ CloudWatch alarms are enabled by default. Set the creation toggle to `false` onl
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | log_retention_days | Default CloudWatch Logs retention (days) exposed as an output for services to inherit; 0 = indefinite | `number` | `90` | no |
-| alb_cloudwatch_alarms_creation_enabled | Create ELB 5xx, target 5xx, and target response time alarms on the public and private ALBs | `bool` | `true` | no |
+| alb_cloudwatch_alarms_creation_enabled | Create ELB 5xx, target 5xx, target response time, and unhealthy targets alarms on the public and private ALBs | `bool` | `true` | no |
 | alb_cloudwatch_alarm_elb_5xx_threshold | HTTPCode_ELB_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
 | alb_cloudwatch_alarm_target_5xx_threshold | HTTPCode_Target_5XX_Count (sum) above which the ALB alarm fires | `number` | `10` | no |
 | alb_cloudwatch_alarm_target_response_time_threshold | Average TargetResponseTime (seconds) above which the ALB alarm fires | `number` | `1` | no |
+| alb_cloudwatch_alarm_unhealthy_hosts_threshold | UnHealthyHostCount (maximum across every target group behind the ALB) above which the ALB alarm fires | `number` | `0` | no |
 | cloudwatch_alarm_evaluation_periods | Consecutive periods the threshold must be breached | `number` | `2` | no |
 | cloudwatch_alarm_period | Period in seconds (60, 300, 900, 3600) | `number` | `300` | no |
 | cloudwatch_alarm_actions | ARNs notified on ALARM | `list(string)` | `[]` | no |

@@ -120,6 +120,11 @@ output "autoscaling_hook_log_group_name" {
   value       = "/aws/lambda/${local.autoscaling_hook_function_name}"
 }
 
+output "cloudwatch_alarm_arns" {
+  description = "Error-rate alarm ARN for each alterNAT Lambda function, keyed by function name."
+  value       = { for name, alarm in aws_cloudwatch_metric_alarm.lambda_error_rate : name => alarm.arn }
+}
+
 ################################################################################
 # VPC endpoints
 ################################################################################

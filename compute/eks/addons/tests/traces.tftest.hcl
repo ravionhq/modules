@@ -942,3 +942,55 @@ run "tempo_go_memory_limit_follows_the_destination_chart_values" {
     error_message = "GOMEMLIMIT must follow the memory limit the destination's helm_values sets"
   }
 }
+
+################################################################################
+# OTLP logs: with Loki as a logs provider the collector serves /v1/logs and
+# sends what it receives to Loki's native OTLP endpoint; without Loki it has no
+# logs pipeline.
+################################################################################
+
+run "otlp_logs_go_to_loki_when_loki_is_a_logs_provider" {
+  command = plan
+
+  variables {
+    logs_providers = ["loki"]
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.logs.receivers == ["otlp"] && yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.logs.exporters == ["otlp_http/loki"]
+    error_message = "With Loki on, the OTLP collector must run a logs pipeline from its OTLP receiver to Loki"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/loki"].endpoint == "${output.loki_endpoint}/otlp"
+    error_message = "OTLP logs must go to Loki's native OTLP endpoint on its in-cluster Service"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/loki"].retry_on_failure.enabled == true && yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters["otlp_http/loki"].sending_queue.enabled == true
+    error_message = "The Loki exporter must queue and retry, so a Loki restart does not drop logs"
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.traces.exporters == ["otlp_grpc/tempo"]
+    error_message = "Logs must not change where traces go"
+  }
+}
+
+run "otlp_logs_have_no_pipeline_without_loki" {
+  command = plan
+
+  variables {
+    traces_destinations = [
+      { destination = "tempo" },
+    ]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.otlp_collector[0].values[0]).config.service.pipelines.logs == null && !contains(keys(yamldecode(helm_release.otlp_collector[0].values[0]).config.exporters), "otlp_http/loki")
+    error_message = "Without Loki the OTLP collector must keep no logs pipeline and no Loki exporter"
+  }
+}

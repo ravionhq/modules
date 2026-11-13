@@ -222,6 +222,15 @@ module "example" {
 
 ## Critical Reminders
 
+### Local TFLint preparation
+
+Run `bash tools/install-tflint-aws.sh` before local linting. It reuses a verified
+cached plugin or downloads the pinned release directly with committed SHA-256
+checksums, avoiding GitHub's unauthenticated release-metadata rate limit.
+Update its version/checksums together with `.tflint.hcl`. Then run
+`tflint --recursive`; this installer does not suppress lint failures.
+CI can continue using authenticated `tflint --init`.
+
 ### ALWAYS Update Root README.md
 
 When adding, modifying, or removing modules:

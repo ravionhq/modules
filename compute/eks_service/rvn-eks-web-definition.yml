@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.18.0
-  description: Require selected pipeline-provided environment variables on every deploy.
+  version: 1.19.0
+  description: Require selected pipeline-provided environment variables on every deploy and alarm on unhealthy targets in the service's load balancer target group, with optional notification actions.
 module:
   inputs:
     - id: section_cluster
@@ -492,6 +492,30 @@ module:
       collapsible: true
       required: false
       default: null
+    - id: section_alarms
+      label: Alarms
+      type: section
+      show_when:
+        load_balancer:
+          not: kubernetes_service
+    - id: cloudwatch_alarms_creation_enabled
+      label: Create CloudWatch alarms
+      type: boolean
+      description: Alarms on unhealthy targets in this service's target group. CloudWatch charges apply.
+      default: true
+      show_when:
+        load_balancer:
+          not: kubernetes_service
+    - id: cloudwatch_alarm_unhealthy_hosts_threshold
+      label: Unhealthy hosts alarm threshold
+      type: number
+      description: Uses the period maximum. 0 fires on the first unhealthy target.
+      collapsible: true
+      min: 0
+      default: 0
+      show_when:
+        cloudwatch_alarms_creation_enabled: true
+    - $include: ../../partials/inputs/cloudwatch-alarm-common-inputs.yml
     - $include: ../../partials/inputs/eks-workload-builder-ecr-inputs.yml
     - $include: ../../partials/inputs/misc-section.yml
     - $include: ../../partials/inputs/tags.yml
@@ -534,6 +558,14 @@ module:
             ravion_aws_account_id: << module.input.aws_account_id >>
             ravion_aws_region: << module.input.aws_region >>
             target_group_name: << module.input.target_group_name >>
+            # Hidden for cluster-only services, which have no target group; null
+            # takes the Terraform default and the alarm drops out with the listener.
+            cloudwatch_alarms_creation_enabled: << module.input.cloudwatch_alarms_creation_enabled >>
+            cloudwatch_alarm_unhealthy_hosts_threshold: << module.input.cloudwatch_alarm_unhealthy_hosts_threshold >>
+            cloudwatch_alarm_evaluation_periods: << module.input.cloudwatch_alarm_evaluation_periods >>
+            cloudwatch_alarm_period: << module.input.cloudwatch_alarm_period >>
+            cloudwatch_alarm_actions: << module.input.cloudwatch_alarm_actions || [] >>
+            cloudwatch_ok_actions: << module.input.cloudwatch_ok_actions || [] >>
             listener_rule_conditions: >-
               << (module.input.host_header_values != nil && module.input.host_header_values != [] ?
               [{type: "host-header", values: module.input.host_header_values}] : []) |
@@ -1003,6 +1035,10 @@ module:
 
     Deployments collapse: if several are queued, only the newest runs.
 
+    ## Alarms
+
+    Load-balanced services get a CloudWatch alarm on `UnHealthyHostCount` for their own target group, on by default, named `<target group name>-unhealthy-hosts`. It fires when more targets than **Unhealthy hosts alarm threshold** (default 0) fail the load balancer health check for **Alarm evaluation periods** consecutive periods, using the period maximum. Periods with no data, such as before the first pod registers, do not breach. Add an SNS topic ARN under **Alarm actions** to be notified; without one the alarm only changes state. Load balancer wide alarms (ELB 5xx, response time) belong to the EKS add-ons module. Cluster-only services have no target group and get no alarm.
+
     ## Metrics and logs
 
     The Metrics and Logs tabs follow the providers selected on the EKS add-ons module. You configure observability once, on that module, and every workload attached to it follows; there is nothing to set here.
@@ -1105,6 +1141,11 @@ module:
     | Builder AMI | No | Default image | Optional AMI override for build runners |
     | Scan images on push | No | true | ECR basic vulnerability scan on every push |
     | Force delete image repository | No | false | Allow destroying the repository while it holds images |
+    | Create CloudWatch alarms | No | true | Alarm on unhealthy targets in this service's target group |
+    | Unhealthy hosts alarm threshold | No | 0 | Unhealthy targets (period maximum) above which the alarm fires |
+    | Alarm evaluation periods | No | 2 | Consecutive periods that must breach |
+    | Alarm period | No | 300 | Seconds per period: 60, 300, 900 or 3600 |
+    | Alarm actions / OK actions | No | [] | ARNs notified on alarm and recovery, such as an SNS topic |
     | Tags | No | Standard Ravion tags | Additional tags applied to the load balancer and ECR resources |
     | Advanced Terraform variables | No | {} | Raw lower-level overrides for exceptional cases |
     | OpenTofu version override | No | Ravion default | Override the OpenTofu version for the stack |
