@@ -183,6 +183,11 @@ jobs:
               tofu -chdir=containers/ecr init -backend=false
               tofu -chdir=containers/ecr test
 
+          - name: Temporal module
+            run: |
+              tofu -chdir=compute/eks/temporal init -backend=false
+              tofu -chdir=compute/eks/temporal test
+
           - name: ClickHouse module
             run: |
               tofu -chdir=database/clickhouse init -backend=false

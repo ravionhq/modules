@@ -7,6 +7,7 @@ on:
     paths:
       - 'charts/**'
       - 'compute/eks/addons/charts/**'
+      - 'compute/eks/temporal/charts/**'
       - 'database/clickhouse/charts/**'
       - 'compute/eks/addons/mimir.tf'
       - 'compute/eks/addons/variables.tf'
@@ -18,6 +19,7 @@ on:
     paths:
       - 'charts/**'
       - 'compute/eks/addons/charts/**'
+      - 'compute/eks/temporal/charts/**'
       - 'database/clickhouse/charts/**'
       - 'compute/eks/addons/mimir.tf'
       - 'compute/eks/addons/variables.tf'
