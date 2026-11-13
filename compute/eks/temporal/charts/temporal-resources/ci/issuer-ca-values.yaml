@@ -1,0 +1,14 @@
+database:
+  externalSecret:
+    remoteSecretName: arn:aws:secretsmanager:us-east-1:123456789012:secret:example-db-AbCdEf
+tls:
+  enabled: true
+  caSource: issuer
+  issuerRef:
+    name: example-pca
+    kind: AWSPCAClusterIssuer
+    group: awspca.cert-manager.io
+  internode:
+    dnsNames: [temporal-internode.temporal.svc]
+  frontend:
+    dnsNames: [temporal-frontend.temporal.svc]

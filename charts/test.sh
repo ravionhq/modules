@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration temporal-resources)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -40,6 +40,7 @@ done
 chart_path() {
   case "$1" in
     karpenter-resources | warm-capacity | ebs-storage | thanos | statefulset-volume-migration) echo "${CHARTS_DIR}/../compute/eks/addons/charts/$1" ;;
+    temporal-resources) echo "${CHARTS_DIR}/../compute/eks/temporal/charts/$1" ;;
     *) echo "${CHARTS_DIR}/$1" ;;
   esac
 }
@@ -1152,6 +1153,101 @@ test_ebs_storage() {
 }
 
 ################################################################################
+# temporal-resources (compute/eks/temporal)
+################################################################################
+
+test_temporal_resources() {
+  local chart="temporal-resources"
+  local default full existing issuer secret_ca deploy jwks
+  default="$(render "${chart}" default --values "$(chart_path "${chart}")/ci/default-values.yaml")"
+  full="$(render "${chart}" full --values "$(chart_path "${chart}")/ci/full-values.yaml")"
+  existing="$(render "${chart}" existing --values "$(chart_path "${chart}")/ci/existing-secret-values.yaml")"
+  issuer="$(render "${chart}" issuer --values "$(chart_path "${chart}")/ci/issuer-ca-values.yaml")"
+  secret_ca="$(render "${chart}" secret-ca --values "$(chart_path "${chart}")/ci/secret-ca-values.yaml")"
+  deploy='.[] | select(.kind == "Deployment" and .metadata.name == "temporal-metrics") | .spec.template.spec'
+  jwks='.[] | select(.kind == "Deployment" and .metadata.name == "temporal-jwks") | .spec.template.spec'
+
+  assert_eq "${chart}: defaults render the password ExternalSecret and the RDS CA bundle only" \
+    "1 1 0 0 0" \
+    "$(count "${default}" ExternalSecret) $(count "${default}" ConfigMap) $(count "${default}" NetworkPolicy) $(count "${default}" Certificate) $(count "${default}" Deployment)"
+  assert_eq "${chart}: the ExternalSecret reads the password key of the given secret" \
+    "temporal-db password arn:aws:secretsmanager:us-east-1:123456789012:secret:example-db-AbCdEf password" \
+    "$(q "${default}" '.[] | select(.kind == "ExternalSecret") | [.spec.target.name, .spec.data[0].secretKey, .spec.data[0].remoteRef.key, .spec.data[0].remoteRef.property] | join(" ")')"
+  assert_eq "${chart}: the CA bundle ships the RDS certificates" \
+    "true" \
+    "$(q "${default}" '.[] | select(.kind == "ConfigMap") | .data."rds-global-bundle.pem" | test("BEGIN CERTIFICATE")')"
+  assert_eq "${chart}: an existing Secret renders nothing" \
+    "0" "$(q "${existing}" 'length')"
+  expect_template_failure "${chart}" "${chart}: the ExternalSecret requires a secret" \
+    --set database.externalSecret.remoteSecretName=
+  assert_eq "${chart}: TLS issues a CA and two leaf certificates from a namespaced Issuer" \
+    "3 2 temporal-ca" \
+    "$(count "${full}" Certificate) $(count "${full}" Issuer) $(q "${full}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | .spec.issuerRef.name')"
+  assert_eq "${chart}: leaf certificates carry server and client auth" \
+    "server auth,client auth" \
+    "$(q "${full}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-internode-tls") | [.spec.usages[2], .spec.usages[3]] | join(",")')"
+  expect_template_failure "${chart}" "${chart}: TLS requires certificate names" \
+    --set tls.enabled=true
+  assert_eq "${chart}: the NodePool is on-demand, tainted and never expires nodes" \
+    "on-demand ravion.com/dedicated Never 1" \
+    "$(q "${full}" '.[] | select(.kind == "NodePool") | [(.spec.template.spec.requirements[] | select(.key == "karpenter.sh/capacity-type") | .values[0]), .spec.template.spec.taints[0].key, .spec.template.spec.expireAfter, .spec.disruption.budgets[0].nodes] | join(" ")')"
+  assert_eq "${chart}: network policies select only the Temporal release and the key server" \
+    "5 temporal" \
+    "$(count "${full}" NetworkPolicy) $(q "${full}" '[.[] | select(.kind == "NetworkPolicy" and .metadata.name != "temporal-jwks") | .spec.podSelector.matchLabels."app.kubernetes.io/instance"] | unique | join(",")')"
+  assert_eq "${chart}: listed client namespaces and CIDRs reach the frontend and Web UI" \
+    "apps 10.0.0.0/16" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-frontend") | .spec.ingress[0].from[0].namespaceSelector.matchLabels."kubernetes.io/metadata.name"') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-web") | .spec.ingress[0].from[1].ipBlock.cidr')"
+  assert_eq "${chart}: the metrics forwarder runs non-root on the dedicated nodes" \
+    "true true temporal temporal-critical" \
+    "$(q "${full}" "${deploy} | .securityContext.runAsNonRoot") $(q "${full}" "${deploy} | .containers[0].securityContext.readOnlyRootFilesystem") $(q "${full}" "${deploy} | .nodeSelector.\"karpenter.sh/nodepool\"") $(q "${full}" "${deploy} | .priorityClassName")"
+  expect_template_failure "${chart}" "${chart}: the metrics forwarder requires an endpoint" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set metrics.otlp.enabled=true
+
+  # Certificate authority choices.
+  assert_eq "${chart}: an existing issuer signs the leaves, with no CA or Issuer created" \
+    "2 0 example-pca AWSPCAClusterIssuer awspca.cert-manager.io" \
+    "$(count "${issuer}" Certificate) $(count "${issuer}" Issuer) $(q "${issuer}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | [.spec.issuerRef.name, .spec.issuerRef.kind, .spec.issuerRef.group] | join(" ")')"
+  assert_eq "${chart}: an existing CA Secret backs the module's Issuer" \
+    "2 1 my-ca-key-pair temporal-ca" \
+    "$(count "${secret_ca}" Certificate) $(count "${secret_ca}" Issuer) $(q "${secret_ca}" '.[] | select(.kind == "Issuer") | .spec.ca.secretName') $(q "${secret_ca}" '.[] | select(.kind == "Certificate" and .metadata.name == "temporal-frontend-tls") | .spec.issuerRef.name')"
+  expect_template_failure "${chart}" "${chart}: an issuer CA requires an issuer name" \
+    --values "$(chart_path "${chart}")/ci/issuer-ca-values.yaml" --set tls.issuerRef.name=
+
+  # JWT key server.
+  assert_eq "${chart}: the key server serves the synced JWKS non-root and read-only" \
+    "jwks.json temporal-jwks true true" \
+    "$(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-jwks") | .spec.data[0].secretKey') $(q "${full}" "${jwks} | .volumes[0].secret.secretName") $(q "${full}" "${jwks} | .securityContext.runAsNonRoot") $(q "${full}" "${jwks} | .containers[0].securityContext.readOnlyRootFilesystem")"
+  assert_eq "${chart}: only the Temporal release reaches the key server" \
+    "temporal" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-jwks") | .spec.ingress[0].from[0].podSelector.matchLabels."app.kubernetes.io/instance"')"
+  expect_template_failure "${chart}" "${chart}: the key server requires a secret" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set jwks.enabled=true
+
+  # Secrets for the frontend, the server pods and the Web UI.
+  assert_eq "${chart}: frontend environment, server files and the OIDC client are synced" \
+    "CLAIM_MAPPER_SETTING:setting file-0: TEMPORAL_AUTH_CLIENT_ID:client_id,TEMPORAL_AUTH_CLIENT_SECRET:client_secret" \
+    "$(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-frontend-env") | [.spec.data[] | .secretKey + ":" + (.remoteRef.property // "")] | join(",")') $(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-server-files") | [.spec.data[] | .secretKey + ":" + (.remoteRef.property // "")] | join(",")') $(q "${full}" '.[] | select(.kind == "ExternalSecret" and .metadata.name == "temporal-web-oidc") | [.spec.data[] | .secretKey + ":" + .remoteRef.property] | join(",")')"
+  expect_template_failure "${chart}" "${chart}: OIDC requires a client secret" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set webOidc.enabled=true
+
+  # Exposure.
+  assert_eq "${chart}: the frontend NLB is internal, IP-targeted, client-preserving and source-limited" \
+    "service.k8s.aws/nlb internal ip preserve_client_ip.enabled=true 10.10.0.0/16 frontend" \
+    "$(q "${full}" '.[] | select(.kind == "Service" and .metadata.name == "temporal-frontend-nlb") | [.spec.loadBalancerClass, .metadata.annotations."service.beta.kubernetes.io/aws-load-balancer-scheme", .metadata.annotations."service.beta.kubernetes.io/aws-load-balancer-nlb-target-type", .metadata.annotations."service.beta.kubernetes.io/aws-load-balancer-target-group-attributes", .spec.loadBalancerSourceRanges[0], .spec.selector."app.kubernetes.io/component"] | join(" ")')"
+  expect_template_failure "${chart}" "${chart}: the NLB requires source ranges" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" --set frontendNlb.enabled=true
+  assert_eq "${chart}: the frontend is a tagged tailnet device on port 7233" \
+    "tailscale workflows-grpc tag:workflows-grpc 7233" \
+    "$(q "${full}" '.[] | select(.kind == "Service" and .metadata.name == "temporal-frontend-tailscale") | [.spec.loadBalancerClass, .metadata.annotations."tailscale.com/hostname", .metadata.annotations."tailscale.com/tags", .spec.ports[0].port] | join(" ")')"
+  assert_eq "${chart}: the Web UI is a tagged Tailscale Ingress with HTTPS" \
+    "tailscale temporal temporal-web tag:workflows-ui" \
+    "$(q "${full}" '.[] | select(.kind == "Ingress") | [.spec.ingressClassName, .spec.tls[0].hosts[0], .spec.defaultBackend.service.name, .metadata.annotations."tailscale.com/tags"] | join(" ")')"
+  assert_eq "${chart}: the NLB's sources reach the frontend through the network policy" \
+    "10.10.0.0/16,10.0.1.0/24" \
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "temporal-frontend") | [.spec.ingress[0].from[] | select(.ipBlock) | .ipBlock.cidr] | join(",")')"
+}
+
+################################################################################
 
 for chart in "${CHARTS[@]}"; do
   printf '\n==> %s\n' "${chart}"
@@ -1165,6 +1261,7 @@ for chart in "${CHARTS[@]}"; do
     ebs-storage) test_ebs_storage ;;
     thanos) test_thanos ;;
     statefulset-volume-migration) test_statefulset_volume_migration ;;
+    temporal-resources) test_temporal_resources ;;
     *)
       echo "unknown chart: ${chart}" >&2
       exit 1
