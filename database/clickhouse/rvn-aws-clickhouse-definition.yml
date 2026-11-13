@@ -1,6 +1,6 @@
 global: false
 definition:
-  type: rvn-clickhouse
+  type: rvn-aws-clickhouse
   name: ClickHouse
   description: Self-hosted, replicated ClickHouse on an EKS cluster, with ClickHouse Keeper, scheduled S3 backups and an S3 cold tier, all in your own AWS account.
 release:
