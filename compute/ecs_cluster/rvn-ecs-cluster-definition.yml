@@ -3,8 +3,8 @@ definition:
   name: ECS Cluster
   description: Production-ready AWS ECS cluster with Fargate, Fargate Spot, optional EC2 capacity, and shared load balancers.
 release:
-  version: 2.5.0
-  description: Alarm when targets behind the shared ALBs fail health checks.
+  version: 2.5.1
+  description: Fix plans failing with "Invalid function argument" when alarms on the shared ALBs are enabled with no alarm or OK actions.
 module:
   inputs:
     - id: network
