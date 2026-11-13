@@ -1,0 +1,170 @@
+{{- if .Values.tls.enabled }}
+{{- $tls := .Values.tls -}}
+{{- if not (has $tls.caSource (list "self_signed" "secret" "issuer")) }}
+{{- fail "tls.caSource must be self_signed, secret or issuer" }}
+{{- end }}
+{{- if eq $tls.caSource "self_signed" }}
+{{- /*
+A private CA for this installation only. cert-manager generates the CA key
+inside the cluster, and it stays in the CA Secret in this namespace. Anyone who
+can create a Certificate naming this Issuer, or read the CA Secret, can mint a
+certificate clients trust, so keep those permissions as narrow as namespace
+admin.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}-bootstrap
+  labels:
+    app.kubernetes.io/name: clickhouse-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: tls
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tls.caSecretName }}
+  labels:
+    app.kubernetes.io/name: clickhouse-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: tls
+spec:
+  isCA: true
+  commonName: {{ printf "%s ClickHouse CA" .Values.tls.installation }}
+  secretName: {{ $tls.caSecretName }}
+  duration: {{ $tls.caDuration }}
+  renewBefore: {{ $tls.caRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # Renewal re-signs the same key, so certificates it already issued keep
+    # verifying while they renew.
+    rotationPolicy: Never
+  issuerRef:
+    name: {{ $tls.issuerName }}-bootstrap
+    kind: Issuer
+---
+{{- end }}
+{{- if ne $tls.caSource "issuer" }}
+{{- /*
+The CA Issuer signing the server certificate: with the CA created above, or
+with an existing CA key pair Secret (tls.crt and tls.key) in this namespace.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}
+  labels:
+    app.kubernetes.io/name: clickhouse-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: tls
+spec:
+  ca:
+    secretName: {{ $tls.caSecretName }}
+---
+{{- end }}
+{{- $issuerRef := $tls.issuerRef }}
+{{- if ne $tls.caSource "issuer" }}
+{{- $issuerRef = dict "name" $tls.issuerName "kind" "Issuer" "group" "cert-manager.io" }}
+{{- end }}
+{{- if not $issuerRef.name }}
+{{- fail "tls.issuerRef.name is required when tls.caSource is issuer" }}
+{{- end }}
+{{- $dnsNames := $tls.dnsNames }}
+{{- if not $dnsNames }}
+{{- fail "tls.dnsNames are required" }}
+{{- end }}
+# One certificate for every ClickHouse server (and every Keeper node with
+# internal TLS). ClickHouse and Keeper reload it from the mounted Secret when
+# cert-manager renews it, without a restart.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tls.serverSecretName }}
+  labels:
+    app.kubernetes.io/name: clickhouse-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: tls
+spec:
+  secretName: {{ $tls.serverSecretName }}
+  commonName: {{ first $dnsNames }}
+  dnsNames:
+    {{- toYaml $dnsNames | nindent 4 }}
+  usages:
+    - digital signature
+    - server auth
+  duration: {{ $tls.leafDuration }}
+  renewBefore: {{ $tls.leafRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: {{ $issuerRef.name }}
+    kind: {{ $issuerRef.kind }}
+    group: {{ $issuerRef.group }}
+---
+{{- /*
+Holds the release until cert-manager has written the certificate Secret: the
+pod cannot start before the Secret it mounts exists. The operator (next
+release) verifies the servers against this CA and the ClickHouse and Keeper
+pods mount the Secret, so neither starts before it is there.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $tls.serverSecretName }}-ready
+  labels:
+    app.kubernetes.io/name: clickhouse-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: tls
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse-secrets
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: tls
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wait
+          image: {{ $tls.waitImage }}
+          command: ["/bin/sh", "-c", "test -s /tls/ca.crt && test -s /tls/tls.crt && test -s /tls/tls.key"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ $tls.serverSecretName }}
+{{- end }}

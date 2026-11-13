@@ -1,8 +1,22 @@
 {{- if .Values.networkPolicy.enabled }}
-# ClickHouse: any pod in this namespace (other replicas, Keeper, the operator,
-# backups) on every port; the allowed namespaces on HTTP and native, and their
-# TLS ports when TLS is on (only those once the plaintext ports are closed);
-# anyone on the metrics port, so a scraper in any namespace works.
+{{- $tls := .Values.tls.enabled -}}
+{{- $plaintext := not (and $tls .Values.tls.disablePlaintextPorts) -}}
+{{- $internal := and $tls .Values.tls.internal -}}
+{{- $clickhouse := dict "clickhouse.ravion.com/installation" .Values.name "app.kubernetes.io/component" "clickhouse" -}}
+{{- $keeper := dict "clickhouse.ravion.com/installation" .Values.name "app.kubernetes.io/component" "keeper" -}}
+{{- $operator := dict "app.kubernetes.io/instance" .Values.operatorFullname -}}
+{{- $clientPorts := list -}}
+{{- if $plaintext }}{{ $clientPorts = concat $clientPorts (list 8123 9000) }}{{ end -}}
+{{- if $tls }}{{ $clientPorts = concat $clientPorts (list 8443 9440) }}{{ end -}}
+# ClickHouse:
+# - any pod in this namespace (the operator, the jobs, applications) on the
+#   client ports: HTTP and native, their TLS ports when TLS is on, and only
+#   the TLS ones once the plaintext ports are closed;
+# - the other ClickHouse servers on the interserver port replicas fetch parts
+#   over: HTTPS on 9010 with internal TLS, otherwise HTTP on 9009;
+# - the backup job and the operator on the clickhouse-backup API (7171);
+# - the allowed namespaces on the client ports;
+# - anyone on the metrics port, so a scraper in any namespace works.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -12,12 +26,34 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      clickhouse.ravion.com/installation: {{ .Values.name }}
-      app.kubernetes.io/component: clickhouse
+      {{- toYaml $clickhouse | nindent 6 }}
   policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector: {}
+      ports:
+        {{- range $clientPorts }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $clickhouse | nindent 14 }}
+      ports:
+        - port: {{ ternary 9010 9009 $internal }}
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: backup
+        - podSelector:
+            matchLabels:
+              {{- toYaml $operator | nindent 14 }}
+      ports:
+        - port: 7171
+          protocol: TCP
     {{- with .Values.networkPolicy.allowedNamespaces }}
     - from:
         - namespaceSelector:
@@ -27,16 +63,8 @@ spec:
                 values:
                   {{- toYaml . | nindent 18 }}
       ports:
-        {{- if not (and $.Values.tls.enabled $.Values.tls.disablePlaintextPorts) }}
-        - port: 8123
-          protocol: TCP
-        - port: 9000
-          protocol: TCP
-        {{- end }}
-        {{- if $.Values.tls.enabled }}
-        - port: 8443
-          protocol: TCP
-        - port: 9440
+        {{- range $clientPorts }}
+        - port: {{ . }}
           protocol: TCP
         {{- end }}
     {{- end }}
@@ -46,7 +74,14 @@ spec:
         - port: 9363
           protocol: TCP
 ---
+{{- if $internal }}
+# Keeper with internal TLS: the other Keeper nodes on every port (Raft on
+# 9444); ClickHouse only on the TLS client port (2281); the operator on both
+# client ports; metrics from anywhere. The plaintext client port (2181) stays
+# open for the liveness probe, which runs inside the pod.
+{{- else }}
 # Keeper: only this namespace, plus metrics from anywhere.
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -56,12 +91,34 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      clickhouse.ravion.com/installation: {{ .Values.name }}
-      app.kubernetes.io/component: keeper
+      {{- toYaml $keeper | nindent 6 }}
   policyTypes: [Ingress]
   ingress:
+    {{- if $internal }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $keeper | nindent 14 }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $clickhouse | nindent 14 }}
+      ports:
+        - port: 2281
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml $operator | nindent 14 }}
+      ports:
+        - port: 2181
+          protocol: TCP
+        - port: 2281
+          protocol: TCP
+    {{- else }}
     - from:
         - podSelector: {}
+    {{- end }}
     - from:
         - namespaceSelector: {}
       ports:

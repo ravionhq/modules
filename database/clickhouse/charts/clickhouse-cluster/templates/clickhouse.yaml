@@ -3,6 +3,9 @@
 {{- $tlsDir := include "clickhouse-cluster.tlsMountPath" . -}}
 {{- $plaintext := not (and .Values.tls.enabled .Values.tls.disablePlaintextPorts) -}}
 {{- $coldStorage := and .Values.coldStorage.enabled .Values.s3.bucket -}}
+{{- $internal := and .Values.tls.enabled .Values.tls.internal -}}
+{{- $backup := and .Values.backup.enabled .Values.s3.bucket -}}
+{{- $keeperName := include "clickhouse-cluster.keeperName" . -}}
 apiVersion: clickhouse.altinity.com/v1
 kind: ClickHouseInstallation
 metadata:
@@ -25,8 +28,20 @@ spec:
       reclaimPolicy: {{ .Values.storage.reclaimPolicy }}
   configuration:
     zookeeper:
+      {{- if $internal }}
+      # Keeper's TLS client port on each node, verified against the CA. Named
+      # here rather than found through the Keeper reference, so the servers
+      # never fall back to the plaintext port while Keeper rolls to TLS.
+      nodes:
+        {{- range $replica := until (int .Values.keeper.replicas) }}
+        - host: {{ printf "chk-%s-keeper-0-%d-client" $keeperName $replica }}
+          port: 2281
+          secure: "yes"
+        {{- end }}
+      {{- else }}
       keeper:
-        name: {{ include "clickhouse-cluster.keeperName" . }}
+        name: {{ $keeperName }}
+      {{- end }}
     users:
       # Full access, including user and grant management in SQL.
       {{ .Values.users.admin.username }}/password:
@@ -90,11 +105,25 @@ spec:
       tcp_port_secure: "9440"
       https_port: "8443"
       {{- end }}
+      {{- if $internal }}
+      # Replicas fetch parts from each other over HTTPS on 9010. ClickHouse
+      # refuses to start with both interserver ports, so 9009 is removed.
+      interserver_http_port: _removed_
+      interserver_https_port: "9010"
+      {{- end }}
       {{- range $key, $value := .Values.clickhouse.settings }}
       {{ $key }}: {{ $value | quote }}
       {{- end }}
     {{- if or $coldStorage .Values.tls.enabled }}
     files:
+    {{- end }}
+    {{- if $internal }}
+      # The name other replicas reach this one by for interserver HTTPS: its
+      # own per-replica Service, as the operator sets for interserver HTTP.
+      config.d/interserver_tls.xml: |
+        <clickhouse>
+          <interserver_https_host from_env="CLICKHOUSE_INTERSERVER_HOST"/>
+        </clickhouse>
     {{- end }}
     {{- if .Values.tls.enabled }}
       # The server certificate for 9440 and 8443, reloaded when the mounted
@@ -178,6 +207,16 @@ spec:
         # Closes 9000 and 8123 on the servers, their pods and Services.
         insecure: "no"
         {{- end }}
+        # The operator connects over HTTPS and verifies each server's
+        # certificate and name against the CA. It reads ca.crt on every
+        # reconcile, so a renewed CA needs no operator restart.
+        security:
+          clickhouse:
+            tls:
+              verify: Strict
+              rootCASecretRef:
+                name: {{ .Values.tls.serverSecretName }}
+                key: ca.crt
         {{- end }}
         layout:
           shardsCount: {{ .Values.clickhouse.shards }}
@@ -224,6 +263,25 @@ spec:
               ports:
                 - name: metrics
                   containerPort: 9363
+                {{- if $internal }}
+                - name: interserver-tls
+                  containerPort: 9010
+                {{- end }}
+              {{- if $internal }}
+              env:
+                # chi-<installation>-<cluster>-<shard>-<replica>, from the
+                # labels the operator puts on each pod.
+                - name: CLICKHOUSE_SHARD
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['clickhouse.altinity.com/shard']
+                - name: CLICKHOUSE_REPLICA
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['clickhouse.altinity.com/replica']
+                - name: CLICKHOUSE_INTERSERVER_HOST
+                  value: {{ printf "chi-%s-%s-$(CLICKHOUSE_SHARD)-$(CLICKHOUSE_REPLICA)" .Values.name .Values.clusterName | quote }}
+              {{- end }}
               resources:
                 {{- toYaml .Values.clickhouse.resources | nindent 16 }}
               {{- if .Values.tls.enabled }}
@@ -238,7 +296,21 @@ spec:
             # so it must run in the same pod as the server.
             - name: clickhouse-backup
               image: {{ .Values.backup.image }}
+              {{- if .Values.tls.enabled }}
+              # clickhouse-backup reads its API certificate only at startup.
+              # The liveness probe fails once cert-manager has renewed the
+              # mounted certificate after this start, so the kubelet restarts
+              # the sidecar onto the new one.
+              command: ["/bin/sh", "-c", "touch /tmp/started && exec /bin/clickhouse-backup server"]
+              livenessProbe:
+                exec:
+                  command: ["/bin/sh", "-c", "[ ! {{ $tlsDir }}/..data -nt /tmp/started ]"]
+                initialDelaySeconds: 60
+                periodSeconds: 60
+                failureThreshold: 1
+              {{- else }}
               args: ["server"]
+              {{- end }}
               ports:
                 - name: backup-api
                   containerPort: 7171
@@ -274,6 +346,14 @@ spec:
                       key: password
                 - name: API_LISTEN
                   value: "0.0.0.0:7171"
+                {{- if .Values.tls.enabled }}
+                - name: API_SECURE
+                  value: "true"
+                - name: API_CERTIFICATE_FILE
+                  value: {{ printf "%s/tls.crt" $tlsDir | quote }}
+                - name: API_PRIVATE_KEY_FILE
+                  value: {{ printf "%s/tls.key" $tlsDir | quote }}
+                {{- end }}
                 - name: API_CREATE_INTEGRATION_TABLES
                   value: "true"
                 - name: ALLOW_EMPTY_BACKUPS

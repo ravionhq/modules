@@ -47,6 +47,34 @@ locals {
   }
   tls_ca_key_pair_secret = var.tls_ca_source == "secret" ? coalesce(var.tls_ca_secret_name, "${var.name}-ca") : "${var.name}-ca"
 
+  tls_internal = var.tls_enabled && var.tls_internal_enabled
+
+  # Version of the connection details written to each user secret: changes
+  # with password_version and with every setting that changes the ports, never
+  # otherwise. The low two bits are the TLS settings.
+  connection_version = var.password_version * 4 + (var.tls_enabled ? 1 : 0) + (var.tls_enabled && var.tls_disable_plaintext_ports ? 2 : 0)
+
+  # Every name the server certificate covers, each in its short, namespace,
+  # svc and cluster-local forms: the installation's Service (first, as the
+  # common name), each replica's Service (what remote_servers, the operator,
+  # the backup job and interserver HTTPS use) and pod, localhost for the
+  # backup sidecar, and with internal TLS each Keeper node's Services.
+  keeper_installation = "${var.name}-keeper"
+  tls_hosts = concat(
+    ["clickhouse-${var.name}"],
+    flatten([for s in range(var.shard_count) : [for r in range(var.replica_count) : "chi-${var.name}-${local.cluster_layout_name}-${s}-${r}"]]),
+    local.tls_internal ? concat(
+      ["keeper-${local.keeper_installation}"],
+      flatten([for r in range(var.keeper_replica_count) : ["chk-${local.keeper_installation}-keeper-0-${r}", "chk-${local.keeper_installation}-keeper-0-${r}-client"]]),
+    ) : [],
+  )
+  tls_dns_names = distinct(concat(
+    flatten([for h in local.tls_hosts : ["${h}.${var.namespace}.svc.cluster.local", "${h}.${var.namespace}.svc", "${h}.${var.namespace}", h]]),
+    flatten([for s in range(var.shard_count) : [for r in range(var.replica_count) : "chi-${var.name}-${local.cluster_layout_name}-${s}-${r}-0.chi-${var.name}-${local.cluster_layout_name}-${s}-${r}.${var.namespace}.svc.cluster.local"]]),
+    ["localhost"],
+    var.tls_extra_dns_names,
+  ))
+
   ################################################################################
   # Users
   ################################################################################

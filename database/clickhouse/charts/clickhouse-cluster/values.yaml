@@ -125,27 +125,15 @@ networkPolicy:
   enabled: false
   allowedNamespaces: []
 
-# TLS on the native (9440) and HTTPS (8443) ports, with a server certificate
-# from cert-manager. Distributed queries between servers use TLS too.
+# TLS on the native (9440) and HTTPS (8443) ports, with the server certificate
+# Secret the secrets release creates. Distributed queries between servers use
+# TLS too, and the operator verifies the servers against its ca.crt.
 tls:
   enabled: false
   # Close the plaintext native (9000) and HTTP (8123) ports.
   disablePlaintextPorts: false
-  # self_signed, issuer or secret.
-  caSource: self_signed
-  # The chart's own Issuer (self_signed and secret), and the CA key pair Secret
-  # it signs with: created for self_signed, existing for secret.
-  issuerName: clickhouse-ca
-  caSecretName: clickhouse-ca
-  # The issuer that signs the server certificate when caSource is issuer.
-  issuerRef:
-    name: ""
-    kind: ClusterIssuer
-    group: cert-manager.io
+  # Replication between replicas over interserver HTTPS (9010), and Keeper
+  # over TLS: the client port 2281 for ClickHouse and Raft between Keeper
+  # nodes.
+  internal: false
   serverSecretName: clickhouse-server-tls
-  # Added to the Service, every replica's pod and localhost.
-  extraDnsNames: []
-  caDuration: 87600h
-  caRenewBefore: 8760h
-  leafDuration: 2160h
-  leafRenewBefore: 720h

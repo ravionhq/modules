@@ -46,7 +46,7 @@ resource "helm_release" "secrets" {
   values = [yamlencode({
     region          = local.region
     refreshInterval = var.external_secrets.refresh_interval
-    passwordVersion = tostring(var.password_version)
+    passwordVersion = tostring(local.connection_version)
     store = {
       create = var.external_secrets.cluster_secret_store_name == null
       name   = coalesce(var.external_secrets.cluster_secret_store_name, "${var.name}-aws-secrets-manager")
@@ -58,7 +58,35 @@ resource "helm_release" "secrets" {
         remoteKey = aws_secretsmanager_secret.user[key].name
       }
     ]
+
+    # The server certificate, created in this first release so it exists
+    # before the operator, which verifies the servers against its CA, and the
+    # servers, which mount it.
+    tls = {
+      enabled      = var.tls_enabled
+      installation = var.name
+      caSource     = var.tls_ca_source
+      # The module's own Issuer (self_signed and secret), and the CA key pair
+      # it signs with.
+      issuerName       = local.tls_module_issuer_name
+      caSecretName     = local.tls_ca_key_pair_secret
+      issuerRef        = local.tls_issuer_ref
+      serverSecretName = local.tls_server_secret
+      dnsNames         = local.tls_dns_names
+      waitImage        = var.backup_job_image
+    }
   })]
+
+  lifecycle {
+    precondition {
+      condition     = !var.tls_enabled || var.tls_ca_source != "issuer" || var.tls_issuer != null
+      error_message = "tls_issuer is required when tls_ca_source is issuer."
+    }
+    precondition {
+      condition     = !var.tls_enabled || var.tls_ca_source != "secret" || var.tls_ca_secret_name != null
+      error_message = "tls_ca_secret_name is required when tls_ca_source is secret."
+    }
+  }
 
   depends_on = [aws_secretsmanager_secret_version.user]
 }
@@ -125,6 +153,21 @@ resource "helm_release" "operator" {
     })
     serviceMonitor = {
       enabled = false
+    }
+
+    # With TLS, the operator always talks to the servers over HTTPS and
+    # verifies them against the CA (set per installation in the cluster
+    # chart), even while 8123 is still open.
+    configs = {
+      files = {
+        "config.yaml" = {
+          clickhouse = {
+            access = {
+              scheme = var.tls_enabled ? "https" : "Auto"
+            }
+          }
+        }
+      }
     }
   })]
 
@@ -272,32 +315,12 @@ resource "helm_release" "cluster" {
 
     tls = {
       enabled               = var.tls_enabled
-      disablePlaintextPorts = var.tls_disable_plaintext_ports
-      caSource              = var.tls_ca_source
-      # The module's own Issuer (self_signed and secret), and the CA key pair
-      # it signs with.
-      issuerName       = local.tls_module_issuer_name
-      caSecretName     = local.tls_ca_key_pair_secret
-      issuerRef        = local.tls_issuer_ref
-      serverSecretName = local.tls_server_secret
-      extraDnsNames    = var.tls_extra_dns_names
+      disablePlaintextPorts = var.tls_enabled && var.tls_disable_plaintext_ports
+      internal              = local.tls_internal
+      serverSecretName      = local.tls_server_secret
     }
   })]
 
-  lifecycle {
-    precondition {
-      condition     = !var.tls_enabled || var.tls_ca_source != "issuer" || var.tls_issuer != null
-      error_message = "tls_issuer is required when tls_ca_source is issuer."
-    }
-    precondition {
-      condition     = !var.tls_enabled || var.tls_ca_source != "secret" || var.tls_ca_secret_name != null
-      error_message = "tls_ca_secret_name is required when tls_ca_source is secret."
-    }
-    precondition {
-      condition     = var.tls_enabled || !var.tls_disable_plaintext_ports
-      error_message = "tls_disable_plaintext_ports requires tls_enabled."
-    }
-  }
 
   depends_on = [
     helm_release.operator,

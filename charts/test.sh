@@ -1204,7 +1204,7 @@ test_clickhouse_cluster() {
     "$(count "${full}" NetworkPolicy) $(count "${full}" PodMonitor) $(count "${full}" NodePool) $(count "${full}" PriorityClass) $(count "${full}" Deployment)"
   assert_eq "${chart}: allowed namespaces reach only HTTP and native" \
     "apps,jobs 8123,9000" \
-    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].from[0].namespaceSelector.matchExpressions[0].values | join(",")') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports | map(.port) | join(",")')"
+    "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].from[0].namespaceSelector.matchExpressions[0].values | join(",")') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].ports | map(.port) | join(",")')"
   assert_eq "${chart}: Atomic database is created ON CLUSTER" \
     "Atomic" \
     "$(q "${full}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "ENGINE") | .value')"
@@ -1213,24 +1213,19 @@ test_clickhouse_cluster() {
     "0 0  1" \
     "$(count "${minimal}" CronJob) $(count "${minimal}" Job) $(q "${minimal}" "${chi} | .spec.configuration.files") $(q "${minimal}" "${chi} | .spec.templates.podTemplates[0].spec.containers | length")"
 
-  local tls issuer secret_ca keep_plain
+  local tls keep_plain
   tls="$(render "${chart}" tls -n analytics -f "${ci}/tls-values.yaml")"
-  issuer="$(render "${chart}" tls-issuer -n analytics -f "${ci}/tls-issuer-values.yaml")"
-  secret_ca="$(render "${chart}" tls-secret -n analytics -f "${ci}/default-values.yaml" --set tls.enabled=true --set tls.caSource=secret --set tls.caSecretName=corp-ca)"
   keep_plain="$(render "${chart}" tls-plain -n analytics -f "${ci}/full-values.yaml" --set tls.enabled=true)"
 
-  assert_eq "${chart}: TLS off renders no certificates, issuers or service template" \
-    "0 0 " \
-    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(q "${default}" "${chi} | .spec.templates.serviceTemplates")"
-  assert_eq "${chart}: self-signed CA bootstraps a CA Issuer that signs the server certificate" \
-    "2 2 analytics-ca-bootstrap analytics-ca" \
-    "$(count "${tls}" Certificate) $(count "${tls}" Issuer) $(q "${tls}" '.[] | select(.kind == "Certificate" and .spec.isCA) | .spec.issuerRef.name') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.issuerRef.name')"
-  assert_eq "${chart}: server certificate names the Service, every replica, localhost and extra names" \
-    "clickhouse-analytics.analytics.svc.cluster.local 22 chi-analytics-main-1-1.analytics.svc.cluster.local localhost clickhouse.example.internal" \
-    "$(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.commonName') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames | length') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames[] | select(. == "chi-analytics-main-1-1.analytics.svc.cluster.local")') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames[] | select(. == "localhost")') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames[-1]')"
+  assert_eq "${chart}: TLS off renders no certificates, service template or cluster security" \
+    "0 0  " \
+    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(q "${default}" "${chi} | .spec.templates.serviceTemplates") $(q "${default}" "${chi} | .spec.configuration.clusters[0].security")"
   assert_eq "${chart}: TLS opens 9440 and 8443 and marks the cluster secure" \
     "9440 8443 yes" \
     "$(q "${tls}" "${chi} | .spec.configuration.settings.tcp_port_secure") $(q "${tls}" "${chi} | .spec.configuration.settings.https_port") $(q "${tls}" "${chi} | .spec.configuration.clusters[0].secure")"
+  assert_eq "${chart}: the operator verifies the servers against the certificate Secret's CA" \
+    "Strict analytics-server-tls ca.crt" \
+    "$(q "${tls}" "${chi} | .spec.configuration.clusters[0].security.clickhouse.tls.verify") $(q "${tls}" "${chi} | .spec.configuration.clusters[0].security.clickhouse.tls.rootCASecretRef.name") $(q "${tls}" "${chi} | .spec.configuration.clusters[0].security.clickhouse.tls.rootCASecretRef.key")"
   assert_eq "${chart}: openSSL serves the mounted certificate and trusts the CA as a client" \
     "1 1" \
     "$(q "${tls}" "${chi} | .spec.configuration.files[\"config.d/tls.xml\"] | test(\"<certificateFile>/etc/clickhouse-server/tls/tls.crt</certificateFile>\") | select(.) | 1") $(q "${tls}" "${chi} | .spec.configuration.files[\"config.d/tls.xml\"] | test(\"<caConfig>/etc/clickhouse-server/tls/ca.crt</caConfig>\") | select(.) | 1")"
@@ -1243,37 +1238,47 @@ test_clickhouse_cluster() {
   assert_eq "${chart}: backup sidecar reaches the server over TLS on 9440" \
     "9440 true /etc/clickhouse-server/tls/ca.crt" \
     "$(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"CLICKHOUSE_PORT\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"CLICKHOUSE_SECURE\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"CLICKHOUSE_TLS_CA\") | .value")"
+  assert_eq "${chart}: backup sidecar serves its API over HTTPS and restarts after a renewal" \
+    "true /etc/clickhouse-server/tls/tls.crt 1 1" \
+    "$(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"API_SECURE\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].env[] | select(.name == \"API_CERTIFICATE_FILE\") | .value") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].livenessProbe.exec.command[2] | test(\"-nt /tmp/started\") | select(.) | 1") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[1].command[2] | test(\"touch /tmp/started\") | select(.) | 1")"
+  assert_eq "${chart}: backup job calls the API over HTTPS with only the CA mounted" \
+    "https --cacert /tls/ca.crt ca.crt" \
+    "$(q "${tls}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].env[] | select(.name == "SCHEME") | .value') $(q "${tls}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[0].env[] | select(.name == "CURL_TLS") | .value') $(q "${tls}" '.[] | select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.volumes[] | select(.name == "tls-ca") | .secret.items | map(.key) | join(",")')"
   assert_eq "${chart}: closing plaintext marks the cluster insecure no and drops 8123 and 9000 from the Service" \
     "no clickhouse 8443,9440 None" \
     "$(q "${tls}" "${chi} | .spec.configuration.clusters[0].insecure") $(q "${tls}" "${chi} | .spec.defaults.templates.serviceTemplate") $(q "${tls}" "${chi} | .spec.templates.serviceTemplates[0].spec.ports | map(.port) | join(\",\")") $(q "${tls}" "${chi} | .spec.templates.serviceTemplates[0].spec.clusterIP")"
-  assert_eq "${chart}: closing plaintext lets client namespaces reach only the TLS ports" \
-    "8443,9440" \
-    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports | map(.port) | join(",")')"
-  assert_eq "${chart}: database job connects over TLS with only the CA mounted" \
-    "1 ca.crt" \
-    "$(q "${tls}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].command[2] | test("--secure --port 9440") | select(.) | 1') $(q "${tls}" '.[] | select(.kind == "Job") | .spec.template.spec.volumes[0].secret.items | map(.key) | join(",")')"
-  assert_eq "${chart}: TLS beside plaintext keeps 8123 and 9000 open everywhere" \
-    " 8123,9000,8443,9440 8123,9000,8443,9440" \
-    "$(q "${keep_plain}" "${chi} | .spec.configuration.clusters[0].insecure") $(q "${keep_plain}" "${chi} | .spec.templates.serviceTemplates[0].spec.ports | map(.port) | join(\",\")") $(q "${keep_plain}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports | map(.port) | join(",")')"
-  assert_eq "${chart}: an existing issuer signs the server certificate with no CA of its own" \
-    "1 0 private-ca AWSPCAClusterIssuer awspca.cert-manager.io" \
-    "$(count "${issuer}" Certificate) $(count "${issuer}" Issuer) $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.name') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.kind') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.group')"
-  assert_eq "${chart}: an existing CA secret backs the chart's CA Issuer" \
-    "1 1 corp-ca" \
-    "$(count "${secret_ca}" Certificate) $(count "${secret_ca}" Issuer) $(q "${secret_ca}" '.[] | select(.kind == "Issuer") | .spec.ca.secretName')"
-
-  expect_template_failure "${chart}" "${chart}: rejects an unknown CA source" \
-    -f "${ci}/default-values.yaml" --set tls.enabled=true --set tls.caSource=acme
-  expect_template_failure "${chart}" "${chart}: rejects the issuer CA source without an issuer name" \
-    -f "${ci}/default-values.yaml" --set tls.enabled=true --set tls.caSource=issuer
+  assert_eq "${chart}: internal TLS moves replication to interserver HTTPS on 9010 named after each replica's Service" \
+    "_removed_ 9010 9010 chi-analytics-main-\$(CLICKHOUSE_SHARD)-\$(CLICKHOUSE_REPLICA) 1" \
+    "$(q "${tls}" "${chi} | .spec.configuration.settings.interserver_http_port") $(q "${tls}" "${chi} | .spec.configuration.settings.interserver_https_port") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[0].ports[] | select(.name == \"interserver-tls\") | .containerPort") $(q "${tls}" "${chi} | .spec.templates.podTemplates[0].spec.containers[0].env[] | select(.name == \"CLICKHOUSE_INTERSERVER_HOST\") | .value") $(q "${tls}" "${chi} | .spec.configuration.files[\"config.d/interserver_tls.xml\"] | test(\"from_env=.CLICKHOUSE_INTERSERVER_HOST.\") | select(.) | 1")"
+  assert_eq "${chart}: internal TLS points ClickHouse at each Keeper node's TLS client port" \
+    "3 chk-analytics-keeper-keeper-0-2-client 2281 yes " \
+    "$(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes | length") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes[2].host") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes[0].port") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.nodes[0].secure") $(q "${tls}" "${chi} | .spec.configuration.zookeeper.keeper")"
+  assert_eq "${chart}: internal TLS runs Keeper secure with the mounted certificate" \
+    "yes analytics-server-tls 1" \
+    "$(q "${tls}" "${chk} | .spec.configuration.clusters[0].secure") $(q "${tls}" "${chk} | .spec.templates.podTemplates[0].spec.volumes[0].secret.secretName") $(q "${tls}" "${chk} | .spec.configuration.files[\"config.d/tls.xml\"] | test(\"<caConfig>/etc/clickhouse-server/tls/ca.crt</caConfig>\") | select(.) | 1")"
+  assert_eq "${chart}: client namespaces reach only the TLS ports once plaintext is closed" \
+    "8443,9440 8443,9440" \
+    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[0].ports | map(.port) | join(",")') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].ports | map(.port) | join(",")')"
+  assert_eq "${chart}: replicas reach each other only on interserver HTTPS, and 7171 only from the backup job and the operator" \
+    "9010 backup analytics-operator 7171" \
+    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports[0].port') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[2].from[0].podSelector.matchLabels["app.kubernetes.io/component"]') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[2].from[1].podSelector.matchLabels["app.kubernetes.io/instance"]') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[2].ports[0].port')"
+  assert_eq "${chart}: with internal TLS ClickHouse reaches Keeper only on 2281, the operator on both client ports" \
+    "2281 2181,2281" \
+    "$(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-keeper") | .spec.ingress[1].ports | map(.port) | join(",")') $(q "${tls}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-keeper") | .spec.ingress[2].ports | map(.port) | join(",")')"
+  assert_eq "${chart}: without internal TLS replication stays on 9009 and Keeper is found by reference" \
+    "9009 analytics-keeper 8123,9000,8443,9440" \
+    "$(q "${keep_plain}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[1].ports[0].port') $(q "${keep_plain}" "${chi} | .spec.configuration.zookeeper.keeper.name") $(q "${keep_plain}" "${chi} | .spec.templates.serviceTemplates[0].spec.ports | map(.port) | join(\",\")")"
 }
 
 test_clickhouse_secrets() {
   local chart=clickhouse-secrets
-  local ci default store
+  local ci default store tls issuer secret_ca
   ci="$(chart_path "${chart}")/ci"
   default="$(render "${chart}" default -f "${ci}/default-values.yaml")"
   store="$(render "${chart}" store -f "${ci}/cluster-store-values.yaml")"
+  tls="$(render "${chart}" tls -n analytics -f "${ci}/tls-values.yaml")"
+  issuer="$(render "${chart}" tls-issuer -n analytics -f "${ci}/tls-issuer-values.yaml")"
+  secret_ca="$(render "${chart}" tls-secret -n analytics -f "${ci}/tls-values.yaml" --set tls.caSource=secret --set tls.caSecretName=corp-ca)"
 
   assert_eq "${chart}: one ExternalSecret per user through a namespaced SecretStore" \
     "1 2 SecretStore" \
@@ -1284,6 +1289,31 @@ test_clickhouse_secrets() {
   assert_eq "${chart}: a named ClusterSecretStore is used, not created" \
     "0 ClusterSecretStore shared-aws-secrets" \
     "$(count "${store}" SecretStore) $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.kind') $(q "${store}" '.[] | select(.kind == "ExternalSecret") | .spec.secretStoreRef.name')"
+  assert_eq "${chart}: TLS off renders no certificates" \
+    "0 0 0" \
+    "$(count "${default}" Certificate) $(count "${default}" Issuer) $(count "${default}" Job)"
+  assert_eq "${chart}: self-signed CA bootstraps a CA Issuer that signs the server certificate" \
+    "2 2 analytics-ca-bootstrap analytics-ca" \
+    "$(count "${tls}" Certificate) $(count "${tls}" Issuer) $(q "${tls}" '.[] | select(.kind == "Certificate" and .spec.isCA) | .spec.issuerRef.name') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.issuerRef.name')"
+  assert_eq "${chart}: server certificate takes its names from the values, the first as common name" \
+    "clickhouse-analytics.analytics.svc.cluster.local 3 server auth" \
+    "$(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.commonName') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.dnsNames | length') $(q "${tls}" '.[] | select(.kind == "Certificate" and .metadata.name == "analytics-server-tls") | .spec.usages[1]')"
+  assert_eq "${chart}: a hook job holds the release until the certificate Secret exists" \
+    "post-install,post-upgrade analytics-server-tls" \
+    "$(q "${tls}" '.[] | select(.kind == "Job") | .metadata.annotations["helm.sh/hook"]') $(q "${tls}" '.[] | select(.kind == "Job") | .spec.template.spec.volumes[0].secret.secretName')"
+  assert_eq "${chart}: an existing issuer signs the server certificate with no CA of its own" \
+    "1 0 private-ca AWSPCAClusterIssuer awspca.cert-manager.io" \
+    "$(count "${issuer}" Certificate) $(count "${issuer}" Issuer) $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.name') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.kind') $(q "${issuer}" '.[] | select(.kind == "Certificate") | .spec.issuerRef.group')"
+  assert_eq "${chart}: an existing CA secret backs the chart's CA Issuer" \
+    "1 1 corp-ca" \
+    "$(count "${secret_ca}" Certificate) $(count "${secret_ca}" Issuer) $(q "${secret_ca}" '.[] | select(.kind == "Issuer") | .spec.ca.secretName')"
+
+  expect_template_failure "${chart}" "${chart}: rejects an unknown CA source" \
+    -f "${ci}/tls-values.yaml" --set tls.caSource=acme
+  expect_template_failure "${chart}" "${chart}: rejects the issuer CA source without an issuer name" \
+    -f "${ci}/tls-values.yaml" --set tls.caSource=issuer
+  expect_template_failure "${chart}" "${chart}: rejects a certificate without names" \
+    -f "${ci}/tls-values.yaml" --set tls.dnsNames=null
 }
 
 ################################################################################

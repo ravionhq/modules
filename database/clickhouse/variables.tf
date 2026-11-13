@@ -332,15 +332,22 @@ variable "network_policy_allowed_namespaces" {
 
 variable "tls_enabled" {
   type        = bool
-  description = "Serve the native protocol over TLS on 9440 and HTTPS on 8443, with a server certificate from cert-manager, and send distributed queries between servers over TLS. Requires cert-manager, such as from the EKS Add-ons module. Clients then trust the ca.crt in the Secret named by the tls_ca_secret_name output."
-  default     = false
+  description = "Serve the native protocol over TLS on 9440 and HTTPS on 8443, with a server certificate from cert-manager, and send distributed queries between servers over TLS. On by default. Requires cert-manager, which the EKS Add-ons module installs. Clients then trust the ca.crt in the Secret named by the tls_ca_secret_name output."
+  default     = true
   nullable    = false
 }
 
 variable "tls_disable_plaintext_ports" {
   type        = bool
-  description = "With tls_enabled, close the plaintext native (9000) and HTTP (8123) ports, so every client must use TLS. The operator, probes, backups and the database job switch to the secure ports."
-  default     = false
+  description = "With tls_enabled, close the plaintext native (9000) and HTTP (8123) ports, so every client must use TLS (on by default; ignored without tls_enabled). The operator, probes, backups and the database job switch to the secure ports."
+  default     = true
+  nullable    = false
+}
+
+variable "tls_internal_enabled" {
+  type        = bool
+  description = "With tls_enabled, also encrypt traffic inside the installation: replicas fetch parts from each other over interserver HTTPS (9010, replacing HTTP on 9009), ClickHouse reaches Keeper on its TLS client port (2281), and Keeper nodes run Raft over TLS. On by default; ignored without tls_enabled. Turning it on or off restarts Keeper and ClickHouse one pod at a time."
+  default     = true
   nullable    = false
 }
 

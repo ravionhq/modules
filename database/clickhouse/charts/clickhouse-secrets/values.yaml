@@ -20,3 +20,30 @@ store:
 secrets: []
 #  - name: analytics-admin
 #    remoteKey: clickhouse/my-cluster/analytics/analytics/admin
+
+# The server certificate from cert-manager, created here so it exists before
+# the operator and the servers start.
+tls:
+  enabled: false
+  # Name of the installation, for the CA's common name.
+  installation: clickhouse
+  # self_signed, issuer or secret.
+  caSource: self_signed
+  # The chart's own Issuer (self_signed and secret), and the CA key pair Secret
+  # it signs with: created for self_signed, existing for secret.
+  issuerName: clickhouse-ca
+  caSecretName: clickhouse-ca
+  # The issuer that signs the server certificate when caSource is issuer.
+  issuerRef:
+    name: ""
+    kind: ClusterIssuer
+    group: cert-manager.io
+  serverSecretName: clickhouse-server-tls
+  # Every name the certificate covers; the first is its common name.
+  dnsNames: []
+  caDuration: 87600h
+  caRenewBefore: 8760h
+  leafDuration: 2160h
+  leafRenewBefore: 720h
+  # Image with sh for the job that waits for the certificate Secret.
+  waitImage: curlimages/curl:8.22.0

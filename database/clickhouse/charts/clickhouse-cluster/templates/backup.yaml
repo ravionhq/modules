@@ -22,9 +22,9 @@ data:
       done_ok=0
       replica=0
       while [ "$replica" -lt "$REPLICAS" ] && [ "$done_ok" -eq 0 ]; do
-        api="http://chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}.${NAMESPACE}.svc.cluster.local:7171"
+        api="${SCHEME}://chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}.${NAMESPACE}.svc.cluster.local:7171"
         echo "shard ${shard}: creating ${name} on replica ${replica}"
-        response=$(curl -sS -f -u "${API_USER}:${API_PASSWORD}" -X POST "${api}/backup/create_remote?name=${name}&delete-source=true") || {
+        response=$(curl ${CURL_TLS} -sS -f -u "${API_USER}:${API_PASSWORD}" -X POST "${api}/backup/create_remote?name=${name}&delete-source=true") || {
           echo "shard ${shard}: replica ${replica} refused the backup"
           replica=$((replica + 1))
           continue
@@ -37,7 +37,7 @@ data:
         fi
         while :; do
           sleep 15
-          status=$(curl -sS -f -u "${API_USER}:${API_PASSWORD}" "${api}/backup/status?operationid=${id}") || continue
+          status=$(curl ${CURL_TLS} -sS -f -u "${API_USER}:${API_PASSWORD}" "${api}/backup/status?operationid=${id}") || continue
           case "$status" in
             *'"status":"success"'* | *'"status": "success"'*)
               echo "shard ${shard}: ${name} uploaded"
@@ -100,6 +100,18 @@ spec:
                   value: {{ .Values.clusterName | quote }}
                 - name: NAMESPACE
                   value: {{ .Release.Namespace | quote }}
+                {{- if .Values.tls.enabled }}
+                # The sidecars' API over HTTPS, verified against the CA.
+                - name: SCHEME
+                  value: https
+                - name: CURL_TLS
+                  value: "--cacert /tls/ca.crt"
+                {{- else }}
+                - name: SCHEME
+                  value: http
+                - name: CURL_TLS
+                  value: ""
+                {{- end }}
                 - name: SHARDS
                   value: {{ .Values.clickhouse.shards | int64 | quote }}
                 - name: REPLICAS
@@ -129,8 +141,22 @@ spec:
                 - name: scripts
                   mountPath: /scripts
                   readOnly: true
+                {{- if .Values.tls.enabled }}
+                - name: tls-ca
+                  mountPath: /tls
+                  readOnly: true
+                {{- end }}
           volumes:
             - name: scripts
               configMap:
                 name: {{ .Values.name }}-backup
+            {{- if .Values.tls.enabled }}
+            # Only the CA from the server certificate Secret, not its key.
+            - name: tls-ca
+              secret:
+                secretName: {{ .Values.tls.serverSecretName }}
+                items:
+                  - key: ca.crt
+                    path: ca.crt
+            {{- end }}
 {{- end }}

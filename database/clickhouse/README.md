@@ -19,8 +19,9 @@ The module creates:
 - A `tiered` storage policy with an S3 `cold` volume for old data.
 - Prometheus metrics for ClickHouse, Keeper and the operator, with optional PodMonitors and an optional
   OTLP push.
-- Optionally: TLS on the native and HTTP interfaces with certificates from cert-manager, an empty database,
-  NetworkPolicies, a PriorityClass and a dedicated Karpenter NodePool.
+- TLS by default, with certificates from cert-manager: clients on 9440 and 8443 only, replication between
+  replicas, Keeper and the backup API over TLS, and the operator verifying every server.
+- Optionally: an empty database, NetworkPolicies, a PriorityClass and a dedicated Karpenter NodePool.
 
 ## Usage
 
@@ -40,17 +41,20 @@ module "clickhouse" {
 }
 ```
 
-Applications in the cluster connect to `host` on port 8123 (HTTP) or 9000 (native), or with `tls_enabled`
-on 8443 (HTTPS) and 9440 (native over TLS); see [TLS](#tls). Each user's
-Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`, `reader_secret_arn`) is JSON:
+Applications in the cluster connect to `host` over TLS on 8443 (HTTPS) or 9440 (native); see [TLS](#tls),
+which is on by default. Each user's Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`,
+`reader_secret_arn`) is JSON, with null for a port that is closed:
 
 ```json
 {
   "username": "writer",
   "password": "...",
   "host": "clickhouse-analytics.analytics.svc.cluster.local",
-  "http_port": 8123,
-  "native_port": 9000,
+  "http_port": null,
+  "native_port": null,
+  "https_port": 8443,
+  "secure_native_port": 9440,
+  "secure": true,
   "database": "events",
   "cluster": "main"
 }
@@ -69,8 +73,8 @@ The same keys are in Kubernetes Secrets in the namespace (`<name>-admin`, `<name
   `ClusterSecretStore` instead; it must allow the installation's namespace.
 - A StorageClass that allows volume expansion (`gp3` by default).
 - For `dedicated_node_pool`, Karpenter and an `EC2NodeClass`. For `metrics_pod_monitors_enabled`, the
-  Prometheus Operator CRDs. For `tls_enabled`, [cert-manager](https://cert-manager.io), such as from the EKS
-  add-ons module.
+  Prometheus Operator CRDs. [cert-manager](https://cert-manager.io) for TLS, which is on by default; the EKS
+  add-ons module installs it.
 
 The Terraform runner needs the AWS CLI and network access to the cluster API; the provider authenticates
 with `aws eks get-token`, assuming `ravion_runner_role_arn` when it is set.
@@ -153,11 +157,36 @@ When the hot volume runs nearly full, ClickHouse also moves the oldest parts of 
 
 ## TLS
 
-With `tls_enabled`, every server also serves the native protocol over TLS on 9440 and HTTPS on 8443. A
-single cert-manager certificate covers the Service, every replica's pod and `localhost`, plus
-`tls_extra_dns_names`; it is mounted into the pods as a directory, so ClickHouse picks up a renewed
-certificate without a restart. The cluster is marked `secure` in the ClickHouseInstallation, so queries
-between shards go over 9440 with TLS too, verified against the same CA.
+TLS is on by default; cert-manager is required, and the EKS add-ons module installs it. Each option can be
+turned off on its own (`tls_disable_plaintext_ports` and `tls_internal_enabled` do nothing while
+`tls_enabled` is off):
+
+| Input | Default | What it does |
+| ----- | ------- | ------------ |
+| `tls_enabled` | `true` | Native protocol over TLS on 9440 and HTTPS on 8443; queries between shards over TLS; the operator connects over HTTPS and verifies every server against the CA; the clickhouse-backup sidecar serves its API over HTTPS and connects to the server over TLS. |
+| `tls_disable_plaintext_ports` | `true` | Closes 9000 and 8123 on the servers, their pods and the Service. The operator, probes, backup sidecar and database job use the TLS ports. The `http_port`, `native_port` and `http_endpoint` outputs are null. |
+| `tls_internal_enabled` | `true` | Replicas fetch parts over interserver HTTPS on 9010 (9009 is removed), ClickHouse reaches Keeper on its TLS client port 2281, and Keeper nodes run Raft over TLS. Turning it on or off restarts Keeper and ClickHouse one pod at a time; replicas briefly lose Keeper while it rolls. |
+
+How it fits together:
+
+- The secrets release creates the certificate first and holds until cert-manager has written its Secret,
+  so the operator and the servers never start without it. One certificate covers the Service, every
+  replica's Service and pod, `localhost`, every Keeper node's Services with internal TLS, and
+  `tls_extra_dns_names`.
+- ClickHouse and Keeper mount the Secret as a directory and reload a renewed certificate without a
+  restart. clickhouse-backup reads its certificate only at startup, so its liveness probe fails once the
+  mounted certificate is newer than the process, and the kubelet restarts only that sidecar.
+- The operator reads the CA from the Secret on every reconcile (`rootCASecretRef`, `verify: Strict`), so a
+  renewed CA needs no operator restart.
+- Each replica advertises itself for interserver HTTPS by its own Service name, the same name the operator
+  sets for interserver HTTP, built from the operator's shard and replica pod labels.
+- The Keeper plaintext client port (2181) stays open for Keeper's liveness probe, which speaks four-letter
+  words that Keeper does not serve over TLS. With `network_policy_enabled`, only Keeper and the operator
+  can reach it; ClickHouse reaches Keeper only on 2281, replicas reach each other only on 9010, and the
+  backup API (7171) only takes the backup job and the operator.
+- Changing a TLS setting rewrites the connection details in the Secrets Manager secrets with the right
+  ports and `secure` flag. Each password lives in a secret of its own (`<prefix>/<user>-password`) that
+  is written only when `password_version` changes, so the passwords stay the same.
 
 Clients verify the `tls_server_name` output and trust the `ca.crt` of the Secret named by the
 `tls_ca_secret_name` output, whichever CA issued it. Copy only `ca.crt` to clients: the Secret also holds
@@ -167,14 +196,6 @@ the server's private key.
 clickhouse-client --host clickhouse-analytics.analytics.svc.cluster.local --secure --port 9440 \
   --user writer --password "$PASSWORD"
 ```
-
-`tls_disable_plaintext_ports` closes 9000 and 8123 on the servers, their pods and the Service, and drops
-them from the NetworkPolicy. What used them moves on its own: the operator talks to the servers over HTTPS
-on 8443, the liveness and readiness probes use HTTPS, the clickhouse-backup sidecar connects to 9440 on
-`localhost`, and the database job connects to 9440 and verifies the CA. The `http_port`, `native_port` and
-`http_endpoint` outputs are then null. The connection details in the Secrets Manager secrets keep listing
-the plaintext ports, as they are written only when `password_version` changes; read the TLS ports from the
-`https_port` and `secure_native_port` outputs.
 
 `tls_ca_source` picks what issues the certificate: `self_signed` (a CA created in the namespace, the
 default), `issuer` (an existing cert-manager Issuer or ClusterIssuer, `tls_issuer = { name, kind, group }`)
@@ -186,19 +207,7 @@ plugin, give its service account `acm-pca:DescribeCertificateAuthority`, `acm-pc
 `acm-pca:GetCertificate` on the CA through EKS Pod Identity, create an `AWSPCAClusterIssuer` for the CA, and
 set `tls_issuer = { name = "<issuer>", kind = "AWSPCAClusterIssuer", group = "awspca.cert-manager.io" }`.
 
-Not included in this version:
-
-- Traffic between ClickHouse and Keeper (2181), between Keeper nodes (Raft, 9444) and replication between
-  replicas (interserver HTTP, 9009) stays unencrypted inside the namespace. The pinned operator writes
-  `interserver_http_port` and its pod and Service ports itself and has no setting for
-  `interserver_https_port`. Its secure Keeper mode (client port 2281, Raft over TLS) is new in this
-  operator line, falls back to process-based liveness probes, and leaves the operator's own Keeper client
-  unable to connect. Keep those ports inside the namespace with `network_policy_enabled`.
-- The operator encrypts its connection to the servers but, as by default, does not verify their
-  certificate: its CA setting is read once at startup from a Secret that would not exist yet.
-- The clickhouse-backup sidecar's API on 7171, which the backup job calls, stays HTTP: the sidecar reads a
-  TLS certificate only at startup and would keep serving an expired one after renewal.
-- Clients are not required to present certificates (mutual TLS).
+Not included in this version: client certificates (mutual TLS).
 
 ## Metrics
 
@@ -266,8 +275,9 @@ its backups are kept unless `s3_force_destroy` is set. Credential secrets stay r
 | dedicated_node_pool | Run ClickHouse and Keeper on a tainted Karpenter NodePool of their own. Needs Karpenter and an EC2NodeClass on the cluster. | `object({ enabled = optional(bool, false) node_class_name = optional(string, "default") capacity_types = optional(list(string), ["on-demand"]) instance_categories = optional(list(string), ["r", "m"]) architectures = optional(list(string), ["amd64"]) cpu_limit = optional(number, 64) })` | `{}` | no |
 | network_policy_enabled | Restrict ingress to ClickHouse and Keeper with NetworkPolicies. Needs a CNI that enforces them (for the VPC CNI, turn on its network policy agent). | `bool` | `false` | no |
 | network_policy_allowed_namespaces | Namespaces whose pods may reach ClickHouse on its HTTP and native ports (and their TLS ports, with tls_enabled) when network policies are on. Pods in the installation's own namespace are always allowed. | `list(string)` | `[]` | no |
-| tls_enabled | Serve the native protocol over TLS on 9440 and HTTPS on 8443, with a server certificate from cert-manager, and send distributed queries between servers over TLS. Requires cert-manager, such as from the EKS Add-ons module. Clients then trust the ca.crt in the Secret named by the tls_ca_secret_name output. | `bool` | `false` | no |
-| tls_disable_plaintext_ports | With tls_enabled, close the plaintext native (9000) and HTTP (8123) ports, so every client must use TLS. The operator, probes, backups and the database job switch to the secure ports. | `bool` | `false` | no |
+| tls_enabled | Serve the native protocol over TLS on 9440 and HTTPS on 8443, with a server certificate from cert-manager, and send distributed queries between servers over TLS. On by default. Requires cert-manager, which the EKS Add-ons module installs. Clients then trust the ca.crt in the Secret named by the tls_ca_secret_name output. | `bool` | `true` | no |
+| tls_disable_plaintext_ports | With tls_enabled, close the plaintext native (9000) and HTTP (8123) ports, so every client must use TLS (on by default; ignored without tls_enabled). The operator, probes, backups and the database job switch to the secure ports. | `bool` | `true` | no |
+| tls_internal_enabled | With tls_enabled, also encrypt traffic inside the installation: replicas fetch parts from each other over interserver HTTPS (9010, replacing HTTP on 9009), ClickHouse reaches Keeper on its TLS client port (2281), and Keeper nodes run Raft over TLS. On by default; ignored without tls_enabled. Turning it on or off restarts Keeper and ClickHouse one pod at a time. | `bool` | `true` | no |
 | tls_ca_source | Certificate authority that issues the server certificate. `self_signed` creates a CA in the namespace; `issuer` uses an existing cert-manager Issuer or ClusterIssuer, such as an AWS Private CA issuer; `secret` uses an existing CA key pair Secret in the namespace. | `string` | `"self_signed"` | no |
 | tls_issuer | Existing issuer for tls_ca_source = issuer. It must put the CA in the certificate Secret's ca.crt. For AWS Private CA through aws-privateca-issuer, use kind AWSPCAClusterIssuer or AWSPCAIssuer and group awspca.cert-manager.io. | `object({ name = string kind = optional(string, "ClusterIssuer") group = optional(string, "cert-manager.io") })` | `null` | no |
 | tls_ca_secret_name | For tls_ca_source = secret: a kubernetes.io/tls Secret in the namespace holding the CA certificate (tls.crt) and its private key (tls.key). | `string` | `null` | no |

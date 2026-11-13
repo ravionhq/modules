@@ -71,8 +71,12 @@ run "defaults_install_a_replicated_cluster_with_backups_and_a_cold_tier" {
     error_message = "Secret names must default to clickhouse/<cluster>/<namespace>/<name>/<user>."
   }
   assert {
-    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 1
-    error_message = "Passwords must be written through the write-only argument, versioned by password_version."
+    condition     = aws_secretsmanager_secret_version.password["admin"].secret_string_wo_version == 1 && aws_secretsmanager_secret.password["admin"].name == "clickhouse/test-cluster/analytics/analytics/admin-password"
+    error_message = "Passwords must be written through the write-only argument to their own secret, versioned by password_version."
+  }
+  assert {
+    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 7
+    error_message = "The connection details must be versioned by password_version and the TLS settings."
   }
   assert {
     condition     = helm_release.secrets.name == "analytics-secrets" && helm_release.operator.name == "analytics-operator" && helm_release.cluster.name == "analytics"
@@ -83,7 +87,7 @@ run "defaults_install_a_replicated_cluster_with_backups_and_a_cold_tier" {
     error_message = "The operator must come from the pinned upstream chart."
   }
   assert {
-    condition     = output.host == "clickhouse-analytics.analytics.svc.cluster.local" && output.http_endpoint == "http://clickhouse-analytics.analytics.svc.cluster.local:8123" && output.cluster == "main"
+    condition     = output.host == "clickhouse-analytics.analytics.svc.cluster.local" && output.https_endpoint == "https://clickhouse-analytics.analytics.svc.cluster.local:8443" && output.cluster == "main"
     error_message = "Connection outputs must point at the installation's Service."
   }
   assert {
@@ -252,11 +256,11 @@ run "rotating_passwords_bumps_the_secret_version_and_restarts_pods" {
   }
 
   assert {
-    condition     = aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == 2
-    error_message = "A new password_version must write new passwords."
+    condition     = aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 2 && aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == 11
+    error_message = "A new password_version must write new passwords and rewrite the connection details."
   }
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.operator.values[0]).podAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.secrets.values[0]).passwordVersion == "2"
+    condition     = yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.operator.values[0]).podAnnotations["clickhouse.ravion.com/password-version"] == "2" && yamldecode(helm_release.secrets.values[0]).passwordVersion == "11"
     error_message = "A new password_version must refresh the secrets and restart ClickHouse and the operator."
   }
 }
@@ -279,12 +283,45 @@ run "metrics_options_reach_the_cluster_chart" {
   }
 }
 
-run "tls_is_off_by_default" {
+run "tls_is_on_by_default" {
   command = plan
 
   assert {
-    condition     = !yamldecode(helm_release.cluster.values[0]).tls.enabled && output.tls_ca_secret_name == null && output.https_port == null && output.native_port == 9000 && output.http_port == 8123
-    error_message = "TLS must be off by default, with only the plaintext ports."
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.enabled && yamldecode(helm_release.cluster.values[0]).tls.disablePlaintextPorts && yamldecode(helm_release.cluster.values[0]).tls.internal && yamldecode(helm_release.secrets.values[0]).tls.enabled && yamldecode(helm_release.secrets.values[0]).tls.caSource == "self_signed"
+    error_message = "TLS, closed plaintext ports and internal TLS must be on by default, from a self-signed CA."
+  }
+  assert {
+    condition     = output.https_port == 8443 && output.secure_native_port == 9440 && output.http_port == null && output.native_port == null && output.tls_ca_secret_name == "analytics-server-tls"
+    error_message = "By default only the TLS ports are output."
+  }
+  assert {
+    condition     = yamldecode(helm_release.operator.values[0]).configs.files["config.yaml"].clickhouse.access.scheme == "https"
+    error_message = "By default the operator uses HTTPS."
+  }
+}
+
+run "tls_off" {
+  command = plan
+
+  variables {
+    tls_enabled = false
+  }
+
+  assert {
+    condition     = !yamldecode(helm_release.cluster.values[0]).tls.enabled && !yamldecode(helm_release.cluster.values[0]).tls.disablePlaintextPorts && !yamldecode(helm_release.cluster.values[0]).tls.internal && !yamldecode(helm_release.secrets.values[0]).tls.enabled
+    error_message = "Turning TLS off must turn off the plaintext port closing and internal TLS with it."
+  }
+  assert {
+    condition     = output.tls_ca_secret_name == null && output.https_port == null && output.native_port == 9000 && output.http_port == 8123
+    error_message = "Without TLS only the plaintext ports are output."
+  }
+  assert {
+    condition     = yamldecode(helm_release.operator.values[0]).configs.files["config.yaml"].clickhouse.access.scheme == "Auto"
+    error_message = "Without TLS the operator keeps choosing the scheme itself."
+  }
+  assert {
+    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 4 && aws_secretsmanager_secret_version.password["admin"].secret_string_wo_version == 1
+    error_message = "Turning TLS off rewrites the connection details but not the passwords."
   }
 }
 
@@ -292,21 +329,31 @@ run "tls_with_a_self_signed_ca" {
   command = plan
 
   variables {
-    tls_enabled         = true
-    tls_extra_dns_names = ["clickhouse.example.internal"]
+    tls_enabled                 = true
+    tls_disable_plaintext_ports = false
+    tls_internal_enabled        = false
+    tls_extra_dns_names         = ["clickhouse.example.internal"]
   }
 
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).tls.enabled && yamldecode(helm_release.cluster.values[0]).tls.caSource == "self_signed" && !yamldecode(helm_release.cluster.values[0]).tls.disablePlaintextPorts
-    error_message = "TLS must reach the chart with a self-signed CA and the plaintext ports still open."
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.enabled && !yamldecode(helm_release.cluster.values[0]).tls.disablePlaintextPorts && !yamldecode(helm_release.cluster.values[0]).tls.internal && yamldecode(helm_release.cluster.values[0]).tls.serverSecretName == "analytics-server-tls"
+    error_message = "TLS must reach the cluster chart with the plaintext ports still open and internal TLS off."
   }
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).tls.issuerName == "analytics-ca" && yamldecode(helm_release.cluster.values[0]).tls.caSecretName == "analytics-ca" && yamldecode(helm_release.cluster.values[0]).tls.serverSecretName == "analytics-server-tls"
-    error_message = "The CA, its Issuer and the server certificate must be named after the installation."
+    condition     = yamldecode(helm_release.secrets.values[0]).tls.enabled && yamldecode(helm_release.secrets.values[0]).tls.caSource == "self_signed" && yamldecode(helm_release.secrets.values[0]).tls.issuerName == "analytics-ca" && yamldecode(helm_release.secrets.values[0]).tls.caSecretName == "analytics-ca" && yamldecode(helm_release.secrets.values[0]).tls.serverSecretName == "analytics-server-tls"
+    error_message = "The certificate must be created by the first release, from a CA named after the installation."
   }
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).tls.extraDnsNames == ["clickhouse.example.internal"]
-    error_message = "Extra DNS names must reach the chart."
+    condition     = yamldecode(helm_release.secrets.values[0]).tls.dnsNames[0] == "clickhouse-analytics.analytics.svc.cluster.local" && contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "chi-analytics-main-0-1.analytics.svc.cluster.local") && contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "chi-analytics-main-0-1-0.chi-analytics-main-0-1.analytics.svc.cluster.local") && contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "localhost") && contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "clickhouse.example.internal")
+    error_message = "The certificate must name the Service, every replica's Service and pod, localhost and the extra names."
+  }
+  assert {
+    condition     = length(yamldecode(helm_release.secrets.values[0]).tls.dnsNames) == 16 && !contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "keeper-analytics-keeper")
+    error_message = "Without internal TLS the certificate must not name Keeper."
+  }
+  assert {
+    condition     = yamldecode(helm_release.operator.values[0]).configs.files["config.yaml"].clickhouse.access.scheme == "https"
+    error_message = "With TLS the operator must always use HTTPS."
   }
   assert {
     condition     = output.tls_enabled && output.https_port == 8443 && output.secure_native_port == 9440 && output.native_port == 9000 && output.http_port == 8123
@@ -319,6 +366,14 @@ run "tls_with_a_self_signed_ca" {
   assert {
     condition     = output.tls_issuer.name == "analytics-ca" && output.tls_issuer.kind == "Issuer" && output.tls_issuer.group == "cert-manager.io"
     error_message = "The module's own CA Issuer must sign the server certificate."
+  }
+  assert {
+    condition     = aws_secretsmanager_secret_version.user["writer"].secret_string_wo_version == 5 && aws_secretsmanager_secret_version.password["writer"].secret_string_wo_version == 1
+    error_message = "Turning TLS on must rewrite the connection details but not the passwords."
+  }
+  assert {
+    condition     = yamldecode(helm_release.secrets.values[0]).passwordVersion == "5" && yamldecode(helm_release.cluster.values[0]).passwordAnnotations["clickhouse.ravion.com/password-version"] == "1"
+    error_message = "Turning TLS on must refresh the Kubernetes Secrets without restarting for a password change."
   }
 }
 
@@ -336,7 +391,7 @@ run "tls_with_an_existing_issuer" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).tls.caSource == "issuer" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.name == "private-ca" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.kind == "AWSPCAClusterIssuer" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.group == "awspca.cert-manager.io"
+    condition     = yamldecode(helm_release.secrets.values[0]).tls.caSource == "issuer" && yamldecode(helm_release.secrets.values[0]).tls.issuerRef.name == "private-ca" && yamldecode(helm_release.secrets.values[0]).tls.issuerRef.kind == "AWSPCAClusterIssuer" && yamldecode(helm_release.secrets.values[0]).tls.issuerRef.group == "awspca.cert-manager.io"
     error_message = "An existing issuer must reach the chart as is."
   }
   assert {
@@ -370,7 +425,7 @@ run "tls_with_an_existing_ca_secret" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.cluster.values[0]).tls.caSource == "secret" && yamldecode(helm_release.cluster.values[0]).tls.caSecretName == "corp-ca" && yamldecode(helm_release.cluster.values[0]).tls.issuerRef.name == "analytics-ca"
+    condition     = yamldecode(helm_release.secrets.values[0]).tls.caSource == "secret" && yamldecode(helm_release.secrets.values[0]).tls.caSecretName == "corp-ca" && yamldecode(helm_release.secrets.values[0]).tls.issuerRef.name == "analytics-ca"
     error_message = "The module's CA Issuer must sign with the existing CA secret."
   }
   assert {
@@ -395,6 +450,32 @@ run "tls_with_plaintext_ports_closed" {
     condition     = output.http_port == null && output.native_port == null && output.http_endpoint == null && output.https_endpoint == "https://clickhouse-analytics.analytics.svc.cluster.local:8443"
     error_message = "With the plaintext ports closed, only the TLS endpoints are output."
   }
+  assert {
+    condition     = aws_secretsmanager_secret_version.user["reader"].secret_string_wo_version == 7 && aws_secretsmanager_secret_version.password["reader"].secret_string_wo_version == 1
+    error_message = "Closing the plaintext ports must rewrite the connection details but not the passwords."
+  }
+}
+
+run "tls_internal_names_keeper_on_the_certificate" {
+  command = plan
+
+  variables {
+    tls_enabled          = true
+    tls_internal_enabled = true
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.cluster.values[0]).tls.internal
+    error_message = "Internal TLS must reach the cluster chart."
+  }
+  assert {
+    condition     = contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "keeper-analytics-keeper.analytics.svc.cluster.local") && contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "chk-analytics-keeper-keeper-0-2.analytics.svc.cluster.local") && contains(yamldecode(helm_release.secrets.values[0]).tls.dnsNames, "chk-analytics-keeper-keeper-0-2-client")
+    error_message = "With internal TLS the certificate must name the Keeper Service and every Keeper node's Services."
+  }
+  assert {
+    condition     = aws_secretsmanager_secret_version.user["admin"].secret_string_wo_version == 7
+    error_message = "Internal TLS does not change the client ports, so the connection details keep their version."
+  }
 }
 
 run "tls_issuer_source_needs_an_issuer" {
@@ -405,7 +486,7 @@ run "tls_issuer_source_needs_an_issuer" {
     tls_ca_source = "issuer"
   }
 
-  expect_failures = [helm_release.cluster]
+  expect_failures = [helm_release.secrets]
 }
 
 run "tls_secret_source_needs_a_secret_name" {
@@ -416,17 +497,7 @@ run "tls_secret_source_needs_a_secret_name" {
     tls_ca_source = "secret"
   }
 
-  expect_failures = [helm_release.cluster]
-}
-
-run "closing_plaintext_ports_needs_tls" {
-  command = plan
-
-  variables {
-    tls_disable_plaintext_ports = true
-  }
-
-  expect_failures = [helm_release.cluster]
+  expect_failures = [helm_release.secrets]
 }
 
 run "unknown_tls_ca_source_is_rejected" {

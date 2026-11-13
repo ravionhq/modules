@@ -25,7 +25,5 @@ networkPolicy:
 tls:
   enabled: true
   disablePlaintextPorts: true
-  issuerName: analytics-ca
-  caSecretName: analytics-ca
+  internal: true
   serverSecretName: analytics-server-tls
-  extraDnsNames: [clickhouse.example.internal]

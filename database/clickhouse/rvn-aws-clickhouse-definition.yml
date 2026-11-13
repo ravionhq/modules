@@ -439,13 +439,20 @@ module:
     - id: tls_enabled
       label: TLS
       type: boolean
-      description: Native protocol over TLS on 9440 and HTTPS on 8443, with a certificate from cert-manager. Needs cert-manager.
-      default: false
+      description: Native protocol over TLS on 9440 and HTTPS on 8443, with a certificate from cert-manager, which the EKS Add-ons module installs.
+      default: true
     - id: tls_disable_plaintext_ports
       label: Close plaintext ports
       type: boolean
       description: Closes 9000 and 8123, so every client must use TLS.
-      default: false
+      default: true
+      show_when:
+        tls_enabled: true
+    - id: tls_internal_enabled
+      label: Internal TLS
+      type: boolean
+      description: Replication between replicas, ClickHouse to Keeper, and Raft between Keeper nodes over TLS.
+      default: true
       show_when:
         tls_enabled: true
     - id: tls_ca_source
@@ -595,8 +602,9 @@ module:
           cpu_limit: << module.input.dedicated_node_pool_cpu_limit >>
         network_policy_enabled: << module.input.network_policy_enabled >>
         network_policy_allowed_namespaces: << module.input.network_policy_allowed_namespaces >>
-        tls_enabled: << module.input.tls_enabled == true >>
-        tls_disable_plaintext_ports: << module.input.tls_disable_plaintext_ports == true >>
+        tls_enabled: << module.input.tls_enabled != false >>
+        tls_disable_plaintext_ports: << module.input.tls_disable_plaintext_ports != false >>
+        tls_internal_enabled: << module.input.tls_internal_enabled != false >>
         tls_ca_source: << module.input.tls_ca_source || "self_signed" >>
         tls_issuer: >-
           << module.input.tls_ca_source == "issuer" && module.input.tls_issuer_name ? {"name": module.input.tls_issuer_name,
@@ -643,12 +651,12 @@ module:
     ## Prerequisites
 
     - An **EKS Cluster** module, with the `eks-pod-identity-agent` add-on.
-    - An **EKS Add-ons** module with the **EBS CSI driver** (for the `gp3` StorageClass) and **External Secrets** turned on.
+    - An **EKS Add-ons** module with the **EBS CSI driver** (for the `gp3` StorageClass), **External Secrets** and **cert-manager** turned on. cert-manager issues the TLS certificates, which are on by default.
     - OpenTofu 1.11 or newer: passwords are written through write-only arguments and never reach Terraform state.
 
     ## Connecting
 
-    Applications in the cluster connect to the `host` output on port 8123 (HTTP) or 9000 (native), or over TLS on 8443 (HTTPS) and 9440 (native) when **TLS** is on. Each user's Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`, `reader_secret_arn`) is JSON with `username`, `password`, `host`, `http_port`, `native_port`, `database` and `cluster`, so a workload can read its credentials from there. The same values are in Kubernetes Secrets in the installation's namespace (`writer_kubernetes_secret_name` and so on).
+    Applications in the cluster connect to the `host` output over TLS on 8443 (HTTPS) or 9440 (native). With **Close plaintext ports** off, 8123 (HTTP) and 9000 (native) are open too, and with **TLS** off only those. Each user's Secrets Manager secret (`admin_secret_arn`, `writer_secret_arn`, `reader_secret_arn`) is JSON with `username`, `password`, `host`, `http_port`, `native_port`, `https_port`, `secure_native_port`, `secure`, `database` and `cluster` (ports that are closed are null), so a workload can read its credentials from there. The same values are in Kubernetes Secrets in the installation's namespace (`writer_kubernetes_secret_name` and so on).
 
     | User | Use it for | Access |
     | ---- | ---------- | ------ |
@@ -662,17 +670,23 @@ module:
 
     ## TLS
 
-    With **TLS** on, every server serves the native protocol over TLS on 9440 and HTTPS on 8443, with a certificate cert-manager issues and renews; cert-manager must be installed, as it is with the EKS Add-ons module. Clients verify the server name in `tls_server_name` and trust the `ca.crt` of the Secret named in `tls_ca_secret_name`. Copy only `ca.crt` to clients: that Secret also holds the server's private key. Queries between shards also travel over TLS.
+    TLS is on by default. cert-manager is required; the EKS Add-ons module installs it. Every server serves the native protocol over TLS on 9440 and HTTPS on 8443 with a certificate cert-manager issues and renews, and ClickHouse picks up a renewed certificate without a restart. Clients verify the server name in `tls_server_name` and trust the `ca.crt` of the Secret named in `tls_ca_secret_name`. Copy only `ca.crt` to clients: that Secret also holds the server's private key.
 
-    **Close plaintext ports** closes 9000 and 8123, so clients must use TLS; the operator, probes, backups and the database job move to the TLS ports on their own. The connection details in the Secrets Manager secrets keep listing the plaintext ports, so read the ports from the `https_port` and `secure_native_port` outputs instead.
+    | Option | Default | What it does |
+    | ------ | ------- | ------------ |
+    | **TLS** | On | 9440 and 8443, queries between shards over TLS, the operator connects over HTTPS and verifies every server against the CA, and the backup sidecar serves its API over HTTPS. |
+    | **Close plaintext ports** | On | Closes 9000 and 8123 on the servers, their pods and the Service. The operator, probes, backups and the database job use the TLS ports. |
+    | **Internal TLS** | On | Replicas fetch parts from each other over HTTPS on 9010 instead of HTTP on 9009, ClickHouse reaches Keeper on its TLS port 2281, and Keeper nodes run Raft over TLS. Turning it on or off restarts Keeper and ClickHouse one pod at a time; replicas briefly lose Keeper while it rolls. |
+
+    Changing any of them rewrites the connection details in the Secrets Manager secrets, without changing the passwords.
 
     | Certificate authority | What it is |
     | --------------------- | ---------- |
-    | Self-signed CA | cert-manager creates a CA in the namespace. Its key never leaves the cluster. |
+    | Self-signed CA | The default. cert-manager creates a CA in the namespace. Its key never leaves the cluster. |
     | Existing issuer | A cert-manager Issuer or ClusterIssuer you already run. For AWS Private CA, install [aws-privateca-issuer](https://github.com/cert-manager/aws-privateca-issuer), give it `acm-pca:DescribeCertificateAuthority`, `acm-pca:IssueCertificate` and `acm-pca:GetCertificate` on the CA through EKS Pod Identity, create an `AWSPCAClusterIssuer`, and set **Issuer kind** to `AWSPCAClusterIssuer` and **Issuer group** to `awspca.cert-manager.io`. |
     | Existing CA secret | A `kubernetes.io/tls` Secret in the namespace holding your CA's `tls.crt` and `tls.key`. |
 
-    Traffic between ClickHouse and Keeper, and replication between replicas (port 9009), stay unencrypted inside the namespace in this version.
+    The Keeper plaintext client port (2181) stays open for its liveness probe, which speaks four-letter words that Keeper does not serve over TLS; with **Network policies** on, only Keeper and the operator can reach it.
 
     ## Shards and replicas
 
