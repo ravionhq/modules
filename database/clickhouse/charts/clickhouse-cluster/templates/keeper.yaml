@@ -1,0 +1,123 @@
+{{- $selector := dict "clickhouse.ravion.com/installation" .Values.name "app.kubernetes.io/component" "keeper" -}}
+{{- $internal := and .Values.tls.enabled .Values.tls.internal -}}
+{{- $tlsDir := include "clickhouse-cluster.tlsMountPath" . -}}
+apiVersion: clickhouse-keeper.altinity.com/v1
+kind: ClickHouseKeeperInstallation
+metadata:
+  name: {{ include "clickhouse-cluster.keeperName" . }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: keeper
+spec:
+  defaults:
+    templates:
+      podTemplate: keeper
+      dataVolumeClaimTemplate: data
+    storageManagement:
+      # The operator creates and grows the volumes itself, so a larger
+      # volumeSize resizes them in place.
+      provisioner: Operator
+      reclaimPolicy: {{ .Values.storage.reclaimPolicy }}
+  configuration:
+    settings:
+      logger/level: information
+      logger/console: "true"
+      prometheus/endpoint: /metrics
+      prometheus/port: "7000"
+      prometheus/metrics: "true"
+      prometheus/events: "true"
+      prometheus/asynchronous_metrics: "true"
+    {{- if $internal }}
+    files:
+      # The certificate for the TLS client port (2281) and Raft, reloaded when
+      # the mounted Secret changes. As a Raft client, Keeper verifies the other
+      # nodes against the CA.
+      config.d/tls.xml: |
+        <clickhouse>
+          <openSSL>
+            <server>
+              <certificateFile>{{ $tlsDir }}/tls.crt</certificateFile>
+              <privateKeyFile>{{ $tlsDir }}/tls.key</privateKeyFile>
+              <verificationMode>none</verificationMode>
+              <loadDefaultCAFile>false</loadDefaultCAFile>
+              <cacheSessions>true</cacheSessions>
+              <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+              <preferServerCiphers>true</preferServerCiphers>
+            </server>
+            <client>
+              <caConfig>{{ $tlsDir }}/ca.crt</caConfig>
+              <loadDefaultCAFile>false</loadDefaultCAFile>
+              <verificationMode>relaxed</verificationMode>
+              <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+              <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+              </invalidCertificateHandler>
+            </client>
+          </openSSL>
+        </clickhouse>
+    {{- end }}
+    clusters:
+      - name: keeper
+        {{- if $internal }}
+        # Opens the TLS client port 2281 and runs Raft over TLS. The plaintext
+        # client port 2181 stays open for the liveness probe (it speaks the
+        # four-letter words, which Keeper does not serve over TLS); the
+        # NetworkPolicy keeps it to Keeper and the operator.
+        secure: "yes"
+        {{- end }}
+        layout:
+          replicasCount: {{ .Values.keeper.replicas }}
+  templates:
+    podTemplates:
+      - name: keeper
+        metadata:
+          labels:
+            {{- toYaml $selector | nindent 12 }}
+          annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "7000"
+            prometheus.io/path: /metrics
+        spec:
+          {{- with .Values.placement.priorityClass }}
+          {{- if .create }}
+          priorityClassName: {{ .name }}
+          {{- end }}
+          {{- end }}
+          {{- include "clickhouse-cluster.scheduling" . | nindent 10 }}
+          {{- include "clickhouse-cluster.topologySpread" (dict "root" . "selector" $selector) | nindent 10 }}
+          {{- include "clickhouse-cluster.antiAffinity" (dict "root" . "selector" $selector) | nindent 10 }}
+          {{- if $internal }}
+          volumes:
+            - name: tls
+              secret:
+                secretName: {{ .Values.tls.serverSecretName }}
+                defaultMode: 0440
+          {{- end }}
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            fsGroup: 101
+            fsGroupChangePolicy: OnRootMismatch
+          containers:
+            - name: clickhouse-keeper
+              image: {{ .Values.keeper.image }}
+              ports:
+                - name: metrics
+                  containerPort: 7000
+              resources:
+                {{- toYaml .Values.keeper.resources | nindent 16 }}
+              {{- if $internal }}
+              volumeMounts:
+                - name: tls
+                  mountPath: {{ $tlsDir }}
+                  readOnly: true
+              {{- end }}
+    volumeClaimTemplates:
+      - name: data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: {{ .Values.storage.storageClassName }}
+          resources:
+            requests:
+              storage: {{ .Values.keeper.volumeSize }}

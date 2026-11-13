@@ -47,9 +47,9 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
   {
     givenId: "database",
     name: "Database",
-    description: "For relational data such as PostgreSQL or MySQL, including connection pooling.",
+    description: "For relational data such as PostgreSQL or MySQL, including connection pooling, and analytical data such as ClickHouse.",
     sortOrder: 60,
-    definitionTypes: ["rvn-aurora", "rvn-planetscale-vitess", "rvn-rds", "rvn-rds-proxy"],
+    definitionTypes: ["rvn-aurora", "rvn-aws-clickhouse", "rvn-planetscale-vitess", "rvn-rds", "rvn-rds-proxy"],
   },
   {
     givenId: "cache",
