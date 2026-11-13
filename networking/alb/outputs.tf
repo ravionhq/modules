@@ -113,10 +113,10 @@ output "cloudwatch_alarm_arns" {
 }
 
 output "cloudwatch_alarm_notification_actions" {
-  description = "Actions every CloudWatch alarm runs when it fires (alarm) and when it recovers (ok). Both lists are empty when alarms are disabled."
+  description = "Actions every CloudWatch alarm runs when it fires (alarm) and when it recovers (ok). Both lists are empty when alarms are disabled or have no actions."
   value = {
-    alarm = local.create_cloudwatch_alarms ? sort(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_actions) : []
-    ok    = local.create_cloudwatch_alarms ? sort(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].ok_actions) : []
+    alarm = local.create_cloudwatch_alarms ? sort(coalesce(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_actions, [])) : []
+    ok    = local.create_cloudwatch_alarms ? sort(coalesce(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].ok_actions, [])) : []
   }
 }
 

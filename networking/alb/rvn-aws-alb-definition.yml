@@ -3,8 +3,8 @@ definition:
   name: AWS Application Load Balancer
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
-  version: 1.5.0
-  description: Alarm when targets behind the load balancer fail health checks, including target groups attached after the load balancer was created.
+  version: 1.5.1
+  description: Fix plans failing with "Invalid function argument" when alarms are enabled with no alarm or OK actions.
 module:
   inputs:
     - id: network
