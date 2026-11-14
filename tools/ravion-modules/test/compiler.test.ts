@@ -2046,6 +2046,65 @@ describe("compiler", () => {
   });
 });
 
+describe("ECS jobs", () => {
+  const definition = "compute/ecs_service/rvn-ecs-jobs-definition.yml";
+
+  it("keeps the service idle: no tasks, scaling, load balancer or service alarms", async () => {
+    const { module } = await compileDefinitionFile(join(repoRoot, definition));
+    assert.equal(getTerraformVariable(module, "desired_count"), 0);
+    assert.deepEqual(getTerraformVariable(module, "auto_scaling"), { enabled: false, min_capacity: 0, max_capacity: 0 });
+    assert.equal(getTerraformVariable(module, "load_balancer_attachment"), null);
+    assert.equal(getTerraformVariable(module, "cloudwatch_alarms_creation_enabled"), false);
+  });
+
+  it("maps each configured job to a schedule, timeout, retry, concurrency and ECS command override", async () => {
+    const { module } = await compileDefinitionFile(join(repoRoot, definition));
+    const mapJobs = compileJobsExpression(assertString(module.jobs));
+    const stack = { output: { container_name: "app" } };
+
+    assert.deepEqual(mapJobs({ jobs: [{ id: "report", name: "Report", command: ["bin/report"], schedule: "0 6 * * *" }] }, stack), [
+      {
+        id: "report",
+        name: "Report",
+        enabled: true,
+        schedule: { cron: "0 6 * * *", timezone: "UTC" },
+        timeout: 1800,
+        retry: { max_attempts: 1 },
+        concurrency: { limit: 1 },
+        target: { type: "aws:ecs", overrides: { container_overrides: [{ name: "app", command: ["bin/report"] }] } },
+      },
+    ]);
+
+    // Explicit zero and false values are kept, not replaced by defaults.
+    const [explicit] = mapJobs(
+      {
+        jobs: [{
+          id: "sync", name: "Sync", command: ["sync"], enabled: false, schedule: "@hourly", timezone: "Europe/Berlin",
+          timeout_minutes: 0, retries: 0, concurrency: 0,
+        }],
+      },
+      stack,
+    );
+    assert.equal(explicit.enabled, false);
+    assert.deepEqual(explicit.schedule, { cron: "@hourly", timezone: "Europe/Berlin" });
+    assert.equal(explicit.timeout, 0);
+    assert.deepEqual(explicit.retry, { max_attempts: 1 });
+    assert.deepEqual(explicit.concurrency, { limit: 0 });
+
+    // A job with no schedule (or a cleared one) runs only on demand.
+    assert.equal(mapJobs({ jobs: [{ id: "once", name: "Once", command: ["x"] }] }, stack)[0].schedule, null);
+    assert.equal(mapJobs({ jobs: [{ id: "once", name: "Once", command: ["x"], schedule: "" }] }, stack)[0].schedule, null);
+    assert.deepEqual(mapJobs({ jobs: [{ id: "r", name: "R", command: ["x"], retries: 2, timeout_minutes: 1.5 }] }, stack)[0], {
+      ...mapJobs({ jobs: [{ id: "r", name: "R", command: ["x"] }] }, stack)[0],
+      retry: { max_attempts: 3 },
+      timeout: 90,
+    });
+
+    assert.deepEqual(mapJobs({ jobs: [] }, stack), []);
+    assert.deepEqual(mapJobs({}, stack), []);
+  });
+});
+
 describe("ECS service CPU and memory units", () => {
   const definitions = [
     "compute/ecs_service/rvn-ecs-web-definition.yml",
@@ -2214,6 +2273,34 @@ function getValueOptions(input: Record<string, unknown>): unknown[] {
 function getBuildSourceShowWhen(input: Record<string, unknown>): unknown {
   const showWhen = assertRecord(input.show_when, `${String(input.id)}.show_when`);
   return showWhen.build_source;
+}
+
+type CompiledJob = {
+  id: unknown;
+  name: unknown;
+  enabled: unknown;
+  schedule: unknown;
+  timeout: unknown;
+  retry: unknown;
+  concurrency: unknown;
+  target: unknown;
+};
+
+/**
+ * Evaluates the `jobs` expression, which is expr-lang (`map(list, {... #.field ...})`), by
+ * translating the few constructs it uses into JavaScript: `map` over the list, `#` for the item,
+ * `nil` for null and `int` for truncation.
+ */
+function compileJobsExpression(
+  expression: string,
+): (input: Record<string, unknown>, stack: Record<string, unknown>) => CompiledJob[] {
+  assert.ok(expression.startsWith("<< ") && expression.endsWith(" >>"));
+  const match = /^map\((.+?), (\{.*\})\)$/s.exec(expression.slice(3, -3).trim());
+  assert.ok(match, "jobs is a single map() over the configured jobs");
+  const [, list, body] = match;
+  const js = `return (${list}).map((job) => (${body.replace(/#\./g, "job.")}));`;
+  return (input, stack) =>
+    new Function("module", "stack", "nil", "int", js)({ input }, stack, null, Math.trunc);
 }
 
 function getTerraformVariable(module: Record<string, unknown>, key: string): unknown {
