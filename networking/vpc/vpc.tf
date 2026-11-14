@@ -34,8 +34,39 @@ resource "aws_vpc" "this" {
     }
 
     precondition {
+      condition     = var.private_subnets_enabled || !var.nat_gateway_enabled
+      error_message = "A NAT gateway needs private subnets to route; disable nat_gateway_enabled or enable private_subnets_enabled."
+    }
+
+    precondition {
+      condition     = var.private_subnets_enabled || length(local.vpc_endpoint_interface_services) == 0
+      error_message = "Interface VPC endpoints are created in the private subnets; remove vpc_endpoint_interface_services or enable private_subnets_enabled."
+    }
+
+    precondition {
+      condition     = var.secondary_public_subnet_cidrs == null || length(var.secondary_public_subnet_cidrs) == local.subnet_count
+      error_message = "The number of secondary_public_subnet_cidrs (${var.secondary_public_subnet_cidrs != null ? length(var.secondary_public_subnet_cidrs) : 0}) must match subnet_count (${local.subnet_count})."
+    }
+
+    precondition {
+      condition     = var.secondary_private_subnet_cidrs == null || length(var.secondary_private_subnet_cidrs) == local.subnet_count
+      error_message = "The number of secondary_private_subnet_cidrs (${var.secondary_private_subnet_cidrs != null ? length(var.secondary_private_subnet_cidrs) : 0}) must match subnet_count (${local.subnet_count})."
+    }
+
+    precondition {
       condition     = local.supplied_nat_eip_allocation_ids == null || !var.nat_gateway_enabled || length(local.supplied_nat_eip_allocation_ids) == local.nat_gateway_count
       error_message = "The number of nat_gateway_eip_allocation_ids must equal 1 for single-NAT mode, or subnet_count (${local.subnet_count}) for HA mode."
     }
   }
+}
+
+################################################################################
+# Secondary CIDR
+################################################################################
+
+resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
+  count = var.secondary_vpc_cidr != null ? 1 : 0
+
+  vpc_id     = aws_vpc.this.id
+  cidr_block = var.secondary_vpc_cidr
 }
