@@ -32,6 +32,19 @@ mock_provider "aws" {
       arn = "arn:aws:iam::123456789012:role/test-rds-monitoring-role"
     }
   }
+
+  # The mock provider materializes computed lists as empty; provide the managed
+  # master user secret that the rotation resource targets.
+  override_resource {
+    target = aws_db_instance.this
+    values = {
+      master_user_secret = [{
+        kms_key_id    = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+        secret_arn    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:test-master-abc123"
+        secret_status = "active"
+      }]
+    }
+  }
 }
 
 #-------------------------------------------------------------------------------
@@ -915,6 +928,140 @@ run "test_master_user_password_management_enabled_default" {
     condition     = var.master_user_password_management_enabled == true
     error_message = "master_user_password_management_enabled should default to true."
   }
+}
+
+#-------------------------------------------------------------------------------
+# Master User Secret Rotation Tests
+#-------------------------------------------------------------------------------
+
+# Test: rotation of the managed secret is off by default
+run "test_master_user_secret_rotation_default" {
+  command = apply
+
+  variables {
+    name              = "test-db"
+    engine            = "postgres"
+    instance_class    = "db.t3.micro"
+    allocated_storage = 20
+    vpc_id            = "vpc-12345678"
+    subnet_ids        = ["subnet-11111111", "subnet-22222222"]
+    username          = "dbadmin"
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret_rotation.master_user) == 1
+    error_message = "Rotation should be managed when password management is enabled."
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].secret_id == "arn:aws:secretsmanager:us-east-1:123456789012:secret:test-master-abc123"
+    error_message = "Rotation should target the RDS-managed master user secret."
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_enabled == false
+    error_message = "Rotation should be disabled by default."
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret_rotation.master_user[0].rotation_rules) == 0
+    error_message = "Rotation rules must be omitted when rotation is disabled."
+  }
+}
+
+# Test: rotation can be turned on with the default seven day interval
+run "test_master_user_secret_rotation_enabled" {
+  command = apply
+
+  variables {
+    name                                = "test-db"
+    engine                              = "postgres"
+    instance_class                      = "db.t3.micro"
+    allocated_storage                   = 20
+    vpc_id                              = "vpc-12345678"
+    subnet_ids                          = ["subnet-11111111", "subnet-22222222"]
+    username                            = "dbadmin"
+    master_user_secret_rotation_enabled = true
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_enabled == true
+    error_message = "Rotation should be enabled."
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_rules[0].automatically_after_days == 7
+    error_message = "Rotation should default to every 7 days."
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotate_immediately == false
+    error_message = "Applying rotation settings should not rotate the password immediately."
+  }
+}
+
+# Test: the rotation interval can be changed
+run "test_master_user_secret_rotation_custom_days" {
+  command = apply
+
+  variables {
+    name                                = "test-db"
+    engine                              = "postgres"
+    instance_class                      = "db.t3.micro"
+    allocated_storage                   = 20
+    vpc_id                              = "vpc-12345678"
+    subnet_ids                          = ["subnet-11111111", "subnet-22222222"]
+    username                            = "dbadmin"
+    master_user_secret_rotation_enabled = true
+    master_user_secret_rotation_days    = 90
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_rules[0].automatically_after_days == 90
+    error_message = "Rotation should use the configured interval."
+  }
+}
+
+# Test: no rotation is managed without an RDS-managed secret
+run "test_master_user_secret_rotation_without_password_management" {
+  command = plan
+
+  variables {
+    name                                    = "test-db"
+    engine                                  = "postgres"
+    instance_class                          = "db.t3.micro"
+    allocated_storage                       = 20
+    vpc_id                                  = "vpc-12345678"
+    subnet_ids                              = ["subnet-11111111", "subnet-22222222"]
+    username                                = "dbadmin"
+    master_user_password_management_enabled = false
+    password                                = "test-password-123"
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret_rotation.master_user) == 0
+    error_message = "Rotation should not be managed when password management is disabled."
+  }
+}
+
+# Test: the rotation interval must be between 1 and 1000 whole days
+run "test_master_user_secret_rotation_days_invalid" {
+  command = plan
+
+  variables {
+    name                             = "test-db"
+    engine                           = "postgres"
+    instance_class                   = "db.t3.micro"
+    allocated_storage                = 20
+    vpc_id                           = "vpc-12345678"
+    subnet_ids                       = ["subnet-11111111", "subnet-22222222"]
+    username                         = "dbadmin"
+    master_user_secret_rotation_days = 0
+  }
+
+  expect_failures = [
+    var.master_user_secret_rotation_days,
+  ]
 }
 
 # Test: managed and preserved passwords are mutually exclusive
