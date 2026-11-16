@@ -20,6 +20,8 @@
       moved_from:
         - max_capacity
       label: Maximum tasks
+      description: Set Minimum tasks and Maximum tasks to 0 to stop the service without deleting it.
+      min: 0
       show_when:
         auto_scaling_enabled: true
 - id: desired_tasks
