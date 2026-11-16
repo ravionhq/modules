@@ -128,7 +128,23 @@ locals {
   # The 404 custom error response is always emitted so error_caching_min_ttl
   # always applies; the response page is only attached when error_document is
   # set.
-  custom_error_responses = [
+  #
+  # Custom error responses are distribution-wide: CloudFront cannot scope them
+  # to a cache behavior. With origin_routes set, a 404 from the API would get
+  # the static 404.html body and be cached for a day, shared by every viewer
+  # (CachingDisabled does not stop error caching). So routed distributions
+  # drop the error page and pin error caching to 0 for every cacheable code.
+  origin_routes_enabled = length(var.origin_routes) > 0
+  error_document        = local.origin_routes_enabled ? "" : var.error_document
+
+  custom_error_responses = local.origin_routes_enabled ? [
+    for code in [400, 403, 404, 405, 414, 416, 500, 501, 502, 503, 504] : {
+      error_code            = code
+      response_code         = null
+      response_page_path    = null
+      error_caching_min_ttl = 0
+    }
+    ] : [
     {
       error_code            = 404
       response_code         = var.error_document == "" ? null : 404
@@ -136,6 +152,45 @@ locals {
       error_caching_min_ttl = var.error_caching_min_ttl
     }
   ]
+
+  # One custom origin per route; one behavior per path pattern. No CloudFront
+  # Functions: the version rewrite would send /v1/... to /<version>/index.html
+  # and the Cache-Control writer would stamp HTML/asset headers onto API
+  # responses.
+  origin_route_origins = [
+    for i, r in var.origin_routes : {
+      origin_id                = "route-${i}"
+      domain_name              = r.domain_name
+      origin_path              = r.origin_path
+      origin_protocol_policy   = r.origin_protocol_policy
+      http_port                = r.http_port
+      https_port               = r.https_port
+      origin_read_timeout      = r.origin_read_timeout
+      origin_keepalive_timeout = r.origin_keepalive_timeout
+      connection_timeout       = r.connection_timeout
+      connection_attempts      = r.connection_attempts
+      custom_headers           = r.custom_headers
+    }
+  ]
+
+  origin_route_behaviors = flatten([
+    for i, r in var.origin_routes : [
+      for path in r.path_patterns : {
+        path_pattern                 = path
+        target_origin_id             = "route-${i}"
+        viewer_protocol_policy       = "redirect-to-https"
+        allowed_methods              = r.allowed_methods
+        cached_methods               = ["GET", "HEAD"]
+        compression_enabled          = true
+        cache_policy_id              = r.cache_policy_id
+        origin_request_policy_id     = r.origin_request_policy_id
+        response_headers_policy_id   = r.response_headers_policy_id
+        function_associations        = []
+        lambda_function_associations = []
+        realtime_log_config_arn      = null
+      }
+    ]
+  ])
 
   no_cache_behaviors = [
     for path in var.no_cache_paths : {
@@ -160,9 +215,9 @@ locals {
   # it to the managed CachingDisabled policy; the error *responses* viewers
   # receive are still cached per error_caching_min_ttl, so S3 sees at most
   # one error-page fetch per edge location per that window.
-  error_document_behaviors = var.error_document == "" ? [] : [
+  error_document_behaviors = local.error_document == "" ? [] : [
     {
-      path_pattern                 = "/${var.error_document}"
+      path_pattern                 = "/${local.error_document}"
       target_origin_id             = local.origin_id
       viewer_protocol_policy       = "redirect-to-https"
       allowed_methods              = ["GET", "HEAD", "OPTIONS"]
@@ -177,7 +232,9 @@ locals {
     }
   ]
 
-  ordered_behaviors = concat(local.no_cache_behaviors, local.error_document_behaviors)
+  # Origin routes go first so an explicit backend route wins over overlapping
+  # no-cache patterns.
+  ordered_behaviors = concat(local.origin_route_behaviors, local.no_cache_behaviors, local.error_document_behaviors)
 
   cff_request_rewrite_name = format(
     "%s-%s-request-rewrite",

@@ -36,7 +36,7 @@ module "cdn" {
   module_instance_id    = var.module_instance_id
   ravion_aws_account_id = var.ravion_aws_account_id
 
-  origins = [
+  origins = concat([
     {
       origin_id         = local.origin_id
       domain_name       = module.hosting.bucket_regional_domain_name
@@ -47,7 +47,7 @@ module "cdn" {
         origin_shield_region = local.origin_shield_region
       } : null
     }
-  ]
+  ], local.origin_route_origins)
 
   default_cache_behavior = {
     target_origin_id             = local.origin_id
