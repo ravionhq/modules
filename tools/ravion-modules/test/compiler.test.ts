@@ -1410,6 +1410,8 @@ describe("compiler", () => {
     assert.deepEqual(minTasks.moved_from, ["min_capacity"]);
     assert.deepEqual(maxTasks.moved_from, ["max_capacity"]);
     assert.deepEqual(desiredTasks.moved_from, ["desired_count"]);
+    assert.equal(minTasks.min, 0);
+    assert.equal(maxTasks.min, 0);
     assert.equal(
       getTerraformVariable(compiled.module, "desired_count"),
       "<< module.input.auto_scaling_enabled ? module.input.min_tasks : module.input.desired_tasks >>",
