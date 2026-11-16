@@ -317,7 +317,6 @@ module:
       type: object_array
       description: Matching paths skip S3 and reach the backend with their original URL. Adding a route turns off the custom 404 page and error caching for the whole site so backend errors pass through unchanged.
       required: false
-      add_button_label: Add backend route
       item_label: Backend route
       item_title:
         template: "{domain_name}"
