@@ -5,7 +5,7 @@ definition:
 
 release:
   version: 1.6.0
-  description: Add inputs to change the rotation interval of the RDS-managed master password secret or turn rotation off.
+  description: Stop automatic rotation of the RDS-managed master password by default so apps that read it at startup keep working. Turn rotation back on and set its interval with new inputs.
 module:
   inputs:
     - id: network
@@ -553,8 +553,8 @@ module:
         master_user_password_management_enabled: false
       type: boolean
     - collapsible: true
-      default: true
-      description: Apps that read the password only at startup must restart after each rotation. Disable if they cannot.
+      default: false
+      description: Each rotation changes the password. Apps that read it only at startup must restart after every rotation.
       id: master_user_secret_rotation_enabled
       label: Rotate master password automatically
       show_when:
@@ -1141,7 +1141,7 @@ module:
         master_user_password_preservation_enabled: << module.input.master_user_password_preservation_enabled || false >>
         master_user_secret_kms_key_id: << module.input.master_user_secret_kms_key_id >>
         master_user_secret_rotation_days: '<< module.input.master_user_secret_rotation_days != nil ? module.input.master_user_secret_rotation_days : 7 >>'
-        master_user_secret_rotation_enabled: << module.input.master_user_secret_rotation_enabled != false >>
+        master_user_secret_rotation_enabled: << module.input.master_user_secret_rotation_enabled == true >>
         max_allocated_storage: << module.input.max_allocated_storage >>
         monitoring_interval: << module.input.monitoring_interval >>
         monitoring_role_arn: << module.input.monitoring_role_arn >>
@@ -1339,7 +1339,7 @@ module:
     | Read replicas | No | false | Creates read replicas when supported by the engine. |
     | Manage password in Secrets Manager | No | true | Stores generated master credentials in AWS Secrets Manager. Disable before importing an externally managed password. |
     | Preserve existing master password | No | false | Verifies the database exists in AWS and leaves its externally managed password unchanged. |
-    | Rotate master password automatically | No | true | Secrets Manager rotates the RDS-managed master password. Disable if apps read the password only at startup and cannot be restarted after each rotation. |
+    | Rotate master password automatically | No | false | Rotates the RDS-managed master password on a schedule. Off by default because apps that read the password only at startup lose access after each rotation until they restart. |
     | Rotation interval days | No | 7 | Days between automatic rotations of the master password. |
     | Backup retention days | No | 7 | Set to 0 to disable automated backups. |
     | Deletion protection | No | true | Helps prevent accidental deletion. |

@@ -2,10 +2,10 @@
 # Master User Secret Rotation
 ################################################################################
 
-# RDS rotates the managed master user secret every seven days by default.
-# Managing rotation explicitly lets callers change the interval or turn
-# rotation off; rotation_enabled = false cancels the rotation that RDS
-# configures (AWS provider >= 6.62.0). rotate_immediately = false keeps
+# RDS rotates the managed master user secret every seven days by default,
+# which breaks apps that read the password only at startup. Rotation is off
+# unless master_user_secret_rotation_enabled is true; rotation_enabled = false
+# cancels the rotation that RDS configures (AWS provider >= 6.62.0). rotate_immediately = false keeps
 # applies from changing the password outside the rotation schedule.
 resource "aws_secretsmanager_secret_rotation" "master_user" {
   count = var.master_user_password_management_enabled ? 1 : 0

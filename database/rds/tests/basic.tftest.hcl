@@ -934,7 +934,7 @@ run "test_master_user_password_management_enabled_default" {
 # Master User Secret Rotation Tests
 #-------------------------------------------------------------------------------
 
-# Test: the managed secret keeps the AWS default seven day rotation
+# Test: rotation of the managed secret is off by default
 run "test_master_user_secret_rotation_default" {
   command = apply
 
@@ -959,8 +959,34 @@ run "test_master_user_secret_rotation_default" {
   }
 
   assert {
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_enabled == false
+    error_message = "Rotation should be disabled by default."
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret_rotation.master_user[0].rotation_rules) == 0
+    error_message = "Rotation rules must be omitted when rotation is disabled."
+  }
+}
+
+# Test: rotation can be turned on with the default seven day interval
+run "test_master_user_secret_rotation_enabled" {
+  command = apply
+
+  variables {
+    name                                = "test-db"
+    engine                              = "postgres"
+    instance_class                      = "db.t3.micro"
+    allocated_storage                   = 20
+    vpc_id                              = "vpc-12345678"
+    subnet_ids                          = ["subnet-11111111", "subnet-22222222"]
+    username                            = "dbadmin"
+    master_user_secret_rotation_enabled = true
+  }
+
+  assert {
     condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_enabled == true
-    error_message = "Rotation should be enabled by default."
+    error_message = "Rotation should be enabled."
   }
 
   assert {
@@ -979,27 +1005,6 @@ run "test_master_user_secret_rotation_custom_days" {
   command = apply
 
   variables {
-    name                             = "test-db"
-    engine                           = "postgres"
-    instance_class                   = "db.t3.micro"
-    allocated_storage                = 20
-    vpc_id                           = "vpc-12345678"
-    subnet_ids                       = ["subnet-11111111", "subnet-22222222"]
-    username                         = "dbadmin"
-    master_user_secret_rotation_days = 90
-  }
-
-  assert {
-    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_rules[0].automatically_after_days == 90
-    error_message = "Rotation should use the configured interval."
-  }
-}
-
-# Test: rotation can be turned off
-run "test_master_user_secret_rotation_disabled" {
-  command = apply
-
-  variables {
     name                                = "test-db"
     engine                              = "postgres"
     instance_class                      = "db.t3.micro"
@@ -1007,17 +1012,13 @@ run "test_master_user_secret_rotation_disabled" {
     vpc_id                              = "vpc-12345678"
     subnet_ids                          = ["subnet-11111111", "subnet-22222222"]
     username                            = "dbadmin"
-    master_user_secret_rotation_enabled = false
+    master_user_secret_rotation_enabled = true
+    master_user_secret_rotation_days    = 90
   }
 
   assert {
-    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_enabled == false
-    error_message = "Rotation should be disabled."
-  }
-
-  assert {
-    condition     = length(aws_secretsmanager_secret_rotation.master_user[0].rotation_rules) == 0
-    error_message = "Rotation rules must be omitted when rotation is disabled."
+    condition     = aws_secretsmanager_secret_rotation.master_user[0].rotation_rules[0].automatically_after_days == 90
+    error_message = "Rotation should use the configured interval."
   }
 }
 

@@ -341,7 +341,7 @@ module "mysql" {
 | master_user_password_management_enabled | Use Secrets Manager for the master password. Disable before importing a database whose existing password is managed externally. | `bool` | `true` | no |
 | master_user_password_preservation_enabled | Preserve an existing externally managed password by omitting password configuration. The named database must already exist in AWS, and password management must be disabled. | `bool` | `false` | no |
 | master_user_secret_kms_key_id | KMS key for Secrets Manager secret. | `string` | `null` | no |
-| master_user_secret_rotation_enabled | Rotate the RDS-managed master user secret automatically. Disable when apps read the password only at startup and cannot restart after each rotation. | `bool` | `true` | no |
+| master_user_secret_rotation_enabled | Rotate the RDS-managed master user secret automatically. Off by default because apps that read the password only at startup lose access after each rotation until they restart. | `bool` | `false` | no |
 | master_user_secret_rotation_days | Days between automatic rotations of the RDS-managed master user secret (1-1000). | `number` | `7` | no |
 | iam_database_authentication_enabled | Enable IAM database authentication. | `bool` | `false` | no |
 | db_name | Database name to create. | `string` | `null` | no |
@@ -753,13 +753,15 @@ Valid log export types depend on the database engine:
 ## Master password rotation
 
 When `master_user_password_management_enabled = true`, RDS stores the master
-password in Secrets Manager and rotates it every seven days by default. Each
+password in Secrets Manager. RDS would rotate it every seven days, but each
 rotation changes the database password, so apps that read the injected password
-only at startup lose access until they restart. Set
-`master_user_secret_rotation_days` to change the interval, or set
-`master_user_secret_rotation_enabled = false` to turn rotation off. Turning
-rotation off requires AWS provider 6.62.0 or later. Changing either input does
-not rotate the password immediately.
+only at startup lose access until they restart. This module therefore turns
+rotation off by default (`master_user_secret_rotation_enabled = false`), which
+requires AWS provider 6.62.0 or later. Set
+`master_user_secret_rotation_enabled = true` to rotate the password every
+`master_user_secret_rotation_days` days (default 7) when your apps re-read the
+secret or restart on rotation. Changing either input does not rotate the
+password immediately.
 
 ## Storage and I/O alarms
 
