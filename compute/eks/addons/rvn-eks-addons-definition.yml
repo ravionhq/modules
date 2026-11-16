@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.4.0
-  description: Mimir's distributors compress what they send to ingesters with snappy, cutting the inter-zone traffic of the write path several times over.
+  version: 1.4.1
+  description: Plans no longer fail with "argument must not be null" when the shared ALB alarms have no notification actions.
 module:
   inputs:
     - id: cluster
