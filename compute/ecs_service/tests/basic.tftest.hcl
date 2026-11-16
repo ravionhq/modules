@@ -1043,6 +1043,40 @@ run "service_with_auto_scaling" {
   }
 }
 
+run "auto_scaling_zero_capacity_stops_service" {
+  command = plan
+
+  variables {
+    auto_scaling = {
+      min_capacity = 0
+      max_capacity = 0
+      target_tracking = [{
+        policy_name       = "cpu-scaling"
+        target_value      = 70
+        predefined_metric = "ECSServiceAverageCPUUtilization"
+      }]
+    }
+  }
+
+  assert {
+    condition     = aws_appautoscaling_target.this[0].min_capacity == 0 && aws_appautoscaling_target.this[0].max_capacity == 0
+    error_message = "A maximum of 0 should pin the scalable target to 0 tasks"
+  }
+}
+
+run "auto_scaling_rejects_min_above_max" {
+  command = plan
+
+  variables {
+    auto_scaling = {
+      min_capacity = 1
+      max_capacity = 0
+    }
+  }
+
+  expect_failures = [var.auto_scaling]
+}
+
 ################################################################################
 # Test: Custom Task Configuration
 ################################################################################
