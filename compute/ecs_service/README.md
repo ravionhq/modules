@@ -404,7 +404,7 @@ Set when the cluster was created with `use_ravion_managed_domains` (pipe the clu
 
 The `auto_scaling` object includes:
 - `enabled` - Enable auto scaling (default: true)
-- `min_capacity` / `max_capacity` - Capacity limits
+- `min_capacity` / `max_capacity` - Capacity limits. `min_capacity` must not exceed `max_capacity`. Set both to 0 to stop the service without destroying it; Application Auto Scaling scales the tasks in to 0
 - `target_tracking` - List of target tracking policies (predefined or custom metrics)
 - `scheduled` - List of scheduled scaling actions with cron expressions
 
