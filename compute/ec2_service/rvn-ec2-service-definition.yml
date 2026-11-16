@@ -3,8 +3,8 @@ definition:
   name: EC2 Service
   description: Runs supervised workloads on a stable EC2 Auto Scaling Group, with optional shared ALB routing and switchable container or manual in-place deploys.
 release:
-  version: 2.7.0
-  description: Snapshot data volumes daily, remount them after Update AMI rebuilds an instance's root disk, and refuse to start the app when its data volume or EFS is not mounted.
+  version: 2.8.0
+  description: Pick the branch for a manual deploy from the branches of the deploy repository.
 module:
   inputs:
     - id: network
@@ -852,7 +852,7 @@ module:
           deploy_type: container
       - id: branch
         label: Git branch
-        type: string
+        type: gitbranch
         description: Branch to deploy. Defaults to the repository's default branch.
         required: false
         show_when:
