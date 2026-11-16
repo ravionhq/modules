@@ -4,7 +4,7 @@ definition:
   description: Standalone Application Load Balancer (ALB) with HTTP/HTTPS listeners that multiple services can attach listener rules to.
 release:
   version: 1.5.1
-  description: Fix plans failing with "Invalid function argument" when alarms are enabled with no alarm or OK actions.
+  description: Plans no longer fail with "argument must not be null" when the load balancer alarms have no notification actions.
 module:
   inputs:
     - id: network

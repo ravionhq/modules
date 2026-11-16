@@ -113,7 +113,9 @@ output "cloudwatch_alarm_arns" {
 }
 
 output "cloudwatch_alarm_notification_actions" {
-  description = "Actions every CloudWatch alarm runs when it fires (alarm) and when it recovers (ok). Both lists are empty when alarms are disabled or have no actions."
+  description = "Actions every CloudWatch alarm runs when it fires (alarm) and when it recovers (ok). Both lists are empty when alarms are disabled."
+  # The AWS provider plans an empty action list as null, and sort() rejects
+  # null, so an alarm with no actions would fail every plan.
   value = {
     alarm = local.create_cloudwatch_alarms ? sort(coalesce(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].alarm_actions, [])) : []
     ok    = local.create_cloudwatch_alarms ? sort(coalesce(aws_cloudwatch_metric_alarm.unhealthy_hosts[0].ok_actions, [])) : []

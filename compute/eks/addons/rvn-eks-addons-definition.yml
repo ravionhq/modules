@@ -5,7 +5,7 @@ definition:
   description: Selectable add-ons for an existing EKS cluster.
 release:
   version: 1.4.1
-  description: Fix plans failing with "Invalid function argument" when alarms on the shared ALBs are enabled with no alarm or OK actions.
+  description: Plans no longer fail with "argument must not be null" when the shared ALB alarms have no notification actions.
 module:
   inputs:
     - id: cluster
