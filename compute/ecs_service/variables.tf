@@ -792,8 +792,13 @@ variable "auto_scaling" {
       end_time     = optional(string, null)
     })), [])
   })
-  description = "Auto scaling configuration for the service."
+  description = "Auto scaling configuration for the service. Setting min_capacity and max_capacity to 0 stops the service without destroying it: Application Auto Scaling scales the running tasks in to 0, and raising the bounds again starts them."
   default     = null
+
+  validation {
+    condition     = try(var.auto_scaling.min_capacity <= var.auto_scaling.max_capacity, true)
+    error_message = "auto_scaling.min_capacity must not be greater than auto_scaling.max_capacity."
+  }
 
   validation {
     condition     = try(length(distinct([for policy in var.auto_scaling.target_tracking : policy.policy_name])) == length(var.auto_scaling.target_tracking), true)
