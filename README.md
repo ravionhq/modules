@@ -94,7 +94,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-worker` | EKS Worker | v1.1.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.4.0 | `compute/lambda/` |
-| `rvn-rds` | RDS Database | v1.5.0 | `database/rds/` |
+| `rvn-rds` | RDS Database | v1.6.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.1 | `database/rds-proxy/` |
 | `rvn-route53` | Route 53 DNS | v1.1.1 | `networking/route53/` |
 | `rvn-s3` | S3 Bucket | v2.1.0 | `storage/s3/` |

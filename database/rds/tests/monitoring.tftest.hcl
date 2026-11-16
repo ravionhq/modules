@@ -21,6 +21,19 @@ mock_provider "aws" {
       cidr_block = "10.0.0.0/16"
     }
   }
+
+  # The mock provider materializes computed lists as empty; provide the managed
+  # master user secret that the rotation resource targets.
+  override_resource {
+    target = aws_db_instance.this
+    values = {
+      master_user_secret = [{
+        kms_key_id    = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
+        secret_arn    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:test-master-abc123"
+        secret_status = "active"
+      }]
+    }
+  }
 }
 
 variables {

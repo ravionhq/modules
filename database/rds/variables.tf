@@ -369,6 +369,23 @@ variable "master_user_secret_kms_key_id" {
   }
 }
 
+variable "master_user_secret_rotation_enabled" {
+  type        = bool
+  description = "Whether Secrets Manager automatically rotates the RDS-managed master user secret. Applications that read the password only at startup must be restarted after each rotation, so disable rotation when that is not possible. Only applies when master_user_password_management_enabled is true."
+  default     = true
+}
+
+variable "master_user_secret_rotation_days" {
+  type        = number
+  description = "Number of days between automatic rotations of the RDS-managed master user secret. Only applies when master_user_password_management_enabled and master_user_secret_rotation_enabled are true."
+  default     = 7
+
+  validation {
+    condition     = var.master_user_secret_rotation_days >= 1 && var.master_user_secret_rotation_days <= 1000 && floor(var.master_user_secret_rotation_days) == var.master_user_secret_rotation_days
+    error_message = "master_user_secret_rotation_days must be a whole number between 1 and 1000."
+  }
+}
+
 variable "iam_database_authentication_enabled" {
   type        = bool
   description = "Enable IAM database authentication. Supported for MySQL and PostgreSQL."
