@@ -315,7 +315,7 @@ module:
     - id: origin_routes
       label: Backend routes
       type: object_array
-      description: Matching paths skip S3 and reach the backend with their original URL. Adding a route turns off the custom 404 page and error caching for the whole site so backend errors pass through unchanged.
+      description: Matching paths skip S3 and reach the backend with their original URL. Adding a route turns off the custom 404 page and minimum error caching for the whole site so backend errors pass through unchanged.
       required: false
       item_label: Backend route
       item_title:
@@ -332,8 +332,8 @@ module:
         - id: domain_name
           label: Backend domain name
           type: string
-          description: Host name only, such as a load balancer DNS name.
-          placeholder: my-alb-123456.us-east-1.elb.amazonaws.com
+          description: Host name only. With HTTPS only, it must be covered by the backend certificate, so use a DNS record pointing at the load balancer, not its elb.amazonaws.com name.
+          placeholder: api-origin.example.com
           required: true
         - id: origin_protocol_policy
           label: Origin protocol
@@ -656,7 +656,7 @@ module:
     | Field | Default | Purpose |
     | --- | --- | --- |
     | Path patterns | none | CloudFront path patterns such as /v1/*. Patterns match exactly, so /v1/* does not match /v1; add both when the bare path is a route |
-    | Backend domain name | none | Host name only, without https:// or a path |
+    | Backend domain name | none | Host name only, without https:// or a path. With HTTPS only it must be covered by the backend certificate: use a DNS record pointing at the load balancer, not its elb.amazonaws.com name, or choose HTTP only for a plain-HTTP listener |
     | Origin protocol | HTTPS only | HTTPS only requires the backend to serve a certificate valid for its domain name |
     | Allowed methods | All methods | Read only or Read and OPTIONS limit what CloudFront forwards |
     | Cache policy | CachingDisabled | Use an origin Cache-Control policy only for responses that are safe to share between viewers |
@@ -664,7 +664,7 @@ module:
     | Response timeout | 30 | Seconds CloudFront waits for the backend |
     | Custom headers | none | Headers added to every backend request, such as a shared secret the backend checks |
 
-    CloudFront applies custom error responses to the whole distribution, not per path. When any backend route is set, the module turns off the custom 404 page and caches no error responses, so backend errors such as a JSON 404 or a 401 reach viewers unchanged and are never shared between them. Missing static files still return a plain 404.
+    CloudFront applies custom error responses to the whole distribution, not per path. When any backend route is set, the module turns off the custom 404 page and removes the minimum error caching time, so backend errors such as a JSON 404 or a 401 reach viewers unchanged. With CachingDisabled they are not cached; with an origin Cache-Control policy, send Cache-Control: no-store on error responses so they are not shared between viewers. Missing static files still return a plain 404.
 
     Backend responses skip the site's Cache-Control function and managed response headers, so the backend controls its own headers.
 

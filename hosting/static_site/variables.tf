@@ -452,7 +452,9 @@ variable "origin_routes" {
 
     Defaults suit APIs: all HTTP methods, AWS-managed CachingDisabled cache policy, and AllViewerExceptHostHeader origin request policy (forwards headers, cookies, and query strings, but not Host). Use AllViewer (216adef6-5c7f-47e4-b989-5492eafa07d3) when the origin routes by Host header.
 
-    CloudFront custom error responses apply to the whole distribution, so when any route is set the module stops replacing 404 bodies with error_document and sets error caching to 0 seconds for every cacheable error code. Origin error responses then pass through unchanged and are never shared between viewers.
+    CloudFront custom error responses apply to the whole distribution, so when any route is set the module stops replacing 404 bodies with error_document and sets the error caching minimum TTL to 0 seconds for every cacheable error code. Origin error responses then pass through unchanged and, with CachingDisabled, are not cached. With an origin Cache-Control cache policy, an error response carrying max-age or s-maxage can still be cached.
+
+    With https-only, domain_name (or the forwarded Host with AllViewer) must be covered by the backend's TLS certificate. A raw *.elb.amazonaws.com ALB name is not, so use a DNS record pointing at the ALB, or http-only for a plain-HTTP listener.
 
     Path patterns match exactly: /v1/* does not match /v1, so add both when the bare prefix is a valid route.
   EOT

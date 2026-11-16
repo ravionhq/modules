@@ -168,7 +168,10 @@ module "site" {
 
   origin_routes = [{
     path_patterns = ["/v1", "/v1/*"]
-    domain_name   = module.api.alb_dns_name
+    # With the default https-only, use a host name covered by the backend's TLS
+    # certificate (e.g. a DNS record pointing at the ALB), not the raw
+    # *.elb.amazonaws.com name, or CloudFront returns 502.
+    domain_name = "api-origin.example.com"
     # Optional: a shared secret the API checks so it only accepts CloudFront traffic.
     custom_headers = [{ name = "X-Origin-Auth", value = var.origin_secret }]
   }]
@@ -177,7 +180,9 @@ module "site" {
 
 Each route creates one custom origin and one cache behavior per path pattern, ordered ahead of `no_cache_paths` and the default S3 behavior. Routed requests reach the backend with their original URI: the version rewrite and Cache-Control functions are not attached, and no response-headers policy is applied unless the route sets `response_headers_policy_id`. Defaults suit APIs: HTTPS only, all methods, `CachingDisabled`, and `AllViewerExceptHostHeader` (use `AllViewer`, `216adef6-5c7f-47e4-b989-5492eafa07d3`, when the backend routes by Host). Path patterns match exactly, so `/v1/*` does not match `/v1`.
 
-CloudFront custom error responses apply to the whole distribution. With any route set, the module drops the `error_document` page and sets error caching to 0 seconds for every cacheable error code (400, 403, 404, 405, 414, 416, 500-504), so backend errors such as a JSON 404 or a 401 pass through unchanged and are never shared between viewers. Missing static files still return a plain 404.
+With `https-only`, CloudFront validates the backend certificate against `domain_name` (the Host header with `AllViewer`). An ALB's `*.elb.amazonaws.com` name is not covered by an application certificate, so point a DNS record such as `api-origin.example.com` at the ALB and use that name. For a plain-HTTP listener, set `origin_protocol_policy = "http-only"` and use the ALB DNS name directly; traffic between CloudFront and the backend is then unencrypted.
+
+CloudFront custom error responses apply to the whole distribution. With any route set, the module drops the `error_document` page and sets the error caching minimum TTL to 0 seconds for every cacheable error code (400, 403, 404, 405, 414, 416, 500-504), so backend errors such as a JSON 404 or a 401 pass through unchanged. With the default `CachingDisabled` policy CloudFront does not cache them; with an origin Cache-Control policy, a backend error carrying `max-age` or `s-maxage` can still be cached and shared, so send `Cache-Control: no-store` on error responses. Missing static files still return a plain 404.
 
 ## Deploy and rollback
 
