@@ -1176,6 +1176,43 @@ test_ebs_storage() {
     "$(count "${class_only}" StorageClass) $(count "${class_only}" MutatingAdmissionPolicy) $(count "${class_only}" Deployment)"
 }
 
+# run_database_job runs a rendered clickhouse-cluster database Job's script
+# against a stub clickhouse-client and prints one sorted line per query it
+# sent to a server: "<host> <secure|plain> <query>". The stub answers every
+# server's SELECT 1 at once, so the script never waits.
+run_database_job() {
+  local rendered="$1" label="$2"
+  local dir="${WORK_DIR}/database-job-${label}"
+  mkdir -p "${dir}/bin"
+  cat >"${dir}/bin/clickhouse-client" <<'STUB'
+#!/usr/bin/env bash
+host="" query="" mode=plain
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host) host="$2"; shift 2 ;;
+    --query) query="$2"; shift 2 ;;
+    --secure) mode=secure; shift ;;
+    *) shift ;;
+  esac
+done
+[[ "${query}" == "SELECT 1" ]] && exit 0
+echo "${host} ${mode} ${query}" >>"${DATABASE_JOB_LOG}"
+STUB
+  chmod +x "${dir}/bin/clickhouse-client"
+  # The script writes its TLS client config to /tmp; keep it in the work dir.
+  q "${rendered}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].command[2]' |
+    sed "s#/tmp/client.xml#${dir}/client.xml#g" >"${dir}/job.sh"
+  : >"${dir}/queries.log"
+  (
+    while IFS='=' read -r name value; do
+      export "${name}=${value}"
+    done < <(q "${rendered}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.value != null) | .name + "=" + .value')
+    export CLICKHOUSE_USER=admin CLICKHOUSE_PASSWORD=secret DATABASE_JOB_LOG="${dir}/queries.log"
+    PATH="${dir}/bin:${PATH}" bash "${dir}/job.sh" >/dev/null
+  )
+  sort "${dir}/queries.log"
+}
+
 test_clickhouse_cluster() {
   local chart=clickhouse-cluster
   local ci default full minimal prefixed nodes chi chk
@@ -1261,6 +1298,15 @@ test_clickhouse_cluster() {
     "0 1 1 analytics main 1 2" \
     "$(grep -c "ON CLUSTER '" <<<"${db_script}") $(grep -c 'host="chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}"' <<<"${db_script}") $(grep -c -- '--host "$host"' <<<"${db_script}") $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "INSTALLATION") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "CLUSTER") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "SHARDS") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "REPLICAS") | .value')"
 
+  local replicated="CREATE DATABASE IF NOT EXISTS \`events\` ENGINE = Replicated('/clickhouse/databases/events', '{shard}', '{replica}')"
+  assert_eq "${chart}: database job creates a Replicated database on each replica of a shard" \
+    "chi-analytics-main-0-0 plain ${replicated}
+chi-analytics-main-0-1 plain ${replicated}" \
+    "$(run_database_job "${default}" default)"
+  assert_eq "${chart}: database job creates an Atomic database on every replica of every shard" \
+    "$(for s in 0 1; do for r in 0 1 2; do echo "chi-analytics-main-${s}-${r} plain CREATE DATABASE IF NOT EXISTS \`events\` ENGINE = Atomic"; done; done)" \
+    "$(run_database_job "${full}" full)"
+
   assert_eq "${chart}: without a bucket there is no backup, cold tier or database job" \
     "0 0  1" \
     "$(count "${minimal}" CronJob) $(count "${minimal}" Job) $(q "${minimal}" "${chi} | .spec.configuration.files") $(q "${minimal}" "${chi} | .spec.templates.podTemplates[0].spec.containers | length")"
@@ -1268,6 +1314,9 @@ test_clickhouse_cluster() {
   local tls keep_plain
   tls="$(render "${chart}" tls -n analytics -f "${ci}/tls-values.yaml")"
   keep_plain="$(render "${chart}" tls-plain -n analytics -f "${ci}/full-values.yaml" --set tls.enabled=true)"
+  assert_eq "${chart}: with TLS the database job reaches every replica over TLS" \
+    "$(for s in 0 1; do for r in 0 1; do echo "chi-analytics-main-${s}-${r} secure ${replicated}"; done; done)" \
+    "$(run_database_job "${tls}" tls)"
 
   assert_eq "${chart}: TLS off renders no certificates, service template or cluster security" \
     "0 0  " \
