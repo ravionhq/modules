@@ -1,0 +1,24 @@
+# Follows each definition's own spot_burst_scale_down_window input, whose
+# default differs between workload types.
+- id: spot_burst_scale_down_pods
+  label: Spot pods removed per minute
+  type: number
+  collapsible: true
+  description: Most Spot pods removed in any minute once demand falls. The smaller of this and the percentage below applies, and at least one pod is always removed.
+  max: 1000
+  min: 1
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 2
+- id: spot_burst_scale_down_percent
+  label: Spot pool removed per minute (%)
+  type: number
+  collapsible: true
+  description: Most of the Spot pool, as a percentage, removed in any minute once demand falls. The smaller of this and the pod count above applies.
+  max: 100
+  min: 1
+  show_when:
+    compute_target: on_demand
+    spot_burst_enabled: true
+  default: 25

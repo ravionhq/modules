@@ -33,8 +33,19 @@ spec:
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
+        {{- $scaleDown := .Values.spotBurst.scaleDown }}
+        # Shrink a few pods at a time: at most podsPerPeriod or
+        # percentPerPeriod each period, whichever removes fewer.
         scaleDown:
-          stabilizationWindowSeconds: 300
+          stabilizationWindowSeconds: {{ $scaleDown.stabilizationWindowSeconds }}
+          selectPolicy: Min
+          policies:
+            - type: Pods
+              value: {{ $scaleDown.podsPerPeriod }}
+              periodSeconds: {{ $scaleDown.periodSeconds }}
+            - type: Percent
+              value: {{ $scaleDown.percentPerPeriod }}
+              periodSeconds: {{ $scaleDown.periodSeconds }}
     restoreToOriginalReplicaCount: false
   triggers:
     {{- toYaml .Values.spotBurst.triggers | nindent 4 }}
