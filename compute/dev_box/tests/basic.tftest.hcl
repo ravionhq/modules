@@ -157,7 +157,7 @@ run "custom_ami" {
   }
 
   assert {
-    condition     = length(data.aws_ssm_parameter.default_ami) == 0 && length(data.aws_ec2_instance_type.selected) == 0
+    condition     = length(data.aws_ssm_parameter.default_ami) == 0
     error_message = "A custom AMI must not look up a default image"
   }
 
@@ -223,6 +223,71 @@ run "public_ssh_and_auto_stop" {
     condition     = jsondecode(aws_iam_role_policy.auto_stop[0].policy).Statement[0].Resource == "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0"
     error_message = "Auto stop role must only stop the dev box"
   }
+}
+
+################################################################################
+# Architecture changes on an existing box
+################################################################################
+
+run "refuses_architecture_change" {
+  command = plan
+
+  variables {
+    instance_type = "m8g.large"
+  }
+
+  override_data {
+    target = data.aws_ec2_instance_type.selected
+    values = {
+      supported_architectures = ["arm64"]
+    }
+  }
+
+  expect_failures = [aws_instance.this]
+}
+
+run "allows_same_architecture_resize" {
+  command = plan
+
+  variables {
+    instance_type = "m7i.2xlarge"
+  }
+
+  assert {
+    condition     = aws_instance.this.instance_type == "m7i.2xlarge"
+    error_message = "Same-architecture instance type changes must be allowed"
+  }
+}
+
+run "allows_architecture_change_with_new_image" {
+  command = apply
+
+  variables {
+    instance_type    = "m8g.large"
+    operating_system = "al2023"
+  }
+
+  override_data {
+    target = data.aws_ec2_instance_type.selected
+    values = {
+      supported_architectures = ["arm64"]
+    }
+  }
+
+  assert {
+    condition     = terraform_data.architecture.output == "arm64"
+    error_message = "Rebuilding for a new image must record the new architecture"
+  }
+}
+
+run "rejects_io_volume_types" {
+  command = plan
+
+  variables {
+    root_volume_type = "io2"
+  }
+
+  expect_failures = [var.root_volume_type]
 }
 
 ################################################################################

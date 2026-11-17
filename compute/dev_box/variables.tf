@@ -83,7 +83,7 @@ variable "key_name" {
 
 variable "instance_type" {
   type        = string
-  description = "EC2 instance type. Changing it stops and restarts the instance in place."
+  description = "EC2 instance type. Changing it stops and restarts the instance in place. Changing to another CPU architecture is refused unless the image also changes."
 
   validation {
     condition     = can(regex("^[a-z0-9-]+\\.[a-z0-9-]+$", var.instance_type))
@@ -130,8 +130,8 @@ variable "root_volume_type" {
   default     = "gp3"
 
   validation {
-    condition     = contains(["gp3", "gp2", "io1", "io2"], var.root_volume_type)
-    error_message = "The root_volume_type must be gp3, gp2, io1, or io2."
+    condition     = contains(["gp3", "gp2"], var.root_volume_type)
+    error_message = "The root_volume_type must be gp3 or gp2."
   }
 }
 

@@ -6,10 +6,9 @@ data "aws_region" "current" {}
 
 data "aws_partition" "current" {}
 
-# Architecture of the selected instance type, used to pick the matching default AMI.
+# Architecture of the selected instance type, used to pick the matching
+# default AMI and to block instance type changes across architectures.
 data "aws_ec2_instance_type" "selected" {
-  count = var.ami_id == null ? 1 : 0
-
   instance_type = var.instance_type
 }
 

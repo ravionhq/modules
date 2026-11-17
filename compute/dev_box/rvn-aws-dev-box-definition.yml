@@ -40,7 +40,7 @@ module:
           pattern: ^[a-z0-9]([a-z0-9-]{0,26}[a-z0-9])?$
       required: true
       type: string
-    - description: Changing it stops and restarts the box; its disk is kept. Graviton (`g`) types cost less but need arm64 software. Burstable `t` types suit light, intermittent use.
+    - description: Changing it stops and restarts the box; its disk is kept. Switching between x86 and Graviton (`g`) types is refused after creation, so choose the architecture up front. Burstable `t` types suit light, intermittent use.
       id: instance_type
       label: Instance type
       no_options_message: Select a VPC network, or enter an AWS account and region, to load available EC2 instance types.
@@ -252,7 +252,7 @@ module:
     | VPC network | Yes | None | Supplies the account, region, VPC, and subnets. The box runs in the first subnet. |
     | Run in private subnets | No | On | Off places the box in a public subnet with a public IP. |
     | Name | Yes | Project, environment, and module given IDs | Prefixes resource names. |
-    | Instance type | Yes | None | Changing it stops and restarts the box. |
+    | Instance type | Yes | None | Changing it stops and restarts the box. x86 and Graviton cannot be swapped after creation. |
     | Operating system | Yes | Ubuntu 24.04 LTS | Fixed after creation. |
     | Disk size (GB) | Yes | 100 | Can grow, not shrink. |
     | Custom AMI ID | No | None | Rebuilds the box when set or changed. |
@@ -272,7 +272,7 @@ module:
 
     A single instance, rather than an Auto Scaling group, keeps the disk attached to the same machine for its whole life. Outbound traffic is open so the box can install packages and reach external services; inbound traffic is closed unless SSH CIDR blocks are set. Instance metadata requires IMDSv2, with a hop limit of 2 so containers on the box can still read the instance role's credentials.
 
-    Advanced Terraform variables expose the root volume type and KMS key.
+    Advanced Terraform variables expose the root volume type (`gp3` or `gp2`) and KMS key.
 
     ## Learn more
 

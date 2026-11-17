@@ -16,7 +16,7 @@ Includes the `rvn-aws-dev-box` Ravion module definition.
 
 ```hcl
 module "dev_box" {
-  source = "git::https://github.com/ravionhq/modules.git//compute/dev_box?ref=v1.0.0"
+  source = "git::https://github.com/ravionhq/modules.git//compute/dev_box?ref=rvn-aws-dev-box@0.1.0"
 
   name          = "alice-dev"
   vpc_id        = "vpc-0123456789abcdef0"
@@ -44,7 +44,7 @@ Sessions start as `ssm-user`. Run `sudo su - ubuntu` (or `ec2-user` on Amazon Li
 
 | Change | Effect |
 | --- | --- |
-| `instance_type` | Stops and restarts the instance; the disk is kept. |
+| `instance_type` | Stops and restarts the instance; the disk is kept. A type with a different CPU architecture (x86 and Graviton) is refused. |
 | `root_volume_size` increase | Grows the volume in place; grow the filesystem from inside the box. |
 | New default image release | Ignored. |
 | `user_data` | Ignored after the first boot. |
@@ -69,7 +69,7 @@ Sessions start as `ssm-user`. Run `sudo su - ubuntu` (or `ec2-user` on Amazon Li
 | operating_system | `ubuntu-24.04` or `al2023`, used when `ami_id` is not set. | `string` | `"ubuntu-24.04"` | no |
 | ami_id | Custom AMI. Overrides `operating_system`. | `string` | `null` | no |
 | root_volume_size | Root volume size in GiB. | `number` | `100` | no |
-| root_volume_type | Root volume type: `gp3`, `gp2`, `io1`, or `io2`. | `string` | `"gp3"` | no |
+| root_volume_type | Root volume type: `gp3` or `gp2`. | `string` | `"gp3"` | no |
 | root_volume_kms_key_id | KMS key ARN for root volume encryption. Defaults to the account's default EBS key. | `string` | `null` | no |
 | public_ip_assignment_enabled | Assign a public IPv4 address. Requires a public subnet. | `bool` | `false` | no |
 | additional_security_group_ids | Additional security groups attached to the dev box. | `list(string)` | `[]` | no |

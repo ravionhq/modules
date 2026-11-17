@@ -5,10 +5,7 @@
 locals {
   region = coalesce(var.region, data.aws_region.current.region)
 
-  # Only needed to resolve a default AMI; a custom AMI defines its own architecture.
-  cpu_architecture = var.ami_id == null ? (
-    contains(data.aws_ec2_instance_type.selected[0].supported_architectures, "arm64") ? "arm64" : "x86_64"
-  ) : null
+  cpu_architecture = contains(data.aws_ec2_instance_type.selected.supported_architectures, "arm64") ? "arm64" : "x86_64"
 
   default_ami_parameter_names = var.ami_id == null ? {
     "ubuntu-24.04" = "/aws/service/canonical/ubuntu/server/24.04/stable/current/${local.cpu_architecture == "arm64" ? "arm64" : "amd64"}/hvm/ebs-gp3/ami-id"

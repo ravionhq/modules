@@ -12,6 +12,18 @@ resource "terraform_data" "image" {
   }
 }
 
+# Architecture the box was built for. It is recorded once and only refreshed
+# when the box is rebuilt for a new image, so an instance type change to
+# another architecture (x86 to Graviton) is refused instead of applied.
+resource "terraform_data" "architecture" {
+  input = local.cpu_architecture
+
+  lifecycle {
+    ignore_changes       = [input]
+    replace_triggered_by = [terraform_data.image]
+  }
+}
+
 resource "aws_instance" "this" {
   ami                         = local.ami_id
   instance_type               = var.instance_type
@@ -44,7 +56,18 @@ resource "aws_instance" "this" {
   lifecycle {
     ignore_changes       = [ami, user_data, user_data_base64]
     replace_triggered_by = [terraform_data.image]
+
+    precondition {
+      condition     = local.cpu_architecture == terraform_data.architecture.output
+      error_message = "Instance type ${var.instance_type} is ${local.cpu_architecture}, but this dev box was built for ${terraform_data.architecture.output}. Pick a ${terraform_data.architecture.output} instance type, or set a new ami_id or operating_system to rebuild the box (this erases its disk)."
+    }
   }
 
-  depends_on = [aws_iam_role_policy_attachment.ssm]
+  # Egress rules are separate resources; wait for them so the first boot
+  # script has internet access.
+  depends_on = [
+    aws_iam_role_policy_attachment.ssm,
+    aws_vpc_security_group_egress_rule.all_ipv4,
+    aws_vpc_security_group_egress_rule.all_ipv6,
+  ]
 }
