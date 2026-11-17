@@ -1,8 +1,13 @@
 {{- if .Values.database.name }}
-# Creates the database on every server once all of them have joined the
-# cluster. Runs after each install and upgrade; CREATE ... IF NOT EXISTS makes
-# a rerun a no-op. Replicas added later get the database from the operator,
-# which copies schemas to new replicas.
+# Creates the database on every server after each install and upgrade,
+# addressing each replica by its own Service rather than with ON CLUSTER.
+# ON CLUSTER reaches only the servers the receiving server lists in its
+# cluster at that moment, and the operator leaves a server out of the other
+# servers' lists while it is being created or restarted, so a server can be
+# skipped and never get the database. CREATE ... IF NOT EXISTS makes a rerun
+# a no-op on servers that have it, and an upgrade that adds replicas creates
+# it on them. A Replicated database then copies its tables to the new
+# replica from Keeper, and Replicated*MergeTree tables fetch their data.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -53,28 +58,38 @@ spec:
               </config>
               EOF
               client() {
-                clickhouse-client --config-file /tmp/client.xml --secure --port 9440 --host "clickhouse-${INSTALLATION}" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
+                local host="$1"
+                shift
+                clickhouse-client --config-file /tmp/client.xml --secure --port 9440 --host "$host" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
               }
               {{- else }}
               client() {
-                clickhouse-client --host "clickhouse-${INSTALLATION}" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
+                local host="$1"
+                shift
+                clickhouse-client --host "$host" --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" "$@"
               }
               {{- end }}
-              expected=$((SHARDS * REPLICAS))
-              until [ "$(client --query "SELECT count() FROM system.clusters WHERE cluster = '${CLUSTER}'" 2>/dev/null)" = "$expected" ]; do
-                echo "waiting for ${expected} servers in cluster ${CLUSTER}"
-                sleep 10
-              done
+              # Without ON CLUSTER the macros are each server's own, so every
+              # replica registers itself in the Replicated database.
               if [ "$ENGINE" = "Replicated" ]; then
-                query="CREATE DATABASE IF NOT EXISTS \`${DATABASE}\` ON CLUSTER '${CLUSTER}' ENGINE = Replicated('/clickhouse/databases/${DATABASE}', '{shard}', '{replica}')"
+                query="CREATE DATABASE IF NOT EXISTS \`${DATABASE}\` ENGINE = Replicated('/clickhouse/databases/${DATABASE}', '{shard}', '{replica}')"
               else
-                query="CREATE DATABASE IF NOT EXISTS \`${DATABASE}\` ON CLUSTER '${CLUSTER}' ENGINE = Atomic"
+                query="CREATE DATABASE IF NOT EXISTS \`${DATABASE}\` ENGINE = Atomic"
               fi
-              until client --distributed_ddl_task_timeout 300 --query "$query"; do
-                echo "retrying CREATE DATABASE ${DATABASE}"
-                sleep 15
+              for shard in $(seq 0 $((SHARDS - 1))); do
+                for replica in $(seq 0 $((REPLICAS - 1))); do
+                  host="chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}"
+                  until client "$host" --query "SELECT 1" >/dev/null 2>&1; do
+                    echo "waiting for ${host}"
+                    sleep 10
+                  done
+                  until client "$host" --query "$query"; do
+                    echo "retrying CREATE DATABASE ${DATABASE} on ${host}"
+                    sleep 15
+                  done
+                  echo "database ${DATABASE} exists on ${host}"
+                done
               done
-              echo "database ${DATABASE} exists on cluster ${CLUSTER}"
           env:
             - name: INSTALLATION
               value: {{ .Values.name | quote }}

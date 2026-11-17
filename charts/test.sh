@@ -1249,9 +1249,17 @@ test_clickhouse_cluster() {
   assert_eq "${chart}: allowed namespaces reach only HTTP and native" \
     "apps,jobs 8123,9000" \
     "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].from[0].namespaceSelector.matchExpressions[0].values | join(",")') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].ports | map(.port) | join(",")')"
-  assert_eq "${chart}: Atomic database is created ON CLUSTER" \
+  assert_eq "${chart}: Atomic database is created with the Atomic engine" \
     "Atomic" \
     "$(q "${full}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "ENGINE") | .value')"
+  # ON CLUSTER reaches only the servers the receiving one lists at that
+  # moment, so the job creates the database on each replica's own Service,
+  # whose name the server certificate covers.
+  local db_script
+  db_script="$(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].command[2]')"
+  assert_eq "${chart}: database job creates the database on each replica, not ON CLUSTER" \
+    "0 1 1 analytics main 1 2" \
+    "$(grep -c "ON CLUSTER '" <<<"${db_script}") $(grep -c 'host="chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}"' <<<"${db_script}") $(grep -c -- '--host "$host"' <<<"${db_script}") $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "INSTALLATION") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "CLUSTER") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "SHARDS") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "REPLICAS") | .value')"
 
   assert_eq "${chart}: without a bucket there is no backup, cold tier or database job" \
     "0 0  1" \
