@@ -197,9 +197,32 @@ test_spot_burst_chart() {
     assert_eq "${chart}: configured minimum sets the KEDA ScaledObject floor (${min_replicas})" \
       "${min_replicas}" "$(q "${min_burst}" '.[] | select(.kind == "ScaledObject") | .spec.minReplicaCount')"
   done
-  assert_eq "${chart}: KEDA scale-down stabilization and restore policy are fixed" \
-    "300 false" \
-    "$(q "${burst}" "${scaled} | [.spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleDown.stabilizationWindowSeconds, .spec.advanced.restoreToOriginalReplicaCount] | join(\" \")")"
+  # Without scale-down policies the HPA removes every excess pod in one step
+  # once the stabilization window passes, so a pool at its maximum drops to its
+  # minimum while work is still queued. The pool must shrink a few pods at a
+  # time instead: at most podsPerPeriod or percentPerPeriod, whichever is fewer.
+  local default_window=300
+  [[ "${chart}" == "rvn-eks-worker" ]] && default_window=600
+  local scale_down="${scaled} | .spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleDown"
+  assert_eq "${chart}: KEDA scale-down waits the stabilization window and does not restore replicas" \
+    "${default_window} false" \
+    "$(q "${burst}" "[(${scale_down} | .stabilizationWindowSeconds), (${scaled} | .spec.advanced.restoreToOriginalReplicaCount)] | join(\" \")")"
+  assert_eq "${chart}: KEDA scale-down removes at most 2 pods or 25% per minute, whichever is fewer" \
+    "Min Pods:2:60 Percent:25:60" \
+    "$(q "${burst}" "${scale_down} | [.selectPolicy] + (.policies | map(.type + \":\" + (.value | tostring) + \":\" + (.periodSeconds | tostring))) | join(\" \")")"
+  assert_eq "${chart}: KEDA scale-up keeps the Kubernetes default" \
+    "false" "$(q "${burst}" "${scaled} | .spec.advanced.horizontalPodAutoscalerConfig.behavior | has(\"scaleUp\")")"
+  assert_eq "${chart}: scale-down window and rate are configurable" \
+    "900 Min Pods:5:30 Percent:50:30" \
+    "$(q "$(render "${chart}" scale-down-custom \
+      --values "${CHARTS_DIR}/${chart}/ci/spot-burst-scale-down-values.yaml")" \
+      "${scale_down} | [(.stabilizationWindowSeconds | tostring), .selectPolicy] + (.policies | map(.type + \":\" + (.value | tostring) + \":\" + (.periodSeconds | tostring))) | join(\" \")")"
+  expect_template_failure "${chart}" "${chart}: scale-down must remove at least one pod per period" \
+    --values "${values}" --set spotBurst.scaleDown.podsPerPeriod=0
+  expect_template_failure "${chart}" "${chart}: scale-down percent cannot exceed 100" \
+    --values "${values}" --set spotBurst.scaleDown.percentPerPeriod=101
+  expect_template_failure "${chart}" "${chart}: scale-down window cannot exceed one hour" \
+    --values "${values}" --set spotBurst.scaleDown.stabilizationWindowSeconds=3601
   assert_eq "${chart}: scaler receives the configured external trigger unchanged" \
     "prometheus vector(0)" \
     "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query] | join(\" \")")"

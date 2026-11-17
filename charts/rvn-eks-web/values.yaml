@@ -172,6 +172,17 @@ spotBurst:
     enabled: true
     failureThreshold: 3
     replicas: null
+  # -- How fast the Spot pool shrinks once demand falls. After
+  # stabilizationWindowSeconds of lower demand, each periodSeconds removes at
+  # most podsPerPeriod pods or percentPerPeriod percent of the pool, whichever
+  # is fewer (at least one pod). Without these limits Kubernetes removes every
+  # excess pod at once, so a pool at its maximum drops to its minimum in one
+  # step while work may still be queued. Scale-up is unchanged.
+  scaleDown:
+    stabilizationWindowSeconds: 300
+    podsPerPeriod: 2
+    percentPerPeriod: 25
+    periodSeconds: 60
 
 # -- PodDisruptionBudget limiting voluntary disruptions (node drains,
 # consolidation, upgrades). Rendered only when the replica floor
