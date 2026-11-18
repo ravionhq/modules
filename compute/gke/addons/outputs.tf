@@ -23,7 +23,7 @@ output "eso_cluster_secret_store_name" {
   value       = var.eso_enabled && var.eso_cluster_secret_store_creation_enabled ? var.eso_cluster_secret_store_name : null
 }
 
-output "eso_principal" {
-  description = "Workload Identity principal of the External Secrets controller, for granting it access to secrets in other projects. Null when the operator is not installed."
-  value       = var.eso_enabled ? local.eso_principal : null
+output "eso_google_service_account_email" {
+  description = "Google service account the External Secrets controller acts as, for granting it access to secrets in other projects. Null when the operator is not installed."
+  value       = var.eso_enabled ? google_service_account.external_secrets[0].email : null
 }

@@ -6,13 +6,13 @@ Selectable add-ons for an existing GKE cluster, each toggled independently:
 |---|---|---|---|
 | **KEDA** | `keda_enabled` | `false` | Operator, external metrics API server, admission webhooks and CRDs from the official KEDA Helm chart |
 | **cert-manager** | `cert_manager_enabled` | `false` | Controller, webhook, CA injector and CRDs from the official Jetstack Helm chart; CRDs are kept on uninstall |
-| **External Secrets Operator** | `eso_enabled` | `false` | The `external-secrets` Helm chart, `roles/secretmanager.secretAccessor` for its Kubernetes service account through Workload Identity (project-wide, or on the secrets in `eso_secret_ids`), the Secret Manager API, and a `ravion-gcp` ClusterSecretStore limited to `eso_allowed_namespaces` (local `charts/external-secrets-resources`) |
+| **External Secrets Operator** | `eso_enabled` | `false` | The `external-secrets` Helm chart, a Google service account per cluster that the controller acts as through Workload Identity, with `roles/secretmanager.secretAccessor` (project-wide, or on the secrets in `eso_secret_ids`), the Secret Manager API, and a `ravion-gcp` ClusterSecretStore limited to `eso_allowed_namespaces` (local `charts/external-secrets-resources`) |
 
 GKE itself provides the rest of what the EKS Add-ons module installs: Gateway API and Ingress load balancing, the Persistent Disk CSI driver, the cluster autoscaler and node auto-provisioning, Cloud Logging, and Managed Prometheus. Configure those on the [`compute/gke`](..) cluster.
 
 Module definition: `rvn-gke-addons` ([`rvn-gke-addons-definition.yml`](rvn-gke-addons-definition.yml)).
 
-> **Connectivity:** the Helm provider authenticates with the access token of the identity running Terraform. On a Ravion runner that is the `ravion-runner` service account, which `compute/gke` grants `roles/container.admin`. With `use_dns_endpoint` (the default) it reaches the cluster's IAM-authorized DNS endpoint, so the runner needs no network path into the VPC. With `use_dns_endpoint = false` it uses the IP endpoint and cluster CA, and the runner must be able to reach it.
+> **Connectivity:** the Helm provider authenticates with the access token of the identity running Terraform. On a Ravion runner that is the `ravion-runner` service account, which needs `roles/container.admin` (add it to `runner_sa_roles` in Ravion's GCP setup; `compute/gke` does not grant it because the role covers every cluster in the project). With `use_dns_endpoint` (the default) it reaches the cluster's IAM-authorized DNS endpoint, so the runner needs no network path into the VPC. With `use_dns_endpoint = false` it uses the IP endpoint and cluster CA, and the runner must be able to reach it.
 
 ## Placement
 
@@ -36,7 +36,9 @@ module "gke_addons" {
 }
 ```
 
-With the External Secrets Operator on, the identity running Terraform also needs to change IAM policy: `roles/resourcemanager.projectIamAdmin`, or `roles/secretmanager.admin` when `eso_secret_ids` lists secrets.
+With the External Secrets Operator on, the identity running Terraform also needs `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin` (or `roles/secretmanager.admin` when `eso_secret_ids` lists secrets).
+
+The controller acts as its own Google service account, not as its Kubernetes service account's principal: every cluster in a project shares one Workload Identity pool, so that principal would be identical across clusters, and destroying one cluster's add-ons would revoke the grant for all of them.
 
 ## Requirements
 
@@ -83,4 +85,4 @@ With the External Secrets Operator on, the identity running Terraform also needs
 | keda_namespace | Namespace of KEDA, or null. |
 | eso_namespace | Namespace of the External Secrets Operator, or null. |
 | eso_cluster_secret_store_name | Name of the Secret Manager ClusterSecretStore, or null. |
-| eso_principal | Workload Identity principal of the External Secrets controller, or null. |
+| eso_google_service_account_email | Google service account the External Secrets controller acts as, or null. |

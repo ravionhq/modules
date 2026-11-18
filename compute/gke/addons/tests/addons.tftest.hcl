@@ -1,4 +1,11 @@
 mock_provider "google" {
+  mock_resource "google_service_account" {
+    defaults = {
+      email  = "test-cluster-eso@test-project.iam.gserviceaccount.com"
+      member = "serviceAccount:test-cluster-eso@test-project.iam.gserviceaccount.com"
+      name   = "projects/test-project/serviceAccounts/test-cluster-eso@test-project.iam.gserviceaccount.com"
+    }
+  }
   mock_data "google_container_cluster" {
     defaults = {
       endpoint = "10.0.0.2"
@@ -13,9 +20,6 @@ mock_provider "google" {
       }]
     }
   }
-  mock_data "google_project" {
-    defaults = { number = "123456789012" }
-  }
 }
 
 mock_provider "helm" {}
@@ -26,7 +30,10 @@ variables {
   region       = "us-central1"
 }
 
-run "eso_principal_is_the_controller_service_account" {
+# Clusters in one project share a Workload Identity pool, so the grants must
+# name a Google service account of this cluster: a principal shared with
+# another cluster's stack would be revoked when either stack is destroyed.
+run "eso_grants_belong_to_a_per_cluster_service_account" {
   command = plan
 
   variables {
@@ -35,8 +42,18 @@ run "eso_principal_is_the_controller_service_account" {
   }
 
   assert {
-    condition     = google_project_iam_member.external_secrets[0].member == "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/test-project.svc.id.goog/subject/ns/external-secrets/sa/external-secrets"
-    error_message = "Secret Manager access must go to the controller's own Kubernetes service account."
+    condition     = can(regex("^test-cluster-[0-9a-f]{6}-eso$", google_service_account.external_secrets[0].account_id))
+    error_message = "The controller's Google service account ID must include a hash of the cluster name and region."
+  }
+
+  assert {
+    condition     = google_project_iam_member.external_secrets[0].member == "serviceAccount:test-cluster-eso@test-project.iam.gserviceaccount.com"
+    error_message = "Secret Manager access must go to the cluster's own Google service account."
+  }
+
+  assert {
+    condition     = google_service_account_iam_member.external_secrets_workload_identity[0].member == "serviceAccount:test-project.svc.id.goog[external-secrets/external-secrets]"
+    error_message = "The controller's Kubernetes service account must be allowed to act as the Google service account."
   }
 }
 

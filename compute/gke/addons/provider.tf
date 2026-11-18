@@ -5,7 +5,7 @@ provider "google" {
 
 # Authenticates against the existing cluster with the access token of the
 # identity running Terraform (on a Ravion runner, its attached service account,
-# which the compute/gke stack grants roles/container.admin). Nothing is stored
+# which needs roles/container.admin from Ravion's GCP setup). Nothing is stored
 # in state and no gcloud plugin is needed.
 #
 # By default the DNS-based control plane endpoint is used: it is reachable from

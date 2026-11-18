@@ -1,6 +1,6 @@
 # GKE Cluster
 
-A regional Google Kubernetes Engine (GKE) Standard cluster with private nodes, Workload Identity, Dataplane V2, a dedicated least-privilege node service account, an autoscaled system node pool plus optional On-demand or Spot pools, and node auto-provisioning. The Ravion runner service account is granted Kubernetes Engine Admin so pipelines, such as the [GKE Add-ons](addons) module, can manage Kubernetes objects.
+A regional Google Kubernetes Engine (GKE) Standard cluster with private nodes, Workload Identity, Dataplane V2, a dedicated least-privilege node service account, an autoscaled system node pool plus optional On-demand or Spot pools, and node auto-provisioning.
 
 The cluster starts with no default node pool. Every pool, the system pool included, is a separate `google_container_node_pool` created with a name prefix and `create_before_destroy`, so a change GKE can only make by recreating a pool brings up its replacement first. Node counts are totals across zones, and the cluster autoscaler owns the running count.
 
@@ -34,7 +34,11 @@ module "gke" {
 
 ## Permissions
 
-The identity running Terraform needs to create GKE clusters and service accounts and to change project IAM policy: `roles/editor` plus `roles/resourcemanager.projectIamAdmin`. Ravion's GCP setup gives the `ravion-runner` service account `roles/editor` by default; add `roles/resourcemanager.projectIamAdmin` through its `runner_sa_roles` variable. Without IAM policy access, set `node_service_account_creation_enabled = false` with an existing `node_service_account_email`, set `ravion_runner_cluster_admin_enabled = false`, and leave `access_members` empty.
+The identity running Terraform needs to create GKE clusters and service accounts and to change project IAM policy: `roles/editor` plus `roles/resourcemanager.projectIamAdmin`. Ravion's GCP setup gives the `ravion-runner` service account `roles/editor` by default; add `roles/resourcemanager.projectIamAdmin` through its `runner_sa_roles` variable. Without IAM policy access, set `node_service_account_creation_enabled = false` with an existing `node_service_account_email`, and leave `access_members` empty.
+
+Pipelines that manage Kubernetes objects, such as the [GKE Add-ons](addons) module, also need `roles/container.admin` on the runner. This module does not grant it: GKE roles cover every cluster in the project, so a grant owned by one cluster's stack would be revoked for all clusters when that stack is destroyed. Add it to `runner_sa_roles` in Ravion's GCP setup, which owns the runner's project roles. For the same reason, `access_members` should not repeat a grant another stack manages.
+
+The node service account ID is a prefix of the cluster name plus a hash of the name and region, so clusters with a long shared prefix, or one name in two regions, do not collide. Labels are lowercased with invalid characters replaced, keys that would start with a non-letter get an `x_` prefix, and keys that normalize to the same label keep the value of the last one in key order.
 
 Nodes have no external IPs, so the subnetwork needs Cloud NAT for nodes to pull public images.
 
@@ -77,8 +81,6 @@ Nodes have no external IPs, so the subnetwork needs Cloud NAT for nodes to pull 
 | dns_endpoint_enabled | Allow IAM-authorized requests to the DNS endpoint from outside the VPC. | `bool` | `true` | no |
 | ip_endpoint_public_access_enabled | Expose the public IP endpoint. | `bool` | `false` | no |
 | master_authorized_cidr_blocks | IPv4 CIDR blocks allowed to reach the IP endpoints. | `list(string)` | `[]` | no |
-| ravion_runner_cluster_admin_enabled | Grant the Ravion runner service account `roles/container.admin`. | `bool` | `true` | no |
-| ravion_runner_service_account_email | Ravion runner service account. Null uses `ravion-runner@<project_id>.iam.gserviceaccount.com`. | `string` | `null` | no |
 | access_members | IAM principals granted a GKE role on the project: `member` and `role`. | `map(object)` | `{}` | no |
 | logging_components | Components whose logs go to Cloud Logging. | `list(string)` | `["SYSTEM_COMPONENTS", "WORKLOADS"]` | no |
 | managed_prometheus_enabled | Collect metrics with Managed Service for Prometheus. | `bool` | `true` | no |
@@ -103,4 +105,3 @@ Nodes have no external IPs, so the subnetwork needs Cloud NAT for nodes to pull 
 | node_pool_names | Generated node pool names, keyed by pool key. |
 | system_node_labels | Kubernetes labels on the system node pool. |
 | system_node_min_nodes | Minimum node count of the system pool. |
-| ravion_runner_service_account_email | Service account granted `roles/container.admin`, or null. |

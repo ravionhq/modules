@@ -89,8 +89,3 @@ output "system_node_min_nodes" {
   description = "Minimum node count of the system node pool across all zones."
   value       = var.system_node_pool.min_nodes
 }
-
-output "ravion_runner_service_account_email" {
-  description = "Service account granted roles/container.admin for Ravion pipelines, or null when that grant is off."
-  value       = var.ravion_runner_cluster_admin_enabled ? local.ravion_runner_service_account_email : null
-}

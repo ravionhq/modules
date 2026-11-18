@@ -351,22 +351,8 @@ module:
       label: Access
       type: section
     - collapsible: true
-      default: true
-      description: Grant the Ravion runner service account Kubernetes Engine Admin, which the GKE Add-ons module needs to install Helm charts. GKE roles apply to every cluster in the project.
-      id: ravion_runner_cluster_admin_enabled
-      label: Ravion runner cluster admin
-      type: boolean
-    - collapsible: true
-      description: Leave blank for ravion-runner@<project>.iam.gserviceaccount.com, created by Ravion's GCP setup.
-      id: ravion_runner_service_account_email
-      label: Ravion runner service account
-      placeholder: ravion-runner@my-project-123456.iam.gserviceaccount.com
-      show_when:
-        ravion_runner_cluster_admin_enabled: true
-      type: string
-    - collapsible: true
       default: {}
-      description: People and automation that need the Kubernetes API. GKE roles are granted on the project.
+      description: People and automation that need the Kubernetes API. Roles are granted on the project and removed with this module, so don't repeat a grant another module manages.
       id: access_members
       item_inputs:
         - id: member
@@ -469,8 +455,6 @@ module:
         dns_endpoint_enabled: << module.input.dns_endpoint_enabled >>
         ip_endpoint_public_access_enabled: << module.input.ip_endpoint_public_access_enabled >>
         master_authorized_cidr_blocks: << module.input.master_authorized_cidr_blocks || [] >>
-        ravion_runner_cluster_admin_enabled: << module.input.ravion_runner_cluster_admin_enabled >>
-        ravion_runner_service_account_email: << module.input.ravion_runner_service_account_email >>
         access_members: << module.input.access_members || {} >>
         logging_components: << module.input.logging_components || [] >>
         managed_prometheus_enabled: << module.input.managed_prometheus_enabled >>
@@ -492,7 +476,7 @@ module:
     2. **Node service account** - a dedicated, least-privilege account for nodes instead of the Compute Engine default account
     3. **Cluster** - a regional, VPC-native control plane with private nodes, Workload Identity, Dataplane V2, the Gateway API, Cloud Logging, and Managed Prometheus
     4. **Node pools** - an always-on system pool, any additional pools, and optional node auto-provisioning
-    5. **Access** - Kubernetes Engine Admin for Ravion's runner service account, and any access members you add
+    5. **Access** - GKE roles for any access members you add
 
     It talks only to Google Cloud APIs, so it provisions in a single apply. Add cert-manager, KEDA, or the External Secrets Operator with the separate **GKE Add-ons** module.
 
@@ -538,11 +522,14 @@ module:
     - **DNS-based endpoint**: open to requests from outside the VPC by default, and every request is still authorized by IAM. Ravion pipelines, including the GKE Add-ons module, reach the Kubernetes API through it, so the Terraform runner needs no network path into the VPC.
     - **IP-based endpoints**: private by default. Turn on **Public IP endpoint** to expose one, and restrict both with **Authorized networks**.
 
-    The Ravion runner service account (`ravion-runner@<project>.iam.gserviceaccount.com`) is granted Kubernetes Engine Admin by default, so pipelines can install charts that create RBAC objects and CRDs. Grant people and automation access with **Access members**. GKE authorizes the Kubernetes API with project IAM roles, so every role here covers all clusters in the project; narrow access within the cluster with Kubernetes RBAC.
+    GKE authorizes the Kubernetes API with project IAM roles, so every role covers all clusters in the project; narrow access within a cluster with Kubernetes RBAC. Grant people and automation access with **Access members**. A project grant is removed when the module that manages it is destroyed, so don't add a grant here that another module also manages.
 
     ### Permissions the runner needs
 
-    Ravion's GCP setup gives the runner service account `roles/editor`, which cannot change IAM policies. This module grants the node service account and the Ravion runner their project roles, so the runner also needs `roles/resourcemanager.projectIamAdmin` (`runner_sa_roles` in the setup). Without it, set `node_service_account_creation_enabled: false` and `node_service_account_email` under **Advanced Terraform variables**, turn off **Ravion runner cluster admin**, and grant those roles yourself.
+    Ravion's GCP setup gives the runner service account (`ravion-runner@<project>.iam.gserviceaccount.com`) `roles/editor`, set by `runner_sa_roles` in the setup. Add two roles there:
+
+    - `roles/container.admin`, so pipelines such as the **GKE Add-ons** module can install charts that create RBAC objects and CRDs. The setup owns it rather than this module because the role covers every cluster in the project: a grant owned by one cluster's module would be revoked for all of them when that cluster is destroyed.
+    - `roles/resourcemanager.projectIamAdmin`, because this module grants the node service account its project roles. Without it, set `node_service_account_creation_enabled: false` and `node_service_account_email` under **Advanced Terraform variables**, and leave **Access members** empty.
 
     ## Security
 
@@ -574,7 +561,6 @@ module:
     | Node auto-provisioning | No | On, 100 vCPU / 400 GB | Node pools created for pending pods |
     | DNS endpoint access | No | `true` | IAM-authorized API access from outside the VPC |
     | Public IP endpoint | No | `false` | Exposes the IP endpoint to authorized networks |
-    | Ravion runner cluster admin | No | `true` | Kubernetes Engine Admin for Ravion pipelines |
     | Access members | No | - | Extra IAM principals with GKE roles |
     | Logged components | No | System, workloads | Logs sent to Cloud Logging |
     | Tags | No | Ravion defaults | Applied as GCP labels, lowercased |

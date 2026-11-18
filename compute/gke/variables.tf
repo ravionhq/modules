@@ -312,24 +312,12 @@ variable "master_authorized_cidr_blocks" {
 # Access
 ################################################################################
 
-variable "ravion_runner_cluster_admin_enabled" {
-  type        = bool
-  description = "Grant the Ravion runner service account roles/container.admin, so pipelines (such as the GKE Add-ons module) can manage Kubernetes objects. GKE has no per-cluster IAM, so the role covers every cluster in the project."
-  default     = true
-}
-
-variable "ravion_runner_service_account_email" {
-  type        = string
-  description = "Ravion runner service account. Null uses ravion-runner@<project_id>.iam.gserviceaccount.com, the account Ravion's GCP setup creates."
-  default     = null
-}
-
 variable "access_members" {
   type = map(object({
     member = string
     role   = optional(string, "roles/container.developer")
   }))
-  description = "IAM principals granted a GKE role on the project, such as group:platform@example.com with roles/container.admin."
+  description = "IAM principals granted a GKE role on the project, such as group:platform@example.com with roles/container.admin. The grant covers every cluster in the project and is removed with this stack, so do not repeat one another stack manages."
   default     = {}
 
   validation {

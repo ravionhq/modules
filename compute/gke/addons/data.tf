@@ -11,9 +11,3 @@ data "google_container_cluster" "this" {
 
 # Access token of the identity running Terraform, used by the Helm provider.
 data "google_client_config" "current" {}
-
-# The project number names the Workload Identity principals of add-on
-# Kubernetes service accounts.
-data "google_project" "this" {
-  project_id = var.project_id
-}

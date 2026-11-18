@@ -33,6 +33,46 @@ run "labels_are_normalized_for_gcp" {
   }
 }
 
+# Owner (a Ravion tag) and owner (a user tag) normalize to the same label key;
+# they must not fail the plan with a duplicate key, and keys must start with a
+# letter.
+run "colliding_and_digit_label_keys_are_resolved" {
+  command = plan
+
+  variables {
+    labels = {
+      Owner     = "Ravion"
+      owner     = "platform"
+      "123team" = "infra"
+    }
+  }
+
+  assert {
+    condition     = google_container_cluster.this.resource_labels["owner"] == "platform" && google_container_cluster.this.resource_labels["x_123team"] == "infra"
+    error_message = "Colliding keys must resolve to one label and digit-leading keys must get a letter prefix."
+  }
+}
+
+# Clusters sharing a long name prefix, or one name in two regions, must not
+# collide on the project-unique node service account ID.
+run "node_service_account_id_is_unique_per_cluster" {
+  command = plan
+
+  variables {
+    name = "acme-production-platform-east"
+  }
+
+  assert {
+    condition     = can(regex("^acme-production-p-[0-9a-f]{6}-nodes$", google_service_account.nodes[0].account_id))
+    error_message = "The node service account ID must keep a prefix plus a hash of the name and region, within 30 characters."
+  }
+
+  assert {
+    condition     = google_service_account.nodes[0].account_id != "${substr("acme-production-platform-west", 0, 17)}-${substr(sha256("acme-production-platform-west/us-central1"), 0, 6)}-nodes"
+    error_message = "A sibling cluster with the same prefix must get a different node service account ID."
+  }
+}
+
 run "private_nodes_with_workload_identity_and_dedicated_node_account" {
   command = plan
 
@@ -54,11 +94,6 @@ run "private_nodes_with_workload_identity_and_dedicated_node_account" {
   assert {
     condition     = google_container_node_pool.this["system"].node_config[0].workload_metadata_config[0].mode == "GKE_METADATA"
     error_message = "Pods must not see the node's credentials."
-  }
-
-  assert {
-    condition     = google_project_iam_member.ravion_runner[0].member == "serviceAccount:ravion-runner@test-project.iam.gserviceaccount.com"
-    error_message = "The Ravion runner account must default to the one Ravion's GCP setup creates."
   }
 }
 

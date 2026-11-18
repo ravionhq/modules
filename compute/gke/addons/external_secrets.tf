@@ -5,9 +5,9 @@
 # into a Kubernetes Secret in the workload's namespace. Secret values never
 # pass through Ravion, Helm values, or release history.
 #
-# The controller authenticates as its own Kubernetes service account through
-# Workload Identity Federation for GKE: IAM grants Secret Manager access to
-# that service account's principal directly.
+# The controller's Kubernetes service account impersonates a Google service
+# account created for this cluster (see locals.tf for why it is not granted
+# access directly), which holds the Secret Manager grants.
 ################################################################################
 
 # Left enabled on destroy: other workloads may read Secret Manager.
@@ -19,13 +19,29 @@ resource "google_project_service" "secretmanager" {
   disable_on_destroy = false
 }
 
+resource "google_service_account" "external_secrets" {
+  count = var.eso_enabled ? 1 : 0
+
+  project      = var.project_id
+  account_id   = local.eso_google_service_account_id
+  display_name = "External Secrets for GKE cluster ${var.cluster_name}"
+}
+
+resource "google_service_account_iam_member" "external_secrets_workload_identity" {
+  count = var.eso_enabled ? 1 : 0
+
+  service_account_id = google_service_account.external_secrets[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${local.workload_identity_pool}[${var.eso_namespace}/${var.eso_service_account}]"
+}
+
 # Every secret in the project, unless eso_secret_ids narrows it.
 resource "google_project_iam_member" "external_secrets" {
   count = var.eso_enabled && length(var.eso_secret_ids) == 0 ? 1 : 0
 
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"
-  member  = local.eso_principal
+  member  = google_service_account.external_secrets[0].member
 }
 
 resource "google_secret_manager_secret_iam_member" "external_secrets" {
@@ -33,7 +49,7 @@ resource "google_secret_manager_secret_iam_member" "external_secrets" {
 
   secret_id = each.value
   role      = "roles/secretmanager.secretAccessor"
-  member    = local.eso_principal
+  member    = google_service_account.external_secrets[0].member
 }
 
 resource "helm_release" "external_secrets" {
@@ -51,11 +67,14 @@ resource "helm_release" "external_secrets" {
   values = concat(
     [yamlencode({
       installCRDs = true
-      # Must match local.eso_principal, or every ExternalSecret fails with
-      # PermissionDenied.
+      # The name must match the workloadIdentityUser binding above, and the
+      # annotation selects the Google service account to act as.
       serviceAccount = {
         create = true
         name   = var.eso_service_account
+        annotations = {
+          "iam.gke.io/gcp-service-account" = google_service_account.external_secrets[0].email
+        }
       }
     })],
     # The controller, its webhook and its cert controller are three Deployments.
@@ -68,6 +87,7 @@ resource "helm_release" "external_secrets" {
 
   depends_on = [
     google_project_service.secretmanager,
+    google_service_account_iam_member.external_secrets_workload_identity,
     google_project_iam_member.external_secrets,
     google_secret_manager_secret_iam_member.external_secrets,
   ]
