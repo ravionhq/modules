@@ -157,7 +157,7 @@ module:
               placeholder: us-central1
               required: true
               type: string
-            - description: Weighted round robin only. Relative share of answers; 0 stops sending traffic to this set.
+            - description: Weighted round robin only. Relative share of answers, 1 when empty; 0 stops sending traffic to this set.
               id: weight
               label: Weight
               min: 0
@@ -309,7 +309,7 @@ module:
     | Routing policy | Behavior |
     | --- | --- |
     | Simple | Return the same values for every query. |
-    | Weighted round robin | Each answer set has a weight; answers are returned in proportion. A weight of 0 stops traffic to that set. |
+    | Weighted round robin | Each answer set has a weight (1 when empty); answers are returned in proportion. A weight of 0 stops traffic to that set. |
     | Geolocation | Each answer set is keyed by a Google Cloud region; callers get the set for the nearest region. |
 
     Cloud DNS has no alias records. Point A records at a load balancer's static IP address, or use a CNAME for names below the apex.
@@ -352,7 +352,7 @@ module:
 
     Zone identity inputs are immutable because changing them creates a different zone. Records, logging, DNSSEC, and labels stay editable.
 
-    The module derives the zone resource name from the domain (`example.com` becomes `example-com`), since Cloud DNS zone names cannot contain dots.
+    The module derives the zone resource name from the domain (`example.com` becomes `example-com`, and `123.example.com` becomes `z-123-example-com`), since Cloud DNS zone names cannot contain dots and must start with a letter.
 
     ## Learn more
 

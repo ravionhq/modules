@@ -37,6 +37,10 @@ resource "google_dns_record_set" "this" {
 
   lifecycle {
     precondition {
+      condition     = length([for record in values(local.records) : record if record.fqdn == each.value.fqdn && record.type == each.value.type]) == 1
+      error_message = "More than one ${each.value.type} record resolves to ${each.value.fqdn}; use a routing_policy for several answers."
+    }
+    precondition {
       condition     = endswith(each.value.fqdn, local.dns_name)
       error_message = "Record ${each.value.fqdn} is not inside the zone ${local.dns_name}."
     }

@@ -12,7 +12,10 @@ locals {
 
   dns_name_input = var.dns_name == null ? null : (endswith(var.dns_name, ".") ? lower(var.dns_name) : "${lower(var.dns_name)}.")
 
-  generated_zone_name = local.dns_name_input == null ? null : substr(trim(replace(trimsuffix(local.dns_name_input, "."), "/[^a-z0-9-]/", "-"), "-"), 0, 63)
+  # Zone names must start with a letter, so a domain such as 123.example.com
+  # becomes z-123-example-com.
+  zone_name_base      = local.dns_name_input == null ? null : trim(replace(trimsuffix(local.dns_name_input, "."), "/[^a-z0-9-]/", "-"), "-")
+  generated_zone_name = local.zone_name_base == null ? null : trim(substr(can(regex("^[a-z]", local.zone_name_base)) ? local.zone_name_base : "z-${local.zone_name_base}", 0, 63), "-")
   created_zone_name   = coalesce(var.zone_name, local.generated_zone_name, "unset")
 
   create_public_zone  = var.zone_creation_enabled && !var.private_zone_enabled

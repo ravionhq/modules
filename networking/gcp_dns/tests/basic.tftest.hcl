@@ -157,3 +157,53 @@ run "routing_policy_and_rrdatas_conflict" {
 
   expect_failures = [var.records]
 }
+
+run "numeric_domain_gets_letter_prefix" {
+  command = plan
+
+  variables {
+    dns_name = "123.example.com"
+  }
+
+  assert {
+    condition     = google_dns_managed_zone.this[0].name == "z-123-example-com"
+    error_message = "A zone name generated from a domain starting with a digit should start with a letter."
+  }
+}
+
+run "weight_defaults_to_one" {
+  command = plan
+
+  variables {
+    dns_name = "example.com"
+    records = [
+      {
+        name = "api"
+        type = "A"
+        routing_policy = {
+          type  = "WEIGHTED"
+          items = [{ key = "blue", weight = null, rrdatas = ["203.0.113.10"] }]
+        }
+      },
+    ]
+  }
+
+  assert {
+    condition     = one(google_dns_record_set.this["A api"].routing_policy).wrr[0].weight == 1
+    error_message = "A weighted answer without a weight should default to 1."
+  }
+}
+
+run "equivalent_record_names_are_duplicates" {
+  command = plan
+
+  variables {
+    dns_name = "example.com"
+    records = [
+      { name = "www", type = "A", rrdatas = ["203.0.113.10"] },
+      { name = "www.example.com.", type = "A", rrdatas = ["203.0.113.11"] },
+    ]
+  }
+
+  expect_failures = [google_dns_record_set.this]
+}

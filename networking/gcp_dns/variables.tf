@@ -99,7 +99,7 @@ variable "records" {
       type = string
       items = list(object({
         key     = string
-        weight  = optional(number)
+        weight  = optional(number, 1)
         rrdatas = list(string)
       }))
     }))
@@ -109,7 +109,8 @@ variable "records" {
     name relative to the zone (app), or a fully qualified name (app.example.com
     or app.example.com.).
     Standard records set rrdatas. Records with routing_policy set it instead:
-    type WEIGHTED splits answers by item weight (key is a label), and type GEO
+    type WEIGHTED splits answers by item weight (key is a label, weight
+    defaults to 1), and type GEO
     answers by the caller's nearest Google Cloud region (key is the region).
   EOT
   default     = []
@@ -143,9 +144,9 @@ variable "records" {
   validation {
     condition = alltrue([
       for record in var.records :
-      record.routing_policy == null || try(record.routing_policy.type != "WEIGHTED" || alltrue([for item in record.routing_policy.items : item.weight != null && item.weight >= 0]), false)
+      record.routing_policy == null || try(record.routing_policy.type != "WEIGHTED" || alltrue([for item in record.routing_policy.items : item.weight >= 0]), false)
     ])
-    error_message = "Each item of a WEIGHTED routing_policy needs a weight of 0 or more."
+    error_message = "Each weight of a WEIGHTED routing_policy must be 0 or more."
   }
 
   validation {
