@@ -1,0 +1,6 @@
+id: gcp_region
+immutable: true
+label: Region
+required: true
+type: string
+values: $values:gcp/regions

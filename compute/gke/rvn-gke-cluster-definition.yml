@@ -1,0 +1,587 @@
+global: true
+definition:
+  type: rvn-gke-cluster
+  name: GKE Cluster
+  description: Production-ready Google Kubernetes Engine cluster with private nodes, Workload Identity, a system node pool, and node auto-provisioning. Extend with the GKE Add-ons module (cert-manager, KEDA, External Secrets).
+release:
+  version: 0.1.0
+  description: Create a regional GKE cluster in a connected GCP project, with private nodes, Workload Identity, autoscaled node pools, and IAM-authorized API access for Ravion pipelines.
+module:
+  inputs:
+    - $include: ../../partials/inputs/gcp-account.yml
+    - $include: ../../partials/inputs/gcp-region.yml
+    - collapsible: true
+      description: Override the execution environment for Terraform runners. Must use the same GCP account as selected above.
+      id: execution_environment_id
+      label: Terraform execution environment
+      type: string
+      values: $values:ravion/execution_environments
+    - id: section_network
+      label: Network
+      type: section
+    - default: default
+      description: Name or self link of the VPC network.
+      id: network
+      immutable: true
+      label: VPC network
+      placeholder: default
+      required: true
+      type: string
+    - default: default
+      description: Name or self link of a subnetwork in the selected region. Nodes get IPs from its primary range.
+      id: subnetwork
+      immutable: true
+      label: Subnetwork
+      placeholder: default
+      required: true
+      type: string
+    - collapsible: true
+      description: Existing secondary range on the subnetwork for pod IPs. Leave blank to let GKE create one.
+      id: pods_secondary_range_name
+      immutable: true
+      label: Pods secondary range
+      placeholder: gke-pods
+      type: string
+    - collapsible: true
+      description: Size or CIDR of the pod range GKE creates when no secondary range is named. Leave blank for an automatic /14.
+      id: pods_ipv4_cidr_block
+      immutable: true
+      label: Pods CIDR
+      placeholder: /14
+      type: string
+    - collapsible: true
+      description: Existing secondary range on the subnetwork for Service IPs. Leave blank to let GKE create one.
+      id: services_secondary_range_name
+      immutable: true
+      label: Services secondary range
+      placeholder: gke-services
+      type: string
+    - collapsible: true
+      description: Size or CIDR of the Service range GKE creates when no secondary range is named. Leave blank to pick one automatically.
+      id: services_ipv4_cidr_block
+      immutable: true
+      label: Services CIDR
+      placeholder: /20
+      type: string
+    - collapsible: true
+      default: true
+      description: eBPF networking that enforces Kubernetes NetworkPolicy. Changing it replaces the cluster.
+      id: dataplane_v2_enabled
+      immutable: true
+      label: Dataplane V2
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Standard Gateway API CRDs and GKE's Gateway controller, for exposing Services through Google Cloud load balancers.
+      id: gateway_api_enabled
+      label: Gateway API
+      type: boolean
+    - id: section_cluster
+      label: GKE cluster
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>
+      description: Also prefixes the node service account.
+      id: name
+      immutable: true
+      label: GKE cluster name
+      patterns:
+        - message: 1-40 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+          pattern: ^[a-z]([-a-z0-9]{0,38}[a-z0-9])?$
+      required: true
+      type: string
+    - default: REGULAR
+      description: How soon GKE upgrades the control plane and nodes after a Kubernetes release.
+      id: release_channel
+      label: Release channel
+      required: true
+      type: string
+      values:
+        - label: Rapid
+          value: RAPID
+        - label: Regular
+          value: REGULAR
+        - label: Stable
+          value: STABLE
+        - label: Extended
+          value: EXTENDED
+    - collapsible: true
+      description: Minimum control plane version in MAJOR.MINOR form. Leave blank for the release channel default; GKE still upgrades past it within the channel.
+      id: kubernetes_version
+      label: Minimum Kubernetes version
+      patterns:
+        - message: A version such as 1.34 or 1.34.1-gke.1000.
+          pattern: ^[0-9]+\.[0-9]+(\.[0-9]+(-gke\.[0-9]+)?)?$
+      placeholder: "1.34"
+      type: string
+    - add_button_label: Add zone
+      collapsible: true
+      description: Zones that run nodes. Leave empty for the region's default zones, usually three.
+      id: node_locations
+      label: Node zones
+      placeholder: us-central1-a
+      type: string_array
+    - collapsible: true
+      default: true
+      description: Destroy and replacement plans fail until this is turned off.
+      id: deletion_protection_enabled
+      label: Deletion protection
+      type: boolean
+    - collapsible: true
+      description: Cloud KMS key for application-layer encryption of Kubernetes Secrets. The GKE service agent needs Encrypter/Decrypter on it. Leave blank for Google's default encryption at rest.
+      id: secrets_kms_key_name
+      label: Secrets KMS key
+      placeholder: projects/my-project/locations/us-central1/keyRings/gke/cryptoKeys/secrets
+      type: string
+    - description: Always-on nodes for cluster add-ons such as kube-dns and the GKE Add-ons controllers. With node auto-provisioning, applications that don't fit here get node pools of their own, so keep this pool small. Node counts are totals across zones.
+      id: section_capacity
+      label: Default capacity
+      type: section
+    - collapsible: true
+      default: ON_DEMAND
+      description: Spot is lower cost, but Google can reclaim nodes at any time.
+      id: system_node_capacity_type
+      label: Capacity type
+      type: string
+      values:
+        - label: On-demand
+          value: ON_DEMAND
+        - label: Spot
+          value: SPOT
+    - collapsible: true
+      default: e2-standard-2
+      id: system_node_machine_type
+      label: Machine type
+      placeholder: e2-standard-2
+      required: true
+      type: string
+    - collapsible: true
+      default: 2
+      description: Two keeps the cluster add-ons highly available.
+      id: system_node_min_nodes
+      label: Minimum nodes
+      min: 1
+      type: number
+    - collapsible: true
+      default: 3
+      description: The cluster autoscaler grows the pool up to this when its pods don't fit.
+      id: system_node_max_nodes
+      label: Maximum nodes
+      min: 1
+      type: number
+    - collapsible: true
+      description: Boot disk size for each node. Leave blank for the GKE default of 100 GB.
+      id: system_node_disk_size
+      label: Disk size (GB)
+      min: 10
+      placeholder: "100"
+      type: number
+    - collapsible: true
+      default: []
+      description: Keep pods without a matching toleration off this pool. GKE Add-ons tolerate CriticalAddonsOnly, so that taint with No schedule reserves the pool for them.
+      id: system_node_taints
+      item_inputs:
+        - id: key
+          label: Key
+          required: true
+          type: string
+        - id: value
+          label: Value
+          type: string
+        - id: effect
+          label: Effect
+          required: true
+          type: string
+          values:
+            - label: No schedule
+              value: NO_SCHEDULE
+            - label: Prefer no schedule
+              value: PREFER_NO_SCHEDULE
+            - label: No execute
+              value: NO_EXECUTE
+      item_label: Taint
+      item_title:
+        fallback: Taint
+        template: "{key}"
+      label: Taints
+      type: object_array
+    - default: {}
+      description: Autoscaled On-demand or Spot node pools for workloads that need a specific machine type or separate capacity. A change GKE can only make by recreating a pool brings up its replacement first.
+      id: node_pools
+      item_inputs:
+        - default: ON_DEMAND
+          description: Spot is lower cost, but Google can reclaim nodes at any time.
+          id: capacity_type
+          label: Capacity type
+          required: true
+          type: string
+          values:
+            - label: On-demand
+              value: ON_DEMAND
+            - label: Spot
+              value: SPOT
+        - default: e2-standard-4
+          id: machine_type
+          label: Machine type
+          placeholder: e2-standard-4
+          required: true
+          type: string
+        - default: 0
+          description: Total across zones. Zero lets the pool scale down to nothing when idle.
+          id: min_nodes
+          label: Minimum nodes
+          min: 0
+          required: true
+          type: number
+        - default: 3
+          description: Total across zones.
+          id: max_nodes
+          label: Maximum nodes
+          min: 1
+          required: true
+          type: number
+        - collapsible: true
+          description: Leave blank for the GKE default of 100 GB.
+          id: disk_size_gb
+          label: Disk size (GB)
+          min: 10
+          type: number
+        - collapsible: true
+          default: {}
+          id: labels
+          label: Node labels
+          type: keyvalue
+        - collapsible: true
+          default: []
+          id: taints
+          item_inputs:
+            - id: key
+              label: Key
+              required: true
+              type: string
+            - id: value
+              label: Value
+              type: string
+            - id: effect
+              label: Effect
+              required: true
+              type: string
+              values:
+                - label: No schedule
+                  value: NO_SCHEDULE
+                - label: Prefer no schedule
+                  value: PREFER_NO_SCHEDULE
+                - label: No execute
+                  value: NO_EXECUTE
+          item_label: Taint
+          item_title:
+            fallback: Taint
+            template: "{key}"
+          label: Taints
+          type: object_array
+      item_label: Node pool
+      item_title:
+        template: "{key}"
+      key:
+        description: GKE appends a suffix so replacements can start before the old pool is removed.
+        label: Node pool name
+        patterns:
+          - message: 1-13 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number. "system" is reserved.
+            pattern: ^[a-z]([-a-z0-9]{0,11}[a-z0-9])?$
+        placeholder: batch-spot
+      label: Additional node pools
+      required: false
+      type: object_map
+    - id: section_autoscaling
+      label: Node auto-provisioning
+      type: section
+    - default: true
+      description: GKE creates node pools shaped for pending pods that fit no existing pool, and deletes them when they empty. Turn off to run only the pools above.
+      id: node_auto_provisioning_enabled
+      label: Node auto-provisioning
+      type: boolean
+    - default: 100
+      description: Cluster-wide, counting every node pool.
+      id: node_auto_provisioning_cpu_limit
+      label: vCPU limit
+      min: 1
+      show_when:
+        node_auto_provisioning_enabled: true
+      type: number
+    - default: 400
+      description: Cluster-wide, counting every node pool.
+      id: node_auto_provisioning_memory_limit_gb
+      label: Memory limit (GB)
+      min: 1
+      show_when:
+        node_auto_provisioning_enabled: true
+      type: number
+    - collapsible: true
+      default: BALANCED
+      description: Optimize utilization removes underused nodes sooner, at the cost of more pod rescheduling.
+      id: autoscaling_profile
+      label: Autoscaling profile
+      type: string
+      values:
+        - label: Balanced
+          value: BALANCED
+        - label: Optimize utilization
+          value: OPTIMIZE_UTILIZATION
+    - id: section_endpoint
+      label: API endpoint
+      type: section
+    - collapsible: true
+      default: true
+      description: Every request is still authorized by IAM. Ravion pipelines use it to reach the API without a network path into the VPC; turning it off requires running them inside the VPC.
+      id: dns_endpoint_enabled
+      label: DNS endpoint access from outside the VPC
+      type: boolean
+    - collapsible: true
+      default: false
+      id: ip_endpoint_public_access_enabled
+      label: Public IP endpoint
+      type: boolean
+    - add_button_label: Add CIDR block
+      collapsible: true
+      description: IPv4 ranges allowed to reach the IP endpoints. Empty allows only the VPC.
+      id: master_authorized_cidr_blocks
+      label: Authorized networks
+      placeholder: 203.0.113.0/24
+      type: string_array
+    - id: section_cluster_access
+      label: Access
+      type: section
+    - collapsible: true
+      default: true
+      description: Grant the Ravion runner service account Kubernetes Engine Admin, which the GKE Add-ons module needs to install Helm charts. GKE roles apply to every cluster in the project.
+      id: ravion_runner_cluster_admin_enabled
+      label: Ravion runner cluster admin
+      type: boolean
+    - collapsible: true
+      description: Leave blank for ravion-runner@<project>.iam.gserviceaccount.com, created by Ravion's GCP setup.
+      id: ravion_runner_service_account_email
+      label: Ravion runner service account
+      placeholder: ravion-runner@my-project-123456.iam.gserviceaccount.com
+      show_when:
+        ravion_runner_cluster_admin_enabled: true
+      type: string
+    - collapsible: true
+      default: {}
+      description: People and automation that need the Kubernetes API. GKE roles are granted on the project.
+      id: access_members
+      item_inputs:
+        - id: member
+          label: IAM principal
+          placeholder: group:platform-admins@example.com
+          required: true
+          type: string
+        - default: roles/container.developer
+          id: role
+          label: Role
+          required: true
+          type: string
+          values:
+            - label: Kubernetes Engine Viewer
+              value: roles/container.viewer
+            - label: Kubernetes Engine Developer
+              value: roles/container.developer
+            - label: Kubernetes Engine Admin
+              value: roles/container.admin
+            - label: Kubernetes Engine Cluster Viewer
+              value: roles/container.clusterViewer
+      item_label: Access member
+      item_title:
+        template: "{key}"
+      key:
+        label: Member key
+        patterns:
+          - message: Lowercase letters, numbers, and hyphens only.
+            pattern: ^[a-z0-9-]+$
+        placeholder: platform-admins
+      label: Access members
+      required: false
+      type: object_map
+    - id: section_observability
+      label: Observability
+      type: section
+    - add_button_label: Add component
+      collapsible: true
+      default:
+        - SYSTEM_COMPONENTS
+        - WORKLOADS
+      description: Logs GKE sends to Cloud Logging. System components are required whenever any other is selected; remove all entries to turn logging off.
+      id: logging_components
+      label: Logged components
+      type: string_array
+      values:
+        - label: System components
+          value: SYSTEM_COMPONENTS
+        - label: Workloads
+          value: WORKLOADS
+        - label: API server
+          value: APISERVER
+        - label: Controller manager
+          value: CONTROLLER_MANAGER
+        - label: Scheduler
+          value: SCHEDULER
+    - collapsible: true
+      default: true
+      description: Google Cloud Managed Service for Prometheus, billed per sample ingested.
+      id: managed_prometheus_enabled
+      label: Managed Prometheus
+      type: boolean
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings-gcp.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: compute/gke
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        name: << module.input.name >>
+        project_id: << module.input.project_id >>
+        region: << module.input.gcp_region >>
+        node_locations: '<< len(module.input.node_locations) > 0 ? module.input.node_locations : nil >>'
+        network: << module.input.network >>
+        subnetwork: << module.input.subnetwork >>
+        pods_secondary_range_name: << module.input.pods_secondary_range_name >>
+        pods_ipv4_cidr_block: << module.input.pods_ipv4_cidr_block >>
+        services_secondary_range_name: << module.input.services_secondary_range_name >>
+        services_ipv4_cidr_block: << module.input.services_ipv4_cidr_block >>
+        dataplane_v2_enabled: << module.input.dataplane_v2_enabled >>
+        gateway_api_enabled: << module.input.gateway_api_enabled >>
+        release_channel: << module.input.release_channel >>
+        kubernetes_version: << module.input.kubernetes_version >>
+        deletion_protection_enabled: << module.input.deletion_protection_enabled >>
+        secrets_kms_key_name: << module.input.secrets_kms_key_name >>
+        system_node_pool:
+          capacity_type: << module.input.system_node_capacity_type >>
+          machine_type: << module.input.system_node_machine_type >>
+          min_nodes: << module.input.system_node_min_nodes >>
+          max_nodes: << module.input.system_node_max_nodes >>
+          disk_size_gb: << module.input.system_node_disk_size >>
+          taints: << module.input.system_node_taints || [] >>
+        node_pools: << module.input.node_pools || {} >>
+        node_auto_provisioning_enabled: << module.input.node_auto_provisioning_enabled >>
+        node_auto_provisioning_cpu_limit: '<< module.input.node_auto_provisioning_cpu_limit != nil ? module.input.node_auto_provisioning_cpu_limit : 100 >>'
+        node_auto_provisioning_memory_limit_gb: '<< module.input.node_auto_provisioning_memory_limit_gb != nil ? module.input.node_auto_provisioning_memory_limit_gb : 400 >>'
+        autoscaling_profile: << module.input.autoscaling_profile >>
+        dns_endpoint_enabled: << module.input.dns_endpoint_enabled >>
+        ip_endpoint_public_access_enabled: << module.input.ip_endpoint_public_access_enabled >>
+        master_authorized_cidr_blocks: << module.input.master_authorized_cidr_blocks || [] >>
+        ravion_runner_cluster_admin_enabled: << module.input.ravion_runner_cluster_admin_enabled >>
+        ravion_runner_service_account_email: << module.input.ravion_runner_service_account_email >>
+        access_members: << module.input.access_members || {} >>
+        logging_components: << module.input.logging_components || [] >>
+        managed_prometheus_enabled: << module.input.managed_prometheus_enabled >>
+        labels:
+          $include: ../../partials/stack/ravion-tags.yml
+  ui:
+    links: |-
+      <<
+      (stack.output.cluster_name ? [{"name":"GKE console","href":"https://console.cloud.google.com/kubernetes/clusters/details/" + stack.output.region + "/" + stack.output.cluster_name + "/details?project=" + stack.output.project_id}] : [])
+      >>
+  readme: |-
+    Production-ready Google Kubernetes Engine (GKE) cluster with private nodes, Workload Identity, a system node pool, and node auto-provisioning. Extend with the **GKE Add-ons** module (cert-manager, KEDA, External Secrets).
+
+    ## Overview
+
+    This module creates a regional GKE Standard cluster in a connected GCP account's project and everything a working cluster needs:
+
+    1. **Kubernetes Engine API** - enabled on the project if it isn't already (left enabled on destroy)
+    2. **Node service account** - a dedicated, least-privilege account for nodes instead of the Compute Engine default account
+    3. **Cluster** - a regional, VPC-native control plane with private nodes, Workload Identity, Dataplane V2, the Gateway API, Cloud Logging, and Managed Prometheus
+    4. **Node pools** - an always-on system pool, any additional pools, and optional node auto-provisioning
+    5. **Access** - Kubernetes Engine Admin for Ravion's runner service account, and any access members you add
+
+    It talks only to Google Cloud APIs, so it provisions in a single apply. Add cert-manager, KEDA, or the External Secrets Operator with the separate **GKE Add-ons** module.
+
+    Terraform source: [ravionhq/modules/compute/gke](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/gke)
+
+    ## Use cases
+
+    | Scenario | GKE cluster helps by... |
+    | --- | --- |
+    | Running Kubernetes workloads on Google Cloud | Providing a regional control plane and ready-to-use nodes |
+    | Mixed or bursty workloads | Creating right-sized node pools on demand with node auto-provisioning |
+    | Lower-cost batch work | Adding Spot node pools that scale to zero |
+    | Calling Google Cloud APIs from pods | Giving each Kubernetes service account its own identity through Workload Identity |
+    | Meeting security requirements | Keeping nodes private, NetworkPolicy enforced, and nodes off the project's editor account |
+
+    ## Compute
+
+    ### Default capacity
+
+    Every cluster gets a system node pool for cluster components, such as kube-dns and the GKE Add-ons controllers. It defaults to 2-3 On-demand `e2-standard-2` nodes, labelled `role=system`, which GKE Add-ons pods prefer. Node counts are totals across the cluster's zones; GKE starts one node per zone and the cluster autoscaler keeps the pool within the bounds.
+
+    - **With node auto-provisioning** (on by default): applications can use spare room on this pool, and pods that don't fit make GKE create a node pool shaped for them. Keep this pool small. Add the `CriticalAddonsOnly` taint with No schedule to reserve it for add-ons.
+    - **Without node auto-provisioning**: only the system pool and additional pools exist, so size them for your applications too.
+
+    ### Additional node pools
+
+    Add autoscaled pools for application workloads through the **Additional node pools** form. Each pool chooses On-demand or Spot capacity, a machine type, total node bounds, disk size, labels, and taints. Spot pools may place nodes in whichever zone has capacity. A change GKE can only make by recreating the pool, such as the machine type, brings up the replacement before the old pool is drained and deleted.
+
+    ### Node auto-provisioning
+
+    Node auto-provisioning is GKE's counterpart to Karpenter: when pods are pending and fit no existing pool, GKE creates a node pool sized for them and deletes it once it empties. The vCPU and memory limits cap the whole cluster, every pool included. Auto-provisioned pools use the same node service account, Shielded VM settings, and auto-repair and auto-upgrade as the pools above.
+
+    ## Networking
+
+    The cluster is VPC-native in the chosen network and subnetwork; both default to the project's `default` network. GKE creates secondary ranges for pods and Services on the subnetwork unless you name existing ones. Nodes have no external IPs, so they need Cloud NAT on the subnetwork to pull public images.
+
+    Dataplane V2 (on by default) enforces Kubernetes NetworkPolicy. The Gateway API (on by default) installs the standard Gateway CRDs and GKE's Gateway controller, which programs Google Cloud load balancers.
+
+    ## Cluster access
+
+    The control plane has two kinds of endpoint:
+
+    - **DNS-based endpoint**: open to requests from outside the VPC by default, and every request is still authorized by IAM. Ravion pipelines, including the GKE Add-ons module, reach the Kubernetes API through it, so the Terraform runner needs no network path into the VPC.
+    - **IP-based endpoints**: private by default. Turn on **Public IP endpoint** to expose one, and restrict both with **Authorized networks**.
+
+    The Ravion runner service account (`ravion-runner@<project>.iam.gserviceaccount.com`) is granted Kubernetes Engine Admin by default, so pipelines can install charts that create RBAC objects and CRDs. Grant people and automation access with **Access members**. GKE authorizes the Kubernetes API with project IAM roles, so every role here covers all clusters in the project; narrow access within the cluster with Kubernetes RBAC.
+
+    ### Permissions the runner needs
+
+    Ravion's GCP setup gives the runner service account `roles/editor`, which cannot change IAM policies. This module grants the node service account and the Ravion runner their project roles, so the runner also needs `roles/resourcemanager.projectIamAdmin` (`runner_sa_roles` in the setup). Without it, set `node_service_account_creation_enabled: false` and `node_service_account_email` under **Advanced Terraform variables**, turn off **Ravion runner cluster admin**, and grant those roles yourself.
+
+    ## Security
+
+    - **Private nodes**: nodes have no external IPs, and the IP endpoint is private unless you enable public access
+    - **Workload Identity**: pods get Google credentials for their own Kubernetes service account from the GKE metadata server, never the node's
+    - **Least-privilege nodes**: nodes run as a dedicated service account with `roles/container.defaultNodeServiceAccount` and Artifact Registry read access
+    - **Shielded nodes**: Secure Boot and integrity monitoring on every node
+    - **Secrets encryption**: Kubernetes Secrets are encrypted at rest by Google; add a Cloud KMS key for application-layer encryption
+    - **Deletion protection**: on by default, so any plan that would delete or replace the cluster fails until it is turned off
+
+    ## Observability
+
+    GKE sends system and workload logs to Cloud Logging and collects metrics with Google Cloud Managed Service for Prometheus. Adjust the logged components, or turn Managed Prometheus off, in the Observability section. The module's links open the cluster in the Google Cloud console.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | --- | --- | --- | --- |
+    | GCP account | Yes | - | Connected GCP account |
+    | Project ID | Yes | - | Project of that account |
+    | Region | Yes | - | Region of the regional cluster |
+    | VPC network | Yes | `default` | Network the cluster runs in |
+    | Subnetwork | Yes | `default` | Regional subnetwork for nodes |
+    | GKE cluster name | Yes | `{project}-{env}` | Name of the cluster |
+    | Release channel | Yes | Regular | How soon GKE upgrades the cluster |
+    | Deletion protection | No | `true` | Blocks deletion until turned off |
+    | Default capacity | No | 2-3 `e2-standard-2` | Capacity type, machine type, node bounds, disk size, and taints |
+    | Additional node pools | No | - | On-demand or Spot autoscaled pools |
+    | Node auto-provisioning | No | On, 100 vCPU / 400 GB | Node pools created for pending pods |
+    | DNS endpoint access | No | `true` | IAM-authorized API access from outside the VPC |
+    | Public IP endpoint | No | `false` | Exposes the IP endpoint to authorized networks |
+    | Ravion runner cluster admin | No | `true` | Kubernetes Engine Admin for Ravion pipelines |
+    | Access members | No | - | Extra IAM principals with GKE roles |
+    | Logged components | No | System, workloads | Logs sent to Cloud Logging |
+    | Tags | No | Ravion defaults | Applied as GCP labels, lowercased |
+
+    ## Learn more
+
+    - [GKE documentation](https://cloud.google.com/kubernetes-engine/docs) - Official documentation
+    - [Node auto-provisioning](https://cloud.google.com/kubernetes-engine/docs/how-to/node-auto-provisioning) - Node pools created on demand
+    - [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) - Google identities for pods
+    - [Control plane access](https://cloud.google.com/kubernetes-engine/docs/concepts/network-isolation) - DNS-based and IP-based endpoints
