@@ -1,0 +1,20 @@
+- id: section_gcp
+  label: Google Cloud project & region
+  type: section
+- description: Ravion GCP account (gcpact_...) or its given ID. Terraform runs with this connection's runner service account.
+  id: gcp_account_id
+  immutable: true
+  label: GCP account
+  placeholder: gcpact_123
+  required: true
+  type: string
+- description: Project the connected GCP account belongs to.
+  id: gcp_project_id
+  immutable: true
+  label: Project ID
+  patterns:
+    - message: 6-30 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+      pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+  placeholder: acme-prod-123
+  required: true
+  type: string

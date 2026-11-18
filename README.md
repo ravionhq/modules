@@ -42,6 +42,9 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `networking/` | `alb`             | Standalone AWS Application Load Balancer with shared HTTP/HTTPS listeners and alarms enabled by default | v1.0.0  |
 | `networking/` | `alternat`        | Highly available alterNAT NAT instances for any VPC, with route table discovery, automatic per-AZ placement, and failover to an existing or standby NAT gateway (includes `rvn-aws-alternat` module definition) | Unreleased |
 | `networking/` | `eips`            | AWS Elastic IP pool with deterministic Name tags and `/32` CIDR outputs | v1.0.0  |
+| `networking/` | `gcp_dns`         | Google Cloud DNS public and private zones, records with weighted and geolocation routing, query logging, and DNSSEC (includes `rvn-gcp-dns` module definition) | Unreleased |
+| `networking/` | `gcp_network_lb`  | Google Cloud regional passthrough Network Load Balancer (external or internal) with health check, backend service, static IP, and backend firewall rules | Unreleased |
+| `networking/` | `gcp_vpc`         | Google Cloud custom-mode VPC network with regional subnetworks, GKE secondary ranges, Cloud NAT, Private Service Access, firewall rules, and flow logs (includes `rvn-gcp-network` module definition) | Unreleased |
 | `networking/` | `nlb`             | AWS Network Load Balancers                                             | v1.0.0  |
 | `networking/` | `route53`         | AWS Route53 hosted zones and records                                   | v1.0.0  |
 | `networking/` | `security-groups` | AWS Security Groups                                                    | v1.0.0  |
@@ -93,6 +96,8 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-web` | EKS Web Service | v1.19.0 | `compute/eks_service/` |
 | `rvn-eks-worker` | EKS Worker | v1.2.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
+| `rvn-gcp-dns` | Cloud DNS | v0.1.0 | `networking/gcp_dns/` |
+| `rvn-gcp-network` | GCP VPC Network | v0.1.0 | `networking/gcp_vpc/` |
 | `rvn-lambda` | Lambda Function | v2.4.0 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.6.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.1 | `database/rds-proxy/` |

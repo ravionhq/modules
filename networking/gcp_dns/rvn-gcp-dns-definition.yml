@@ -1,0 +1,363 @@
+definition:
+  type: rvn-gcp-dns
+  name: Cloud DNS
+  description: Manage Cloud DNS public and private zones, DNS records, query logging, and DNSSEC.
+release:
+  version: 0.1.0
+  description: Initial Cloud DNS module with public and private zones, records with weighted and geolocation routing, query logging, and DNSSEC.
+module:
+  outputs:
+    - id: zone_name
+      type: string
+      label: Managed zone name
+    - id: zone_id
+      type: string
+      label: Managed zone ID
+    - id: dns_name
+      type: string
+      label: DNS name
+      description: The zone's domain, with a trailing dot.
+    - id: name_servers
+      type: string_array
+      label: Name servers
+    - id: dnssec_ds_records
+      type: string_array
+      label: DNSSEC DS records
+      description: Publish these at the registrar or parent zone.
+  inputs:
+    - $include: ../../partials/inputs/gcp-account.yml
+    - $merge:
+        - ../../partials/inputs/gcp-region.yml
+      description: Cloud DNS zones are global. The region only sets where the Terraform runner and provider operate.
+    - id: section_zone
+      label: Managed zone
+      type: section
+    - default: true
+      description: Turn off to manage records in a zone that already exists in this project.
+      id: zone_creation_enabled
+      immutable: true
+      label: Create managed zone
+      type: boolean
+    - description: Name of the existing managed zone resource, not its domain.
+      id: zone_name
+      immutable: true
+      label: Managed zone name
+      patterns:
+        - message: 1-63 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+          pattern: ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$
+      placeholder: example-com
+      required: true
+      show_when:
+        zone_creation_enabled: false
+      type: string
+    - id: dns_name
+      immutable: true
+      label: Domain name
+      patterns:
+        - message: Invalid domain name, for example example.com.
+          pattern: ^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.?$
+      placeholder: example.com
+      required: true
+      show_when:
+        zone_creation_enabled: true
+      type: string
+    - collapsible: true
+      default: Managed in Ravion
+      id: description
+      label: Description
+      show_when:
+        zone_creation_enabled: true
+      type: string
+    - collapsible: true
+      default: false
+      description: Delete every record, including ones Terraform does not manage, when the zone is destroyed.
+      id: record_force_destroy_enabled
+      label: Force destroy records
+      show_when:
+        zone_creation_enabled: true
+      type: boolean
+    - default: false
+      description: Resolvable only from the VPC networks below.
+      id: private_zone_enabled
+      immutable: true
+      label: Private zone
+      show_when:
+        zone_creation_enabled: true
+      type: boolean
+    - add_button_label: Add network
+      description: Network self links or IDs, such as the Network ID output of a GCP VPC Network module.
+      id: private_visibility_networks
+      label: VPC networks
+      placeholder: projects/acme-prod-123/global/networks/acme-prod
+      required: true
+      show_when:
+        zone_creation_enabled: true
+        private_zone_enabled: true
+      type: string_array
+    - id: section_records
+      label: DNS records
+      type: section
+    - id: records
+      item_inputs:
+        - id: type
+          label: Record type
+          required: true
+          type: string
+          values:
+            - value: A
+            - value: AAAA
+            - value: CNAME
+            - value: MX
+            - value: TXT
+            - value: CAA
+            - value: NS
+            - value: PTR
+            - value: SRV
+            - value: SPF
+            - value: HTTPS
+            - value: SVCB
+            - value: NAPTR
+            - value: SSHFP
+            - value: TLSA
+            - value: DS
+        - description: "@ for the zone apex, a name relative to the zone (app), or a fully qualified name."
+          id: name
+          label: Record name
+          placeholder: www
+          required: true
+          type: string
+        - default: simple
+          id: routing_policy_type
+          label: Routing policy
+          required: true
+          type: string
+          values:
+            - label: Simple
+              description: Return the same answer for every query.
+              value: simple
+            - label: Weighted round robin
+              description: Split answers by weight, for gradual migrations or blue/green shifts.
+              value: WEIGHTED
+            - label: Geolocation
+              description: Answer with the set for the Google Cloud region nearest the caller.
+              value: GEO
+        - add_button_label: Add value
+          description: CNAME records take one value, a fully qualified name ending in a dot.
+          id: rrdatas
+          label: Record values
+          required: true
+          show_when:
+            routing_policy_type: simple
+          type: string_array
+        - id: routing_items
+          item_inputs:
+            - description: A label for weighted answers, or the Google Cloud region for geolocation answers.
+              id: key
+              label: Name or region
+              placeholder: us-central1
+              required: true
+              type: string
+            - description: Weighted round robin only. Relative share of answers; 0 stops sending traffic to this set.
+              id: weight
+              label: Weight
+              min: 0
+              required: false
+              type: number
+            - add_button_label: Add value
+              id: rrdatas
+              label: Record values
+              required: true
+              type: string_array
+          item_label: Answer set
+          item_title:
+            fallback: Answer set
+            template: "{key}"
+          label: Answer sets
+          required: true
+          show_when:
+            routing_policy_type:
+              - WEIGHTED
+              - GEO
+          type: object_array
+        - collapsible: true
+          default: 300
+          description: Seconds. Lower values update faster but increase query volume.
+          id: ttl
+          label: TTL
+          min: 0
+          type: number
+      item_label: Record
+      item_title:
+        fallback: Record
+        template: "{type} {name}"
+      label: Records
+      required: false
+      type: object_array
+    - id: section_logging
+      label: Query logging
+      type: section
+    - default: false
+      description: Logs to Cloud Logging. For a private zone this creates a DNS server policy on its networks, which fails if a network already has one.
+      id: query_logging_enabled
+      label: Query logging
+      type: boolean
+    - collapsible: true
+      description: Defaults to <zone name>-logging.
+      id: server_policy_name
+      label: DNS server policy name
+      required: false
+      show_when:
+        zone_creation_enabled: true
+        private_zone_enabled: true
+        query_logging_enabled: true
+      type: string
+    - id: section_dnssec
+      label: DNSSEC
+      show_when:
+        zone_creation_enabled: true
+        private_zone_enabled: false
+      type: section
+    - default: false
+      description: Google manages the signing keys. Publish the DS record output at your registrar to complete the chain of trust.
+      id: dnssec_enabled
+      label: DNSSEC signing
+      show_when:
+        zone_creation_enabled: true
+        private_zone_enabled: false
+      type: boolean
+    - collapsible: true
+      default: nsec3
+      id: dnssec_non_existence
+      label: Authenticated denial of existence
+      show_when:
+        zone_creation_enabled: true
+        private_zone_enabled: false
+        dnssec_enabled: true
+      type: string
+      values:
+        - label: NSEC3
+          description: Prevents listing the zone's names by walking it.
+          value: nsec3
+        - label: NSEC
+          value: nsec
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/labels.yml
+    - $include: ../../partials/inputs/gcp-terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: networking/gcp_dns
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        description: '<< module.input.description || "Managed in Ravion" >>'
+        dns_name: << module.input.dns_name >>
+        dnssec_enabled: << module.input.dnssec_enabled == true >>
+        dnssec_non_existence: '<< module.input.dnssec_non_existence || "nsec3" >>'
+        labels:
+          $include: ../../partials/stack/ravion-labels.yml
+        private_visibility_networks: << module.input.private_visibility_networks || [] >>
+        private_zone_enabled: << module.input.private_zone_enabled == true >>
+        project_id: << module.input.gcp_project_id >>
+        query_logging_enabled: << module.input.query_logging_enabled >>
+        record_force_destroy_enabled: << module.input.record_force_destroy_enabled == true >>
+        records: >-
+          << map(module.input.records ?? [], ({"name": #.name, "type": #.type, "ttl": (#.ttl ?? 300),
+          "rrdatas": (#.routing_policy_type == "WEIGHTED" || #.routing_policy_type == "GEO" ? [] : (#.rrdatas ?? [])),
+          "routing_policy": (#.routing_policy_type == "WEIGHTED" || #.routing_policy_type == "GEO" ?
+          {"type": #.routing_policy_type, "items": (#.routing_items ?? [])} : nil)})) >>
+        region: << module.input.gcp_region >>
+        server_policy_name: << module.input.server_policy_name >>
+        zone_creation_enabled: << module.input.zone_creation_enabled >>
+        zone_name: << module.input.zone_name >>
+  ui:
+    links:
+      - name: Zone in Google Cloud console
+        href: https://console.cloud.google.com/net-services/dns/zones/<< stack.output.zone_name >>/details?project=<< module.input.gcp_project_id >>
+      - name: DNS query logs in Logs Explorer
+        href: https://console.cloud.google.com/logs/query;query=resource.type%3D%22dns_query%22?project=<< module.input.gcp_project_id >>
+  readme: |
+    Manage Cloud DNS public and private zones, DNS records, query logging, and DNSSEC.
+
+    ## Overview
+
+    Use this module to create a Cloud DNS public or private managed zone, manage DNS records in a created or existing zone, and optionally turn on query logging and DNSSEC signing.
+
+    A managed zone is Cloud DNS's container for the records of one domain, served by Google's name servers. It is the Google Cloud counterpart of a Route 53 hosted zone.
+
+    Terraform source: [ravionhq/modules/networking/gcp_dns](https://github.com/ravionhq/modules/tree/$local.module_tag/networking/gcp_dns)
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Public domain hosting | Create a zone and delegate to its name servers from your registrar. |
+    | Application DNS | Create A, AAAA, CNAME, TXT, MX, and other records for apps and load balancers. |
+    | Existing zone | Manage records in a zone that already exists in the project. |
+    | Private service discovery | Create a private zone resolvable only from chosen VPC networks. |
+    | Traffic shifting | Split answers by weight or answer by the caller's nearest region. |
+
+    ## Zone mode
+
+    Create managed zone creates a new public or private zone for Domain name. A public zone returns four Google name servers in the Name servers output; delegate to them from your registrar or parent zone. A private zone needs at least one VPC network, such as the Network ID output of a GCP VPC Network module.
+
+    Turn Create managed zone off to manage records in an existing zone of the same project. In that mode, provide the zone's resource name (for example `example-com`), not its domain.
+
+    ## DNS records
+
+    Each record has a type, a name, and either record values or a routing policy. Names can be `@` for the zone apex, a name relative to the zone (`app` becomes `app.example.com.`), or a fully qualified name. A record whose fully qualified name is outside the zone fails the plan. Each name and type pair can appear once; use a routing policy to return different answers.
+
+    | Routing policy | Behavior |
+    | --- | --- |
+    | Simple | Return the same values for every query. |
+    | Weighted round robin | Each answer set has a weight; answers are returned in proportion. A weight of 0 stops traffic to that set. |
+    | Geolocation | Each answer set is keyed by a Google Cloud region; callers get the set for the nearest region. |
+
+    Cloud DNS has no alias records. Point A records at a load balancer's static IP address, or use a CNAME for names below the apex.
+
+    ## Query logging
+
+    Query logs go to Cloud Logging under the `dns_query` resource type.
+
+    - **Public zones:** the module turns on logging on the zone itself.
+    - **Private zones:** Cloud DNS logs private queries per VPC network through a DNS server policy. The module creates one with logging on the zone's networks. A network can have only one server policy, so this fails when a network already has one; turn on logging in that policy instead.
+
+    ## DNSSEC
+
+    DNSSEC signing is available for public zones. Google creates and rotates the signing keys, so no key management is needed. After turning it on, publish the DS record from the DNSSEC DS records output at your registrar. NSEC3 (default) prevents listing the zone's names by walking it.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | GCP account | Yes | None | Ravion GCP account the Terraform runner uses. |
+    | Project ID | Yes | None | Project that owns the zone. |
+    | Region | Yes | None | Runner region. Cloud DNS zones are global. |
+    | Create managed zone | No | true | Creates a new zone instead of using an existing one. |
+    | Managed zone name | When Create managed zone is off | None | Resource name of the existing zone. |
+    | Domain name | When Create managed zone is on | None | Domain the zone serves. |
+    | Description | No | Managed in Ravion | Stored on the created zone. |
+    | Force destroy records | No | false | Deletes every record when the created zone is destroyed. |
+    | Private zone | No | false | Creates a private zone. |
+    | VPC networks | For private zones | None | Networks that can resolve the private zone. |
+    | Records | No | None | Record sets to create. |
+    | Query logging | No | false | Logs queries to Cloud Logging. |
+    | DNS server policy name | No | `<zone name>-logging` | Server policy for private-zone logging. |
+    | DNSSEC signing | No | false | Public zones only. |
+    | Authenticated denial of existence | No | NSEC3 | NSEC3 or NSEC. |
+    | Labels | No | Standard Ravion labels | Labels on the zone. |
+    | Terraform execution environment | No | None | Optional runner environment override. |
+    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off overrides. |
+
+    ## Design decisions
+
+    Zone identity inputs are immutable because changing them creates a different zone. Records, logging, DNSSEC, and labels stay editable.
+
+    The module derives the zone resource name from the domain (`example.com` becomes `example-com`), since Cloud DNS zone names cannot contain dots.
+
+    ## Learn more
+
+    - [Cloud DNS overview](https://cloud.google.com/dns/docs/overview)
+    - [Records and routing policies](https://cloud.google.com/dns/docs/zones/manage-routing-policies)
+    - [DNSSEC in Cloud DNS](https://cloud.google.com/dns/docs/dnssec)
+    - [Cloud DNS logging](https://cloud.google.com/dns/docs/monitoring)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/networking/gcp_dns)

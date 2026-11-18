@@ -1,0 +1,27 @@
+# Google Cloud variant of opentofu-stack.yml. Runs target a connected GCP
+# account and region, the same target mode as gce step infrastructure, or a
+# GCP execution environment. The runner's attached service account provides
+# Application Default Credentials to the google provider.
+type: opentofu
+ravion_state_backend_workspace: >-
+  << module.input.ravion_state_backend_workspace || project.given_id + "-" + environment.given_id + "-"
+  + module.given_id + "-" + stack.id>>
+pipelines:
+  defaults:
+    input:
+      base_path: $with.base_path
+      branch: main
+      execution_environment_id: << module.input.execution_environment_id >>
+      gcp_account_id: "<< module.input.execution_environment_id ? null : module.input.gcp_account_id >>"
+      gcp_region: "<< module.input.execution_environment_id ? null : module.input.gcp_region >>"
+      ref: $local.module_tag
+      repo: https://github.com/ravionhq/modules
+      stack_id: <<stack.id>>
+      terraform_variables: $with.terraform_variables
+      tool: opentofu
+      tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
+    variant: standard
+  change:
+    pipeline_id: << defaults.change_pipeline_id >>
+  destroy:
+    pipeline_id: << defaults.destroy_pipeline_id >>

@@ -1,0 +1,58 @@
+id: gcp_region
+immutable: true
+label: Region
+required: true
+type: string
+values:
+  - value: us-central1
+    group_label: Americas
+  - value: us-east1
+    group_label: Americas
+  - value: us-east4
+    group_label: Americas
+  - value: us-east5
+    group_label: Americas
+  - value: us-south1
+    group_label: Americas
+  - value: us-west1
+    group_label: Americas
+  - value: us-west2
+    group_label: Americas
+  - value: us-west3
+    group_label: Americas
+  - value: us-west4
+    group_label: Americas
+  - value: northamerica-northeast1
+    group_label: Americas
+  - value: northamerica-northeast2
+    group_label: Americas
+  - value: southamerica-east1
+    group_label: Americas
+  - value: europe-west1
+    group_label: Europe
+  - value: europe-west2
+    group_label: Europe
+  - value: europe-west3
+    group_label: Europe
+  - value: europe-west4
+    group_label: Europe
+  - value: europe-west6
+    group_label: Europe
+  - value: europe-west9
+    group_label: Europe
+  - value: europe-north1
+    group_label: Europe
+  - value: europe-central2
+    group_label: Europe
+  - value: asia-east1
+    group_label: Asia Pacific
+  - value: asia-northeast1
+    group_label: Asia Pacific
+  - value: asia-south1
+    group_label: Asia Pacific
+  - value: asia-southeast1
+    group_label: Asia Pacific
+  - value: australia-southeast1
+    group_label: Asia Pacific
+  - value: me-west1
+    group_label: Middle East
