@@ -1,0 +1,24 @@
+# Terraform variables shared by every GKE workload stack. All of them point at
+# the compute/gke_service root module; web adds the Gateway variables on top.
+#
+# The Artifact Registry repository exists only for the Dockerfile and Railpack
+# build sources. On the image_registry path nothing is built here.
+...overrides: << module.input.advanced_terraform_variables >>
+name: << module.input.name >>
+project_id: << module.input.project_id >>
+region: << module.input.gcp_region >>
+artifact_registry_repository_creation_enabled: << module.input.build_source == "dockerfile" || module.input.build_source == "railpack" >>
+artifact_registry_repository_id: << module.input.artifact_registry_repository_id || module.input.name >>
+artifact_registry_vulnerability_scanning_enabled: '<< module.input.artifact_registry_vulnerability_scanning_enabled != nil ? module.input.artifact_registry_vulnerability_scanning_enabled : true >>'
+artifact_registry_max_image_count: '<< module.input.artifact_registry_max_image_count != nil ? module.input.artifact_registry_max_image_count : 100 >>'
+# Destroying the stack uninstalls the workload's Helm release first, under the
+# same identity the deploy installs it with.
+workload_release_cleanup_enabled: true
+cluster_name: << module.input.cluster_name >>
+dns_endpoint: << module.input.dns_endpoint >>
+release_name: << module.input.name >>
+release_namespace: << module.input.namespace >>
+workload_identity_pool: << module.input.workload_identity_pool >>
+workload_identity_project_roles: '<< module.input.workload_identity_project_roles != nil ? module.input.workload_identity_project_roles : [] >>'
+labels:
+  $include: ./ravion-tags.yml

@@ -1,0 +1,20 @@
+# Cloud Logging source for a GKE workload's containers.
+#
+# PLATFORM DEPENDENCY: there is no `cloud_logging` log source yet (EKS uses
+# `eks_loki` and `cloudwatch`). Modeled on the CloudWatch source: a GCP account
+# and project plus a Logging query filter. GKE ships container stdout and
+# stderr to Cloud Logging when the cluster logs WORKLOADS, which is the default.
+id: workload_logs
+name: Containers
+enabled: << module.input.logging_workloads_enabled != false >>
+source:
+  type: cloud_logging
+  gcp_account_id: << module.input.gcp_account_id >>
+  project_id: << module.input.project_id >>
+  filter: >-
+    resource.type="k8s_container"
+    resource.labels.project_id="<< module.input.project_id >>"
+    resource.labels.location="<< module.input.gcp_region >>"
+    resource.labels.cluster_name="<< module.input.cluster_name >>"
+    resource.labels.namespace_name="<< module.input.namespace >>"
+    labels."k8s-pod/app_kubernetes_io/instance"="<< module.input.name >>"

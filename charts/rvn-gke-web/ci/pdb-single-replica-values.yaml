@@ -1,0 +1,10 @@
+# PodDisruptionBudget requested on a single fixed replica: the chart skips the
+# budget, because minAvailable >= replicas would block every node drain. A
+# target group is bound, so the default readiness gate renders.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-web/demo-web
+  tag: v1.2.3
+replicaCount: 1
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

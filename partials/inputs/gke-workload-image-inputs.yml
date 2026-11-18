@@ -1,0 +1,41 @@
+# Image inputs shared by rvn-gke-web, rvn-gke-worker, and rvn-gke-cron. The
+# GKE port of ./eks-workload-image-inputs.yml.
+#
+# The repository and its pull secrets apply only to the image_registry build
+# source. For Dockerfile and Railpack builds the repository is the Artifact
+# Registry repository the stack creates, and nodes pull from it with their own
+# service account, so neither field has anything to configure.
+- id: section_image
+  label: Image
+  type: section
+- id: image_repository
+  label: Image repository
+  type: string
+  description: Image repository without a tag. The tag or digest is supplied at deploy time.
+  placeholder: us-central1-docker.pkg.dev/my-project/api/api
+  required: true
+  show_when:
+    build_source: image_registry
+- id: image_pull_secret_names
+  label: Image pull secret names
+  type: string_array
+  description: Existing kubernetes.io/dockerconfigjson Secrets in the namespace, for registries outside the project. Artifact Registry in the cluster's project needs none.
+  add_button_label: Add pull secret
+  collapsible: true
+  required: false
+  show_when:
+    build_source: image_registry
+- id: start_command
+  label: Start command
+  type: string_array
+  description: Overrides the image entrypoint. Leave empty to use the image default.
+  add_button_label: Add argument
+  collapsible: true
+  required: false
+- id: start_command_args
+  label: Start command arguments
+  type: string_array
+  description: Overrides the image default arguments. Leave empty to use the image default.
+  add_button_label: Add argument
+  collapsible: true
+  required: false

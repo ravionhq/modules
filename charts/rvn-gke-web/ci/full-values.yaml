@@ -1,0 +1,70 @@
+# Every optional surface switched on at once: digest pinning, dual target
+# groups with pod readiness gates, autoscaling, a PodDisruptionBudget, a
+# graceful-shutdown preStop sleep, a startup probe, an ingress allow-list, and
+# a same-project and a cross-project secret.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-web/demo-web
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+containerPort: 3000
+command: ["/bin/app"]
+args: ["serve", "--port=3000"]
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+probes:
+  startup:
+    enabled: true
+    path: /startup
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 80
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+terminationGracePeriodSeconds: 120
+lifecycle:
+  preStopSleepSeconds: 15
+# Explicit constraints replace the chart's default zone spread.
+topologySpreadConstraints:
+  - maxSkew: 2
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: rvn-gke-web
+serviceAccount:
+  name: demo-web
+  gcpServiceAccount: demo-web-750a9b@demo-project.iam.gserviceaccount.com
+  annotations:
+    example.com/owner: shop
+networkPolicy:
+  enabled: true
+  ingress:
+    fromReleases: [api, worker]
+    fromNamespaces: [monitoring]
+    fromCIDRs: [10.0.0.0/20, 10.0.16.0/20]
+ravion:
+  secrets:
+    - name: DB_PASSWORD
+      key: db-secret
+      property: password
+      version: "3"
+    - name: API_KEY
+      key: api-secret
+    - name: FEATURE_FLAGS
+      key: projects/shared-project/secrets/feature-flags
+gateway:
+  enabled: true
+  addressName: gw-demo-web
+  hostnames: [shop.example.com, "*.shop.example.com"]
+  pathPrefixes: [/, /api]
+  certificateMapName: shop
+  sessionAffinity:
+    type: GENERATED_COOKIE

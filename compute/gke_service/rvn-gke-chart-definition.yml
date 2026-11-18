@@ -1,0 +1,299 @@
+global: true
+definition:
+  type: rvn-gke-chart
+  name: GKE Helm Chart
+  description: Install any Helm chart from an HTTP Helm repository, an OCI registry or a Git repository onto a GKE cluster, with full control over the chart's values.
+release:
+  version: 0.1.0
+  description: Install any Helm chart onto a GKE cluster from a Helm repository, an OCI registry or a Git repository, with optional Workload Identity access to Google Cloud APIs.
+module:
+  inputs:
+    - id: section_cluster
+      label: GKE cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-gke-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/gke-workload-cluster-mapped-inputs.yml
+      required: true
+    - id: section_release
+      label: Helm release
+      type: section
+    - $template: ../../partials/templates/eks-workload-release-inputs.yml
+      with:
+        name_label: Release name
+        name_description: Charts usually prefix the Kubernetes objects they create with this name.
+    - id: section_chart
+      label: Chart
+      type: section
+    - id: chart_source_type
+      label: Chart source
+      type: string
+      required: true
+      default: http
+      values:
+        - description: Chart index served over HTTPS, as with helm repo add
+          label: Helm repository
+          value: http
+        - description: Chart stored in a container registry such as Artifact Registry, GHCR or Docker Hub
+          label: OCI registry
+          value: oci
+        - description: Chart directory in a Git repository connected to Ravion
+          label: Git repository
+          value: git
+    - id: chart_repository_url
+      label: Repository URL
+      type: string
+      description: HTTPS protects private repository credentials in transit.
+      placeholder: https://nats-io.github.io/k8s/helm/charts/
+      required: true
+      show_when:
+        chart_source_type: http
+      patterns:
+        - message: An https:// URL.
+          pattern: ^https://\S+$
+    - id: chart_name
+      label: Chart name
+      type: string
+      description: Omit the repository prefix (nats, not nats/nats).
+      placeholder: nats
+      required: true
+      show_when:
+        chart_source_type: http
+      patterns:
+        - message: A chart name without the repository prefix, such as nats rather than nats/nats.
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+    - id: chart_url
+      label: Chart URL
+      type: string
+      description: Include the oci:// prefix; omit the version tag.
+      placeholder: oci://registry-1.docker.io/bitnamicharts/redis
+      required: true
+      show_when:
+        chart_source_type: oci
+      patterns:
+        - message: An oci:// reference without a tag, such as oci://registry-1.docker.io/bitnamicharts/redis.
+          pattern: ^oci://[^\s:]+(:[0-9]+)?/[^\s:@]+$
+    - id: chart_git_repository_url
+      label: Git repository URL
+      type: string
+      description: A private repository must be connected to Ravion as a code source.
+      placeholder: https://github.com/acme/platform
+      required: true
+      show_when:
+        chart_source_type: git
+      patterns:
+        - message: An https:// URL.
+          pattern: ^https://\S+$
+    - id: chart_git_branch
+      label: Branch
+      type: string
+      description: Each deploy installs the chart as it is on this branch.
+      placeholder: main
+      required: true
+      show_when:
+        chart_source_type: git
+    - id: chart_git_path
+      label: Chart path
+      type: string
+      description: Directory holding Chart.yaml, from the repository root. Enter . for a chart at the root.
+      placeholder: charts/dashboards
+      required: true
+      show_when:
+        chart_source_type: git
+      patterns:
+        - message: A path inside the repository, or . for its root, with no leading slash and no .. segment.
+          pattern: ^(\.|\.*[A-Za-z0-9_-][A-Za-z0-9._-]*(/\.*[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$
+    - collapsible: true
+      id: chart_git_ref
+      label: Commit or tag
+      type: string
+      description: Pin deploys to one commit or tag of the branch. Blank uses the branch's latest commit.
+      required: false
+      show_when:
+        chart_source_type: git
+    - id: chart_version
+      label: Chart version
+      type: string
+      description: Pin the chart version (not appVersion) for repeatable deploys. Blank uses the latest version on each deploy.
+      placeholder: 2.15.0
+      required: false
+      show_when:
+        chart_source_type:
+          - http
+          - oci
+    - id: chart_registry_credentials
+      label: Registry credentials
+      type: object
+      description: Username and password references, resolved on the deploy runner. Leave blank for public sources.
+      collapsible: true
+      required: false
+      show_when:
+        chart_source_type:
+          - http
+          - oci
+      placeholder: |-
+        {
+          "username": {
+            "from_parameter_store": "/charts/registry-username"
+          },
+          "password": {
+            "from_secrets_manager": {
+              "key": "charts-registry",
+              "json_key": "password"
+            }
+          }
+        }
+    - id: section_values
+      label: Chart values
+      type: section
+    - description: JSON merged over the chart's defaults. `from_secrets_manager` and `from_parameter_store` references resolve at deploy time, but the result is stored in the Helm release, so prefer charts that read an existing Secret. The `ravion` key is reserved.
+      id: values
+      label: Values
+      type: object
+      required: false
+      default: {}
+      placeholder: |-
+        {
+          "config": {
+            "cluster": {
+              "enabled": true,
+              "replicas": 3
+            },
+            "jetstream": {
+              "enabled": true
+            }
+          }
+        }
+    - id: section_iam
+      label: IAM roles
+      type: section
+    - id: workload_identity_project_roles
+      label: Project IAM roles
+      type: string_array
+      description: Granted to a Google service account the stack creates, which the chart's Kubernetes service account acts as through Workload Identity. Leave empty if the chart calls no Google Cloud APIs.
+      add_button_label: Add role
+      placeholder: roles/storage.objectViewer
+      required: false
+      default: []
+    - id: workload_identity_service_account_name
+      label: ServiceAccount name
+      type: string
+      description: Must match the chart's ServiceAccount (often serviceAccount.name). Blank uses the release name.
+      collapsible: true
+      required: false
+      patterns:
+        - message: 1-253 lowercase letters, numbers, dots and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings-gcp.yml
+  stack:
+    # compute/gke_service with no image repository or load balancer. The stack
+    # exists for the optional Workload Identity grants and the destroy-time
+    # `helm uninstall` of the release.
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: compute/gke_service
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        name: << module.input.name >>
+        project_id: << module.input.project_id >>
+        region: << module.input.gcp_region >>
+        artifact_registry_repository_creation_enabled: false
+        workload_release_cleanup_enabled: true
+        cluster_name: << module.input.cluster_name >>
+        dns_endpoint: << module.input.dns_endpoint >>
+        release_name: << module.input.name >>
+        release_namespace: << module.input.namespace >>
+        workload_identity_pool: << module.input.workload_identity_pool >>
+        workload_identity_service_account_name: << module.input.workload_identity_service_account_name >>
+        workload_identity_project_roles: '<< module.input.workload_identity_project_roles != nil ? module.input.workload_identity_project_roles : [] >>'
+        labels:
+          $include: ../../partials/stack/ravion-tags.yml
+  deploy:
+    # The infrastructure block matches partials/deploy/gke-workload-deploy-common.yml,
+    # which is not reused because it declares the image_ref deploy input.
+    # PLATFORM DEPENDENCY: the gcp:gke deploy type; see that partial.
+    type: gcp:gke
+    concurrency:
+      queue_overflow: oldest
+      queue_size: 1
+    timeout: 1800
+    infrastructure:
+      gcp_account_id: << module.input.gcp_account_id >>
+      project_id: << module.input.project_id >>
+      region: << module.input.gcp_region >>
+      cluster_name: << module.input.cluster_name >>
+      dns_endpoint: << module.input.dns_endpoint >>
+      execution_environment_id: << module.input.execution_environment_id >>
+    inputs: []
+    definition:
+      type: helm
+      release_name: << module.input.name >>
+      namespace: << module.input.namespace >>
+      create_namespace: '<< module.input.namespace_creation_enabled != nil ? module.input.namespace_creation_enabled : true >>'
+      # The source type decides which fields the chart source may carry, so the
+      # whole object is built in one expression rather than field by field.
+      # A Git source carries no credentials: the runner clones the repository
+      # with the organization's connected code source.
+      source: >-
+        << module.input.chart_source_type == "git" ? {"type": "git", "repo_url": module.input.chart_git_repository_url,
+        "branch": module.input.chart_git_branch, "base_path": module.input.chart_git_path,
+        "ref": module.input.chart_git_ref} : (module.input.chart_source_type == "oci" ? {"type": "oci", "chart_url": module.input.chart_url,
+        "version": module.input.chart_version, "credentials":
+        (module.input.chart_registry_credentials != nil && len(module.input.chart_registry_credentials) > 0 ? module.input.chart_registry_credentials : nil)} : {"type": "http", "repo_url": module.input.chart_repository_url,
+        "chart_name": module.input.chart_name, "version": module.input.chart_version,
+        "credentials": (module.input.chart_registry_credentials != nil && len(module.input.chart_registry_credentials) > 0 ? module.input.chart_registry_credentials : nil)}) >>
+      values: '<< module.input.values != nil ? module.input.values : {} >>'
+  ui:
+    links: |-
+      <<
+      (module.input.cluster_name ? [{"name":"GKE workloads","href":"https://console.cloud.google.com/kubernetes/workload/overview?project=" + module.input.project_id}] : [])
+      >>
+  readme: |
+    Install any Helm chart from an HTTP Helm repository, an OCI registry or a Git repository onto a GKE cluster, with full control over the chart's values.
+
+    ## Overview
+
+    GKE Helm Chart deploys a chart onto an existing Ravion GKE cluster: one someone else publishes, or one you keep in a Git repository. Point it at a chart and a version, write the values you want in JSON, and Ravion installs the release with `helm upgrade --install --atomic`, so a failed deploy rolls back automatically. It is the GKE counterpart of EKS Helm Chart.
+
+    There is no build and no image: the chart decides which Kubernetes resources to create, and your values configure them.
+
+    Terraform source: [ravionhq/modules/compute/gke_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/gke_service)
+
+    ## Use cases
+
+    | Scenario | GKE Helm Chart helps by... |
+    | -------- | -------------------------- |
+    | Messaging and streaming | Running NATS, RabbitMQ or Kafka inside the cluster |
+    | Caches and datastores | Installing Redis, Valkey or other stateful charts on GKE persistent disks |
+    | Cluster tooling | Adding operators and controllers that the GKE Add-ons module does not install |
+    | Your own manifests | Shipping ConfigMaps, dashboards or policies you keep in a repository as a chart |
+
+    ## Prerequisites
+
+    - A **GKE Cluster** module.
+    - `roles/container.admin` on the Ravion runner's service account, added through `runner_sa_roles` in Ravion's GCP setup. Deploys and removal reach the cluster with the runner's Google access token; the GKE Cluster module does not grant the role because it covers every cluster in the project.
+
+    ## Chart source
+
+    | Chart source | Fields | Example |
+    | ------------ | ------ | ------- |
+    | Helm repository | **Repository URL** and **Chart name** | `https://nats-io.github.io/k8s/helm/charts/` and `nats` |
+    | OCI registry | **Chart URL** | `oci://us-central1-docker.pkg.dev/my-project/charts/app` |
+    | Git repository | **Git repository URL**, **Branch** and **Chart path** | `https://github.com/acme/platform`, `main` and `charts/dashboards` |
+
+    Pin **Chart version** for repeatable deploys.
+
+    ## Google Cloud permissions
+
+    List **Project IAM roles** to let the chart's pods call Google Cloud APIs. The stack creates a Google service account for this module, grants it each role, and lets the chart's Kubernetes service account act as it through Workload Identity; set **ServiceAccount name** when the chart does not name it after the release.
+
+    The chart's Kubernetes service account must also carry the `iam.gke.io/gcp-service-account` annotation set to the stack's `workload_identity_service_account_email` output, which Ravion cannot add to an arbitrary chart. Most charts accept it in their values, for example `{"serviceAccount": {"annotations": {"iam.gke.io/gcp-service-account": "<email>"}}}`. Without it the pods use the node's identity, which has no access to your resources.
+
+    ## Removal
+
+    Destroying the module uninstalls the release before the stack's resources go.

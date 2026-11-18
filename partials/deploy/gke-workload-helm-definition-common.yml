@@ -1,0 +1,16 @@
+# Helm release identity shared by every GKE workload deploy. The GKE port of
+# ./eks-workload-helm-definition-common.yml.
+#
+# `secrets` carries references only - {name, value_from}, where value_from is
+# a Secret Manager secret ID or projects/<project>/secrets/<id>.
+#
+# PLATFORM DEPENDENCY: the deploy resolver maps `secrets` onto the chart's
+# reserved `ravion.secrets` key as AWS ARNs today ({name, provider, key}). For
+# `gcp:gke` it has to map each entry to {name, key: value_from}, splitting an
+# optional `#<property>` JSON-key suffix into `property`, and accept non-ARN
+# references. The rvn-gke-* charts' schema rejects ARNs and the provider field.
+type: helm
+release_name: << module.input.name >>
+namespace: << module.input.namespace >>
+create_namespace: '<< module.input.namespace_creation_enabled != nil ? module.input.namespace_creation_enabled : true >>'
+secrets: '<< module.input.secrets != nil ? module.input.secrets : [] >>'

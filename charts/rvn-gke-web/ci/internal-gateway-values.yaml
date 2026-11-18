@@ -1,0 +1,12 @@
+# A regional internal Gateway with a pre-shared regional certificate.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-web/demo-web
+  tag: v1.2.3
+gateway:
+  enabled: true
+  className: gke-l7-rilb
+  addressName: gw-demo-web
+  preSharedCertificateNames: [internal-cert]
+  httpsRedirect: false
+  healthCheck:
+    path: /healthz

@@ -1,0 +1,159 @@
+{{/*
+Load balancer exposure through the GKE Gateway API.
+
+The workload gets its own Gateway, pinned to the address the compute/gke_service
+stack reserved (gateway.addressName), so the address is known before the first
+deploy and survives the Gateway being recreated. The HTTPRoute sends matching
+requests to this release's Service; GKE's Gateway controller programs a Google
+Cloud Application Load Balancer from them:
+
+  gke-l7-global-external-managed  global external, internet-facing
+  gke-l7-rilb                     regional internal, VPC-only
+
+HealthCheckPolicy and GCPBackendPolicy are GKE's Gateway policy kinds: the
+load balancer health check, and the drain timeout and session affinity of the
+backend service. Nothing renders unless gateway.enabled.
+*/}}
+{{- if .Values.gateway.enabled }}
+{{- $fullname := include "rvn-gke-web.fullname" . }}
+{{- $https := or .Values.gateway.certificateMapName .Values.gateway.preSharedCertificateNames }}
+{{- $internal := eq .Values.gateway.className "gke-l7-rilb" }}
+{{- if and .Values.gateway.certificateMapName $internal }}
+{{- fail "gateway.certificateMapName is supported only by the global external Gateway class; use gateway.preSharedCertificateNames with gke-l7-rilb" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+  {{- with .Values.gateway.certificateMapName }}
+  annotations:
+    networking.gke.io/certmap: {{ . | quote }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  {{- with .Values.gateway.addressName }}
+  addresses:
+    - type: NamedAddress
+      value: {{ . | quote }}
+  {{- end }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- if $https }}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      allowedRoutes:
+        namespaces:
+          from: Same
+      {{- with .Values.gateway.preSharedCertificateNames }}
+      tls:
+        mode: Terminate
+        options:
+          networking.gke.io/pre-shared-certs: {{ join "," . | quote }}
+      {{- end }}
+    {{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $fullname }}
+      {{- if $https }}
+      sectionName: https
+      {{- end }}
+  {{- with .Values.gateway.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - matches:
+        {{- range (.Values.gateway.pathPrefixes | default (list "/")) }}
+        - path:
+            type: PathPrefix
+            value: {{ . | quote }}
+        {{- end }}
+      backendRefs:
+        - name: {{ $fullname }}
+          port: {{ .Values.service.port }}
+{{- if and $https .Values.gateway.httpsRedirect }}
+---
+# Plain HTTP requests are redirected to HTTPS rather than served.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ printf "%s-redirect" $fullname | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $fullname }}
+      sectionName: http
+  {{- with .Values.gateway.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+spec:
+  default:
+    checkIntervalSec: {{ .Values.gateway.healthCheck.intervalSeconds }}
+    timeoutSec: {{ .Values.gateway.healthCheck.timeoutSeconds }}
+    healthyThreshold: {{ .Values.gateway.healthCheck.healthyThreshold }}
+    unhealthyThreshold: {{ .Values.gateway.healthCheck.unhealthyThreshold }}
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_SERVING_PORT
+        requestPath: {{ .Values.gateway.healthCheck.path | quote }}
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ $fullname }}
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+spec:
+  default:
+    connectionDraining:
+      drainingTimeoutSec: {{ .Values.gateway.drainingTimeoutSeconds }}
+    {{- with .Values.gateway.sessionAffinity }}
+    {{- if .type }}
+    sessionAffinity:
+      type: {{ .type }}
+      {{- if eq .type "GENERATED_COOKIE" }}
+      cookieTtlSec: {{ .cookieTtlSeconds }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ $fullname }}
+{{- end }}

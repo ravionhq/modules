@@ -1,0 +1,14 @@
+apiVersion: v2
+name: rvn-gke-cron
+description: Ravion application chart for a scheduled job on GKE — CronJob and Workload Identity service account.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - ravion
+  - flightcontrol
+  - gke
+  - cron
+maintainers:
+  - name: Flightcontrol
+    url: https://www.flightcontrol.dev/

@@ -1,0 +1,8 @@
+# Values a GKE workload inherits from its GKE Add-ons reference. The add-ons
+# module publishes keda_namespace only when KEDA is installed.
+- id: keda_enabled
+  label: KEDA enabled
+  type: boolean
+  collapsible: true
+  description: From the selected GKE Add-ons module.
+  default: << ref.stack.output.keda_namespace != nil >>

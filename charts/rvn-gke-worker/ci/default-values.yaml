@@ -1,0 +1,8 @@
+# Minimal container-only worker config.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-worker/demo-worker
+  tag: v1.2.3
+args: ["worker", "--queue=default"]
+env:
+  - name: QUEUE
+    value: default

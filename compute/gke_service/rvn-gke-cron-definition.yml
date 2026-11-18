@@ -1,0 +1,233 @@
+published: false
+global: false
+definition:
+  type: rvn-gke-cron
+  name: GKE Cron Job
+  description: Scheduled job on GKE for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
+release:
+  version: 0.1.0
+  description: Run a container on a cron schedule on a GKE cluster, built from source into Artifact Registry or pulled from a registry, with Workload Identity access to Google Cloud APIs.
+module:
+  inputs:
+    - id: section_cluster
+      label: GKE cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-gke-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/gke-workload-cluster-mapped-inputs.yml
+      required: true
+    - id: addons
+      immutable: true
+      label: GKE add-ons
+      type: $ref:rvn-gke-addons
+      description: Select this cluster's Add-ons module for runtime secrets.
+      required: false
+    - id: section_service
+      label: Cron job
+      type: section
+    - $template: ../../partials/templates/eks-workload-release-inputs.yml
+      with:
+        name_label: Service name
+        name_description: Name for the Helm release and the CronJob it creates.
+    - $include: ../../partials/inputs/eks-workload-build-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-image-inputs.yml
+    - id: section_schedule
+      label: Schedule
+      type: section
+    - id: schedule
+      label: Cron schedule
+      type: string
+      description: Five-field cron expression in minute hour day-of-month month day-of-week order, such as 0 3 * * * for daily at 03:00.
+      placeholder: 0 3 * * *
+      required: true
+      patterns:
+        - message: A five-field cron expression, such as 0 3 * * * or */15 * * * *.
+          pattern: ^\s*\S+\s+\S+\s+\S+\s+\S+\s+\S+\s*$
+    - id: time_zone
+      label: Time zone
+      type: string
+      description: IANA time zone the schedule is interpreted in, such as America/New_York. Leave blank to use the cluster's zone, which is normally UTC.
+      placeholder: UTC
+      required: false
+    - id: scheduling_enabled
+      label: Scheduling
+      type: boolean
+      description: Schedule new runs for this job. Turn off to pause future runs without deleting the job; runs already in flight are not affected.
+      default: true
+    - id: concurrency_policy
+      label: Concurrency policy
+      type: string
+      description: What happens when a run is still going at the next scheduled time.
+      collapsible: true
+      default: Forbid
+      values:
+        - label: Forbid
+          description: Skip the new run and leave the running one alone.
+          value: Forbid
+        - label: Allow
+          description: Start the new run alongside the running one.
+          value: Allow
+        - label: Replace
+          description: Cancel the running job and start the new run.
+          value: Replace
+    - id: starting_deadline_seconds
+      label: Starting deadline (secs)
+      type: number
+      description: Seconds after a missed schedule in which a run may still start. Leave blank for no deadline. Useful when the cluster may be briefly unable to schedule pods.
+      collapsible: true
+      required: false
+      max: 86400
+      min: 0
+    - id: section_run
+      label: Run behavior
+      type: section
+    - id: backoff_limit
+      label: Retries
+      type: number
+      collapsible: true
+      max: 100
+      min: 0
+      default: 3
+    - id: active_deadline_seconds
+      label: Run timeout (secs)
+      type: number
+      description: Wall-clock seconds a run may take before it is killed. Leave blank for no timeout.
+      collapsible: true
+      required: false
+      max: 604800
+      min: 1
+    - id: restart_policy
+      label: On container failure
+      type: string
+      description: Whether a failed container is restarted in place or replaced with a new pod.
+      collapsible: true
+      default: OnFailure
+      values:
+        - label: Restart the container
+          description: Restart the failed container in the same pod.
+          value: OnFailure
+        - label: Start a new pod
+          description: Leave the failed pod for inspection and start a new one.
+          value: Never
+    - id: termination_grace_period_seconds
+      label: Stop timeout (secs)
+      type: number
+      description: Seconds a run has to finish after SIGTERM before it is killed, when it is cancelled or times out.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 30
+    - id: ttl_seconds_after_finished
+      label: Job retention (secs)
+      type: number
+      description: Seconds a finished Job object is kept before deletion. Leave blank to keep finished Jobs until the history limits below evict them.
+      collapsible: true
+      required: false
+      max: 2592000
+      min: 0
+    - id: successful_jobs_history_limit
+      label: Successful runs kept
+      type: number
+      collapsible: true
+      max: 100
+      min: 0
+      default: 3
+    - id: failed_jobs_history_limit
+      label: Failed runs kept
+      type: number
+      collapsible: true
+      max: 100
+      min: 0
+      default: 1
+    - $include: ../../partials/inputs/gke-workload-resource-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-iam-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-builder-inputs.yml
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings-gcp.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: compute/gke_service
+      terraform_variables:
+        $include: ../../partials/stack/gke-workload-common-terraform-variables.yml
+  build:
+    $include: ../../partials/build/gke-workload-image-build.yml
+  deploy:
+    $merge:
+      - ../../partials/deploy/gke-workload-deploy-common.yml
+    definition:
+      $merge:
+        - ../../partials/deploy/gke-workload-helm-definition-common.yml
+        - source:
+            type: git
+            repo_url: https://github.com/ravionhq/modules
+            branch: main
+            ref: $local.module_tag
+            base_path: charts/rvn-gke-cron
+          values:
+            $merge:
+              - ../../partials/deploy/gke-workload-helm-values-common.yml
+              - schedule: << module.input.schedule >>
+                timeZone: '<< module.input.time_zone != nil ? module.input.time_zone : "" >>'
+                suspend: '<< module.input.scheduling_enabled != nil ? !module.input.scheduling_enabled : false >>'
+                concurrencyPolicy: '<< module.input.concurrency_policy != nil ? module.input.concurrency_policy : "Forbid" >>'
+                startingDeadlineSeconds: << module.input.starting_deadline_seconds >>
+                successfulJobsHistoryLimit: '<< module.input.successful_jobs_history_limit != nil ? module.input.successful_jobs_history_limit : 3 >>'
+                failedJobsHistoryLimit: '<< module.input.failed_jobs_history_limit != nil ? module.input.failed_jobs_history_limit : 1 >>'
+                terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                job:
+                  backoffLimit: '<< module.input.backoff_limit != nil ? module.input.backoff_limit : 3 >>'
+                  activeDeadlineSeconds: << module.input.active_deadline_seconds >>
+                  ttlSecondsAfterFinished: << module.input.ttl_seconds_after_finished >>
+                  restartPolicy: '<< module.input.restart_policy != nil ? module.input.restart_policy : "OnFailure" >>'
+  ui:
+    links: |-
+      <<
+      (module.input.cluster_name ? [{"name":"GKE workload","href":"https://console.cloud.google.com/kubernetes/cronjob/" + module.input.gcp_region + "/" + module.input.cluster_name + "/" + module.input.namespace + "/" + module.input.name + "/overview?project=" + module.input.project_id}] : [])
+      >>
+    metrics:
+      - $include: ../../partials/ui/gke-workload-pod-metrics.yml
+    logs:
+      - $include: ../../partials/ui/gke-workload-logs.yml
+  readme: |
+    Scheduled job on GKE for running a container on a cron schedule, with no Kubernetes manifests or Helm charts to write.
+
+    ## Overview
+
+    GKE Cron Job runs a container on a schedule on an existing Ravion GKE cluster. It is the GKE counterpart of EKS Cron Job: the same schedule, concurrency, retry, and retention settings, with Google Cloud services in place of AWS ones.
+
+    Each deploy installs the `rvn-gke-cron` Helm chart, which renders a Kubernetes CronJob, with `helm upgrade --install --atomic`.
+
+    Chart source: [ravionhq/modules/charts/rvn-gke-cron](https://github.com/ravionhq/modules/tree/$local.module_tag/charts/rvn-gke-cron)
+
+    Terraform source: [ravionhq/modules/compute/gke_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/gke_service)
+
+    ## Prerequisites
+
+    - A **GKE Cluster** module.
+    - `roles/container.admin` on the Ravion runner's service account, added through `runner_sa_roles` in Ravion's GCP setup. Deploys and removal reach the cluster with the runner's Google access token; the GKE Cluster module does not grant the role because it covers every cluster in the project.
+
+    ## Schedule
+
+    **Cron schedule** is a five-field expression in `minute hour day-of-month month day-of-week` order, interpreted in **Time zone** (blank uses the cluster's zone, normally UTC). **Concurrency policy** defaults to **Forbid**, which skips a run while the previous one is still going. Turn off **Scheduling** to pause future runs without deleting anything.
+
+    ## Configuration highlights
+
+    - **Build source**: Dockerfile and Railpack builds push to an Artifact Registry repository the stack creates; **Pull from image registry** deploys an existing image.
+    - **Compute target**: Spot is a good fit for jobs that can be retried; **Retries** controls how often a failed run is retried.
+    - **Runtime secrets** are `{name, value_from}` with a Secret Manager secret ID or full name, materialized by the GKE Add-ons External Secrets Operator.
+    - **Project IAM roles** are granted to a Google service account the stack creates, which the job's pods act as through Workload Identity.
+
+    ## Metrics and logs
+
+    The Metrics tab charts CPU, memory, restarts, and network traffic of running job pods from GKE's system metrics. Run success and failure counts need kube-state-metrics, which the GKE Cluster module does not enable, so they are not charted. The Logs tab reads container logs from Cloud Logging.
+
+    ## Learn more
+
+    - [Kubernetes CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/)
+    - [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity)

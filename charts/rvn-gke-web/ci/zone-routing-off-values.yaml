@@ -1,0 +1,9 @@
+# Zone-local routing switched off: even spread across zones, no default
+# topologySpreadConstraint.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-web/demo-web
+  tag: v1.2.3
+topologySpread:
+  enabled: false
+service:
+  trafficDistribution: ""

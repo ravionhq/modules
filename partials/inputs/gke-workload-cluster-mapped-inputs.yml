@@ -1,0 +1,68 @@
+# Values a GKE workload inherits from its GKE Cluster reference.
+#
+# Every field the deploy block's `infrastructure` object needs is here, because
+# the deploy resolver has no `ref` scope: cross-module values reach a deploy
+# only as resolved `module.input.*`. Kubernetes API access works like the GKE
+# Add-ons module: the runner's Google access token against the cluster's
+# IAM-authorized DNS endpoint, so no CA bundle or runner role is mapped.
+- id: section_gcp
+  label: GCP account & region
+  type: section
+- id: gcp_account_id
+  immutable: true
+  label: GCP account
+  type: string
+  default: << ref.input.gcp_account_id >>
+  values: $values:ravion/gcp_accounts
+- id: project_id
+  immutable: true
+  label: Project ID
+  type: string
+  placeholder: my-project-123456
+  required: true
+  default: << ref.stack.output.project_id >>
+- id: gcp_region
+  immutable: true
+  label: Region
+  type: string
+  default: << ref.input.gcp_region >>
+  values: $values:gcp/regions
+- id: execution_environment_id
+  label: Terraform execution environment
+  type: string
+  description: Choose one in the cluster's VPC when the cluster's DNS endpoint is closed to outside traffic.
+  collapsible: true
+  default: << ref.input.execution_environment_id >>
+  values: $values:ravion/execution_environments
+- id: section_cluster_identity
+  label: Cluster connection
+  type: section
+- id: cluster_name
+  immutable: true
+  label: GKE cluster name
+  type: string
+  placeholder: my-gke-cluster
+  required: true
+  default: << ref.stack.output.cluster_name >>
+- id: dns_endpoint
+  immutable: true
+  label: Cluster DNS endpoint
+  type: string
+  description: IAM-authorized control plane endpoint deploys and teardown reach with the runner's Google access token.
+  placeholder: gke-0123456789abcdef0123456789abcdef-123456789012.us-central1.gke.goog
+  required: true
+  default: << ref.stack.output.dns_endpoint >>
+- id: workload_identity_pool
+  immutable: true
+  label: Workload Identity pool
+  type: string
+  collapsible: true
+  placeholder: my-project-123456.svc.id.goog
+  required: false
+  default: << ref.stack.output.workload_identity_pool >>
+- id: logging_workloads_enabled
+  label: Cloud Logging for workloads
+  type: boolean
+  description: From the selected GKE cluster. Off empties the Logs tab.
+  collapsible: true
+  default: << ref.input.logging_components == nil || "WORKLOADS" in ref.input.logging_components >>

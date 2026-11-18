@@ -1,0 +1,9 @@
+# Minimal container-only cron config.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-cron/demo-cron
+  tag: v1.2.3
+schedule: "0 3 * * *"
+args: ["rake", "db:cleanup"]
+env:
+  - name: LOG_LEVEL
+    value: info

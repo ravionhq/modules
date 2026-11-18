@@ -1,0 +1,45 @@
+# Image build shared by rvn-gke-web, rvn-gke-worker, and rvn-gke-cron. The GKE
+# port of ./eks-workload-image-build.yml.
+#
+# PLATFORM DEPENDENCY: image builds on GCP do not exist yet. Two pieces here
+# are modeled the way the EKS build does them and need platform support:
+#   - an `artifact_registry` destination (EKS pushes to an `ecr` destination
+#     by repository ARN); the repository is the stack's Artifact Registry
+#     repository, and the image path matches artifact_registry_repository_url;
+#   - build infrastructure targeted at a GCP account and region (EKS passes
+#     aws_account_id and region), running as the account's runner service
+#     account, which may push to Artifact Registry in the project.
+type: '<< module.input.build_source == "image_registry" ? "disabled" : "image" >>'
+builder: >-
+  << module.input.build_source == "dockerfile" ? {type: "dockerfile", dockerfile: module.input.dockerfile
+  || "Dockerfile", context: module.input.dockerfile_context || ".", inject_env_variables_in_dockerfile:
+  module.input.dockerfile_environment_variable_injection_enabled, cache_from: {tag: "dockerfile"}} :
+  module.input.build_source == "railpack" ? {type: "railpack", railpack_version:
+  module.input.railpack_version, install_cmd: module.input.railpack_install_cmd,
+  build_cmd: module.input.railpack_build_cmd, start_cmd:
+  module.input.railpack_start_cmd, cache_from: {tag: "railpack"}} : {type: "disabled"} >>
+destinations:
+  - id: artifact_registry
+    type: artifact_registry
+    project_id: << module.input.project_id >>
+    location: << module.input.gcp_region >>
+    repository_id: << module.input.artifact_registry_repository_id || module.input.name >>
+    image_name: << module.input.name >>
+    tags:
+      - <<pipeline.run.id>>-<< module.input.build_source >>
+      - << module.input.build_source >>
+environment_variables: << module.input.build_environment_variables >>
+infrastructure:
+  type: sandbox
+  cpu: auto
+  memory: auto
+  disk: auto
+  disk_cache: auto
+  execution_environment_id: << module.input.build_execution_environment_id || module.input.execution_environment_id >>
+  gcp_account_id: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.gcp_account_id >>"
+  region: "<< module.input.build_execution_environment_id || module.input.execution_environment_id ? nil : module.input.gcp_region >>"
+inputs:
+  - $include: ../inputs/build-inputs.yml
+source:
+  $include: ./git-source.yml
+watch_paths: << module.input.watch_paths >>

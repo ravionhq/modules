@@ -1,0 +1,344 @@
+global: true
+definition:
+  type: rvn-gke-worker
+  name: GKE Worker
+  description: Background worker on GKE for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
+release:
+  version: 0.1.0
+  description: Run a background worker on a GKE cluster, built from source into Artifact Registry or pulled from a registry, with Workload Identity access to Google Cloud APIs and optional KEDA Spot burst.
+module:
+  inputs:
+    - id: section_cluster
+      label: GKE cluster
+      type: section
+    - id: cluster
+      immutable: true
+      label: Cluster
+      type: $ref:rvn-gke-cluster
+      mapped_inputs:
+        - $include: ../../partials/inputs/gke-workload-cluster-mapped-inputs.yml
+      required: true
+    - id: addons
+      immutable: true
+      label: GKE add-ons
+      type: $ref:rvn-gke-addons
+      description: Select this cluster's Add-ons module for runtime secrets or KEDA when using Spot burst.
+      mapped_inputs:
+        - $include: ../../partials/inputs/gke-workload-addons-mapped-inputs.yml
+      required: false
+    - id: section_service
+      label: Worker service
+      type: section
+    - $template: ../../partials/templates/eks-workload-release-inputs.yml
+      with:
+        name_label: Service name
+        name_description: Name for the Helm release and the Kubernetes objects it creates.
+    - $include: ../../partials/inputs/eks-workload-build-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-image-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-resource-inputs.yml
+    - id: section_scaling
+      label: Autoscaling
+      type: section
+    - id: autoscaling_enabled
+      label: Autoscaling
+      type: boolean
+      description: Scale pods with a HorizontalPodAutoscaler. Requires the metrics server or an equivalent metrics API in the cluster.
+      show_when:
+        spot_burst_enabled:
+          not: true
+      default: false
+    - id: autoscaling_min_replicas
+      label: Minimum pods
+      type: number
+      max: 1000
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
+      default: 1
+    - id: autoscaling_max_replicas
+      label: Maximum pods
+      type: number
+      max: 1000
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
+      default: 3
+    - id: autoscaling_cpu_target
+      label: CPU target (%)
+      type: number
+      description: Average CPU utilization, as a percentage of the CPU request, the autoscaler aims to hold.
+      max: 100
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
+      default: 70
+    - id: autoscaling_memory_target
+      label: Memory target (%)
+      type: number
+      description: Optional average memory utilization target, as a percentage of the memory request. Leave blank to scale on CPU alone.
+      required: false
+      collapsible: true
+      max: 100
+      min: 1
+      show_when:
+        autoscaling_enabled: true
+        spot_burst_enabled:
+          not: true
+    - label: Desired pods
+      id: replica_count
+      type: number
+      max: 1000
+      min: 0
+      show_when:
+        autoscaling_enabled: false
+        spot_burst_enabled:
+          not: true
+      default: 1
+    - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
+    - id: spot_burst_scale_down_window
+      label: Scale-down delay (secs)
+      type: number
+      collapsible: true
+      description: Seconds demand must stay lower before the Spot pool starts shrinking. The pool then shrinks gradually rather than all at once.
+      max: 3600
+      min: 0
+      show_when:
+        compute_target: on_demand
+        spot_burst_enabled: true
+      default: 600
+    - $include: ../../partials/inputs/eks-workload-spot-burst-scale-down-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-runtime-inputs.yml
+    - $include: ../../partials/inputs/gke-workload-iam-inputs.yml
+    - id: section_health
+      label: Health check
+      type: section
+    - id: health_check_enabled
+      label: HTTP health check
+      type: boolean
+      description: Check an HTTP endpoint the worker serves before a new pod counts toward a rollout. The worker still exposes no Service or container port; Kubernetes calls the endpoint on the pod directly.
+      collapsible: true
+      default: false
+    - id: health_check_port
+      label: Health check port
+      type: number
+      description: Port inside the container the health endpoint listens on. Required when the health check is on.
+      collapsible: true
+      max: 65535
+      min: 1
+      required: false
+      show_when:
+        health_check_enabled: true
+    - id: health_check_path
+      label: Health check path
+      type: string
+      description: Unauthenticated endpoint that succeeds once the worker is ready to process work.
+      collapsible: true
+      default: /
+      show_when:
+        health_check_enabled: true
+    - id: readiness_probe_period_seconds
+      label: Readiness check interval (secs)
+      type: number
+      description: Seconds between readiness checks. A pod stops counting as ready after three failed checks in a row.
+      collapsible: true
+      max: 300
+      min: 1
+      default: 5
+      show_when:
+        health_check_enabled: true
+    - id: startup_probe_enabled
+      label: Enforce startup timeout
+      type: boolean
+      description: Restart the container if the health endpoint does not succeed in time.
+      collapsible: true
+      default: false
+      show_when:
+        health_check_enabled: true
+    - id: startup_timeout_seconds
+      label: Maximum startup time (secs)
+      type: number
+      description: Maximum time the worker may take to become healthy before Kubernetes restarts it. Rounded up to the next five-second check.
+      collapsible: true
+      max: 1500
+      min: 5
+      default: 150
+      show_when:
+        health_check_enabled: true
+        startup_probe_enabled: true
+    - id: section_deployments
+      label: Networking and deployment
+      type: section
+    - id: rollout_max_surge_percent
+      label: Maximum rollout surge (%)
+      type: number
+      description: Extra pods Kubernetes may create during a rolling update, as a percentage of the desired count. Use 100 to create a full replacement set at once when the cluster has enough spare capacity. Zero-unavailable rollout protection remains enabled.
+      collapsible: true
+      max: 100
+      min: 1
+      default: 100
+    - id: min_ready_seconds
+      label: Minimum ready time (secs)
+      type: number
+      description: Seconds a new pod must stay ready, without restarting, before the rollout counts it as available and removes an old pod. Stops a worker that crashes shortly after starting from replacing the healthy pods. Every rollout waits at least this long, so keep it well under the 10-minute deploy timeout.
+      collapsible: true
+      max: 300
+      min: 0
+      default: 10
+    - id: termination_grace_period_seconds
+      label: Stop timeout (secs)
+      type: number
+      description: Seconds a pod has to finish in-flight work after SIGTERM before it is killed. Raise this for workers with long-running jobs.
+      collapsible: true
+      max: 3600
+      min: 0
+      default: 30
+    - id: pod_disruption_budget_enabled
+      label: Disruption budget
+      type: boolean
+      description: Limit how many pods node drains, consolidation and cluster upgrades may evict at once. A worker loses its in-flight work when it is evicted, so draining a fleet all at once loses all of it. Takes effect only while the minimum pod count is above Minimum available pods, since a budget that allows no evictions would block every drain.
+      collapsible: true
+      default: true
+    - id: pod_disruption_budget_min_available
+      label: Minimum available pods
+      type: number
+      description: Pods that must stay running during a node drain or other voluntary disruption.
+      collapsible: true
+      max: 1000
+      min: 1
+      default: 1
+      show_when:
+        pod_disruption_budget_enabled: true
+    - $include: ../../partials/inputs/gke-workload-builder-inputs.yml
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings-gcp.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: compute/gke_service
+      terraform_variables:
+        $include: ../../partials/stack/gke-workload-common-terraform-variables.yml
+  build:
+    $include: ../../partials/build/gke-workload-image-build.yml
+  deploy:
+    $merge:
+      - ../../partials/deploy/gke-workload-deploy-common.yml
+    definition:
+      $merge:
+        - ../../partials/deploy/gke-workload-helm-definition-common.yml
+        - source:
+            type: git
+            repo_url: https://github.com/ravionhq/modules
+            branch: main
+            ref: $local.module_tag
+            base_path: charts/rvn-gke-worker
+          values:
+            $merge:
+              - ../../partials/deploy/gke-workload-helm-values-common.yml
+              - terminationGracePeriodSeconds: '<< module.input.termination_grace_period_seconds != nil ? module.input.termination_grace_period_seconds : 30 >>'
+                strategy:
+                  maxSurge: '<< module.input.rollout_max_surge_percent != nil ? module.input.rollout_max_surge_percent : 100 >>%'
+                minReadySeconds: '<< module.input.min_ready_seconds != nil ? module.input.min_ready_seconds : 10 >>'
+                probes:
+                  readiness:
+                    enabled: '<< module.input.health_check_enabled == true >>'
+                    path: '<< module.input.health_check_path || "/" >>'
+                    port: << module.input.health_check_port >>
+                    periodSeconds: '<< module.input.readiness_probe_period_seconds != nil ? module.input.readiness_probe_period_seconds : 5 >>'
+                  startup:
+                    enabled: '<< module.input.health_check_enabled == true && module.input.startup_probe_enabled == true >>'
+                    failureThreshold: '<< module.input.startup_timeout_seconds != nil ? int((module.input.startup_timeout_seconds + 4) / 5) : 30 >>'
+                podDisruptionBudget:
+                  enabled: '<< module.input.pod_disruption_budget_enabled != nil ? module.input.pod_disruption_budget_enabled : true >>'
+                  minAvailable: '<< module.input.pod_disruption_budget_min_available != nil ? module.input.pod_disruption_budget_min_available : 1 >>'
+                replicaCount: >-
+                  << module.input.autoscaling_enabled == true ? (module.input.autoscaling_min_replicas != nil ?
+                  module.input.autoscaling_min_replicas : 1) : (module.input.replica_count != nil ?
+                  module.input.replica_count : 1) >>
+                autoscaling:
+                  enabled: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? false : (module.input.autoscaling_enabled != nil ? module.input.autoscaling_enabled : false) >>'
+                  minReplicas: '<< module.input.autoscaling_min_replicas != nil ? module.input.autoscaling_min_replicas : 1 >>'
+                  maxReplicas: '<< module.input.autoscaling_max_replicas != nil ? module.input.autoscaling_max_replicas : 3 >>'
+                  targetCPUUtilizationPercentage: '<< module.input.autoscaling_cpu_target != nil ? module.input.autoscaling_cpu_target : 70 >>'
+                  targetMemoryUtilizationPercentage: << module.input.autoscaling_memory_target >>
+                spotBurst:
+                  enabled: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" >>'
+                  kedaEnabled: '<< module.input.keda_enabled == true >>'
+                  baselineReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_baseline_replicas != nil ? module.input.spot_burst_baseline_replicas : 2 >>'
+                  minReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_min_replicas != nil ? module.input.spot_burst_min_replicas : 0 >>'
+                  maxReplicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_max_replicas != nil ? module.input.spot_burst_max_replicas : 8 >>'
+                  pollingInterval: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_polling_interval != nil ? module.input.spot_burst_polling_interval : 30 >>'
+                  cooldownPeriod: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_cooldown_period != nil ? module.input.spot_burst_cooldown_period : 300 >>'
+                  triggers: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_triggers != nil ? module.input.spot_burst_triggers : [] >>'
+                  fallback:
+                    replicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_fallback_replicas != nil ? module.input.spot_burst_fallback_replicas : nil >>'
+                  scaleDown:
+                    stabilizationWindowSeconds: '<< module.input.spot_burst_scale_down_window != nil ? module.input.spot_burst_scale_down_window : 600 >>'
+                    podsPerPeriod: '<< module.input.spot_burst_scale_down_pods != nil ? module.input.spot_burst_scale_down_pods : 2 >>'
+                    percentPerPeriod: '<< module.input.spot_burst_scale_down_percent != nil ? module.input.spot_burst_scale_down_percent : 25 >>'
+  ui:
+    links: |-
+      <<
+      (module.input.cluster_name ? [{"name":"GKE workload","href":"https://console.cloud.google.com/kubernetes/deployment/" + module.input.gcp_region + "/" + module.input.cluster_name + "/" + module.input.namespace + "/" + module.input.name + "/overview?project=" + module.input.project_id}] : [])
+      >>
+    metrics:
+      - $include: ../../partials/ui/gke-workload-pod-metrics.yml
+    logs:
+      - $include: ../../partials/ui/gke-workload-logs.yml
+  readme: |
+    Background worker on GKE for running a long-lived private process with no exposed port, and no Kubernetes manifests or Helm charts to write.
+
+    ## Overview
+
+    GKE Worker runs a queue consumer, stream processor, or any other long-lived process on an existing Ravion GKE cluster. It is the GKE counterpart of EKS Worker: the same form, scaling, Spot burst, and rollout settings, with Google Cloud services in place of AWS ones. The worker has no Service, port, or load balancer.
+
+    Each deploy installs the `rvn-gke-worker` Helm chart with `helm upgrade --install --atomic`, so a failed deploy rolls back on its own.
+
+    | Part | Owns | Changes when |
+    | ---- | ---- | ------------ |
+    | Terraform stack | Optional Artifact Registry repository, Workload Identity IAM grants | You change the build source or IAM roles |
+    | Build | The container image, from a Dockerfile or Railpack | Every build, unless the build source is an existing registry image |
+    | Helm deploy | Deployment, HPA or KEDA ScaledObject, secrets wiring | Every release, and whenever runtime settings change |
+
+    Chart source: [ravionhq/modules/charts/rvn-gke-worker](https://github.com/ravionhq/modules/tree/$local.module_tag/charts/rvn-gke-worker)
+
+    Terraform source: [ravionhq/modules/compute/gke_service](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/gke_service)
+
+    ## Use cases
+
+    | Scenario | GKE Worker helps by... |
+    | -------- | ---------------------- |
+    | Processing a Pub/Sub or task queue | Running consumers with Workload Identity access to the queue |
+    | Absorbing bursts of work cheaply | Adding KEDA-scaled Spot pods on top of an On-demand baseline |
+    | Long-running jobs | Giving pods a configurable stop timeout and a disruption budget |
+
+    ## Prerequisites
+
+    - A **GKE Cluster** module.
+    - `roles/container.admin` on the Ravion runner's service account, added through `runner_sa_roles` in Ravion's GCP setup. Deploys and removal reach the cluster with the runner's Google access token; the GKE Cluster module does not grant the role because it covers every cluster in the project.
+    - A **GKE Add-ons** module on the same cluster for Runtime secrets (External Secrets Operator) or Spot burst (KEDA).
+
+    ## Configuration highlights
+
+    - **Build source**: Dockerfile and Railpack builds push to an Artifact Registry repository the stack creates in the cluster's region; **Pull from image registry** deploys an existing image.
+    - **Compute target**: any node, On-demand only, or Spot only. With node auto-provisioning, GKE creates a Spot node pool when no node fits.
+    - **Autoscaling** is off by default with one pod. **Spot burst** keeps an On-demand baseline and scales a separate Spot Deployment with KEDA triggers, shrinking it gradually after a 10-minute delay.
+    - **HTTP health check** is optional: Kubernetes calls the endpoint on the pod directly before a new pod counts toward a rollout.
+    - **Runtime secrets** are `{name, value_from}` with a Secret Manager secret ID or `projects/<project>/secrets/<id>`, materialized in the cluster by the External Secrets Operator. The namespace must be an allowed namespace on the add-ons module.
+    - **Project IAM roles** are granted to a Google service account the stack creates, which the pods act as through Workload Identity, with no keys.
+
+    ## Metrics and logs
+
+    The Metrics tab charts CPU as a percentage of the request, memory, container restarts, and network traffic from GKE's system metrics. The Logs tab reads container logs from Cloud Logging.
+
+    ## Learn more
+
+    - [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity)
+    - [Spot VMs on GKE](https://cloud.google.com/kubernetes-engine/docs/concepts/spot-vms)
+    - [KEDA](https://keda.sh/docs/)

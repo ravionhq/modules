@@ -1878,7 +1878,9 @@ describe("compiler", () => {
   });
 
   it("defaults every build module to automatic sandbox sizing with a fixed-size opt-out", async () => {
-    const definitions = (await compileAllDefinitions(repoRoot)).filter(({ module }) => module.build);
+    // GKE workloads build on GCP, which has no builder sizing options yet; their
+    // builds always use automatic sandbox sizing.
+    const definitions = (await compileAllDefinitions(repoRoot)).filter(({ type, module }) => module.build && !type.startsWith("rvn-gke-"));
     assert.deepEqual(definitions.map(({ type }) => type).sort(), [
       "rvn-aws-static", "rvn-ec2-service", "rvn-ecs-nlb", "rvn-ecs-web", "rvn-ecs-worker",
       "rvn-eks-cron", "rvn-eks-web", "rvn-eks-worker", "rvn-lambda",

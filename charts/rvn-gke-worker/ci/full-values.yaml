@@ -1,0 +1,35 @@
+# Autoscaling plus a same-project and a cross-project secret.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-worker/demo-worker
+  tag: v1.2.3
+replicaCount: 3
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 60
+# Explicit constraints replace the chart's default zone spread.
+topologySpreadConstraints:
+  - maxSkew: 2
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: rvn-gke-worker
+serviceAccount:
+  name: demo-worker
+  gcpServiceAccount: demo-worker-750a9b@demo-project.iam.gserviceaccount.com
+  annotations:
+    example.com/owner: shop
+ravion:
+  secrets:
+    - name: DB_PASSWORD
+      key: db-secret
+      property: password
+      version: "3"
+    - name: FEATURE_FLAGS
+      key: projects/shared-project/secrets/feature-flags

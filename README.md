@@ -29,6 +29,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `compute/`    | `gke`             | Regional GKE Standard cluster in a connected GCP project: private nodes, Workload Identity, Dataplane V2, Gateway API, a dedicated least-privilege node service account, an autoscaled system node pool plus On-demand or Spot pools, node auto-provisioning, and an IAM-authorized DNS control plane endpoint (includes `rvn-gke-cluster` module definition) | Unreleased |
 | `compute/`    | `gke/addons`      | Selectable GKE add-ons: KEDA, cert-manager, and the External Secrets Operator reading Secret Manager as a per-cluster Google service account through Workload Identity, with a namespace-restricted ClusterSecretStore (includes `rvn-gke-addons` module definition) | Unreleased |
 | `compute/`    | `eks_service`     | AWS-side infrastructure for an EKS workload: optional ECR and EKS Fargate profile resources, plus an optional IP-mode target group and listener rule against a shared EKS Add-ons ALB (includes the `rvn-eks-web`, `rvn-eks-worker`, `rvn-eks-cron`, and `rvn-eks-chart` module definitions) | Unreleased |
+| `compute/`    | `gke_service`     | Google Cloud side of a GKE workload: optional Artifact Registry repository, reserved GKE Gateway address, a per-stack Workload Identity Google service account holding its IAM roles, and Helm release teardown on destroy (includes the `rvn-gke-web`, `rvn-gke-worker`, `rvn-gke-cron`, and `rvn-gke-chart` module definitions) | Unreleased |
 | `compute/`    | `lambda`          | AWS Lambda functions with live-alias rollback and Terraform-managed custom aliases   | v1.0.0  |
 | `containers/` | `ecr`             | Private ECR repositories with scan on push, default image cleanup, optional KMS encryption, and cross-account pull/push access (includes the `rvn-aws-ecr` module definition) | v1.0.0  |
 | `database/`   | `aurora`          | AWS Aurora clusters with storage capacity and read/write IOPS alarms (MySQL, PostgreSQL, Serverless v2, Global Database) (includes `rvn-aurora` module definition) | v1.1.0  |
@@ -96,7 +97,10 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-eks-worker` | EKS Worker | v1.2.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
 | `rvn-gke-addons` | GKE Add-ons | v0.1.0 | `compute/gke/addons/` |
+| `rvn-gke-chart` | GKE Helm Chart | v0.1.0 | `compute/gke_service/` |
 | `rvn-gke-cluster` | GKE Cluster | v0.1.0 | `compute/gke/` |
+| `rvn-gke-web` | GKE Web Service | v0.1.0 | `compute/gke_service/` |
+| `rvn-gke-worker` | GKE Worker | v0.1.0 | `compute/gke_service/` |
 | `rvn-lambda` | Lambda Function | v2.4.0 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.6.0 | `database/rds/` |
 | `rvn-rds-proxy` | RDS Proxy | v0.2.1 | `database/rds-proxy/` |

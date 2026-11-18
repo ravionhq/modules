@@ -1,0 +1,46 @@
+# Shared GKE deploy scaffolding. The GKE port of ./eks-workload-deploy-common.yml.
+#
+# PLATFORM DEPENDENCY: there is no `gcp:gke` deploy type yet. It is modeled on
+# `aws:eks`: Helm runs `upgrade --install --atomic` on a runner in the GCP
+# account (or the execution environment), authenticated with the runner
+# service account's Google access token against the cluster's IAM-authorized
+# DNS endpoint, the same access the GKE Add-ons stack uses. The DNS endpoint
+# serves a publicly trusted certificate, so no CA bundle is passed, and GKE
+# authorizes the token with IAM, so no runner role is passed either.
+#
+# `infrastructure` is fed entirely from module inputs mapped off the GKE
+# Cluster reference: the deploy resolver has no `ref` scope.
+type: gcp:gke
+concurrency:
+  queue_overflow: oldest
+  queue_size: 1
+timeout: 1800
+infrastructure:
+  gcp_account_id: << module.input.gcp_account_id >>
+  project_id: << module.input.project_id >>
+  region: << module.input.gcp_region >>
+  cluster_name: << module.input.cluster_name >>
+  dns_endpoint: << module.input.dns_endpoint >>
+  # Use the same environment as the workload's Terraform pipeline. Required in
+  # practice when the DNS endpoint refuses traffic from outside the VPC.
+  execution_environment_id: << module.input.execution_environment_id >>
+inputs:
+  - id: image_ref
+    label: Image tag or digest
+    type: string
+    description: >-
+      Tag or digest to deploy from the configured image repository. A value starting with
+      "sha256:" is used as a digest, anything else as a tag. Do not pass a full image URI.
+    placeholder: "sha256:... or latest"
+    required: true
+  - id: environment_variables
+    label: Environment variables
+    type: array
+    description: >-
+      Plain environment variables to set for this deploy. Only names listed in the module's
+      Deploy-provided environment variables input are applied; others are ignored. Can't replace
+      a runtime variable or secret.
+    placeholder: |-
+      - name: LOG_LEVEL
+        value: info
+    required: false

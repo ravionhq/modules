@@ -1,0 +1,41 @@
+# Helm values common to rvn-gke-web, rvn-gke-worker, and rvn-gke-cron. Only
+# keys present in all three charts' values.schema.json belong here: those
+# schemas set additionalProperties: false.
+fullnameOverride: << module.input.name >>
+image:
+  # For Dockerfile and Railpack builds the repository is the Artifact Registry
+  # image path the stack created, which is where the build pushed to.
+  repository: '<< module.input.build_source == "image_registry" ? module.input.image_repository : stack.output.artifact_registry_repository_url >>'
+  tag: '<< deploy.input.image_ref contains "sha256:" ? "" : deploy.input.image_ref >>'
+  digest: '<< deploy.input.image_ref contains "sha256:" ? deploy.input.image_ref : "" >>'
+# The Google service account the stack creates when Project IAM roles are
+# listed; the chart annotates the Kubernetes service account with it.
+serviceAccount:
+  gcpServiceAccount: '<< stack.output.workload_identity_service_account_email || "" >>'
+imagePullSecrets: >-
+  << module.input.image_pull_secret_names != nil ? map(module.input.image_pull_secret_names, ({"name": #})) : [] >>
+command: '<< module.input.start_command != nil ? module.input.start_command : [] >>'
+args: '<< module.input.start_command_args != nil ? module.input.start_command_args : [] >>'
+env: >-
+  << (module.input.environment_variables != nil ? module.input.environment_variables : []) |
+  concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
+  map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names &&
+  #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) &&
+  !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>
+resources:
+  requests:
+    cpu: << module.input.cpu_request >>
+    memory: << module.input.memory_request >>
+  limits: >-
+    << module.input.cpu_limit ? {"cpu": module.input.cpu_limit, "memory": module.input.memory_limit} :
+    {"memory": module.input.memory_limit} >>
+# GKE labels Spot nodes cloud.google.com/gke-spot=true; every other node lacks
+# the label, so On-demand is NotIn. Spot burst places each pool itself.
+affinity: >-
+  << module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" ? {} :
+  (module.input.compute_target == "on_demand" || module.input.compute_target == "spot" ?
+  {"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"cloud.google.com/gke-spot","operator":module.input.compute_target == "spot" ? "In" : "NotIn","values":["true"]}]}]}}} : {}) >>
+# Spot node pools node auto-provisioning creates carry this taint.
+tolerations: >-
+  << module.input.compute_target == "spot" || module.input.compute_target == "any" ?
+  [{"key":"cloud.google.com/gke-spot","operator":"Equal","value":"true","effect":"NoSchedule"}] : [] >>
