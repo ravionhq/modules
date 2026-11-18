@@ -48,3 +48,6 @@ tools/ravion-modules/node_modules
 
 # Python test/import caches
 __pycache__/
+
+# Amp orb portal registrations
+.amp/portals/*
