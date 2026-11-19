@@ -1,0 +1,71 @@
+name: Setup Modules
+
+# gcp/setup (Google Cloud project setup) and aws/setup (AWS account setup) are
+# Ravion's account setup modules. Ravion's CI publishes them here from Ravion's
+# source repository, file for file, and tags each version
+# rvn-gcp-setup@<VERSION> and rvn-aws-setup@<VERSION>. Ravion checks that a tag
+# holds exactly the files of that version, so a published version never
+# changes: this check refuses pull requests that change a module under a
+# VERSION that is already tagged.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'gcp/setup/**'
+      - 'aws/setup/**'
+      - '.github/workflows/setup-modules.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check setup module versions
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/disk_cache=auto/id=${{ github.run_id }}-setup-modules-check/interruptible=true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check VERSION, CHANGELOG and the published tag
+        run: |
+          set -euo pipefail
+          check() {
+            local name="$1" dir="$2"
+            if [ ! -d "${dir}" ]; then
+              return 0
+            fi
+            local version newest tag published current
+            version="$(tr -d '[:space:]' < "${dir}/VERSION")"
+            if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error file=${dir}/VERSION::VERSION must be MAJOR.MINOR.PATCH, got '${version}'."
+              return 1
+            fi
+            newest="$(sed -n 's/^## \([0-9][0-9.]*\)[[:space:]]*$/\1/p' "${dir}/CHANGELOG.md" | head -n 1)"
+            if [ "${newest}" != "${version}" ]; then
+              echo "::error file=${dir}/CHANGELOG.md::The newest CHANGELOG entry is '${newest}', but VERSION is '${version}'."
+              return 1
+            fi
+            tag="rvn-${name}-setup@${version}"
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null; then
+              git fetch --quiet --no-tags --depth=1 origin "+refs/tags/${tag}:refs/tags/${tag}"
+              published="$(git rev-parse "refs/tags/${tag}^{commit}:${dir}")"
+              current="$(git rev-parse "HEAD:${dir}")"
+              if [ "${published}" != "${current}" ]; then
+                echo "::error file=${dir}/VERSION::${tag} is already published with different files. Change the module in Ravion's source repository under a new VERSION; it is published here from there."
+                return 1
+              fi
+              echo "${tag} is published and matches ${dir}."
+            else
+              echo "${tag} is not published yet."
+            fi
+          }
+          check gcp gcp/setup
+          check aws aws/setup

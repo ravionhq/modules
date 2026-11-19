@@ -53,3 +53,12 @@ misconfigurations:
     paths:
       - gcp/setup/main.tf
     statement: Runner default of roles/editor is documented and set by the customer through runner_sa_roles.
+
+  # The AWS account setup grants the roles Ravion uses the same permissions as
+  # Ravion's CloudFormation template, generated from the same source. Many of
+  # the actions it needs only support Resource "*"; each session the broker
+  # mints is further scoped by a session policy.
+  - id: AWS-0057
+    paths:
+      - aws/setup/iam.gen.tf.json
+    statement: Generated Ravion role permissions, identical to Ravion's CloudFormation template; many actions only support Resource "*".
