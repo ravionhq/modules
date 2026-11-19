@@ -22,8 +22,8 @@ spec:
   suspend: {{ .Values.suspend }}
   successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
   failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
-  {{- with .Values.startingDeadlineSeconds }}
-  startingDeadlineSeconds: {{ . }}
+  {{- if not (kindIs "invalid" .Values.startingDeadlineSeconds) }}
+  startingDeadlineSeconds: {{ .Values.startingDeadlineSeconds }}
   {{- end }}
   jobTemplate:
     metadata:
@@ -31,11 +31,11 @@ spec:
         {{- include "rvn-gke-cron.labels" . | nindent 8 }}
     spec:
       backoffLimit: {{ .Values.job.backoffLimit }}
-      {{- with .Values.job.activeDeadlineSeconds }}
-      activeDeadlineSeconds: {{ . }}
+      {{- if not (kindIs "invalid" .Values.job.activeDeadlineSeconds) }}
+      activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
       {{- end }}
-      {{- with .Values.job.ttlSecondsAfterFinished }}
-      ttlSecondsAfterFinished: {{ . }}
+      {{- if not (kindIs "invalid" .Values.job.ttlSecondsAfterFinished) }}
+      ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
       {{- end }}
       template:
         metadata:

@@ -40,7 +40,13 @@ locals {
   # the pods.
   # https://cloud.google.com/load-balancing/docs/health-check-concepts#ip-ranges
   google_health_check_cidr_blocks = ["130.211.0.0/22", "35.191.0.0/16"]
-  proxy_only_cidr_blocks          = [for subnet in try(data.google_compute_subnetworks.proxy_only[0].subnetworks, []) : subnet.ip_cidr_range]
+  # Networks compare by their project/name path: self links may differ in API
+  # version.
+  gateway_network = try(regex("projects/[^/]+/global/networks/[^/]+$", data.google_compute_subnetwork.gateway[0].network), null)
+  proxy_only_cidr_blocks = [
+    for subnet in try(data.google_compute_subnetworks.proxy_only[0].subnetworks, []) : subnet.ip_cidr_range
+    if try(regex("projects/[^/]+/global/networks/[^/]+$", subnet.network_self_link), null) == local.gateway_network
+  ]
   load_balancer_source_cidr_blocks = local.load_balancer_enabled ? sort(distinct(concat(
     local.google_health_check_cidr_blocks,
     local.proxy_only_cidr_blocks,
@@ -75,7 +81,7 @@ resource "google_compute_address" "gateway" {
     }
     precondition {
       condition     = length(local.proxy_only_cidr_blocks) > 0
-      error_message = "An internal load balancer needs a proxy-only subnet (purpose REGIONAL_MANAGED_PROXY) in ${var.region}. Create one in the cluster's VPC network first."
+      error_message = "An internal load balancer needs a proxy-only subnet (purpose REGIONAL_MANAGED_PROXY) in ${var.region} in the VPC network of ${coalesce(var.subnetwork, "the subnetwork")}. Create one in the cluster's VPC network first."
     }
   }
 }

@@ -1077,6 +1077,8 @@ test_rvn_gke_web() {
   assert_eq "web: without a redirect HTTP is not redirected and the route matches every host on /" \
     "0 / " \
     "$(count "${internal}" HTTPRoute | awk '{print $1-1}') $(q "${internal}" "${route} | .spec.rules[0].matches[0].path.value") $(q "${internal}" "${route} | .spec.hostnames")"
+  assert_eq "web: HTTPS without a redirect serves the route on both listeners" \
+    "1 " "$(q "${internal}" "${route} | .spec.parentRefs | length") $(q "${internal}" "${route} | .spec.parentRefs[0].sectionName")"
   assert_eq "web: health check path follows the values" \
     "/healthz USE_SERVING_PORT" \
     "$(q "${internal}" '.[] | select(.kind == "HealthCheckPolicy") | [.spec.default.config.httpHealthCheck.requestPath, .spec.default.config.httpHealthCheck.portSpecification] | join(" ")')"
@@ -1125,6 +1127,12 @@ test_rvn_gke_cron() {
     "$(q "${default}" "${cj} | .spec.schedule + \" \" + .spec.jobTemplate.spec.template.spec.containers[0].image")"
   assert_eq "cron: the job pod runs as the Workload Identity service account" \
     "demo-cron" "$(q "${full}" "${cj} | .spec.jobTemplate.spec.template.spec.serviceAccountName")"
+  assert_eq "cron: unset deadlines and retention are omitted" \
+    "false false false" \
+    "$(q "${default}" "${cj} | [(.spec | has(\"startingDeadlineSeconds\")), (.spec.jobTemplate.spec | has(\"activeDeadlineSeconds\")), (.spec.jobTemplate.spec | has(\"ttlSecondsAfterFinished\"))] | join(\" \")")"
+  assert_eq "cron: zero starting deadline and zero retention are rendered, not dropped" \
+    "0 0" \
+    "$(q "$(render "${chart}" zero --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set startingDeadlineSeconds=0 --set job.ttlSecondsAfterFinished=0)" "${cj} | (.spec.startingDeadlineSeconds | tostring) + \" \" + (.spec.jobTemplate.spec.ttlSecondsAfterFinished | tostring)")"
   test_gke_secrets "${chart}" "${full}"
   test_gke_service_account "${chart}" "${default}" "${full}"
 }

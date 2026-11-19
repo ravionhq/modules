@@ -548,7 +548,7 @@ module:
 
     | Part | Owns | Changes when |
     | ---- | ---- | ------------ |
-    | Terraform stack | Reserved load balancer address, optional Artifact Registry repository, Workload Identity IAM grants, service address outputs | You change the load balancer, build source, or IAM roles |
+    | Terraform stack | Reserved load balancer address, optional Artifact Registry repository, Workload Identity Google service account and its IAM grants, service address outputs | You change the load balancer, build source, or IAM roles |
     | Build | The container image, from a Dockerfile or Railpack, pushed to Artifact Registry | Every build, unless the build source is an existing registry image |
     | Helm deploy | Deployment, Service, Gateway, HTTPRoute, HPA, secrets wiring | Every release, and whenever runtime settings change |
 
@@ -628,7 +628,7 @@ module:
     ## Design decisions
 
     - **One Gateway per service.** Each service owns its load balancer and address, so one service's routes cannot break another's. A shared Gateway costs less with many services but needs a cluster-level owner.
-    - **Workload Identity without service accounts.** IAM names the Kubernetes service account directly, so there is no Google service account, key, or annotation to manage.
+    - **A Google service account per stack.** The stack creates a Google service account for the service, grants it the Project IAM roles, and lets the pods' Kubernetes service account act as it through Workload Identity; the chart sets the `iam.gke.io/gcp-service-account` annotation. Roles are not granted to the Kubernetes service account itself because every cluster in a project shares one Workload Identity pool: the same namespace and name on another cluster or environment would share the grant, and removing either module would revoke both. No key is created.
     - **No Ravion-managed domains yet.** Bring a certificate and point DNS yourself; Ravion-managed domains are AWS-only today.
     - **Service name and container port are fixed after creation.** They identify the release and its address.
 

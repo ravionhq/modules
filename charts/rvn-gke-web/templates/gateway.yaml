@@ -67,9 +67,11 @@ metadata:
   labels:
     {{- include "rvn-gke-web.labels" . | nindent 4 }}
 spec:
+  # With an HTTP-to-HTTPS redirect the HTTP listener belongs to the redirect
+  # route; without one the route serves both listeners.
   parentRefs:
     - name: {{ $fullname }}
-      {{- if $https }}
+      {{- if and $https .Values.gateway.httpsRedirect }}
       sectionName: https
       {{- end }}
   {{- with .Values.gateway.hostnames }}

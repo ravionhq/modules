@@ -17,7 +17,23 @@ mock_provider "google" {
         network_self_link        = "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/default"
         private_ip_google_access = false
         self_link                = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/proxy-only"
+        }, {
+        description              = ""
+        ip_cidr_range            = "10.200.0.0/23"
+        name                     = "other-proxy-only"
+        network                  = "other-vpc"
+        network_name             = "other-vpc"
+        network_self_link        = "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/other-vpc"
+        private_ip_google_access = false
+        self_link                = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/other-proxy-only"
       }]
+    }
+  }
+  # The cluster's subnetwork, in the default network. The beta self link checks
+  # that networks compare by path, not by API version.
+  mock_data "google_compute_subnetwork" {
+    defaults = {
+      network = "https://www.googleapis.com/compute/beta/projects/test-project/global/networks/default"
     }
   }
   mock_resource "google_compute_global_address" {
@@ -219,9 +235,29 @@ run "internal_gateway_admits_the_proxy_only_subnet" {
   }
 
   assert {
-    condition     = contains(output.load_balancer_source_cidr_blocks, "10.129.0.0/23")
-    error_message = "A regional internal Gateway forwards from the proxy-only subnet, which must be admitted."
+    condition     = contains(output.load_balancer_source_cidr_blocks, "10.129.0.0/23") && !contains(output.load_balancer_source_cidr_blocks, "10.200.0.0/23")
+    error_message = "A regional internal Gateway forwards from its own network's proxy-only subnet, which must be admitted; another VPC's must not."
   }
+}
+
+# A proxy-only subnet in another VPC of the region must not satisfy the
+# precondition: the Gateway in the cluster's VPC could not be programmed.
+run "internal_gateway_requires_a_proxy_only_subnet_in_its_own_network" {
+  command = plan
+
+  variables {
+    load_balancer_scheme = "internal"
+    subnetwork           = "projects/test-project/regions/us-central1/subnetworks/isolated-subnet"
+  }
+
+  override_data {
+    target = data.google_compute_subnetwork.gateway
+    values = {
+      network = "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/isolated"
+    }
+  }
+
+  expect_failures = [google_compute_address.gateway]
 }
 
 run "cluster_only_has_no_load_balancer" {

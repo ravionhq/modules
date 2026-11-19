@@ -25,8 +25,15 @@
 resource "terraform_data" "workload_release" {
   count = var.workload_release_cleanup_enabled ? 1 : 0
 
+  # Destroyed first, so the release (and the web chart's Gateway, which holds
+  # the reserved address through its forwarding rule) is gone before Terraform
+  # deletes the address, the repository or the Workload Identity grants.
   depends_on = [
     google_artifact_registry_repository.this,
+    google_compute_global_address.gateway,
+    google_compute_address.gateway,
+    google_service_account.workload_identity,
+    google_service_account_iam_member.workload_identity,
     google_project_iam_member.workload_identity,
   ]
 

@@ -302,7 +302,7 @@ module:
 
     | Part | Owns | Changes when |
     | ---- | ---- | ------------ |
-    | Terraform stack | Optional Artifact Registry repository, Workload Identity IAM grants | You change the build source or IAM roles |
+    | Terraform stack | Optional Artifact Registry repository, Workload Identity Google service account and its IAM grants | You change the build source or IAM roles |
     | Build | The container image, from a Dockerfile or Railpack | Every build, unless the build source is an existing registry image |
     | Helm deploy | Deployment, HPA or KEDA ScaledObject, secrets wiring | Every release, and whenever runtime settings change |
 
