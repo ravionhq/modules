@@ -1,0 +1,16 @@
+# Google Cloud permissions for a GKE workload: IAM roles granted on the project
+# to a Google service account the stack creates, which the release's Kubernetes
+# service account acts as through Workload Identity, the GKE analogue of the
+# EKS Pod Identity role. The deploy annotates the service account with the
+# stack's workload_identity_service_account_email output.
+- id: section_iam
+  label: IAM roles
+  type: section
+- id: workload_identity_project_roles
+  label: Project IAM roles
+  type: string_array
+  description: Granted to a Google service account the pods act as through Workload Identity, with no keys. Leave empty if the workload calls no Google Cloud APIs.
+  add_button_label: Add role
+  placeholder: roles/storage.objectViewer
+  required: false
+  default: []

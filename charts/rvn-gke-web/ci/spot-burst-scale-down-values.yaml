@@ -1,0 +1,22 @@
+# Inert render-test trigger only; this is not a production metric. Exercises a
+# non-default scale-down rate for the Spot pool.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-web/demo-web
+  tag: v1.2.3
+spotBurst:
+  enabled: true
+  kedaEnabled: true
+  maxReplicas: 20
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: "http://example.invalid:9090"
+        query: "vector(0)"
+        threshold: "1"
+        activationThreshold: "0"
+        ignoreNullValues: "false"
+  scaleDown:
+    stabilizationWindowSeconds: 900
+    podsPerPeriod: 5
+    percentPerPeriod: 50
+    periodSeconds: 30

@@ -1,0 +1,226 @@
+{{- $root := . -}}
+{{- if and .Values.spotBurst.enabled (not .Values.spotBurst.kedaEnabled) -}}
+{{- fail "spotBurst.enabled requires KEDA to be installed by rvn-gke-addons before this workload is deployed" -}}
+{{- end -}}
+{{- if and .Values.spotBurst.enabled (gt (int .Values.spotBurst.minReplicas) (int .Values.spotBurst.maxReplicas)) -}}
+{{- fail "spotBurst.minReplicas must not exceed spotBurst.maxReplicas" -}}
+{{- end -}}
+{{- $pools := list false -}}
+{{- if .Values.spotBurst.enabled -}}
+{{- $pools = append $pools true -}}
+{{- end -}}
+{{- range $index, $isSpot := $pools -}}
+{{- if gt $index 0 }}
+---
+{{- end }}
+{{- with $root }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ if $isSpot }}{{ include "rvn-gke-web.spotDeploymentName" $ }}{{ else }}{{ include "rvn-gke-web.fullname" . }}{{ end }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+  {{- with .Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if $isSpot }}
+  replicas: {{ include "rvn-gke-web.spotDeploymentReplicas" $ }}
+  {{- else if .Values.spotBurst.enabled }}
+  replicas: {{ .Values.spotBurst.baselineReplicas }}
+  {{- else if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- if and .Values.spotBurst.enabled $isSpot }}
+      {{- include "rvn-gke-web.spotSelectorLabels" $ | nindent 6 }}
+      {{- else }}
+      {{- include "rvn-gke-web.selectorLabels" . | nindent 6 }}
+      {{- end }}
+  strategy:
+    type: {{ .Values.strategy.type }}
+    {{- if eq .Values.strategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.strategy.maxSurge }}
+      maxUnavailable: {{ .Values.strategy.maxUnavailable }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- if and .Values.spotBurst.enabled $isSpot }}
+        {{- include "rvn-gke-web.spotSelectorLabels" $ | nindent 8 }}
+        {{- else }}
+        {{- include "rvn-gke-web.selectorLabels" . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.spotBurst.enabled }}
+        ravion.com/spot-burst-pool: {{ ternary "spot" "baseline" $isSpot }}
+        {{- with (omit .Values.podLabels "app.kubernetes.io/name" "app.kubernetes.io/instance" "ravion.com/spot-burst-pool") }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- else }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- $podAnnotations := deepCopy (.Values.podAnnotations | default dict) }}
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "rvn-gke-web.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- /*
+      No readiness gate is declared here: GKE's NEG controller injects
+      cloud.google.com/load-balancer-neg-ready into pods backing a Gateway, so
+      a rolling update keeps old pods until their replacements are healthy in
+      the load balancer.
+      */}}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "rvn-gke-web.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          {{- /*
+          preStop sleep: keeps the container running, still serving, for a few
+          seconds after the pod is marked Terminating, so the load balancer
+          controller can deregister it before the application receives SIGTERM
+          and no new connections arrive while it drains. Uses the native sleep
+          action, so the image needs no shell or sleep binary. The sleep counts
+          against terminationGracePeriodSeconds.
+          */}}
+          {{- /* Skipped, not failed, before 1.30: the sleep action does not
+          exist there, and a default must never break a supported cluster. */}}
+          {{- if semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
+          {{- with .Values.lifecycle.preStopSleepSeconds }}
+          {{- if ge (int .) (int $.Values.terminationGracePeriodSeconds) }}
+          {{- fail (printf "lifecycle.preStopSleepSeconds (%d) must be less than terminationGracePeriodSeconds (%d), or the application never gets time to shut down after SIGTERM" (int .) (int $.Values.terminationGracePeriodSeconds)) }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ . }}
+          {{- end }}
+          {{- end }}
+          {{- with (include "rvn-gke-web.env" . | trim) }}
+          env:
+            {{- . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: {{ .Values.probes.liveness.port | default "http" }}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: {{ .Values.probes.readiness.port | default "http" }}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+          {{- end }}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path | default .Values.probes.readiness.path }}
+              port: {{ .Values.probes.startup.port | default "http" }}
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (include "rvn-gke-web.tolerationsForPool" (list $ $isSpot) | trim) }}
+      tolerations:
+        {{- . | nindent 8 }}
+      {{- end }}
+      {{- $poolAffinity := include "rvn-gke-web.affinityForPool" (list $ $isSpot) | trim }}
+      {{- with $poolAffinity }}
+      affinity:
+        {{- . | fromYaml | toYaml | nindent 8 }}
+      {{- end }}
+      {{- if .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
+      {{- else if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- if and .Values.spotBurst.enabled $isSpot }}
+              {{- include "rvn-gke-web.spotSelectorLabels" $ | nindent 14 }}
+              {{- else }}
+              {{- include "rvn-gke-web.selectorLabels" . | nindent 14 }}
+              {{- end }}
+              {{- if .Values.spotBurst.enabled }}
+              ravion.com/spot-burst-pool: {{ ternary "spot" "baseline" $isSpot }}
+              {{- end }}
+        {{- if .Values.topologySpread.nodeSpread }}
+        - maxSkew: {{ .Values.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- if and .Values.spotBurst.enabled $isSpot }}
+              {{- include "rvn-gke-web.spotSelectorLabels" $ | nindent 14 }}
+              {{- else }}
+              {{- include "rvn-gke-web.selectorLabels" . | nindent 14 }}
+              {{- end }}
+              {{- if .Values.spotBurst.enabled }}
+              ravion.com/spot-burst-pool: {{ ternary "spot" "baseline" $isSpot }}
+              {{- end }}
+        {{- end }}
+      {{- end }}
+{{- end }}
+{{- end }}

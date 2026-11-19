@@ -1,0 +1,10 @@
+# PodDisruptionBudget requested on a single fixed replica: the chart skips the
+# budget, because minAvailable >= replicas would block every node drain and
+# there is no way to drain one pod gradually.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-worker/demo-worker
+  tag: v1.2.3
+replicaCount: 1
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

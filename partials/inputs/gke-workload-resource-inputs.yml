@@ -1,0 +1,61 @@
+# The GKE port of ./eks-workload-resource-inputs.yml: no Fargate, and Spot
+# means GKE Spot VMs, which node auto-provisioning creates on demand.
+- id: section_resources
+  label: Container resources
+  type: section
+- id: compute_target
+  label: Compute target
+  type: string
+  description: Spot nodes cost less, but Google can reclaim them at any time.
+  required: true
+  default: any
+  values:
+    - label: Automatic
+      description: Any node the pod fits on, On-demand or Spot.
+      value: any
+    - label: On-demand
+      description: Keep pods off Spot nodes.
+      value: on_demand
+    - label: Spot
+      description: Require Spot nodes. Node auto-provisioning creates a Spot node pool when none fits.
+      value: spot
+- id: cpu_request
+  label: CPU request
+  type: string
+  description: CPU reserved for the pod and its guaranteed share under load. 1 is one vCPU; m is thousandths of a core, so 100m is a tenth. Autoscaling CPU targets are a percentage of this value.
+  placeholder: 100m
+  required: true
+  default: 100m
+  patterns:
+    - message: A CPU quantity such as 100m, 0.5, or 2.
+      pattern: ^[0-9]+(\.[0-9]+)?m?$
+- id: cpu_limit
+  label: CPU limit
+  type: string
+  description: Optional CPU ceiling, in the same units. Leave blank to let a pod burst into spare node CPU.
+  placeholder: Unlimited
+  collapsible: true
+  required: false
+  patterns:
+    - message: A CPU quantity such as 100m, 0.5, or 2.
+      pattern: ^[0-9]+(\.[0-9]+)?m?$
+- id: memory_request
+  label: Memory request
+  type: string
+  description: Memory reserved for the pod, in binary units such as 256Mi or 1Gi (1024Mi). Set this close to steady-state usage.
+  placeholder: 256Mi
+  required: true
+  default: 256Mi
+  patterns:
+    - message: A memory quantity such as 256Mi, 1Gi, or 512M.
+      pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?$
+- id: memory_limit
+  label: Memory limit
+  type: string
+  description: Memory ceiling, in the same units. Exceeding it terminates the container with OOMKilled, so set it above the worst legitimate spike.
+  placeholder: 512Mi
+  required: true
+  default: 512Mi
+  patterns:
+    - message: A memory quantity such as 256Mi, 1Gi, or 512M.
+      pattern: ^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?$

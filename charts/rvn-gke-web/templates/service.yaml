@@ -1,0 +1,35 @@
+{{/*
+ClusterIP Service. In-cluster callers reach the workload through it, and the
+chart's HTTPRoute uses it as the backend: GKE's Gateway controller creates
+network endpoint groups for it and the load balancer sends requests straight
+to pod IPs (container-native load balancing), so no NodePort is needed.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rvn-gke-web.fullname" . }}
+  labels:
+    {{- include "rvn-gke-web.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- with .Values.service.trafficDistribution }}
+  trafficDistribution: {{ . }}
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort | default "http" }}
+      protocol: TCP
+      {{- with .Values.service.appProtocol }}
+      appProtocol: {{ . }}
+      {{- end }}
+  selector:
+    {{- if .Values.spotBurst.enabled }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- else }}
+    {{- include "rvn-gke-web.selectorLabels" . | nindent 4 }}
+    {{- end }}

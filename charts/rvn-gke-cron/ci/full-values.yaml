@@ -1,0 +1,28 @@
+# Every cron knob set, plus a same-project and a cross-project secret.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-cron/demo-cron
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+schedule: "*/15 * * * *"
+timeZone: America/New_York
+concurrencyPolicy: Forbid
+suspend: false
+successfulJobsHistoryLimit: 1
+failedJobsHistoryLimit: 5
+startingDeadlineSeconds: 120
+job:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  restartPolicy: Never
+serviceAccount:
+  name: demo-cron
+  gcpServiceAccount: demo-cron-750a9b@demo-project.iam.gserviceaccount.com
+  annotations:
+    example.com/owner: shop
+ravion:
+  secrets:
+    - name: DB_PASSWORD
+      key: db-secret
+      property: password
+    - name: FEATURE_FLAGS
+      key: projects/shared-project/secrets/feature-flags

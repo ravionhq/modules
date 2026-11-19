@@ -1,0 +1,14 @@
+apiVersion: v2
+name: rvn-gke-worker
+description: Ravion application chart for a long-running background workload on GKE — Deployment, Workload Identity service account, optional HPA, PodDisruptionBudget and KEDA Spot burst. No Service or port.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - ravion
+  - flightcontrol
+  - gke
+  - worker
+maintainers:
+  - name: Flightcontrol
+    url: https://www.flightcontrol.dev/

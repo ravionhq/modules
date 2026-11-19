@@ -158,13 +158,15 @@ jobs:
               python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_helm_dependencies.py' -v
               python3 -B -m unittest discover -s compute/eks/addons/tests -p 'test_local_chart_versions.py' -v
 
-          - name: GKE cluster and add-ons
+          - name: GKE cluster, add-ons and workloads
             run: |
               tofu -chdir=compute/gke init -backend=false
               tofu -chdir=compute/gke test
               tofu -chdir=compute/gke/addons init -backend=false
               tofu -chdir=compute/gke/addons validate
               tofu -chdir=compute/gke/addons test
+              tofu -chdir=compute/gke_service init -backend=false
+              tofu -chdir=compute/gke_service test
 
           - name: public ALB WAF association
             run: |

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 CHARTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration temporal-resources clickhouse-cluster clickhouse-secrets)
+ALL_CHARTS=(rvn-eks-web rvn-eks-worker rvn-eks-cron rvn-gke-web rvn-gke-worker rvn-gke-cron karpenter-resources warm-capacity ebs-storage thanos statefulset-volume-migration temporal-resources clickhouse-cluster clickhouse-secrets)
 if [[ $# -gt 0 ]]; then
   CHARTS=("$@")
 else
@@ -949,6 +949,195 @@ test_secrets_contract() {
 }
 
 ################################################################################
+# rvn-gke-web, rvn-gke-worker, rvn-gke-cron
+#
+# Ported from the rvn-eks-* charts. These cover what differs on GKE: the
+# Gateway that replaces the TargetGroupBinding, the single Secret Manager
+# store, Workload Identity service accounts, and GKE Spot placement.
+################################################################################
+
+# Secret Manager references: one store, keys passed through unchanged.
+test_gke_secrets() {
+  local chart="$1" full="$2"
+  local es='.[] | select(.kind == "ExternalSecret")'
+  assert_eq "${chart}: secrets use the single ravion-gcp ClusterSecretStore" \
+    "ravion-gcp ClusterSecretStore" \
+    "$(q "${full}" "${es} | [.spec.secretStoreRef.name, .spec.secretStoreRef.kind] | join(\" \")")"
+  assert_eq "${chart}: no entry overrides the store" \
+    "0" "$(q "${full}" "[${es} | .spec.data[] | select(has(\"sourceRef\"))] | length")"
+  assert_eq "${chart}: secret IDs and cross-project names reach ESO unchanged" \
+    "db-secret projects/shared-project/secrets/feature-flags" \
+    "$(q "${full}" "[${es} | .spec.data[] | .remoteRef.key] | (.[0] + \" \" + .[-1])")"
+  assert_eq "${chart}: property extracts a JSON key" \
+    "password" "$(q "${full}" "${es} | .spec.data[0].remoteRef.property")"
+  expect_template_failure "${chart}" "${chart}: rejects an AWS ARN as a secret key" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" \
+    --set-json 'ravion.secrets=[{"name":"X","key":"arn:aws:secretsmanager:us-east-1:123456789012:secret:x"}]'
+  expect_template_failure "${chart}" "${chart}: rejects the AWS provider field" \
+    --values "$(chart_path "${chart}")/ci/default-values.yaml" \
+    --set-json 'ravion.secrets=[{"name":"X","key":"x","provider":"secretsManager"}]'
+}
+
+# Workload Identity: stable name, no AWS or GKE annotation.
+test_gke_service_account() {
+  local chart="$1" default="$2" full="$3" short="${1#rvn-gke-}"
+  local sa='.[] | select(.kind == "ServiceAccount")'
+  assert_eq "${chart}: ServiceAccount is named after the release" \
+    "test-release-${chart}" "$(q "${default}" "${sa} | .metadata.name")"
+  assert_eq "${chart}: without a Google service account the ServiceAccount carries no annotation" \
+    "" "$(q "${default}" "${sa} | .metadata.annotations")"
+  assert_eq "${chart}: gcpServiceAccount becomes the Workload Identity annotation beside other annotations" \
+    "demo-${short}-750a9b@demo-project.iam.gserviceaccount.com shop" \
+    "$(q "${full}" "${sa} | [.metadata.annotations.\"iam.gke.io/gcp-service-account\", .metadata.annotations.\"example.com/owner\"] | join(\" \")")"
+  expect_template_failure "${chart}" "${chart}: gcpServiceAccount must be a service account email" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set serviceAccount.gcpServiceAccount=principal://iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/subject/ns/n/sa/s
+}
+
+# Spot burst: baseline off GKE Spot nodes, Spot pool on them and tolerating
+# the taint node auto-provisioning puts on Spot pools.
+test_gke_spot_burst() {
+  local chart="$1"
+  local burst
+  burst="$(render "${chart}" gke-spot-burst --values "${CHARTS_DIR}/${chart}/ci/spot-burst-values.yaml")"
+  local baseline='.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$") | not))'
+  local spot='.[] | select(.kind == "Deployment" and (.metadata.name | test("-spot$")))'
+  local terms='.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms'
+  assert_eq "${chart}: two Deployments and one ScaledObject in burst mode" \
+    "2 1 0" "$(count "${burst}" Deployment) $(count "${burst}" ScaledObject) $(count "${burst}" HorizontalPodAutoscaler)"
+  assert_eq "${chart}: every baseline term excludes GKE Spot nodes" \
+    "NotIn" "$(q "${burst}" "[${baseline} | ${terms}[].matchExpressions[] | select(.key == \"cloud.google.com/gke-spot\") | .operator] | unique | join(\" \")")"
+  assert_eq "${chart}: every Spot term requires GKE Spot nodes" \
+    "In" "$(q "${burst}" "[${spot} | ${terms}[].matchExpressions[] | select(.key == \"cloud.google.com/gke-spot\") | .operator] | unique | join(\" \")")"
+  assert_eq "${chart}: user terms are kept, one Spot requirement each" \
+    "2 2" "$(q "${burst}" "${baseline} | ${terms} | length") $(q "${burst}" "${spot} | ${terms} | length")"
+  assert_eq "${chart}: no AWS capacity labels remain" \
+    "0" "$(q "${burst}" "[.. | select(. == \"eks.amazonaws.com/capacityType\" or . == \"karpenter.sh/capacity-type\" or . == \"eks.amazonaws.com/compute-type\")] | length")"
+  assert_eq "${chart}: only the Spot pool tolerates the GKE Spot taint" \
+    " cloud.google.com/gke-spot:NoSchedule" \
+    "$(q "${burst}" "[${baseline} | .spec.template.spec.tolerations[]? | .key + \":\" + .effect] | join(\",\")") $(q "${burst}" "[${spot} | .spec.template.spec.tolerations[]? | .key + \":\" + .effect] | join(\",\")")"
+  assert_eq "${chart}: user tolerations stay ahead of the Spot toleration" \
+    "dedicated cloud.google.com/gke-spot" \
+    "$(q "$(render "${chart}" gke-spot-tol --values "${CHARTS_DIR}/${chart}/ci/spot-burst-values.yaml" \
+      --set-json 'tolerations=[{"key":"dedicated","operator":"Exists","effect":"NoSchedule"}]')" \
+      "[${spot} | .spec.template.spec.tolerations[].key] | join(\" \")")"
+  if helm template test-release "$(chart_path "${chart}")" --values "${CHARTS_DIR}/${chart}/ci/spot-burst-values.yaml" \
+    --set spotBurst.kedaEnabled=false >"${WORK_DIR}/gke-missing-keda.out" 2>&1; then
+    fail "${chart}: burst requires the GKE add-ons KEDA" "clear prerequisite error" "render succeeded"
+  elif grep -q "rvn-gke-addons" "${WORK_DIR}/gke-missing-keda.out"; then
+    pass "${chart}: burst requires the GKE add-ons KEDA"
+  else
+    fail "${chart}: burst requires the GKE add-ons KEDA" "rvn-gke-addons in error" "$(cat "${WORK_DIR}/gke-missing-keda.out")"
+  fi
+}
+
+test_rvn_gke_web() {
+  local chart=rvn-gke-web
+  local default full internal
+  default="$(render "${chart}" default --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml")"
+  full="$(render "${chart}" full --values "${CHARTS_DIR}/${chart}/ci/full-values.yaml")"
+  internal="$(render "${chart}" internal --values "${CHARTS_DIR}/${chart}/ci/internal-gateway-values.yaml")"
+  local gw='.[] | select(.kind == "Gateway")'
+  local route='.[] | select(.kind == "HTTPRoute" and (.metadata.name | test("-redirect$") | not))'
+  local redirect='.[] | select(.kind == "HTTPRoute" and (.metadata.name | test("-redirect$")))'
+  local dep='.[] | select(.kind == "Deployment")'
+
+  assert_eq "web: image maps an Artifact Registry repository:tag" \
+    "us-central1-docker.pkg.dev/demo-project/demo-web/demo-web:v1.2.3" \
+    "$(q "${default}" "${dep} | .spec.template.spec.containers[0].image")"
+  assert_eq "web: a ClusterIP Service is always rendered" \
+    "ClusterIP" "$(q "${default}" '.[] | select(.kind == "Service") | .spec.type')"
+  assert_eq "web: nothing load-balancer related renders by default" \
+    "0 0 0 0 0" \
+    "$(count "${default}" Gateway) $(count "${default}" HTTPRoute) $(count "${default}" HealthCheckPolicy) $(count "${default}" GCPBackendPolicy) $(count "${default}" TargetGroupBinding)"
+  assert_eq "web: no explicit readiness gate; GKE's NEG controller injects one" \
+    "" "$(q "${full}" "${dep} | .spec.template.spec.readinessGates")"
+
+  assert_eq "web: external Gateway uses the reserved global address and certificate map" \
+    "gke-l7-global-external-managed NamedAddress gw-demo-web shop" \
+    "$(q "${full}" "${gw} | [.spec.gatewayClassName, .spec.addresses[0].type, .spec.addresses[0].value, .metadata.annotations.\"networking.gke.io/certmap\"] | join(\" \")")"
+  assert_eq "web: HTTPS adds a 443 listener beside 80" \
+    "http:80 https:443" \
+    "$(q "${full}" "[${gw} | .spec.listeners[] | .name + \":\" + (.port | tostring)] | join(\" \")")"
+  assert_eq "web: route attaches to HTTPS, matches hostnames and path prefixes, and backs onto the Service port" \
+    "https shop.example.com,*.shop.example.com /,/api test-release-rvn-gke-web:80" \
+    "$(q "${full}" "${route} | [.spec.parentRefs[0].sectionName, (.spec.hostnames | join(\",\")), ([.spec.rules[0].matches[].path.value] | join(\",\")), .spec.rules[0].backendRefs[0].name + \":\" + (.spec.rules[0].backendRefs[0].port | tostring)] | join(\" \")")"
+  assert_eq "web: HTTP is redirected to HTTPS" \
+    "http https 301" \
+    "$(q "${full}" "${redirect} | [.spec.parentRefs[0].sectionName, .spec.rules[0].filters[0].requestRedirect.scheme, (.spec.rules[0].filters[0].requestRedirect.statusCode | tostring)] | join(\" \")")"
+  assert_eq "web: health check and backend policies target the Service" \
+    "Service test-release-rvn-gke-web Service test-release-rvn-gke-web" \
+    "$(q "${full}" '[.[] | select(.kind == "HealthCheckPolicy" or .kind == "GCPBackendPolicy") | .spec.targetRef.kind + " " + .spec.targetRef.name] | join(" ")')"
+  assert_eq "web: backend policy drains and keeps cookie affinity" \
+    "300 GENERATED_COOKIE 86400" \
+    "$(q "${full}" '.[] | select(.kind == "GCPBackendPolicy") | [.spec.default.connectionDraining.drainingTimeoutSec, .spec.default.sessionAffinity.type, .spec.default.sessionAffinity.cookieTtlSec] | join(" ")')"
+
+  assert_eq "web: internal Gateway uses gke-l7-rilb with a pre-shared certificate" \
+    "gke-l7-rilb internal-cert" \
+    "$(q "${internal}" "${gw} | [.spec.gatewayClassName, .spec.listeners[1].tls.options.\"networking.gke.io/pre-shared-certs\"] | join(\" \")")"
+  assert_eq "web: without a redirect HTTP is not redirected and the route matches every host on /" \
+    "0 / " \
+    "$(count "${internal}" HTTPRoute | awk '{print $1-1}') $(q "${internal}" "${route} | .spec.rules[0].matches[0].path.value") $(q "${internal}" "${route} | .spec.hostnames")"
+  assert_eq "web: HTTPS without a redirect serves the route on both listeners" \
+    "1 " "$(q "${internal}" "${route} | .spec.parentRefs | length") $(q "${internal}" "${route} | .spec.parentRefs[0].sectionName")"
+  assert_eq "web: health check path follows the values" \
+    "/healthz USE_SERVING_PORT" \
+    "$(q "${internal}" '.[] | select(.kind == "HealthCheckPolicy") | [.spec.default.config.httpHealthCheck.requestPath, .spec.default.config.httpHealthCheck.portSpecification] | join(" ")')"
+  assert_eq "web: an HTTP-only Gateway has one listener and the route attaches to the Gateway" \
+    "1 " \
+    "$(q "$(render "${chart}" http-only --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set gateway.enabled=true)" "${gw} | .spec.listeners | length") $(q "$(render "${chart}" http-only2 --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set gateway.enabled=true)" "${route} | .spec.parentRefs[0].sectionName")"
+  expect_template_failure "${chart}" "web: a certificate map is rejected on an internal Gateway" \
+    --values "${CHARTS_DIR}/${chart}/ci/internal-gateway-values.yaml" --set gateway.certificateMapName=shop
+  expect_template_failure "${chart}" "web: an unknown Gateway class is rejected" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set gateway.enabled=true --set gateway.className=gke-l7-gxlb
+  expect_template_failure "${chart}" "web: the removed targetGroupArns value is rejected" \
+    --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" \
+    --set-json 'targetGroupArns=["arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/x/y"]'
+
+  assert_eq "web: cross-project secrets keep their full name" \
+    "projects/shared-project/secrets/feature-flags projects/shared-project/secrets/rate-limit" \
+    "$(q "$(render "${chart}" cross-project --values "${CHARTS_DIR}/${chart}/ci/cross-project-secret-values.yaml")" '[.[] | select(.kind == "ExternalSecret") | .spec.data[].remoteRef.key] | join(" ")')"
+  test_gke_secrets "${chart}" "${full}"
+  test_gke_service_account "${chart}" "${default}" "${full}"
+  test_gke_spot_burst "${chart}"
+}
+
+test_rvn_gke_worker() {
+  local chart=rvn-gke-worker
+  local default full
+  default="$(render "${chart}" default --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml")"
+  full="$(render "${chart}" full --values "${CHARTS_DIR}/${chart}/ci/full-values.yaml")"
+  assert_eq "worker: image maps an Artifact Registry repository:tag" \
+    "us-central1-docker.pkg.dev/demo-project/demo-worker/demo-worker:v1.2.3" \
+    "$(q "${default}" '.[] | select(.kind == "Deployment") | .spec.template.spec.containers[0].image')"
+  assert_eq "worker: renders no Service, Gateway or route" \
+    "0 0 0" "$(count "${full}" Service) $(count "${full}" Gateway) $(count "${full}" HTTPRoute)"
+  test_gke_secrets "${chart}" "${full}"
+  test_gke_service_account "${chart}" "${default}" "${full}"
+  test_gke_spot_burst "${chart}"
+}
+
+test_rvn_gke_cron() {
+  local chart=rvn-gke-cron
+  local default full
+  default="$(render "${chart}" default --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml")"
+  full="$(render "${chart}" full --values "${CHARTS_DIR}/${chart}/ci/full-values.yaml")"
+  local cj='.[] | select(.kind == "CronJob")'
+  assert_eq "cron: a CronJob runs the Artifact Registry image on its schedule" \
+    "0 3 * * * us-central1-docker.pkg.dev/demo-project/demo-cron/demo-cron:v1.2.3" \
+    "$(q "${default}" "${cj} | .spec.schedule + \" \" + .spec.jobTemplate.spec.template.spec.containers[0].image")"
+  assert_eq "cron: the job pod runs as the Workload Identity service account" \
+    "demo-cron" "$(q "${full}" "${cj} | .spec.jobTemplate.spec.template.spec.serviceAccountName")"
+  assert_eq "cron: unset deadlines and retention are omitted" \
+    "false false false" \
+    "$(q "${default}" "${cj} | [(.spec | has(\"startingDeadlineSeconds\")), (.spec.jobTemplate.spec | has(\"activeDeadlineSeconds\")), (.spec.jobTemplate.spec | has(\"ttlSecondsAfterFinished\"))] | join(\" \")")"
+  assert_eq "cron: zero starting deadline and zero retention are rendered, not dropped" \
+    "0 0" \
+    "$(q "$(render "${chart}" zero --values "${CHARTS_DIR}/${chart}/ci/default-values.yaml" --set startingDeadlineSeconds=0 --set job.ttlSecondsAfterFinished=0)" "${cj} | (.spec.startingDeadlineSeconds | tostring) + \" \" + (.spec.jobTemplate.spec.ttlSecondsAfterFinished | tostring)")"
+  test_gke_secrets "${chart}" "${full}"
+  test_gke_service_account "${chart}" "${default}" "${full}"
+}
+
+################################################################################
 # karpenter-resources (compute/eks/addons)
 ################################################################################
 
@@ -1524,6 +1713,9 @@ for chart in "${CHARTS[@]}"; do
     rvn-eks-web) test_rvn_eks_web ;;
     rvn-eks-worker) test_rvn_eks_worker ;;
     rvn-eks-cron) test_rvn_eks_cron ;;
+    rvn-gke-web) test_rvn_gke_web ;;
+    rvn-gke-worker) test_rvn_gke_worker ;;
+    rvn-gke-cron) test_rvn_gke_cron ;;
     karpenter-resources) test_karpenter_resources ;;
     warm-capacity) test_warm_capacity ;;
     ebs-storage) test_ebs_storage ;;

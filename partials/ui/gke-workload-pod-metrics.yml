@@ -1,0 +1,61 @@
+# Pod charts for a GKE workload, read through Cloud Monitoring's PromQL API.
+#
+# They use GKE system metrics (kubernetes.io/container/* and
+# kubernetes.io/pod/*), which every cluster publishes with the
+# SYSTEM_COMPONENTS monitoring the GKE Cluster module always enables, rather
+# than cAdvisor or kube-state-metrics series: the cluster module does not turn
+# on GKE's kube-state-metrics or cAdvisor packages, so those would be empty.
+# Pods are matched by name: the workload name, an optional -spot (the Spot burst
+# Deployment), then the ReplicaSet hash or Job suffix and the random pod
+# suffix. PromQL regexes are anchored, so another workload whose name merely
+# starts with this one (api and api-worker) has one segment too many. The last
+# segment is optional because Kubernetes truncates long generated pod names.
+#
+# PLATFORM DEPENDENCY: there is no `gcp_monitoring` metric source yet (EKS
+# uses `amp`). Modeled on the AMP source: a GCP account and project plus a
+# PromQL query against the project's Cloud Monitoring Prometheus API.
+- id: cpu_usage
+  name: CPU (% of request)
+  type: line
+  source:
+    type: gcp_monitoring
+    gcp_account_id: << module.input.gcp_account_id >>
+    project_id: << module.input.project_id >>
+    unit: percent
+    query: '100 * avg(kubernetes_io:container_cpu_request_utilization{monitored_resource="k8s_container",cluster_name="<< module.input.cluster_name >>",namespace_name="<< module.input.namespace >>",pod_name=~"<< module.input.name >>(-spot)?-[a-z0-9]+(-[a-z0-9]+)?"})'
+- id: memory_working_set
+  name: Memory used
+  type: line
+  source:
+    type: gcp_monitoring
+    gcp_account_id: << module.input.gcp_account_id >>
+    project_id: << module.input.project_id >>
+    unit: bytes
+    query: 'sum(kubernetes_io:container_memory_used_bytes{monitored_resource="k8s_container",memory_type="non-evictable",cluster_name="<< module.input.cluster_name >>",namespace_name="<< module.input.namespace >>",pod_name=~"<< module.input.name >>(-spot)?-[a-z0-9]+(-[a-z0-9]+)?"})'
+- id: container_restarts
+  name: Container restarts
+  type: line
+  source:
+    type: gcp_monitoring
+    gcp_account_id: << module.input.gcp_account_id >>
+    project_id: << module.input.project_id >>
+    unit: count
+    query: 'sum(increase(kubernetes_io:container_restart_count{monitored_resource="k8s_container",cluster_name="<< module.input.cluster_name >>",namespace_name="<< module.input.namespace >>",pod_name=~"<< module.input.name >>(-spot)?-[a-z0-9]+(-[a-z0-9]+)?"}[$__rate_interval]))'
+- id: network_in
+  name: Network in
+  type: line
+  source:
+    type: gcp_monitoring
+    gcp_account_id: << module.input.gcp_account_id >>
+    project_id: << module.input.project_id >>
+    unit: bytes_per_second
+    query: 'sum(rate(kubernetes_io:pod_network_received_bytes_count{monitored_resource="k8s_pod",cluster_name="<< module.input.cluster_name >>",namespace_name="<< module.input.namespace >>",pod_name=~"<< module.input.name >>(-spot)?-[a-z0-9]+(-[a-z0-9]+)?"}[$__rate_interval]))'
+- id: network_out
+  name: Network out
+  type: line
+  source:
+    type: gcp_monitoring
+    gcp_account_id: << module.input.gcp_account_id >>
+    project_id: << module.input.project_id >>
+    unit: bytes_per_second
+    query: 'sum(rate(kubernetes_io:pod_network_sent_bytes_count{monitored_resource="k8s_pod",cluster_name="<< module.input.cluster_name >>",namespace_name="<< module.input.namespace >>",pod_name=~"<< module.input.name >>(-spot)?-[a-z0-9]+(-[a-z0-9]+)?"}[$__rate_interval]))'

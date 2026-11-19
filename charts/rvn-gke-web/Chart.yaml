@@ -1,0 +1,14 @@
+apiVersion: v2
+name: rvn-gke-web
+description: Ravion application chart for a long-running HTTP workload on GKE — Deployment, Service, Workload Identity service account, optional HPA, PodDisruptionBudget and KEDA Spot burst, and an optional GKE Gateway with HTTPRoute.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - ravion
+  - flightcontrol
+  - gke
+  - web
+maintainers:
+  - name: Flightcontrol
+    url: https://www.flightcontrol.dev/

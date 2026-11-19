@@ -1,0 +1,7 @@
+# A cluster-only service with an allow-list switched on but no sources listed:
+# the NetworkPolicy must render and deny every ingress peer.
+image:
+  repository: us-central1-docker.pkg.dev/demo-project/demo-web/demo-web
+  tag: v1
+networkPolicy:
+  enabled: true

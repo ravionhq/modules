@@ -1,0 +1,63 @@
+# Builder and Artifact Registry inputs shared by rvn-gke-web, rvn-gke-worker,
+# and rvn-gke-cron. Hidden on the image_registry path: nothing is built, so
+# there is no builder to place and no repository to manage.
+- id: section_builder_config
+  label: Builder config
+  type: section
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- id: build_execution_environment_id
+  label: Builder execution environment
+  type: string
+  description: Blank uses the Terraform execution environment.
+  collapsible: true
+  required: false
+  values: $values:ravion/execution_environments
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- id: section_artifact_registry
+  label: Image registry lifecycle
+  type: section
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- id: artifact_registry_repository_id
+  label: Image repository name
+  type: string
+  description: Blank uses the name above. Set it when a repository by that name already exists in the region. Changing it replaces the repository.
+  placeholder: my-service
+  collapsible: true
+  required: false
+  patterns:
+    - message: 1-63 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+      pattern: ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- id: artifact_registry_vulnerability_scanning_enabled
+  label: Scan images on push
+  type: boolean
+  description: Applies when the Container Scanning API is enabled on the project, which bills per image scanned.
+  collapsible: true
+  default: true
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+- id: artifact_registry_max_image_count
+  label: Images kept
+  type: number
+  description: Older image versions are deleted.
+  collapsible: true
+  min: 1
+  default: 100
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
