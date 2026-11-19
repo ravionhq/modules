@@ -36,7 +36,7 @@
 - id: spot_burst_triggers
   label: KEDA triggers
   type: array
-  description: At least one trigger must report demand at the configured minimum. If the minimum is zero, CPU or memory alone cannot wake the pool. Reference pre-created authentication resources only.
+  description: At least one trigger must report demand at the configured minimum. If the minimum is zero, CPU or memory alone cannot wake the pool. Prometheus triggers have the baseline pods' capacity (Baseline pods times threshold) taken off their query; set subtractBaseline false on a trigger that measures a backlog of waiting work. Reference pre-created authentication resources only.
   placeholder: |-
     - type: <KEDA scaler type>
       metadata:

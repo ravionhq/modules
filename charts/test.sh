@@ -223,14 +223,43 @@ test_spot_burst_chart() {
     --values "${values}" --set spotBurst.scaleDown.percentPerPeriod=101
   expect_template_failure "${chart}" "${chart}: scale-down window cannot exceed one hour" \
     --values "${values}" --set spotBurst.scaleDown.stabilizationWindowSeconds=3601
-  assert_eq "${chart}: scaler receives the configured external trigger unchanged" \
-    "prometheus vector(0)" \
-    "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query] | join(\" \")")"
+  # Every pod serves a trigger's demand, the On-Demand baseline included, while
+  # KEDA sizes only the Spot pool. A Prometheus AverageValue trigger therefore
+  # has the baseline's capacity (baselineReplicas * threshold) taken off its
+  # query, or the pool runs baselineReplicas pods more than demand needs.
+  assert_eq "${chart}: a Prometheus trigger asks only for pods beyond the On-Demand baseline" \
+    "prometheus clamp_min((vector(0)) - 3 * 1, 0) 1" \
+    "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query, .spec.triggers[0].metadata.threshold] | join(\" \")")"
+  local prom_meta='"serverAddress":"http://example.invalid:9090","activationThreshold":"0","ignoreNullValues":"false"'
+  local subtracted
+  subtracted="$(render "${chart}" subtract-baseline --values "${values}" --set spotBurst.baselineReplicas=2 \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"query\":\"  (sum(a) or vector(0))\\n+ (sum(b) or vector(0))  \",\"threshold\":\" 500 \"}},{\"type\":\"prometheus\",\"subtractBaseline\":false,\"metadata\":{${prom_meta},\"query\":\"sum(backlog) or vector(0)\",\"threshold\":\"200\"}},{\"type\":\"prometheus\",\"subtractBaseline\":true,\"metricType\":\"Value\",\"metadata\":{${prom_meta},\"query\":\"sum(c)\",\"threshold\":\"0.5\"}},{\"type\":\"aws-sqs-queue\",\"metadata\":{\"queueURL\":\"https://sqs.us-east-1.amazonaws.com/123456789012/q\",\"queueLength\":\"5\"}}]")"
+  assert_eq "${chart}: the baseline count and threshold set the capacity subtracted from a multi-line query" \
+    "clamp_min(((sum(a) or vector(0))
++ (sum(b) or vector(0))) - 2 * 500, 0)" \
+    "$(q "${subtracted}" "${scaled} | .spec.triggers[0].metadata.query")"
+  assert_eq "${chart}: subtractBaseline false keeps a backlog query as written" \
+    "sum(backlog) or vector(0)" "$(q "${subtracted}" "${scaled} | .spec.triggers[1].metadata.query")"
+  assert_eq "${chart}: a Value metric type is not subtracted" \
+    "sum(c)" "$(q "${subtracted}" "${scaled} | .spec.triggers[2].metadata.query")"
+  assert_eq "${chart}: other scaler types pass through unchanged" \
+    "aws-sqs-queue 5" "$(q "${subtracted}" "${scaled} | .spec.triggers[3] | [.type, .metadata.queueLength] | join(\" \")")"
+  assert_eq "${chart}: subtractBaseline never reaches KEDA" \
+    "0" "$(q "${subtracted}" "[${scaled} | .spec.triggers[] | select(has(\"subtractBaseline\"))] | length")"
+  expect_template_failure "${chart}" "${chart}: a subtracted trigger needs a numeric threshold" \
+    --values "${values}" \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"query\":\"vector(0)\",\"threshold\":\"1e3\"}}]"
+  expect_template_failure "${chart}" "${chart}: a subtracted trigger needs a query" \
+    --values "${values}" \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"threshold\":\"1\"}}]"
+  expect_template_failure "${chart}" "${chart}: subtractBaseline must be a boolean" \
+    --values "${values}" \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"subtractBaseline\":\"no\",\"metadata\":{${prom_meta},\"query\":\"vector(0)\",\"threshold\":\"1\"}}]"
   local utilization
   utilization="$(render "${chart}" utilization-metric-type --values "${values}" \
     --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"serverAddress":"http://example.invalid:9090","query":"vector(0)","threshold":"1","activationThreshold":"0","ignoreNullValues":"false"},"metricType":"Utilization"}]')"
-  assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering" \
-    "Utilization" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].metricType')"
+  assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering unsubtracted" \
+    "Utilization vector(0)" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0] | [.metricType, .metadata.query] | join(" ")')"
 
   # When KEDA cannot read its metrics (Prometheus down in ravion-prod), the
   # pool must never shrink, and is topped up to a safe floor: the maximum
