@@ -70,7 +70,12 @@ spec:
   {{- if not $query }}
   {{- fail (printf "spotBurst.triggers[%d]: a prometheus trigger needs metadata.query" $index) }}
   {{- end }}
-  {{- $_ := set $trigger.metadata "query" (printf "clamp_min((%s) - %d * %s, 0)" $query $baseline $threshold) }}
+  {{- /*
+  PromQL comments run to the end of the line, so a query ending in a
+  "# comment" would swallow the closing parenthesis; end its line first.
+  */}}
+  {{- $close := ternary "\n)" ")" (contains "#" $query) }}
+  {{- $_ := set $trigger.metadata "query" (printf "clamp_min((%s%s - %d * %s, 0)" $query $close $baseline $threshold) }}
   {{- end }}
   {{- $triggers = append $triggers $trigger }}
   {{- end }}

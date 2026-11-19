@@ -238,6 +238,14 @@ test_spot_burst_chart() {
     "clamp_min(((sum(a) or vector(0))
 + (sum(b) or vector(0))) - 2 * 500, 0)" \
     "$(q "${subtracted}" "${scaled} | .spec.triggers[0].metadata.query")"
+  # PromQL comments run to the end of the line, so the closing parenthesis
+  # must start a new line or the comment swallows it and the query is invalid.
+  assert_eq "${chart}: a query ending in a PromQL comment keeps its closing parenthesis on a new line" \
+    "clamp_min((sum(active_requests) # total demand
+) - 3 * 100, 0)" \
+    "$(q "$(render "${chart}" subtract-comment --values "${values}" \
+      --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"query\":\"sum(active_requests) # total demand\",\"threshold\":\"100\"}}]")" \
+      "${scaled} | .spec.triggers[0].metadata.query")"
   assert_eq "${chart}: subtractBaseline false keeps a backlog query as written" \
     "sum(backlog) or vector(0)" "$(q "${subtracted}" "${scaled} | .spec.triggers[1].metadata.query")"
   assert_eq "${chart}: a Value metric type is not subtracted" \
