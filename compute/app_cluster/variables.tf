@@ -171,3 +171,43 @@ variable "ssm_enabled" {
   description = "Add AWS Systems Manager Session Manager access to the router's IAM role, for operator shell access. When false the role holds only the permission to publish the router's metrics."
   default     = true
 }
+
+################################################################################
+# App secrets
+################################################################################
+
+variable "app_secret_and_parameter_arns" {
+  type        = list(string)
+  description = "Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the cluster's apps may read through `secrets:` in ravion-app.yaml. Ravion reads them as a role this module creates, which can read nothing else. An empty list creates no role, and the cluster's apps read no secrets."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for arn in var.app_secret_and_parameter_arns : can(regex("^arn:[^:]*:(secretsmanager:[^:]*:[0-9]{12}:secret:|ssm:[^:]*:[0-9]{12}:parameter/).+", arn))])
+    error_message = "All app_secret_and_parameter_arns must be Secrets Manager secret or SSM parameter ARNs, e.g. 'arn:aws:secretsmanager:us-east-2:111122223333:secret:shop/*' or 'arn:aws:ssm:us-east-2:111122223333:parameter/shop/*'."
+  }
+}
+
+variable "app_secret_kms_key_arns" {
+  type        = list(string)
+  description = "Customer-managed KMS key ARNs the apps' secrets and parameters are encrypted with. Only needed for a customer-managed key; the AWS-managed aws/secretsmanager and aws/ssm keys need no grant."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for arn in var.app_secret_kms_key_arns : can(regex("^arn:[^:]*:kms:", arn))])
+    error_message = "All app_secret_kms_key_arns must be KMS key ARNs."
+  }
+}
+
+variable "app_secrets_trusted_principal_arns" {
+  type        = list(string)
+  description = "IAM principal ARN patterns of this account that may assume the apps' secret reader role. Empty means the role Ravion deploys with (rvn-*-deployments)."
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for arn in var.app_secrets_trusted_principal_arns : can(regex("^arn:[^:]*:iam::[0-9]{12}:", arn))])
+    error_message = "All app_secrets_trusted_principal_arns must be IAM ARNs of an AWS account."
+  }
+}

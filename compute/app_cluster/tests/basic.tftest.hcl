@@ -597,3 +597,69 @@ run "outputs_describe_the_load_balancer_and_where_it_runs" {
     error_message = "The account and region outputs must describe where the resources live"
   }
 }
+
+run "no_listed_secrets_creates_no_reader_role" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role.app_secrets) == 0 && length(aws_iam_role_policy.app_secrets_read) == 0 && output.app_secrets_role_name == null
+    error_message = "A cluster that lists no secrets must create no secret reader role"
+  }
+}
+
+run "apps_read_only_the_listed_secrets_as_a_role_named_after_the_cluster" {
+  command = plan
+
+  variables {
+    app_secret_and_parameter_arns = [
+      "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/*",
+      "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token",
+    ]
+    app_secret_kms_key_arns = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"]
+  }
+
+  assert {
+    condition     = aws_iam_role.app_secrets[0].name == "rvn-app-secrets-minst_test" && aws_iam_role.app_secrets[0].path == "/"
+    error_message = "Ravion assumes the reader role by the name rvn-app-secrets-<module instance id>"
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role.app_secrets[0].assume_role_policy).Statement == [{
+      Action    = ["sts:AssumeRole", "sts:SetSourceIdentity"]
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::123456789012:root" }
+      Condition = { ArnLike = { "aws:PrincipalArn" = ["arn:aws:iam::123456789012:role/rvn-*-deployments"] } }
+    }]
+    error_message = "Only the role Ravion deploys with, in this account, may assume the reader role"
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role_policy.app_secrets_read[0].policy).Statement == [
+      { Sid = "ReadListedSecrets", Action = ["secretsmanager:GetSecretValue"], Effect = "Allow", Resource = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/*"] },
+      { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/token"] },
+      { Sid = "DecryptWithListedKeys", Action = ["kms:Decrypt"], Effect = "Allow", Resource = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"] },
+    ]
+    error_message = "The reader role must read the listed secrets and parameters, decrypt with the listed keys, and nothing else"
+  }
+}
+
+run "a_cluster_that_lists_only_parameters_grants_no_secrets_manager_read" {
+  command = plan
+
+  variables {
+    app_secret_and_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/*"]
+    app_secrets_trusted_principal_arns = ["arn:aws:iam::123456789012:role/custom-deployer"]
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role_policy.app_secrets_read[0].policy).Statement == [
+      { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/*"] },
+    ]
+    error_message = "A list with parameters only must grant no Secrets Manager read"
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role.app_secrets[0].assume_role_policy).Statement[0].Condition.ArnLike["aws:PrincipalArn"] == ["arn:aws:iam::123456789012:role/custom-deployer"]
+    error_message = "app_secrets_trusted_principal_arns must replace the default trusted role"
+  }
+}

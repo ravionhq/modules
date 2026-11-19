@@ -196,3 +196,23 @@ run "router_needs_a_subnet" {
 
   expect_failures = [var.router_subnet_ids]
 }
+
+run "an_app_secret_arn_of_another_service_is_refused" {
+  command = plan
+
+  variables {
+    app_secret_and_parameter_arns = ["arn:aws:s3:::shop-secrets/token"]
+  }
+
+  expect_failures = [var.app_secret_and_parameter_arns]
+}
+
+run "an_app_secret_named_without_its_arn_is_refused" {
+  command = plan
+
+  variables {
+    app_secret_and_parameter_arns = ["shop/token"]
+  }
+
+  expect_failures = [var.app_secret_and_parameter_arns]
+}

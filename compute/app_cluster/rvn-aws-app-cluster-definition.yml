@@ -4,8 +4,8 @@ definition:
   name: App Cluster
   description: Runs the apps you deploy with ravion deploy, each in its own sandbox on an execution environment's sandbox pool, and serves them under a managed wildcard domain and your own domains through a Network Load Balancer and a router that wakes a paused app on request.
 release:
-  version: 0.1.1
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 0.2.0
+  description: 'Apps can read secrets: list the Secrets Manager secrets and Parameter Store parameters the cluster''s apps may read, and name them under `secrets` in ravion-app.yaml. Ravion reads them as a new role, rvn-app-secrets-<module instance id>, which can read only what you list.'
 module:
   outputs:
     - id: wildcard_domain_name
@@ -171,6 +171,23 @@ module:
       add_button_label: Add CIDR block
       collapsible: true
       placeholder: 0.0.0.0/0
+    - id: section_app_secrets
+      label: App secrets
+      type: section
+    - id: app_secret_and_parameter_arns
+      label: Secrets and parameters apps may read
+      type: string_array
+      description: ARNs of the Secrets Manager secrets and Parameter Store parameters the apps may read through secrets in ravion-app.yaml. Wildcards are allowed. Ravion reads them as a role that can read nothing else. Leave empty and the apps read no secrets.
+      add_button_label: Add ARN
+      collapsible: true
+      placeholder: arn:aws:secretsmanager:us-east-1:111122223333:secret:shop/*
+    - id: app_secret_kms_key_arns
+      label: KMS keys of those secrets
+      type: string_array
+      description: ARNs of the customer-managed KMS keys those secrets and parameters are encrypted with. Leave empty for the AWS-managed keys.
+      add_button_label: Add key ARN
+      collapsible: true
+      placeholder: arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
     - id: section_router
       label: Router
       type: section
@@ -256,6 +273,8 @@ module:
       base_path: compute/app_cluster
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        app_secret_and_parameter_arns: << module.input.app_secret_and_parameter_arns || [] >>
+        app_secret_kms_key_arns: << module.input.app_secret_kms_key_arns || [] >>
         domains: << module.input.domains || [] >>
         ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
         module_instance_id: << module.id >>

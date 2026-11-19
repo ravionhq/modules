@@ -112,3 +112,8 @@ output "region" {
   description = "The AWS region where the resources are deployed."
   value       = local.region
 }
+
+output "app_secrets_role_name" {
+  description = "Name of the role Ravion reads the apps' secrets as. Null when app_secret_and_parameter_arns is empty."
+  value       = try(aws_iam_role.app_secrets[0].name, null)
+}
