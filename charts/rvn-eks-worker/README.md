@@ -94,6 +94,8 @@ env:
 
 `spotBurst.enabled` keeps the baseline Deployment on On-Demand capacity and adds a separate Spot-only Deployment controlled by a KEDA `ScaledObject`. The fixed baseline uses `spotBurst.baselineReplicas`; the Spot pool starts at `spotBurst.minReplicas` and scales up to `spotBurst.maxReplicas`. The ordinary CPU/memory HPA is not rendered while burst mode is enabled. A new Spot Deployment renders with the configured minimum. On Helm upgrades, an owned live replica count is preserved unless below that minimum; counts above the maximum are left for KEDA to reconcile. Offline renders show the configured minimum, and the deployment identity needs permission to read Deployments in the release namespace. When the minimum is zero, zero replicas do not exercise the new Spot image; verify activation and readiness separately in staging. Turning burst mode off removes its Deployment and `ScaledObject` and restores the ordinary single-pool scaling behavior.
 
+Scale-down is rate limited. Without limits, the HorizontalPodAutoscaler that KEDA manages removes every excess pod in one step once its stabilization window passes, so a pool at its maximum drops straight to its minimum even if work is still queued. `spotBurst.scaleDown` keeps the window and then removes at most `podsPerPeriod` pods or `percentPerPeriod` percent of the pool each `periodSeconds`, whichever is fewer. Scale-up keeps the Kubernetes default.
+
 | Value | Type | Default | Description |
 |-------|------|---------|-------------|
 | `spotBurst.enabled` | bool | `false` | Enable the optional second pool; requires KEDA in the EKS add-ons module. |
@@ -102,13 +104,20 @@ env:
 | `spotBurst.minReplicas` | int | `0` | Minimum number of KEDA-managed Spot replicas; must not exceed `maxReplicas`. |
 | `spotBurst.maxReplicas` | int | `8` | Maximum KEDA-managed Spot replicas; minimum `1`. |
 | `spotBurst.pollingInterval` | int | `30` | KEDA polling interval in seconds; minimum `1`. |
-| `spotBurst.cooldownPeriod` | int | `300` | KEDA cooldown in seconds; minimum `0`. |
+| `spotBurst.cooldownPeriod` | int | `300` | KEDA cooldown in seconds before scaling the Spot pool to zero; applies only when `minReplicas` is `0`. Minimum `0`. |
 | `spotBurst.triggers` | list | `[]` | Required when enabled. If `minReplicas` is zero, a trigger must work at zero Spot replicas; CPU or memory alone cannot wake it. |
+| `spotBurst.triggers[].subtractBaseline` | bool | `true` | For `prometheus` `AverageValue` triggers, subtract `baselineReplicas * threshold` from the query, clamped at 0. Set `false` for a metric that already leaves out what running pods serve, such as a backlog. Removed before the trigger reaches KEDA. |
 | `spotBurst.fallback.enabled` | bool | `true` | When KEDA cannot read the triggers' metrics (for example while Prometheus is down), keep every running Spot pod and never fewer than `fallback.replicas`, instead of freezing at the current count. Not rendered for CPU, memory or `Utilization` triggers, which KEDA does not support it for. |
 | `spotBurst.fallback.failureThreshold` | int | `3` | Consecutive failed metric reads before the fallback applies; minimum `1`. |
 | `spotBurst.fallback.replicas` | int or null | `null` | Spot pods kept at least while metrics fail; `null` means `maxReplicas`, and values above it are capped at it. |
+| `spotBurst.scaleDown.stabilizationWindowSeconds` | int | `600` | Seconds of lower demand before the Spot pool starts shrinking; `0`–`3600`. |
+| `spotBurst.scaleDown.podsPerPeriod` | int | `2` | Most Spot pods removed per period; minimum `1`. |
+| `spotBurst.scaleDown.percentPerPeriod` | int | `25` | Most of the Spot pool, in percent, removed per period; `1`–`100`. The smaller of this and `podsPerPeriod` applies (`selectPolicy: Min`), and at least one pod is removed each period. |
+| `spotBurst.scaleDown.periodSeconds` | int | `60` | Length of a scale-down period; `1`–`1800`. |
 
-When `spotBurst.minReplicas` is zero, choose a zero-independent signal, such as external queue depth, and set thresholds with the fixed baseline's capacity in mind so already-served baseline work does not cause unnecessary Spot scaling. Configure any trigger authentication separately: referenced `TriggerAuthentication`, `ClusterTriggerAuthentication`, and Kubernetes Secrets must already exist. Do not put credential values in trigger metadata; the add-ons module grants no metric-source permissions.
+When `spotBurst.minReplicas` is zero, choose a zero-independent signal, such as external queue depth. Configure any trigger authentication separately: referenced `TriggerAuthentication`, `ClusterTriggerAuthentication`, and Kubernetes Secrets must already exist. Do not put credential values in trigger metadata; the add-ons module grants no metric-source permissions.
+
+Prometheus triggers are sized against the Spot pool alone. A trigger's demand is usually served by every pod, the baseline included, so for each `prometheus` trigger with the default `AverageValue` metric type the chart renders the query as `clamp_min((query) - baselineReplicas * threshold, 0)`. Keep `threshold` at what one pod handles, and KEDA asks only for pods beyond the baseline. Set `subtractBaseline: false` on a trigger whose metric already leaves out what running pods serve, such as a backlog of waiting work. The chart refuses to render a subtracted trigger without a numeric `threshold`. The query must return an instant vector, as KEDA's Prometheus scaler requires. Other scaler types, and `Value` or `Utilization` metric types, are passed through unchanged.
 
 The EKS add-ons module installs KEDA 2.20.2 by default when selected. Its published Kubernetes test matrix covers 1.33–1.35; verify newer versions, including 1.36, in staging. Spot availability is not guaranteed and each active pod incurs compute cost. The Spot pool reuses the same image and pod configuration; review duplicate job processing and idempotency, and do not expect the feature to migrate application code or configuration automatically.
 

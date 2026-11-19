@@ -1,0 +1,54 @@
+name: analytics
+region: us-east-2
+passwordAnnotations:
+  clickhouse.ravion.com/password-version: "2"
+users:
+  admin: {username: admin, secret: analytics-admin}
+  writer: {username: writer, secret: analytics-writer}
+  reader: {username: reader, secret: analytics-reader}
+operatorFullname: analytics-operator
+serviceAccount:
+  name: analytics-clickhouse
+clickhouse:
+  shards: 2
+  replicas: 3
+  settings:
+    max_concurrent_queries: "200"
+placement:
+  zoneSpread: required
+  priorityClass:
+    create: true
+    name: analytics-analytics-clickhouse
+    value: 1000000
+  nodePool:
+    create: true
+    name: analytics-analytics-clickhouse
+    capacityTypes: [on-demand]
+    instanceCategories: [r]
+    architectures: [arm64]
+    cpuLimit: 128
+  tolerations:
+    - key: clickhouse.ravion.com/dedicated
+      operator: Equal
+      value: analytics
+      effect: NoSchedule
+s3:
+  bucket: analytics-clickhouse-example
+  region: us-east-2
+coldStorage:
+  enabled: true
+backup:
+  enabled: true
+database:
+  name: events
+  engine: Atomic
+metrics:
+  podMonitors:
+    enabled: true
+    labels:
+      release: prometheus
+  otlp:
+    endpoint: http://otel.monitoring.svc.cluster.local:4318
+networkPolicy:
+  enabled: true
+  allowedNamespaces: [apps, jobs]

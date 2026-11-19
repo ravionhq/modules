@@ -33,9 +33,52 @@ spec:
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
+        {{- $scaleDown := .Values.spotBurst.scaleDown }}
+        # Shrink a few pods at a time: at most podsPerPeriod or
+        # percentPerPeriod each period, whichever removes fewer.
         scaleDown:
-          stabilizationWindowSeconds: 300
+          stabilizationWindowSeconds: {{ $scaleDown.stabilizationWindowSeconds }}
+          selectPolicy: Min
+          policies:
+            - type: Pods
+              value: {{ $scaleDown.podsPerPeriod }}
+              periodSeconds: {{ $scaleDown.periodSeconds }}
+            - type: Percent
+              value: {{ $scaleDown.percentPerPeriod }}
+              periodSeconds: {{ $scaleDown.periodSeconds }}
     restoreToOriginalReplicaCount: false
+  {{- /*
+  The fixed On-Demand baseline serves the same work as the Spot pool, so
+  demand that a trigger counts across every pod already has baselineReplicas
+  pods' worth of capacity. KEDA sizes the Spot pool alone, so subtract that
+  capacity from each Prometheus AverageValue trigger: the query becomes the
+  demand beyond the baseline, clamped at 0, and the threshold stays the
+  capacity of one pod. A trigger whose metric already leaves out what running
+  pods serve, such as a backlog of waiting work, sets subtractBaseline: false.
+  */}}
+  {{- $baseline := int .Values.spotBurst.baselineReplicas }}
+  {{- $triggers := list }}
+  {{- range $index, $source := .Values.spotBurst.triggers }}
+  {{- $trigger := omit (deepCopy $source) "subtractBaseline" }}
+  {{- $subtract := ternary $source.subtractBaseline true (hasKey $source "subtractBaseline") }}
+  {{- if and $subtract (eq $source.type "prometheus") (eq ($source.metricType | default "AverageValue") "AverageValue") }}
+  {{- $threshold := toString (get $source.metadata "threshold") | trim }}
+  {{- if not (regexMatch "^[0-9]+(\\.[0-9]+)?$" $threshold) }}
+  {{- fail (printf "spotBurst.triggers[%d]: subtracting the On-Demand baseline needs a numeric metadata.threshold, got %q; set subtractBaseline: false to keep the query as written" $index $threshold) }}
+  {{- end }}
+  {{- $query := toString (get $source.metadata "query") | trim }}
+  {{- if not $query }}
+  {{- fail (printf "spotBurst.triggers[%d]: a prometheus trigger needs metadata.query" $index) }}
+  {{- end }}
+  {{- /*
+  PromQL comments run to the end of the line, so a query ending in a
+  "# comment" would swallow the closing parenthesis; end its line first.
+  */}}
+  {{- $close := ternary "\n)" ")" (contains "#" $query) }}
+  {{- $_ := set $trigger.metadata "query" (printf "clamp_min((%s%s - %d * %s, 0)" $query $close $baseline $threshold) }}
+  {{- end }}
+  {{- $triggers = append $triggers $trigger }}
+  {{- end }}
   triggers:
-    {{- toYaml .Values.spotBurst.triggers | nindent 4 }}
+    {{- toYaml $triggers | nindent 4 }}
 {{- end }}

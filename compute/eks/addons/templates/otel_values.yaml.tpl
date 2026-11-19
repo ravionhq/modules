@@ -126,6 +126,22 @@ config:
                 regex: ${jsonencode(kube_state_keep_regex)}
                 action: keep
 %{ endif ~}
+%{ if keda_metrics_enabled ~}
+          # KEDA's operator: which trigger drove a scaling decision, and which
+          # scalers fail. Only the leader runs the scale loops, so every replica
+          # is discovered through the headless Service in keda.tf rather than
+          # scraped through one address. DNS discovery needs no RBAC.
+          - job_name: keda-operator
+            scrape_interval: ${scrape_interval}
+            dns_sd_configs:
+              - names: [${jsonencode(keda_metrics_service)}]
+                type: A
+                port: ${keda_metrics_port}
+            metric_relabel_configs:
+              - source_labels: [__name__]
+                regex: ${jsonencode(keda_keep_regex)}
+                action: keep
+%{ endif ~}
           # The kubelet's summary API in Prometheus form: node CPU and memory
           # without a node-exporter DaemonSet.
           - job_name: kubernetes-nodes

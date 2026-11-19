@@ -517,9 +517,9 @@ describe("compiler", () => {
   });
 
   it("compiles EKS web and worker Spot burst inputs with nil-safe KEDA wiring", async () => {
-    for (const [name, inputDefault] of [
-      ["rvn-eks-web", 2],
-      ["rvn-eks-worker", 1],
+    for (const [name, inputDefault, scaleDownWindow] of [
+      ["rvn-eks-web", 2, 300],
+      ["rvn-eks-worker", 1, 600],
     ] as const) {
       const compiled = await compileDefinitionFile(
         join(repoRoot, "compute", "eks_service", `${name}-definition.yml`),
@@ -552,6 +552,24 @@ describe("compiler", () => {
       assert.equal(findInput(inputs, "spot_burst_max_replicas").min, 1);
       assert.equal(findInput(inputs, "spot_burst_polling_interval").min, 1);
       assert.equal(findInput(inputs, "spot_burst_cooldown_period").min, 0);
+      // The pool shrinks a few pods at a time after the window instead of
+      // dropping from its maximum to its minimum in one step.
+      for (const [inputId, defaultValue, min, max] of [
+        ["spot_burst_scale_down_window", scaleDownWindow, 0, 3600],
+        ["spot_burst_scale_down_pods", 2, 1, 1000],
+        ["spot_burst_scale_down_percent", 25, 1, 100],
+      ] as const) {
+        const input = findInput(inputs, inputId);
+        assert.equal(input.type, "number");
+        assert.equal(input.default, defaultValue);
+        assert.equal(input.min, min);
+        assert.equal(input.max, max);
+        assert.equal(input.collapsible, true);
+        assert.deepEqual(input.show_when, {
+          compute_target: "on_demand",
+          spot_burst_enabled: true,
+        });
+      }
       const triggers = findInput(inputs, "spot_burst_triggers");
       assert.equal(triggers.type, "array");
       assert.equal(triggers.required, true);
@@ -619,6 +637,12 @@ describe("compiler", () => {
         spotBurst.triggers,
         '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_triggers != nil ? module.input.spot_burst_triggers : [] >>',
       );
+      const scaleDown = assertRecord(spotBurst.scaleDown, `${name}.spotBurst.scaleDown`);
+      assert.deepEqual(scaleDown, {
+        stabilizationWindowSeconds: `<< module.input.spot_burst_scale_down_window != nil ? module.input.spot_burst_scale_down_window : ${scaleDownWindow} >>`,
+        podsPerPeriod: "<< module.input.spot_burst_scale_down_pods != nil ? module.input.spot_burst_scale_down_pods : 2 >>",
+        percentPerPeriod: "<< module.input.spot_burst_scale_down_percent != nil ? module.input.spot_burst_scale_down_percent : 25 >>",
+      });
       assert.equal(
         autoscaling.enabled,
         name === "rvn-eks-web"
@@ -1455,6 +1479,8 @@ describe("compiler", () => {
     assert.deepEqual(minTasks.moved_from, ["min_capacity"]);
     assert.deepEqual(maxTasks.moved_from, ["max_capacity"]);
     assert.deepEqual(desiredTasks.moved_from, ["desired_count"]);
+    assert.equal(minTasks.min, 0);
+    assert.equal(maxTasks.min, 0);
     assert.equal(
       getTerraformVariable(compiled.module, "desired_count"),
       "<< module.input.auto_scaling_enabled ? module.input.min_tasks : module.input.desired_tasks >>",

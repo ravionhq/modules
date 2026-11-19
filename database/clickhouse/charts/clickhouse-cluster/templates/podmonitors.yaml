@@ -1,0 +1,56 @@
+{{- if .Values.metrics.podMonitors.enabled }}
+{{- $labels := .Values.metrics.podMonitors.labels }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.name }}-clickhouse
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    {{- with $labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      clickhouse.ravion.com/installation: {{ .Values.name }}
+      app.kubernetes.io/component: clickhouse
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.name }}-keeper
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    {{- with $labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      clickhouse.ravion.com/installation: {{ .Values.name }}
+      app.kubernetes.io/component: keeper
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.operatorFullname }}
+  labels:
+    {{- include "clickhouse-cluster.labels" . | nindent 4 }}
+    {{- with $labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Values.operatorFullname }}
+  podMetricsEndpoints:
+    # The operator's container port is unnamed.
+    - targetPort: 9999
+      path: /metrics
+{{- end }}

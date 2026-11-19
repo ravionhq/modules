@@ -1,0 +1,5 @@
+apiVersion: v2
+name: temporal-resources
+description: Everything a self-hosted Temporal release needs around the upstream chart - the database password, the RDS CA bundle, TLS certificates, scheduling, network policies and a metrics forwarder.
+type: application
+version: 0.1.0

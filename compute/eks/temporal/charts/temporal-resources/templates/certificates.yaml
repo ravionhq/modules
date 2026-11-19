@@ -1,0 +1,104 @@
+{{- if .Values.tls.enabled }}
+{{- $tls := .Values.tls -}}
+{{- if not (has $tls.caSource (list "self_signed" "secret" "issuer")) }}
+{{- fail "tls.caSource must be self_signed, secret or issuer" }}
+{{- end }}
+{{- if eq $tls.caSource "self_signed" }}
+{{- /*
+A private CA for this release only. cert-manager generates the CA key inside
+the cluster, and it stays in the CA secret in this namespace. Anyone who can
+create a Certificate naming this Issuer, or read the CA secret, can mint a
+certificate Temporal trusts, so keep those permissions as narrow as namespace
+admin.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $tls.caSecretName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ printf "%s Temporal CA" .Values.temporal.releaseName }}
+  secretName: {{ $tls.caSecretName }}
+  duration: {{ $tls.caDuration }}
+  renewBefore: {{ $tls.caRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # Renewal re-signs the same key, so certificates it already issued keep
+    # verifying while they renew.
+    rotationPolicy: Never
+  issuerRef:
+    name: {{ $tls.issuerName }}-bootstrap
+    kind: Issuer
+---
+{{- end }}
+{{- if ne $tls.caSource "issuer" }}
+{{- /*
+The CA Issuer signing the leaf certificates: with the CA created above, or
+with an existing CA key pair Secret (tls.crt and tls.key) in this namespace.
+*/}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $tls.issuerName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ $tls.caSecretName }}
+{{- end }}
+{{- $issuerRef := $tls.issuerRef }}
+{{- if ne $tls.caSource "issuer" }}
+{{- $issuerRef = dict "name" $tls.issuerName "kind" "Issuer" "group" "cert-manager.io" }}
+{{- end }}
+{{- if not $issuerRef.name }}
+{{- fail "tls.issuerRef.name is required when tls.caSource is issuer" }}
+{{- end }}
+{{- range $leaf := list $tls.internode $tls.frontend }}
+{{- if not $leaf.dnsNames }}
+{{- fail (printf "tls: dnsNames are required for %s" $leaf.secretName) }}
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $leaf.secretName }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+spec:
+  secretName: {{ $leaf.secretName }}
+  commonName: {{ first $leaf.dnsNames }}
+  dnsNames:
+    {{- toYaml $leaf.dnsNames | nindent 4 }}
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+  duration: {{ $tls.leafDuration }}
+  renewBefore: {{ $tls.leafRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: {{ $issuerRef.name }}
+    kind: {{ $issuerRef.kind }}
+    group: {{ $issuerRef.group }}
+{{- end }}
+{{- end }}

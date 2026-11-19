@@ -116,6 +116,27 @@ locals {
     "node_memory_working_set_bytes",
   ]
 
+  # KEDA's operator — scraped only while KEDA is installed (keda.tf). The
+  # scaler families carry one series per ScaledObject trigger, the rest one per
+  # ScaledObject or ScaledJob. keda_scaler_errors_total is what KEDA before 2.16
+  # called keda_scaler_detail_errors_total, for a chart pinned that far back.
+  # Left out: the scaler HTTP client histogram and CloudEventSource families.
+  metrics_keda_allowlist = [
+    "keda_build_info",
+    "keda_scaler_metrics_value",
+    "keda_scaler_metrics_latency_seconds",
+    "keda_scaler_active",
+    "keda_scaler_detail_errors_total",
+    "keda_scaler_errors_total",
+    "keda_scaler_empty_upstream_responses_total",
+    "keda_scaled_object_paused",
+    "keda_scaled_object_errors_total",
+    "keda_scaled_job_errors_total",
+    "keda_internal_scale_loop_latency_seconds",
+    "keda_resource_registered_total",
+    "keda_trigger_registered_total",
+  ]
+
   metrics_cadvisor_keep_regex = join("|", concat(
     local.metrics_cadvisor_allowlist,
     ["up"],
@@ -130,6 +151,12 @@ locals {
 
   metrics_kubelet_resource_keep_regex = join("|", concat(
     local.metrics_kubelet_resource_allowlist,
+    ["up"],
+    var.metrics_additional_allowlist,
+  ))
+
+  metrics_keda_keep_regex = join("|", concat(
+    local.metrics_keda_allowlist,
     ["up"],
     var.metrics_additional_allowlist,
   ))

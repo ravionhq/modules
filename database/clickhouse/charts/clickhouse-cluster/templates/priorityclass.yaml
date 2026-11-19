@@ -1,0 +1,15 @@
+{{- with .Values.placement.priorityClass }}
+{{- if .create }}
+# Ranks ClickHouse and Keeper above ordinary workloads, so under node pressure
+# the scheduler preempts and the kubelet evicts something else first.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+value: {{ int .value }}
+globalDefault: false
+description: ClickHouse and ClickHouse Keeper for {{ $.Release.Namespace }}/{{ $.Values.name }}.
+{{- end }}
+{{- end }}

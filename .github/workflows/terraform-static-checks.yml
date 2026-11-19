@@ -183,6 +183,16 @@ jobs:
               tofu -chdir=containers/ecr init -backend=false
               tofu -chdir=containers/ecr test
 
+          - name: Temporal module
+            run: |
+              tofu -chdir=compute/eks/temporal init -backend=false
+              tofu -chdir=compute/eks/temporal test
+
+          - name: ClickHouse module
+            run: |
+              tofu -chdir=database/clickhouse init -backend=false
+              tofu -chdir=database/clickhouse test
+
           # The provider waits 30 seconds after every apply, so this takes minutes.
           # Pull requests run it only when they touch the module or this workflow.
           - name: PlanetScale Vitess lifecycle

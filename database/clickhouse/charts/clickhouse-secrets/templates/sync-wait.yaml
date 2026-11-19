@@ -1,0 +1,80 @@
+{{- if and .Values.syncWait.enabled .Values.secrets }}
+{{- /*
+Holds the release until External Secrets has copied the current version of
+every secret: the operator and ClickHouse restart for a new password in the
+next releases, and must read the new value when they do. Each Secret is
+mounted, so the kubelet keeps the files current; the job compares the
+secret_version key with the version this release expects.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-synced
+  labels:
+    app.kubernetes.io/name: clickhouse-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: sync-wait
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.syncWait.timeoutSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse-secrets
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: sync-wait
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wait
+          image: {{ .Values.syncWait.image }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              for dir in /secrets/*; do
+                until [ "$(cat "${dir}/secret_version" 2>/dev/null)" = "${EXPECTED}" ]; do
+                  echo "waiting for $(basename "${dir}") to hold version ${EXPECTED}"
+                  sleep 10
+                done
+              done
+          env:
+            - name: EXPECTED
+              value: {{ .Values.passwordVersion | quote }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            {{- range .Values.secrets }}
+            - name: {{ .name }}
+              mountPath: /secrets/{{ .name }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- range .Values.secrets }}
+        - name: {{ .name }}
+          secret:
+            secretName: {{ .name }}
+            items:
+              - key: secret_version
+                path: secret_version
+        {{- end }}
+{{- end }}

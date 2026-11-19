@@ -1,0 +1,113 @@
+{{- /*
+Ways to reach Temporal from outside the cluster, each optional:
+
+  - an internal NLB for the frontend's gRPC port, from the AWS Load Balancer
+    Controller;
+  - a tailnet device for the frontend's gRPC port and a Tailscale Ingress for
+    the Web UI, from the Tailscale Kubernetes operator.
+
+The frontend is reached by TCP passthrough either way, so TLS terminates and
+tokens are checked at the frontend itself.
+*/ -}}
+{{- $name := .Values.temporal.releaseName }}
+{{- $docs := 0 }}
+{{- with .Values.frontendNlb }}
+{{- if .enabled }}
+{{- if not .sourceRanges }}
+{{- fail "frontendNlb.sourceRanges is required: the client networks allowed to reach the NLB" }}
+{{- end }}
+{{- $docs = add1 $docs }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-frontend-nlb
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-name: {{ .name | quote }}
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    {{- with .subnetIds }}
+    service.beta.kubernetes.io/aws-load-balancer-subnets: {{ join "," . | quote }}
+    {{- end }}
+    service.beta.kubernetes.io/aws-load-balancer-attributes: {{ printf "load_balancing.cross_zone.enabled=%t,deletion_protection.enabled=%t" .crossZoneEnabled .deletionProtectionEnabled | quote }}
+    # Client addresses reach the pods as they are, so the network policy can
+    # admit the allowed source ranges.
+    service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=true
+spec:
+  type: LoadBalancer
+  loadBalancerClass: service.k8s.aws/nlb
+  loadBalancerSourceRanges:
+    {{- toYaml .sourceRanges | nindent 4 }}
+  selector:
+    {{- include "temporal-resources.componentSelector" (list $ "frontend") | nindent 4 }}
+  ports:
+    - name: grpc-rpc
+      port: 7233
+      targetPort: 7233
+      protocol: TCP
+{{- end }}
+{{- end }}
+{{- with .Values.tailscale.frontend }}
+{{- if .enabled }}
+{{- if $docs }}
+---
+{{- end }}
+{{- $docs = add1 $docs }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-frontend-tailscale
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+  annotations:
+    tailscale.com/hostname: {{ .hostname | quote }}
+    {{- with .tags }}
+    tailscale.com/tags: {{ join "," . | quote }}
+    {{- end }}
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector:
+    {{- include "temporal-resources.componentSelector" (list $ "frontend") | nindent 4 }}
+  ports:
+    - name: grpc-rpc
+      port: 7233
+      targetPort: 7233
+      protocol: TCP
+{{- end }}
+{{- end }}
+{{- with .Values.tailscale.web }}
+{{- if .enabled }}
+{{- if $docs }}
+---
+{{- end }}
+{{- /*
+The operator names the device after the TLS host and serves it over HTTPS
+with a certificate for <hostname>.<tailnet>.ts.net.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}-web-tailscale
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+  {{- with .tags }}
+  annotations:
+    tailscale.com/tags: {{ join "," . | quote }}
+  {{- end }}
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: {{ $name }}-web
+      port:
+        number: 8080
+  tls:
+    - hosts:
+        - {{ .hostname | quote }}
+{{- end }}
+{{- end }}

@@ -163,6 +163,14 @@ spotBurst:
   maxReplicas: 8
   pollingInterval: 30
   cooldownPeriod: 300
+  # -- KEDA triggers for the Spot pool. A prometheus trigger with the default
+  # AverageValue metric type has the On-Demand baseline's capacity taken off
+  # its demand: the rendered query is
+  # clamp_min((query) - baselineReplicas * threshold, 0), so threshold stays the
+  # capacity of one pod and KEDA asks only for pods beyond the baseline. Set
+  # subtractBaseline: false on a trigger whose metric already leaves out what
+  # running pods serve, such as a backlog of waiting work. Other scaler types
+  # are passed through unchanged.
   triggers: []
   # -- What KEDA does when it cannot read the triggers' metrics, for example
   # while Prometheus is down: keep every running Spot pod and never fewer than
@@ -172,6 +180,17 @@ spotBurst:
     enabled: true
     failureThreshold: 3
     replicas: null
+  # -- How fast the Spot pool shrinks once demand falls. After
+  # stabilizationWindowSeconds of lower demand, each periodSeconds removes at
+  # most podsPerPeriod pods or percentPerPeriod percent of the pool, whichever
+  # is fewer (at least one pod). Without these limits Kubernetes removes every
+  # excess pod at once, so a pool at its maximum drops to its minimum in one
+  # step while work may still be queued. Scale-up is unchanged.
+  scaleDown:
+    stabilizationWindowSeconds: 300
+    podsPerPeriod: 2
+    percentPerPeriod: 25
+    periodSeconds: 60
 
 # -- PodDisruptionBudget limiting voluntary disruptions (node drains,
 # consolidation, upgrades). Rendered only when the replica floor

@@ -1,0 +1,196 @@
+{{- $m := .Values.metrics.otlp }}
+{{- if $m.enabled }}
+{{- if not $m.endpoint }}
+{{- fail "metrics.otlp.endpoint is required when metrics.otlp.enabled is true: an OTLP gRPC endpoint, host:port" }}
+{{- end }}
+{{- /*
+Scrapes the Temporal servers' metrics port and pushes the samples over OTLP.
+Discovery is this release's pods with a container port named "metrics", so a
+scaled service is picked up without a change here. The forwarder holds no
+state: if it restarts, one scrape interval is lost.
+*/ -}}
+{{- $name := printf "%s-metrics" .Values.temporal.releaseName }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+rules:
+  # Pod discovery for the scrape, in this namespace only.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: temporal
+              scrape_interval: {{ $m.scrapeInterval }}
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [{{ .Release.Namespace | quote }}]
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_label_app_kubernetes_io_instance]
+                  regex: {{ printf "temporal;%s" .Values.temporal.releaseName | quote }}
+                  action: keep
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  regex: metrics
+                  action: keep
+                - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+                  target_label: temporal_service
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+              {{- with $m.keep }}
+              metric_relabel_configs:
+                - source_labels: [__name__]
+                  regex: {{ printf "(%s)(_bucket|_sum|_count|_total)?" (join "|" .) | quote }}
+                  action: keep
+              {{- end }}
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch: {}
+    exporters:
+      otlp_grpc:
+        endpoint: {{ $m.endpoint | quote }}
+        tls:
+          insecure: {{ not (hasPrefix "https://" $m.endpoint) }}
+    service:
+      extensions: [health_check]
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_grpc]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  replicas: 1
+  # Never two forwarders at once: each would push the same series.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "temporal-resources.metricsSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "temporal-resources.labels" . | nindent 8 }}
+        app.kubernetes.io/component: metrics
+      annotations:
+        checksum/config: {{ toJson $m | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}
+      {{- with $.Values.priorityClass }}
+      {{- if .enabled }}
+      priorityClassName: {{ .name }}
+      {{- end }}
+      {{- end }}
+      {{- with $.Values.nodePool }}
+      {{- if .enabled }}
+      nodeSelector:
+        karpenter.sh/nodepool: {{ .name }}
+      tolerations:
+        - key: {{ .taint.key }}
+          operator: Equal
+          value: {{ .taint.value | quote }}
+          effect: NoSchedule
+      {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otelcol
+          image: {{ $m.image }}
+          imagePullPolicy: IfNotPresent
+          args: ["--config=/conf/config.yaml"]
+          env:
+            # Go collects harder before the container limit instead of being
+            # killed at it.
+            - name: GOMEMLIMIT
+              value: {{ $m.goMemLimit | quote }}
+          ports:
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+{{- end }}

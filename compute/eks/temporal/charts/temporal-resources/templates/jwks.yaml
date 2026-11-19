@@ -1,0 +1,159 @@
+{{- if .Values.jwks.enabled }}
+{{- $j := .Values.jwks }}
+{{- if not $j.remoteSecretName }}
+{{- fail "jwks.remoteSecretName is required when jwks.enabled is true" }}
+{{- end }}
+{{- /*
+Serves a JWKS document to the frontend, which fetches signing keys only over
+HTTP(S). The External Secrets Operator copies the document from Secrets
+Manager; the Secret is mounted as a directory, so a changed key set reaches
+the served file without a restart. If the server is down, the frontend keeps
+the keys it last loaded.
+*/}}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ $j.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ $j.refreshInterval }}
+  secretStoreRef:
+    {{- include "temporal-resources.secretStoreRef" . | nindent 4 }}
+  target:
+    name: {{ $j.name }}
+    creationPolicy: Owner
+    # A deleted ExternalSecret leaves the last key set served.
+    deletionPolicy: Retain
+  data:
+    - secretKey: jwks.json
+      remoteRef:
+        {{- include "temporal-resources.remoteRef" (dict "remoteSecret" $j.remoteSecretName "remoteProperty" $j.remoteProperty) | nindent 8 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $j.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jwks
+spec:
+  replicas: {{ $j.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "temporal-resources.jwksSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "temporal-resources.labels" . | nindent 8 }}
+        app.kubernetes.io/component: jwks
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.priorityClass }}
+      {{- if .enabled }}
+      priorityClassName: {{ .name }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.nodePool }}
+      {{- if .enabled }}
+      nodeSelector:
+        karpenter.sh/nodepool: {{ .name }}
+      tolerations:
+        - key: {{ .taint.key }}
+          operator: Equal
+          value: {{ .taint.value | quote }}
+          effect: NoSchedule
+      {{- end }}
+      {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "temporal-resources.jwksSelector" . | nindent 14 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: {{ $j.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NGINX_ENTRYPOINT_QUIET_LOGS
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /jwks.json
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /jwks.json
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: jwks
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+            # The unprivileged image keeps its pid file and temp files in /tmp.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: jwks
+          secret:
+            secretName: {{ $j.name }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $j.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "temporal-resources.jwksSelector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+{{- if gt (int $j.replicaCount) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $j.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-resources.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "temporal-resources.jwksSelector" . | nindent 6 }}
+{{- end }}
+{{- end }}

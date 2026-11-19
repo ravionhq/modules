@@ -1,0 +1,57 @@
+# AWS region of the Secrets Manager secrets.
+region: us-east-1
+
+# How often External Secrets re-reads each secret.
+refreshInterval: 1h
+
+# Changing it makes External Secrets refresh every secret at once. It is also
+# the secret_version every synced Secret must hold before the release finishes.
+passwordVersion: "1"
+
+# Job that holds the release until every Kubernetes Secret holds
+# passwordVersion in its secret_version key.
+syncWait:
+  enabled: true
+  image: curlimages/curl:8.22.0
+  timeoutSeconds: 1800
+
+store:
+  # Create a namespaced SecretStore. Without an auth block it uses the External
+  # Secrets controller's own AWS credentials.
+  create: true
+  name: clickhouse-aws-secrets-manager
+  # SecretStore when created here, ClusterSecretStore to use an existing one.
+  kind: SecretStore
+
+# One entry per Kubernetes Secret: name is the Secret, remoteKey the Secrets
+# Manager secret whose JSON keys become the Secret's keys.
+secrets: []
+#  - name: analytics-admin
+#    remoteKey: clickhouse/my-cluster/analytics/analytics/admin
+
+# The server certificate from cert-manager, created here so it exists before
+# the operator and the servers start.
+tls:
+  enabled: false
+  # Name of the installation, for the CA's common name.
+  installation: clickhouse
+  # self_signed, issuer or secret.
+  caSource: self_signed
+  # The chart's own Issuer (self_signed and secret), and the CA key pair Secret
+  # it signs with: created for self_signed, existing for secret.
+  issuerName: clickhouse-ca
+  caSecretName: clickhouse-ca
+  # The issuer that signs the server certificate when caSource is issuer.
+  issuerRef:
+    name: ""
+    kind: ClusterIssuer
+    group: cert-manager.io
+  serverSecretName: clickhouse-server-tls
+  # Every name the certificate covers; the first is its common name.
+  dnsNames: []
+  caDuration: 87600h
+  caRenewBefore: 8760h
+  leafDuration: 2160h
+  leafRenewBefore: 720h
+  # Image with sh for the job that waits for the certificate Secret.
+  waitImage: curlimages/curl:8.22.0

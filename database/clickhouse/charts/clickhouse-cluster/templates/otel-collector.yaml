@@ -1,0 +1,170 @@
+{{- with .Values.metrics.otlp }}
+{{- if .endpoint }}
+# A single OpenTelemetry collector that scrapes this installation's ClickHouse,
+# Keeper and operator pods (the ones annotated prometheus.io/scrape) and pushes
+# the samples to an OTLP/HTTP endpoint, for metrics backends that receive OTLP
+# rather than scrape.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $.Values.name }}-metrics
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: metrics
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $.Values.name }}-metrics
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: metrics
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $.Values.name }}-metrics
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $.Values.name }}-metrics
+subjects:
+  - kind: ServiceAccount
+    name: {{ $.Values.name }}-metrics
+    namespace: {{ $.Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Values.name }}-metrics
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: metrics
+data:
+  config.yaml: |
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: clickhouse
+              scrape_interval: {{ .interval }}
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names: [{{ $.Release.Namespace | quote }}]
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                  regex: "true"
+                  action: keep
+                # This installation's ClickHouse and Keeper pods, and its operator.
+                - source_labels:
+                    - __meta_kubernetes_pod_label_clickhouse_ravion_com_installation
+                    - __meta_kubernetes_pod_label_app_kubernetes_io_instance
+                  separator: ";"
+                  regex: {{ printf "^(%s;.*|.*;%s)$" $.Values.name $.Values.operatorFullname | quote }}
+                  action: keep
+                - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                  regex: '([^:]+)(?::\d+)?;(\d+)'
+                  replacement: "$$1:$$2"
+                  target_label: __address__
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                  regex: (.+)
+                  target_label: __metrics_path__
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component]
+                  target_label: component
+                - target_label: clickhouse_installation
+                  replacement: {{ $.Values.name | quote }}
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch: {}
+    exporters:
+      otlp_http:
+        endpoint: {{ .endpoint | quote }}
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    service:
+      extensions: [health_check]
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_http]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Values.name }}-metrics
+  labels:
+    {{- include "clickhouse-cluster.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: metrics
+  template:
+    metadata:
+      labels:
+        {{- include "clickhouse-cluster.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: metrics
+      annotations:
+        checksum/config: {{ printf "%s;%s;%s" .endpoint .interval $.Values.name | sha256sum }}
+    spec:
+      serviceAccountName: {{ $.Values.name }}-metrics
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: {{ .image }}
+          args: ["--config=/conf/config.yaml"]
+          ports:
+            - name: health
+              containerPort: 13133
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $.Values.name }}-metrics
+{{- end }}
+{{- end }}

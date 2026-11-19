@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.7.0
-  description: Require selected pipeline-provided environment variables on every deploy.
+  version: 2.8.0
+  description: Require selected pipeline-provided environment variables on every deploy, and set Minimum tasks and Maximum tasks to 0 to stop the service without deleting it.
 module:
   inputs:
     - id: section_cluster
@@ -597,6 +597,8 @@ module:
     ## Autoscaling
 
     Autoscaling is enabled by default with one minimum task and three maximum tasks. For production, start with at least two minimum tasks when availability matters. When autoscaling is disabled, Desired tasks controls how many tasks the ECS service keeps running.
+
+    To stop the service without deleting it, keep autoscaling enabled and set Minimum tasks and Maximum tasks to 0. ECS scales the running tasks in to 0 while the service, load balancer routing, roles, and image repository stay in place. Deploys while stopped keep the task count at 0. Set the bounds back above 0 to start the service again. Scheduled scaling actions still apply, so remove or adjust any that would raise the bounds while the service should stay stopped.
 
     | Field                     | Default | Description                                   |
     | ------------------------- | ------- | --------------------------------------------- |

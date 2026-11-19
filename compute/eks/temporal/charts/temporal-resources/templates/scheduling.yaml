@@ -1,0 +1,71 @@
+{{- with .Values.priorityClass }}
+{{- if .enabled }}
+{{- /*
+Ranks the Temporal pods above ordinary workloads, so under node pressure the
+scheduler preempts, and the kubelet evicts, something else first.
+*/ -}}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+value: {{ int .value }}
+globalDefault: false
+description: Self-hosted Temporal server.
+{{- end }}
+{{- end }}
+{{- with .Values.nodePool }}
+{{- if .enabled }}
+{{- /*
+On-demand nodes for Temporal alone. Every disruption moves history shards and
+task queues, so Karpenter replaces at most one node at a time and nodes never
+expire by age.
+*/}}
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "temporal-resources.labels" $ | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{ .taint.key }}: {{ .taint.value | quote }}
+    spec:
+      requirements:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: {{ .architectures | toJson }}
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: {{ .capacityTypes | toJson }}
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: {{ .instanceCategories | toJson }}
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["2"]
+      taints:
+        - key: {{ .taint.key }}
+          value: {{ .taint.value | quote }}
+          effect: NoSchedule
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: {{ .ec2NodeClassName }}
+      expireAfter: Never
+  limits:
+    cpu: {{ .cpuLimit }}
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: {{ .consolidateAfter }}
+    budgets:
+      - nodes: "1"
+{{- end }}
+{{- end }}

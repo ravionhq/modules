@@ -3,8 +3,8 @@ definition:
   name: ECS Worker
   description: Background worker ECS service for running private container workloads without exposed ports.
 release:
-  version: 2.6.0
-  description: Require selected pipeline-provided environment variables on every deploy.
+  version: 2.7.0
+  description: Require selected pipeline-provided environment variables on every deploy, and set Minimum tasks and Maximum tasks to 0 to stop the service without deleting it.
 module:
   inputs:
     - id: section_cluster
@@ -226,6 +226,8 @@ module:
     ## Autoscaling
 
     Autoscaling is enabled by default with CPU and memory target tracking. Use custom metric scaling policies for queue depth, lag, backlog, or other workload-specific metrics that better represent worker demand. When autoscaling is disabled, Desired tasks controls how many worker tasks the ECS service keeps running.
+
+    To stop the service without deleting it, keep autoscaling enabled and set Minimum tasks and Maximum tasks to 0. ECS scales the running tasks in to 0 while the service, load balancer routing, roles, and image repository stay in place. Deploys while stopped keep the task count at 0. Set the bounds back above 0 to start the service again. Scheduled scaling actions still apply, so remove or adjust any that would raise the bounds while the service should stay stopped.
 
     ## Compliance
 
