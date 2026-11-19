@@ -203,9 +203,14 @@ locals {
     kube_state_metrics_enabled = local.kube_state_metrics_install
     kube_state_metrics_target  = local.kube_state_metrics_target
 
+    keda_metrics_enabled = local.keda_metrics_enabled
+    keda_metrics_service = local.keda_metrics_service_fqdn
+    keda_metrics_port    = local.keda_metrics_port
+
     cadvisor_keep_regex         = local.metrics_cadvisor_keep_regex
     kube_state_keep_regex       = local.metrics_kube_state_keep_regex
     kubelet_resource_keep_regex = local.metrics_kubelet_resource_keep_regex
+    keda_keep_regex             = local.metrics_keda_keep_regex
   }) : null
 }
 

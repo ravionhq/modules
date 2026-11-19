@@ -101,6 +101,8 @@ Set `keda_enabled = true` to install KEDA through this add-ons module. KEDA scal
 
 Outputs are `keda_enabled`, `keda_namespace` and `keda_chart_version`; the last two are null when disabled. Install the add-ons before deploying a workload's `ScaledObject`. Configure scaler authentication separately with narrowly scoped access and Secret references; installation grants no AWS data-source permissions. Do not copy credentials into Helm values or trigger metadata.
 
+While a metrics destination other than CloudWatch is on, KEDA's operator also serves its Prometheus metrics on port 8080 and the metrics collector scrapes them into every destination: `keda_scaler_metrics_value` (what each trigger currently reports), `keda_scaler_active`, `keda_scaler_detail_errors_total`, `keda_scaled_object_errors_total`, `keda_scaled_object_paused` and a few more from the curated list in `locals.tf`. They are labelled by namespace, ScaledObject, scaler and trigger index, so a scaling decision can be traced to the trigger that drove it. Only the leader replica runs the scale loops, so the collector discovers every operator pod through a headless `keda-operator-prometheus` Service, which the chart installs through its `extraObjects` value; a `keda_helm_values` document that sets `extraObjects` replaces it, and the scrape then finds no targets.
+
 The chart templates its CRDs, so Helm manages them during upgrades. Remove dependent ScaledObjects and TriggerAuthentications before uninstalling KEDA, and check CRD retention and migration requirements for each version. Do not turn the add-on off while applications depend on it. Only one provider can serve the cluster's `external.metrics.k8s.io` API; check for an existing external-metrics adapter before installing. Control-plane access to KEDA's metrics API and admission webhook must be allowed.
 
 KEDA 2.20's [published test matrix](https://keda.sh/docs/2.20/operate/cluster/) covers Kubernetes 1.33–1.35. Compatibility with Kubernetes 1.36 must be verified in staging; this change does not downgrade a cluster or claim that newer Kubernetes versions have been tested. The configurable chart pin allows a separately verified upgrade.
@@ -345,13 +347,14 @@ The one behavioural change on upgrade is that the CloudWatch add-on is re-applie
 
 ### Workload metrics (Amazon Managed Prometheus)
 
-`amp` in `metrics_providers` turns on a Prometheus pipeline that lives entirely in the customer's account: an [Amazon Managed Prometheus](https://docs.aws.amazon.com/prometheus/latest/userguide/what-is-Amazon-Managed-Service-Prometheus.html) workspace, `kube-state-metrics`, and a single-replica OpenTelemetry collector running the [AWS Distro for OpenTelemetry](https://aws-otel.github.io/) image. The collector scrapes three targets, drops everything outside a curated allow-list, and remote-writes the rest to the workspace signed with SigV4.
+`amp` in `metrics_providers` turns on a Prometheus pipeline that lives entirely in the customer's account: an [Amazon Managed Prometheus](https://docs.aws.amazon.com/prometheus/latest/userguide/what-is-Amazon-Managed-Service-Prometheus.html) workspace, `kube-state-metrics`, and a single-replica OpenTelemetry collector running the [AWS Distro for OpenTelemetry](https://aws-otel.github.io/) image. The collector scrapes three targets (four with KEDA installed), drops everything outside a curated allow-list, and remote-writes the rest to the workspace signed with SigV4.
 
 | Target | Reached via | What it contributes |
 |---|---|---|
 | cAdvisor (`/metrics/cadvisor`) | kubelet, through the **API server proxy** (`/api/v1/nodes/<node>/proxy/...`) | Per-container CPU, throttling, memory, network, OOM kills |
 | `kube-state-metrics` | in-cluster Service | Desired vs. actual replicas, pod phase, restart and termination reasons, HPA state, node conditions, capacity and cordoning, volume claims and volumes with their phase and size |
 | kubelet `/metrics/resource` | kubelet, through the API server proxy | Node CPU and memory headline numbers |
+| KEDA operator (`:8080/metrics`), only with `keda_enabled` | every operator replica, discovered by DNS through a headless Service | Each scaler trigger's current value (`keda_scaler_metrics_value`), active state and errors, ScaledObject errors and pauses, and scale-loop latency |
 
 Scraping through the API server proxy rather than each node's port 10250 is what makes this work on private-endpoint clusters and behind restrictive node security groups: the collector needs a network path to the Kubernetes API and nothing else. The cost is `nodes/proxy` in its ClusterRole, which is the only permission beyond reading the node list.
 

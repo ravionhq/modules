@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.4.1
-  description: Plans no longer fail with "argument must not be null" when the shared ALB alarms have no notification actions.
+  version: 1.5.0
+  description: KEDA scaling decisions and scaler errors are now observable. With KEDA and a metrics destination both on, each scaler's value, active state and errors are collected as keda_* metrics.
 module:
   inputs:
     - id: cluster
