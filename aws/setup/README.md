@@ -13,7 +13,7 @@ temporary credentials of one of the roles this module creates, and the
 broker scopes every session to the work it is for.
 
 Version: [`VERSION`](VERSION) · Changes: [`CHANGELOG.md`](CHANGELOG.md) ·
-Roles and policies: [`ravion.gen.tf.json`](ravion.gen.tf.json) (generated,
+Roles and policies: [`iam.gen.tf.json`](iam.gen.tf.json) (generated,
 do not edit).
 
 ## Usage

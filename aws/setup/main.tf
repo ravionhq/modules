@@ -1,6 +1,6 @@
 # Ravion AWS account setup. See README.md.
 #
-# The IAM roles, policies and OIDC provider are in ravion.gen.tf.json, which
+# The IAM roles, policies and OIDC provider are in iam.gen.tf.json, which
 # Ravion generates from the same source as its CloudFormation template, so
 # both grant exactly the same permissions. Do not edit that file.
 #

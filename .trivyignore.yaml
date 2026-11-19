@@ -60,5 +60,5 @@ misconfigurations:
   # mints is further scoped by a session policy.
   - id: AWS-0057
     paths:
-      - aws/setup/ravion.gen.tf.json
+      - aws/setup/iam.gen.tf.json
     statement: Generated Ravion role permissions, identical to Ravion's CloudFormation template; many actions only support Resource "*".
