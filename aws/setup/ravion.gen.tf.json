@@ -1,0 +1,1698 @@
+{
+  "//": "Generated from Ravion's CloudFormation template (role version 1.0.72). Do not edit: the same generator writes both, so they grant exactly the same permissions.",
+  "locals": {
+    "ravion_deployments_enabled": "${var.enable_deployments}",
+    "ravion_oidc_provider_arn": "${var.oidc_provider_arn != \"\" ? var.oidc_provider_arn : aws_iam_openid_connect_provider.oidc_provider[0].arn}",
+    "ravion_policy_documents": {
+      "deployments_policy": {
+        "Statement": [
+          {
+            "Action": [
+              "acm:DeleteCertificate",
+              "acm:DescribeCertificate",
+              "acm:RequestCertificate"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ACMManagement"
+          },
+          {
+            "Action": "application-autoscaling:DescribeScalableTargets",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ApplicationAutoScalingManagement"
+          },
+          {
+            "Action": [
+              "autoscaling:CompleteLifecycleAction",
+              "autoscaling:DescribeAutoScalingGroups",
+              "autoscaling:RecordLifecycleActionHeartbeat",
+              "autoscaling:ResumeProcesses",
+              "autoscaling:SetInstanceProtection",
+              "autoscaling:SuspendProcesses"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "AutoScalingManagement"
+          },
+          {
+            "Action": [
+              "cloudfront:CreateInvalidation",
+              "cloudfront:GetDistribution",
+              "cloudfront:GetDistributionConfig",
+              "cloudfront:GetInvalidation"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudFrontManagement"
+          },
+          {
+            "Action": [
+              "cloudfront-keyvaluestore:DescribeKeyValueStore",
+              "cloudfront-keyvaluestore:PutKey"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudFrontKeyValueStoreManagement"
+          },
+          {
+            "Action": "cloudtrail:LookupEvents",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudTrailEventHistoryRead"
+          },
+          {
+            "Action": [
+              "cloudwatch:GetMetricData",
+              "cloudwatch:GetMetricStatistics"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudWatchManagement"
+          },
+          {
+            "Action": [
+              "ec2:AuthorizeSecurityGroupIngress",
+              "ec2:CopyImage",
+              "ec2:CreateReplaceRootVolumeTask",
+              "ec2:CreateSnapshots",
+              "ec2:DescribeImages",
+              "ec2:DescribeInstanceStatus",
+              "ec2:DescribeInstanceTypeOfferings",
+              "ec2:DescribeInstanceTypes",
+              "ec2:DescribeInstances",
+              "ec2:DescribeRegions",
+              "ec2:DescribeReplaceRootVolumeTasks",
+              "ec2:DescribeSnapshots",
+              "ec2:DescribeSpotPriceHistory",
+              "ec2:DescribeVolumes",
+              "ec2:GetConsoleOutput",
+              "ec2:GetEbsEncryptionByDefault",
+              "ec2:GetImageBlockPublicAccessState",
+              "ec2:RevokeSecurityGroupIngress",
+              "ec2:RunInstances",
+              "ec2:TerminateInstances"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EC2Management"
+          },
+          {
+            "Action": [
+              "ecr:BatchGetImage",
+              "ecr:ListImages",
+              "ecr:PutImage"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ECRManagement"
+          },
+          {
+            "Action": [
+              "ecs:ContinueServiceDeployment",
+              "ecs:DescribeServiceDeployments",
+              "ecs:DescribeServices",
+              "ecs:DescribeTaskDefinition",
+              "ecs:DescribeTasks",
+              "ecs:ListServiceDeployments",
+              "ecs:ListTasks",
+              "ecs:RegisterTaskDefinition",
+              "ecs:RunTask",
+              "ecs:StopServiceDeployment",
+              "ecs:StopTask",
+              "ecs:UpdateService"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ECSManagement"
+          },
+          {
+            "Action": [
+              "eks:DescribeCluster",
+              "eks:DescribeClusterVersions"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EKSManagement"
+          },
+          {
+            "Action": [
+              "elasticloadbalancing:AddListenerCertificates",
+              "elasticloadbalancing:DeregisterTargets",
+              "elasticloadbalancing:DescribeListenerCertificates",
+              "elasticloadbalancing:DescribeListeners",
+              "elasticloadbalancing:DescribeLoadBalancers",
+              "elasticloadbalancing:DescribeRules",
+              "elasticloadbalancing:DescribeTargetGroupAttributes",
+              "elasticloadbalancing:DescribeTargetGroups",
+              "elasticloadbalancing:DescribeTargetHealth",
+              "elasticloadbalancing:ModifyRule",
+              "elasticloadbalancing:RegisterTargets",
+              "elasticloadbalancing:RemoveListenerCertificates"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ELBManagement"
+          },
+          {
+            "Action": [
+              "events:CreateApiDestination",
+              "events:CreateConnection",
+              "events:DeleteApiDestination",
+              "events:DeleteConnection",
+              "events:DeleteRule",
+              "events:DescribeApiDestination",
+              "events:DescribeConnection",
+              "events:PutRule",
+              "events:PutTargets",
+              "events:RemoveTargets",
+              "events:UpdateApiDestination",
+              "events:UpdateConnection"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EventBridgeManagement"
+          },
+          {
+            "Action": [
+              "imagebuilder:CreateImage",
+              "imagebuilder:CreateImageRecipe",
+              "imagebuilder:GetImage"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ImageBuilderManagement"
+          },
+          {
+            "Action": [
+              "lambda:CreateAlias",
+              "lambda:GetAlias",
+              "lambda:UpdateAlias"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "LambdaInvoke"
+          },
+          {
+            "Action": [
+              "logs:DescribeLogGroups",
+              "logs:FilterLogEvents",
+              "logs:StartLiveTail"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudWatchLogsManagement"
+          },
+          {
+            "Action": [
+              "ssm:DescribeInstanceInformation",
+              "ssm:ListCommandInvocations",
+              "ssm:SendCommand"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "SSMManagement"
+          },
+          {
+            "Action": [
+              "iam:CreateRole",
+              "iam:GetRole",
+              "iam:PutRolePolicy",
+              "iam:UpdateAssumeRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "IAMRoleManagementScopedToRavion"
+          },
+          {
+            "Action": "iam:PassRole",
+            "Condition": {
+              "StringLike": {
+                "iam:PassedToService": [
+                  "ecs-tasks.amazonaws.com",
+                  "ecs.amazonaws.com",
+                  "ec2.amazonaws.com",
+                  "events.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/*",
+            "Sid": "IAMPassRoleScopedToRavion"
+          },
+          {
+            "Action": "iam:TagRole",
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "IAMRoleTaggingScopedToRavion"
+          },
+          {
+            "Action": "iam:CreateServiceLinkedRole",
+            "Condition": {
+              "StringLike": {
+                "iam:AWSServiceName": [
+                  "apidestinations.events.amazonaws.com",
+                  "ecs.amazonaws.com",
+                  "imagebuilder.amazonaws.com",
+                  "spot.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "IAMServiceLinkedRoles"
+          },
+          {
+            "Action": "iam:CreateServiceLinkedRole",
+            "Condition": {
+              "StringEquals": {
+                "iam:AWSServiceName": "servicequotas.amazonaws.com"
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/aws-service-role/servicequotas.amazonaws.com/AWSServiceRoleForServiceQuotas",
+            "Sid": "IAMServiceQuotaLinkedRole"
+          },
+          {
+            "Action": "ec2:CreateTags",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EC2ImplicitTagging"
+          },
+          {
+            "Action": "events:TagResource",
+            "Effect": "Allow",
+            "Resource": "arn:aws:events:*:*:rule/rvn-*",
+            "Sid": "EventBridgeRuleTaggingScopedToRavion"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "deployments_policy2": {
+        "Statement": [
+          {
+            "Action": [
+              "secretsmanager:CreateSecret",
+              "secretsmanager:UpdateSecret",
+              "secretsmanager:DescribeSecret",
+              "secretsmanager:DeleteSecret",
+              "secretsmanager:GetSecretValue",
+              "secretsmanager:PutSecretValue"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:secretsmanager:*:*:secret:events!connection/rvn-*",
+            "Sid": "EventBridgeConnectionSecretsScopedToRavion"
+          },
+          {
+            "Action": "cloudfront:TagResource",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudFrontTagging"
+          },
+          {
+            "Action": "s3:PutObjectTagging",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3ObjectTagging"
+          },
+          {
+            "Action": [
+              "s3:DeleteObject",
+              "s3:GetObject",
+              "s3:ListBucket"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3StaticHostingObjectAccess"
+          },
+          {
+            "Action": [
+              "s3:GetLifecycleConfiguration",
+              "s3:PutLifecycleConfiguration"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3StaticHostingLifecycle"
+          },
+          {
+            "Action": [
+              "iam:DeleteRole",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-ci/*",
+              "arn:aws:iam::*:role/rvn-ci-*",
+              "arn:aws:iam::*:instance-profile/rvn-ci/*",
+              "arn:aws:iam::*:instance-profile/rvn-ci-*"
+            ],
+            "Sid": "TowerTaskCiEphemeralIamCleanup"
+          },
+          {
+            "Action": [
+              "iam:DeleteRole",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-sandbox-host-*",
+              "arn:aws:iam::*:instance-profile/rvn-sandbox-host-*"
+            ],
+            "Sid": "TowerSandboxPoolHostIamCleanup"
+          },
+          {
+            "Action": [
+              "iam:DeleteRole",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-eb-*",
+            "Sid": "TowerManagedEventBridgeIamCleanup"
+          },
+          {
+            "Action": [
+              "cloudfront:CreateCachePolicy",
+              "cloudfront:ListInvalidations",
+              "cloudfront:UpdateCachePolicy",
+              "cloudfront:UpdateDistribution"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerCloudfrontManage"
+          },
+          {
+            "Action": [
+              "logs:DescribeLogStreams",
+              "logs:GetLogEvents",
+              "logs:GetQueryResults",
+              "logs:StartQuery",
+              "logs:StopQuery"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerCloudwatchLogsRead"
+          },
+          {
+            "Action": "logs:DescribeLogStreams",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerCloudwatchLogsIngestSupplement"
+          },
+          {
+            "Action": [
+              "cloudwatch:ListMetrics",
+              "ecs:DescribeClusters",
+              "rds:DescribeDBInstances"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerCloudwatchMetricsRead"
+          },
+          {
+            "Action": [
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:DescribeImages",
+              "ecr:DescribeRepositories",
+              "ecr:GetAuthorizationToken"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerEcrRead"
+          },
+          {
+            "Action": [
+              "ecr:GetDownloadUrlForLayer",
+              "lambda:GetFunction",
+              "lambda:GetFunctionConfiguration",
+              "lambda:PublishVersion",
+              "lambda:TagResource",
+              "lambda:UpdateFunctionCode",
+              "lambda:UpdateFunctionConfiguration"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerLambdaUpdate"
+          },
+          {
+            "Action": [
+              "s3:HeadBucket",
+              "s3:HeadObject",
+              "s3:PutObject",
+              "s3:PutObjectAcl"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerS3ArtifactWrite"
+          },
+          {
+            "Action": "ssm:GetCommandInvocation",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerSsmRunCommand"
+          },
+          {
+            "Action": [
+              "aps:QueryMetrics",
+              "aps:GetLabels",
+              "aps:GetSeries",
+              "aps:GetMetricMetadata"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:aps:*:*:workspace/*",
+            "Sid": "BrokerAmpMetricsRead"
+          },
+          {
+            "Action": "ec2:DescribeLaunchTemplateVersions",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerSandboxPoolLaunchTemplates"
+          },
+          {
+            "Action": "ec2:DeleteTags",
+            "Condition": {
+              "StringLike": {
+                "ec2:ResourceTag/ravion:sandbox-pool": [
+                  "*"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerSandboxPoolFleet"
+          },
+          {
+            "Action": [
+              "imagebuilder:GetComponent",
+              "imagebuilder:GetDistributionConfiguration",
+              "imagebuilder:GetImageRecipe",
+              "imagebuilder:GetInfrastructureConfiguration"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerAmiDeploymentBuildReads"
+          },
+          {
+            "Action": "imagebuilder:TagResource",
+            "Condition": {
+              "StringLike": {
+                "aws:RequestTag/ModuleId": [
+                  "*"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerAmiDeploymentTagging"
+          },
+          {
+            "Action": [
+              "ec2:DeleteSnapshot",
+              "ec2:DeregisterImage",
+              "ec2:ModifyImageAttribute",
+              "imagebuilder:CancelImageCreation",
+              "imagebuilder:DeleteImage",
+              "imagebuilder:DeleteImageRecipe"
+            ],
+            "Condition": {
+              "StringLike": {
+                "aws:ResourceTag/ModuleId": [
+                  "*"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerAmiDeploymentRelease"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "deployments_role_ravion_policy": {
+        "Statement": [
+          {
+            "Condition": {
+              "BoolIfExists": {
+                "aws:ViaAWSService": [
+                  "false"
+                ]
+              },
+              "NotIpAddressIfExists": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "NotAction": "logs:StartLiveTail",
+            "Resource": "*",
+            "Sid": "EnforceBrokerSourceIp"
+          },
+          {
+            "Action": [
+              "iam:AttachRolePolicy",
+              "iam:DeleteRole",
+              "iam:DeleteRolePermissionsBoundary",
+              "iam:DeleteRolePolicy",
+              "iam:DetachRolePolicy",
+              "iam:PutRolePermissionsBoundary",
+              "iam:PutRolePolicy",
+              "iam:TagRole",
+              "iam:UntagRole",
+              "iam:UpdateAssumeRolePolicy",
+              "iam:UpdateRole",
+              "iam:UpdateRoleDescription",
+              "iam:CreatePolicyVersion",
+              "iam:DeletePolicy",
+              "iam:DeletePolicyVersion",
+              "iam:SetDefaultPolicyVersion"
+            ],
+            "Effect": "Deny",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}",
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}-*",
+              "arn:aws:iam::*:policy/rvn-$${aws:PrincipalTag/RavionAccountId}-*"
+            ],
+            "Sid": "ProtectRavionStackRoles"
+          },
+          {
+            "Action": "iam:AttachRolePolicy",
+            "Condition": {
+              "ArnLike": {
+                "iam:PolicyARN": [
+                  "arn:aws:iam::aws:policy/AdministratorAccess",
+                  "arn:aws:iam::aws:policy/IAMFullAccess"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "Resource": "*",
+            "Sid": "DenyPrivilegedPolicyAttach"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "deployments_role_trust": {
+        "Statement": [
+          {
+            "Action": [
+              "sts:AssumeRoleWithWebIdentity",
+              "sts:TagSession",
+              "sts:SetSourceIdentity"
+            ],
+            "Condition": {
+              "ForAllValues:StringEquals": {
+                "aws:TagKeys": [
+                  "RavionAccountId",
+                  "RavionPurpose",
+                  "RavionCallerService"
+                ]
+              },
+              "IpAddress": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              },
+              "StringEquals": {
+                "aws:RequestTag/RavionCallerService": [
+                  "api",
+                  "automations"
+                ],
+                "oidc.ravion.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "aws:RequestTag/RavionAccountId": "*",
+                "aws:RequestTag/RavionPurpose": "*",
+                "oidc.ravion.com:sub": "rvn:account:${var.ravion_id}:purpose:deployments-*",
+                "sts:SourceIdentity": "rvn_*"
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "${local.ravion_oidc_provider_arn}"
+            },
+            "Sid": "RavionOIDCFederation"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "managed_policy_broker": {
+        "Statement": [
+          {
+            "Action": "ec2:DescribeAvailabilityZones",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerAwsNetworkDiscovery"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "managed_policy_deploy": {
+        "Statement": [
+          {
+            "Action": [
+              "account:EnableRegion",
+              "account:GetRegionOptStatus"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ACCOUNTManagement"
+          },
+          {
+            "Action": [
+              "ec2:CreateDefaultVpc",
+              "ec2:DescribeInstanceTypeOfferings",
+              "ec2:DescribeInstanceTypes",
+              "ec2:DescribeNatGateways",
+              "ec2:DescribeRegions",
+              "ec2:DescribeRouteTables",
+              "ec2:DescribeSecurityGroups",
+              "ec2:DescribeSubnets",
+              "ec2:DescribeVpcs"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EC2Management"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "managed_policy_deploy2": {
+        "Statement": [
+          {
+            "Action": "iam:CreateServiceLinkedRole",
+            "Condition": {
+              "StringLike": {
+                "iam:AWSServiceName": [
+                  "apidestinations.events.amazonaws.com",
+                  "ecs.amazonaws.com",
+                  "imagebuilder.amazonaws.com",
+                  "spot.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "IAMServiceLinkedRoles"
+          },
+          {
+            "Action": [
+              "servicequotas:GetServiceQuota",
+              "servicequotas:ListRequestedServiceQuotaChangeHistoryByQuota"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:servicequotas:*:*:*/*",
+            "Sid": "ServiceQuotaRead"
+          },
+          {
+            "Action": "servicequotas:GetRequestedServiceQuotaChange",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ServiceQuotaRequestStatusRead"
+          },
+          {
+            "Action": "servicequotas:RequestServiceQuotaIncrease",
+            "Effect": "Allow",
+            "Resource": "arn:aws:servicequotas:*:*:*/*",
+            "Sid": "ServiceQuotaIncreaseRequest"
+          },
+          {
+            "Action": "iam:CreateServiceLinkedRole",
+            "Condition": {
+              "StringEquals": {
+                "iam:AWSServiceName": "servicequotas.amazonaws.com"
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/aws-service-role/servicequotas.amazonaws.com/AWSServiceRoleForServiceQuotas",
+            "Sid": "IAMServiceQuotaLinkedRole"
+          },
+          {
+            "Action": "ec2:CreateTags",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EC2ImplicitTagging"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "role_ravion_policy": {
+        "Statement": [
+          {
+            "Action": [
+              "iam:AttachRolePolicy",
+              "iam:DeleteRole",
+              "iam:DeleteRolePermissionsBoundary",
+              "iam:DeleteRolePolicy",
+              "iam:DetachRolePolicy",
+              "iam:PutRolePermissionsBoundary",
+              "iam:PutRolePolicy",
+              "iam:TagRole",
+              "iam:UntagRole",
+              "iam:UpdateAssumeRolePolicy",
+              "iam:UpdateRole",
+              "iam:UpdateRoleDescription",
+              "iam:CreatePolicyVersion",
+              "iam:DeletePolicy",
+              "iam:DeletePolicyVersion",
+              "iam:SetDefaultPolicyVersion"
+            ],
+            "Effect": "Deny",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}",
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}-*",
+              "arn:aws:iam::*:policy/rvn-$${aws:PrincipalTag/RavionAccountId}-*"
+            ],
+            "Sid": "ProtectRavionStackRoles"
+          },
+          {
+            "Condition": {
+              "BoolIfExists": {
+                "aws:ViaAWSService": [
+                  "false"
+                ]
+              },
+              "NotIpAddressIfExists": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "NotAction": "logs:StartLiveTail",
+            "Resource": "*",
+            "Sid": "EnforceBrokerSourceIp"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "role_trust": {
+        "Statement": [
+          {
+            "Action": [
+              "sts:AssumeRoleWithWebIdentity",
+              "sts:TagSession",
+              "sts:SetSourceIdentity"
+            ],
+            "Condition": {
+              "ForAllValues:StringEquals": {
+                "aws:TagKeys": [
+                  "RavionAccountId",
+                  "RavionPurpose",
+                  "RavionCallerService"
+                ]
+              },
+              "IpAddress": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              },
+              "StringEquals": {
+                "aws:RequestTag/RavionCallerService": [
+                  "api",
+                  "automations"
+                ],
+                "oidc.ravion.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "aws:RequestTag/RavionAccountId": "*",
+                "aws:RequestTag/RavionPurpose": "*",
+                "oidc.ravion.com:sub": "rvn:account:${var.ravion_id}:purpose:*",
+                "sts:SourceIdentity": "rvn_*"
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "${local.ravion_oidc_provider_arn}"
+            },
+            "Sid": "RavionOIDCFederation"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "sandboxes_policy": {
+        "Statement": [
+          {
+            "Action": "autoscaling:DeleteAutoScalingGroup",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "AutoScalingManagement"
+          },
+          {
+            "Action": "cloudwatch:GetMetricData",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudWatchManagement"
+          },
+          {
+            "Action": [
+              "ec2:AssignIpv6Addresses",
+              "ec2:AssignPrivateIpAddresses",
+              "ec2:AuthorizeSecurityGroupIngress",
+              "ec2:CancelSpotInstanceRequests",
+              "ec2:CreateFleet",
+              "ec2:DeleteLaunchTemplateVersions",
+              "ec2:DescribeImages",
+              "ec2:DescribeInstanceTypeOfferings",
+              "ec2:DescribeInstanceTypes",
+              "ec2:DescribeInstances",
+              "ec2:DescribeNetworkInterfaces",
+              "ec2:DescribeSpotInstanceRequests",
+              "ec2:DescribeSpotPriceHistory",
+              "ec2:DescribeSubnets",
+              "ec2:DescribeVolumes",
+              "ec2:GetConsoleOutput",
+              "ec2:GetInstanceTypesFromInstanceRequirements",
+              "ec2:GetSpotPlacementScores",
+              "ec2:RequestSpotInstances",
+              "ec2:RunInstances",
+              "ec2:SendDiagnosticInterrupt",
+              "ec2:TerminateInstances",
+              "ec2:UnassignIpv6Addresses"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EC2Management"
+          },
+          {
+            "Action": [
+              "elasticloadbalancing:CreateRule",
+              "elasticloadbalancing:CreateTargetGroup",
+              "elasticloadbalancing:DeleteRule",
+              "elasticloadbalancing:DeleteTargetGroup",
+              "elasticloadbalancing:DeregisterTargets",
+              "elasticloadbalancing:DescribeLoadBalancers",
+              "elasticloadbalancing:DescribeRules",
+              "elasticloadbalancing:DescribeTargetGroups",
+              "elasticloadbalancing:ModifyTargetGroupAttributes",
+              "elasticloadbalancing:RegisterTargets"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ELBManagement"
+          },
+          {
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:DescribeLogGroups",
+              "logs:FilterLogEvents",
+              "logs:PutLogEvents",
+              "logs:PutRetentionPolicy",
+              "logs:StartLiveTail"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudWatchLogsManagement"
+          },
+          {
+            "Action": [
+              "ssm:DescribeInstanceInformation",
+              "ssm:ListCommandInvocations",
+              "ssm:SendCommand"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "SSMManagement"
+          },
+          {
+            "Action": "ssm:GetParameter",
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:ssm:*:*:parameter/ravion/*",
+              "arn:aws:ssm:*::parameter/aws/service/*"
+            ],
+            "Sid": "SSMParameterReadScopedToRavion"
+          },
+          {
+            "Action": [
+              "ssm:DeleteParameter",
+              "ssm:PutParameter"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:ssm:*:*:parameter/ravion/*",
+            "Sid": "SSMParameterWriteScopedToRavion"
+          },
+          {
+            "Action": [
+              "iam:AttachRolePolicy",
+              "iam:CreateRole",
+              "iam:GetRole",
+              "iam:PutRolePolicy",
+              "iam:UpdateAssumeRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "IAMRoleManagementScopedToRavion"
+          },
+          {
+            "Action": [
+              "iam:AddRoleToInstanceProfile",
+              "iam:CreateInstanceProfile",
+              "iam:GetInstanceProfile",
+              "iam:TagInstanceProfile"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:instance-profile/rvn-*",
+            "Sid": "IAMInstanceProfileScopedToRavion"
+          },
+          {
+            "Action": [
+              "s3:GetBucketTagging",
+              "s3:PutBucketTagging"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::ravion-sandbox-cache-*",
+              "arn:aws:s3:::ravion-sandbox-chunks-*"
+            ],
+            "Sid": "S3SandboxCacheBucketTaggingScopedToRavion"
+          },
+          {
+            "Action": "s3:PutMetricsConfiguration",
+            "Effect": "Allow",
+            "Resource": "arn:aws:s3:::ravion-*",
+            "Sid": "S3CacheRequestMetricsScopedToRavion"
+          },
+          {
+            "Action": "s3:DeleteBucket",
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::ravion-sandbox-cache-*",
+              "arn:aws:s3:::ravion-sandbox-chunks-*",
+              "arn:aws:s3:::ravion-artifacts-*"
+            ],
+            "Sid": "S3SandboxCacheBucketDeletionScopedToRavion"
+          },
+          {
+            "Action": [
+              "sts:AssumeRole",
+              "sts:SetSourceIdentity"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "STSAssumeRoleScopedToRavion"
+          },
+          {
+            "Action": "iam:PassRole",
+            "Condition": {
+              "StringLike": {
+                "iam:PassedToService": [
+                  "ecs-tasks.amazonaws.com",
+                  "ecs.amazonaws.com",
+                  "ec2.amazonaws.com",
+                  "events.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/*",
+            "Sid": "IAMPassRoleScopedToRavion"
+          },
+          {
+            "Action": "iam:TagRole",
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "IAMRoleTaggingScopedToRavion"
+          },
+          {
+            "Action": "iam:CreateServiceLinkedRole",
+            "Condition": {
+              "StringLike": {
+                "iam:AWSServiceName": [
+                  "apidestinations.events.amazonaws.com",
+                  "ecs.amazonaws.com",
+                  "imagebuilder.amazonaws.com",
+                  "spot.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "IAMServiceLinkedRoles"
+          },
+          {
+            "Action": "iam:CreateServiceLinkedRole",
+            "Condition": {
+              "StringEquals": {
+                "iam:AWSServiceName": "servicequotas.amazonaws.com"
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/aws-service-role/servicequotas.amazonaws.com/AWSServiceRoleForServiceQuotas",
+            "Sid": "IAMServiceQuotaLinkedRole"
+          },
+          {
+            "Action": "ec2:CreateTags",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "EC2ImplicitTagging"
+          },
+          {
+            "Action": "logs:TagResource",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "CloudWatchLogsTagging"
+          },
+          {
+            "Action": "elasticloadbalancing:AddTags",
+            "Condition": {
+              "StringLike": {
+                "elasticloadbalancing:CreateAction": [
+                  "CreateTargetGroup",
+                  "CreateRule"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "ELBTaggingOnCreate"
+          },
+          {
+            "Action": "s3:PutObjectTagging",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3ObjectTagging"
+          },
+          {
+            "Action": [
+              "s3:DeleteObject",
+              "s3:GetObject",
+              "s3:ListBucket"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3StaticHostingObjectAccess"
+          },
+          {
+            "Action": "s3:PutLifecycleConfiguration",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3StaticHostingLifecycle"
+          },
+          {
+            "Action": [
+              "iam:RemoveRoleFromInstanceProfile",
+              "iam:DeleteInstanceProfile",
+              "iam:DeleteRole",
+              "iam:DetachRolePolicy",
+              "iam:ListAttachedRolePolicies",
+              "iam:ListRolePolicies",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-ci/*",
+              "arn:aws:iam::*:role/rvn-ci-*",
+              "arn:aws:iam::*:instance-profile/rvn-ci/*",
+              "arn:aws:iam::*:instance-profile/rvn-ci-*"
+            ],
+            "Sid": "TowerTaskCiEphemeralIamCleanup"
+          },
+          {
+            "Action": [
+              "iam:RemoveRoleFromInstanceProfile",
+              "iam:DeleteInstanceProfile",
+              "iam:DeleteRole",
+              "iam:DetachRolePolicy",
+              "iam:ListAttachedRolePolicies",
+              "iam:ListRolePolicies",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-sandbox-host-*",
+              "arn:aws:iam::*:instance-profile/rvn-sandbox-host-*"
+            ],
+            "Sid": "TowerSandboxPoolHostIamCleanup"
+          },
+          {
+            "Action": [
+              "iam:DeleteRole",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-eb-*",
+            "Sid": "TowerManagedEventBridgeIamCleanup"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "sandboxes_policy2": {
+        "Statement": [
+          {
+            "Action": "s3:PutObject",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerS3ArtifactWrite"
+          },
+          {
+            "Action": "s3:CreateBucket",
+            "Effect": "Allow",
+            "Resource": "arn:aws:s3:::ravion-*",
+            "Sid": "BrokerSandboxPoolChunkBucketCreate"
+          },
+          {
+            "Action": [
+              "s3:GetObjectVersion",
+              "s3:ListBucketVersions",
+              "s3:PutBucketVersioning"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::ravion-*",
+              "arn:aws:s3:::ravion-*/*"
+            ],
+            "Sid": "BrokerSandboxPoolChunkBucketVersions"
+          },
+          {
+            "Action": [
+              "ec2:CreateLaunchTemplate",
+              "ec2:CreateLaunchTemplateVersion",
+              "ec2:ModifyLaunchTemplate",
+              "ec2:DeleteLaunchTemplate",
+              "ec2:DescribeLaunchTemplateVersions"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerSandboxPoolLaunchTemplates"
+          },
+          {
+            "Action": [
+              "ec2:StopInstances",
+              "ec2:StartInstances",
+              "ec2:DeleteTags"
+            ],
+            "Condition": {
+              "StringLike": {
+                "ec2:ResourceTag/ravion:sandbox-pool": [
+                  "*"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerSandboxPoolFleet"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "sandboxes_role_ravion_policy": {
+        "Statement": [
+          {
+            "Condition": {
+              "BoolIfExists": {
+                "aws:ViaAWSService": [
+                  "false"
+                ]
+              },
+              "NotIpAddressIfExists": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "NotAction": "logs:StartLiveTail",
+            "Resource": "*",
+            "Sid": "EnforceBrokerSourceIp"
+          },
+          {
+            "Action": [
+              "iam:AttachRolePolicy",
+              "iam:DeleteRole",
+              "iam:DeleteRolePermissionsBoundary",
+              "iam:DeleteRolePolicy",
+              "iam:DetachRolePolicy",
+              "iam:PutRolePermissionsBoundary",
+              "iam:PutRolePolicy",
+              "iam:TagRole",
+              "iam:UntagRole",
+              "iam:UpdateAssumeRolePolicy",
+              "iam:UpdateRole",
+              "iam:UpdateRoleDescription",
+              "iam:CreatePolicyVersion",
+              "iam:DeletePolicy",
+              "iam:DeletePolicyVersion",
+              "iam:SetDefaultPolicyVersion"
+            ],
+            "Effect": "Deny",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}",
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}-*",
+              "arn:aws:iam::*:policy/rvn-$${aws:PrincipalTag/RavionAccountId}-*"
+            ],
+            "Sid": "ProtectRavionStackRoles"
+          },
+          {
+            "Action": "iam:AttachRolePolicy",
+            "Condition": {
+              "ArnLike": {
+                "iam:PolicyARN": [
+                  "arn:aws:iam::aws:policy/AdministratorAccess",
+                  "arn:aws:iam::aws:policy/IAMFullAccess"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "Resource": "*",
+            "Sid": "DenyPrivilegedPolicyAttach"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "sandboxes_role_trust": {
+        "Statement": [
+          {
+            "Action": [
+              "sts:AssumeRoleWithWebIdentity",
+              "sts:TagSession",
+              "sts:SetSourceIdentity"
+            ],
+            "Condition": {
+              "ForAllValues:StringEquals": {
+                "aws:TagKeys": [
+                  "RavionAccountId",
+                  "RavionPurpose",
+                  "RavionCallerService"
+                ]
+              },
+              "IpAddress": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              },
+              "StringEquals": {
+                "aws:RequestTag/RavionCallerService": [
+                  "api",
+                  "automations"
+                ],
+                "oidc.ravion.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "aws:RequestTag/RavionAccountId": "*",
+                "aws:RequestTag/RavionPurpose": "*",
+                "oidc.ravion.com:sub": "rvn:account:${var.ravion_id}:purpose:sandboxes-*",
+                "sts:SourceIdentity": "rvn_*"
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "${local.ravion_oidc_provider_arn}"
+            },
+            "Sid": "RavionOIDCFederation"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "terraform_policy": {
+        "Statement": [
+          {
+            "Action": [
+              "iam:AttachRolePolicy",
+              "iam:CreateRole",
+              "iam:GetRole",
+              "iam:PutRolePolicy",
+              "iam:UpdateAssumeRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "IAMRoleManagementScopedToRavion"
+          },
+          {
+            "Action": [
+              "iam:AddRoleToInstanceProfile",
+              "iam:CreateInstanceProfile",
+              "iam:GetInstanceProfile"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:instance-profile/rvn-*",
+            "Sid": "IAMInstanceProfileScopedToRavion"
+          },
+          {
+            "Action": "iam:PassRole",
+            "Condition": {
+              "StringLike": {
+                "iam:PassedToService": [
+                  "ecs-tasks.amazonaws.com",
+                  "ecs.amazonaws.com",
+                  "ec2.amazonaws.com",
+                  "events.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/*",
+            "Sid": "IAMPassRoleScopedToRavion"
+          },
+          {
+            "Action": "iam:TagRole",
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-*",
+            "Sid": "IAMRoleTaggingScopedToRavion"
+          },
+          {
+            "Action": "s3:PutObjectTagging",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "S3ObjectTagging"
+          },
+          {
+            "Action": [
+              "iam:RemoveRoleFromInstanceProfile",
+              "iam:DeleteInstanceProfile",
+              "iam:DeleteRole",
+              "iam:DetachRolePolicy",
+              "iam:ListAttachedRolePolicies",
+              "iam:ListRolePolicies",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-ci/*",
+              "arn:aws:iam::*:role/rvn-ci-*",
+              "arn:aws:iam::*:instance-profile/rvn-ci/*",
+              "arn:aws:iam::*:instance-profile/rvn-ci-*"
+            ],
+            "Sid": "TowerTaskCiEphemeralIamCleanup"
+          },
+          {
+            "Action": [
+              "iam:RemoveRoleFromInstanceProfile",
+              "iam:DeleteInstanceProfile",
+              "iam:DeleteRole",
+              "iam:DetachRolePolicy",
+              "iam:ListAttachedRolePolicies",
+              "iam:ListRolePolicies",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-sandbox-host-*",
+              "arn:aws:iam::*:instance-profile/rvn-sandbox-host-*"
+            ],
+            "Sid": "TowerSandboxPoolHostIamCleanup"
+          },
+          {
+            "Action": [
+              "iam:DeleteRole",
+              "iam:DeleteRolePolicy"
+            ],
+            "Effect": "Allow",
+            "Resource": "arn:aws:iam::*:role/rvn-eb-*",
+            "Sid": "TowerManagedEventBridgeIamCleanup"
+          },
+          {
+            "Action": "s3:PutObject",
+            "Effect": "Allow",
+            "Resource": "*",
+            "Sid": "BrokerS3ArtifactWrite"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "terraform_role_ravion_policy": {
+        "Statement": [
+          {
+            "Condition": {
+              "BoolIfExists": {
+                "aws:ViaAWSService": [
+                  "false"
+                ]
+              },
+              "NotIpAddressIfExists": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "NotAction": "logs:StartLiveTail",
+            "Resource": "*",
+            "Sid": "EnforceBrokerSourceIp"
+          },
+          {
+            "Action": [
+              "iam:AttachRolePolicy",
+              "iam:DeleteRole",
+              "iam:DeleteRolePermissionsBoundary",
+              "iam:DeleteRolePolicy",
+              "iam:DetachRolePolicy",
+              "iam:PutRolePermissionsBoundary",
+              "iam:PutRolePolicy",
+              "iam:TagRole",
+              "iam:UntagRole",
+              "iam:UpdateAssumeRolePolicy",
+              "iam:UpdateRole",
+              "iam:UpdateRoleDescription",
+              "iam:CreatePolicyVersion",
+              "iam:DeletePolicy",
+              "iam:DeletePolicyVersion",
+              "iam:SetDefaultPolicyVersion"
+            ],
+            "Effect": "Deny",
+            "Resource": [
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}",
+              "arn:aws:iam::*:role/rvn-$${aws:PrincipalTag/RavionAccountId}-*",
+              "arn:aws:iam::*:policy/rvn-$${aws:PrincipalTag/RavionAccountId}-*"
+            ],
+            "Sid": "ProtectRavionStackRoles"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "terraform_role_trust": {
+        "Statement": [
+          {
+            "Action": [
+              "sts:AssumeRoleWithWebIdentity",
+              "sts:TagSession",
+              "sts:SetSourceIdentity"
+            ],
+            "Condition": {
+              "ForAllValues:StringEquals": {
+                "aws:TagKeys": [
+                  "RavionAccountId",
+                  "RavionPurpose",
+                  "RavionCallerService"
+                ]
+              },
+              "IpAddress": {
+                "aws:SourceIp": [
+                  "184.33.144.157/32",
+                  "35.165.172.23/32",
+                  "50.112.69.57/32",
+                  "52.38.126.172/32",
+                  "54.200.59.143/32",
+                  "54.214.167.211/32"
+                ]
+              },
+              "StringEquals": {
+                "aws:RequestTag/RavionCallerService": [
+                  "api",
+                  "automations"
+                ],
+                "oidc.ravion.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "aws:RequestTag/RavionAccountId": "*",
+                "aws:RequestTag/RavionPurpose": "*",
+                "oidc.ravion.com:sub": "rvn:account:${var.ravion_id}:purpose:terraform-*",
+                "sts:SourceIdentity": "rvn_*"
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "${local.ravion_oidc_provider_arn}"
+            },
+            "Sid": "RavionOIDCFederation"
+          }
+        ],
+        "Version": "2012-10-17"
+      }
+    },
+    "ravion_role_version": "1.0.72",
+    "ravion_sandboxes_enabled": "${(var.enable_sandboxes || var.enable_deployments || var.enable_terraform)}",
+    "ravion_terraform_enabled": "${var.enable_terraform}"
+  },
+  "resource": {
+    "aws_iam_openid_connect_provider": {
+      "oidc_provider": {
+        "client_id_list": [
+          "sts.amazonaws.com"
+        ],
+        "count": "${var.oidc_provider_arn == \"\" ? 1 : 0}",
+        "thumbprint_list": [
+          "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+        ],
+        "url": "https://oidc.ravion.com"
+      }
+    },
+    "aws_iam_policy": {
+      "deployments_policy": {
+        "count": "${local.ravion_deployments_enabled ? 1 : 0}",
+        "description": "Ravion Deployments role permissions. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-deployments",
+        "policy": "${jsonencode(local.ravion_policy_documents.deployments_policy)}"
+      },
+      "deployments_policy2": {
+        "count": "${local.ravion_deployments_enabled ? 1 : 0}",
+        "description": "Ravion Deployments role permissions. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-deployments-2",
+        "policy": "${jsonencode(local.ravion_policy_documents.deployments_policy2)}"
+      },
+      "managed_policy_broker": {
+        "description": "Ravion credentials-broker session permissions: observability reads, artifact writes, and billing configuration. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-broker",
+        "policy": "${jsonencode(local.ravion_policy_documents.managed_policy_broker)}"
+      },
+      "managed_policy_deploy": {
+        "description": "Ravion deploy-plane permissions: deployments, infrastructure provisioning, and CI cleanup. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-deploy",
+        "policy": "${jsonencode(local.ravion_policy_documents.managed_policy_deploy)}"
+      },
+      "managed_policy_deploy2": {
+        "description": "Ravion deploy-plane permissions: deployments, infrastructure provisioning, and CI cleanup. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-deploy-2",
+        "policy": "${jsonencode(local.ravion_policy_documents.managed_policy_deploy2)}"
+      },
+      "sandboxes_policy": {
+        "count": "${local.ravion_sandboxes_enabled ? 1 : 0}",
+        "description": "Ravion Sandboxes role permissions. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-sandboxes",
+        "policy": "${jsonencode(local.ravion_policy_documents.sandboxes_policy)}"
+      },
+      "sandboxes_policy2": {
+        "count": "${local.ravion_sandboxes_enabled ? 1 : 0}",
+        "description": "Ravion Sandboxes role permissions. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-sandboxes-2",
+        "policy": "${jsonencode(local.ravion_policy_documents.sandboxes_policy2)}"
+      },
+      "terraform_policy": {
+        "count": "${local.ravion_terraform_enabled ? 1 : 0}",
+        "description": "Ravion Terraform role permissions. Generated by ravion-iam policy-gen; do not edit by hand.",
+        "name": "rvn-${var.ravion_id}-terraform",
+        "policy": "${jsonencode(local.ravion_policy_documents.terraform_policy)}"
+      }
+    },
+    "aws_iam_role": {
+      "deployments_role": {
+        "assume_role_policy": "${jsonencode(local.ravion_policy_documents.deployments_role_trust)}",
+        "count": "${local.ravion_deployments_enabled ? 1 : 0}",
+        "name": "rvn-${var.ravion_id}-deployments"
+      },
+      "role": {
+        "assume_role_policy": "${jsonencode(local.ravion_policy_documents.role_trust)}",
+        "name": "rvn-${var.ravion_id}"
+      },
+      "sandboxes_role": {
+        "assume_role_policy": "${jsonencode(local.ravion_policy_documents.sandboxes_role_trust)}",
+        "count": "${local.ravion_sandboxes_enabled ? 1 : 0}",
+        "name": "rvn-${var.ravion_id}-sandboxes"
+      },
+      "terraform_role": {
+        "assume_role_policy": "${jsonencode(local.ravion_policy_documents.terraform_role_trust)}",
+        "count": "${local.ravion_terraform_enabled ? 1 : 0}",
+        "name": "rvn-${var.ravion_id}-terraform"
+      }
+    },
+    "aws_iam_role_policy": {
+      "deployments_role_ravion_policy": {
+        "count": "${local.ravion_deployments_enabled ? 1 : 0}",
+        "name": "RavionPolicy",
+        "policy": "${jsonencode(local.ravion_policy_documents.deployments_role_ravion_policy)}",
+        "role": "${aws_iam_role.deployments_role[0].id}"
+      },
+      "role_ravion_policy": {
+        "name": "RavionPolicy",
+        "policy": "${jsonencode(local.ravion_policy_documents.role_ravion_policy)}",
+        "role": "${aws_iam_role.role.id}"
+      },
+      "sandboxes_role_ravion_policy": {
+        "count": "${local.ravion_sandboxes_enabled ? 1 : 0}",
+        "name": "RavionPolicy",
+        "policy": "${jsonencode(local.ravion_policy_documents.sandboxes_role_ravion_policy)}",
+        "role": "${aws_iam_role.sandboxes_role[0].id}"
+      },
+      "terraform_role_ravion_policy": {
+        "count": "${local.ravion_terraform_enabled ? 1 : 0}",
+        "name": "RavionPolicy",
+        "policy": "${jsonencode(local.ravion_policy_documents.terraform_role_ravion_policy)}",
+        "role": "${aws_iam_role.terraform_role[0].id}"
+      }
+    },
+    "aws_iam_role_policy_attachment": {
+      "deployments_role_deployments_policy": {
+        "count": "${local.ravion_deployments_enabled ? 1 : 0}",
+        "policy_arn": "${aws_iam_policy.deployments_policy[0].arn}",
+        "role": "${aws_iam_role.deployments_role[0].name}"
+      },
+      "deployments_role_deployments_policy2": {
+        "count": "${local.ravion_deployments_enabled ? 1 : 0}",
+        "policy_arn": "${aws_iam_policy.deployments_policy2[0].arn}",
+        "role": "${aws_iam_role.deployments_role[0].name}"
+      },
+      "role_managed_policy_broker": {
+        "policy_arn": "${aws_iam_policy.managed_policy_broker.arn}",
+        "role": "${aws_iam_role.role.name}"
+      },
+      "role_managed_policy_deploy": {
+        "policy_arn": "${aws_iam_policy.managed_policy_deploy.arn}",
+        "role": "${aws_iam_role.role.name}"
+      },
+      "role_managed_policy_deploy2": {
+        "policy_arn": "${aws_iam_policy.managed_policy_deploy2.arn}",
+        "role": "${aws_iam_role.role.name}"
+      },
+      "sandboxes_role_sandboxes_policy": {
+        "count": "${local.ravion_sandboxes_enabled ? 1 : 0}",
+        "policy_arn": "${aws_iam_policy.sandboxes_policy[0].arn}",
+        "role": "${aws_iam_role.sandboxes_role[0].name}"
+      },
+      "sandboxes_role_sandboxes_policy2": {
+        "count": "${local.ravion_sandboxes_enabled ? 1 : 0}",
+        "policy_arn": "${aws_iam_policy.sandboxes_policy2[0].arn}",
+        "role": "${aws_iam_role.sandboxes_role[0].name}"
+      },
+      "terraform_role_terraform_policy": {
+        "count": "${local.ravion_terraform_enabled ? 1 : 0}",
+        "policy_arn": "${aws_iam_policy.terraform_policy[0].arn}",
+        "role": "${aws_iam_role.terraform_role[0].name}"
+      }
+    }
+  }
+}
