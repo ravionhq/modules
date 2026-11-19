@@ -128,7 +128,7 @@ The module's definition charts these on the Metrics tab beside the load balancer
 | module_instance_id | Ravion module instance id (`minst_*`) of this App Cluster. Injected as `TF_VAR_module_instance_id` inside a stack run | `string` | n/a | yes |
 | vpc_id | VPC of the load balancer and the router. The router reaches TCP 20000-20999 in each of its IPv4 ranges | `string` | n/a | yes |
 | public_subnet_ids | Public subnets for the load balancer | `list(string)` | n/a | yes |
-| router_subnet_ids | Subnets Ravion may launch the router in, in Availability Zones the public subnets cover. The router needs outbound HTTPS | `list(string)` | n/a | yes |
+| router_subnet_ids | Subnets Ravion may launch the router in, in Availability Zones the public subnets cover. The router needs outbound HTTPS: private subnets with a NAT gateway, or public subnets, where the public IP address Ravion launches it with gives it that | `list(string)` | n/a | yes |
 | ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
 | ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
 | ssm_enabled | Add Session Manager access to the router's role | `bool` | `true` | no |

@@ -4,8 +4,8 @@ definition:
   name: App Cluster
   description: Runs the apps you deploy with ravion deploy, each in its own sandbox on an execution environment's sandbox pool, and serves them under a managed wildcard domain and your own domains through a Network Load Balancer and a router that wakes a paused app on request.
 release:
-  version: 0.1.1
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 0.1.2
+  description: Document running the router in public subnets, for a network without a NAT gateway.
 module:
   outputs:
     - id: wildcard_domain_name
@@ -75,7 +75,7 @@ module:
       immutable: true
       label: VPC network
       type: $ref:rvn-aws-network
-      description: The load balancer runs in its public subnets, and the router in its private subnets, which need a NAT gateway.
+      description: The load balancer runs in its public subnets, and the router in its private subnets, which need a NAT gateway. For a network without one, enter public subnets as the private subnet IDs.
       mapped_inputs:
         - id: section_aws
           label: AWS account & region
@@ -788,7 +788,7 @@ module:
 
     ## Placement and security
 
-    The load balancer is internet-facing in the network's public subnets. Restrict who can open the apps with Allowed source CIDRs. The router runs in the private subnets and needs a NAT gateway for outbound traffic.
+    The load balancer is internet-facing in the network's public subnets. Restrict who can open the apps with Allowed source CIDRs. The router runs in the private subnets and reaches the Ravion API and AWS through their NAT gateway. In a network without a NAT gateway, enter public subnets as the private subnet IDs: Ravion launches the router with a public IP address, and its security group still accepts traffic only from the load balancer.
 
     | Security group | Inbound | Outbound |
     | --- | --- | --- |

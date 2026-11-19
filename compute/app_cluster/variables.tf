@@ -132,7 +132,7 @@ variable "public_subnet_ids" {
 
 variable "router_subnet_ids" {
   type        = list(string)
-  description = "Subnets Ravion may launch the router instance in. Use private subnets with a NAT gateway: the router needs outbound HTTPS. Each must be in an Availability Zone that one of public_subnet_ids covers, because the load balancer reaches targets only in its own zones."
+  description = "Subnets Ravion may launch the router instance in. The router needs outbound HTTPS: use private subnets with a NAT gateway, or public subnets, where the public IP address Ravion launches it with gives it that. Each must be in an Availability Zone that one of public_subnet_ids covers, because the load balancer reaches targets only in its own zones."
 
   validation {
     condition     = length(var.router_subnet_ids) >= 1 && alltrue([for subnet in var.router_subnet_ids : can(regex("^subnet-", subnet))])
