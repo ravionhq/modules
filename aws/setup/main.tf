@@ -28,7 +28,14 @@ locals {
 resource "terraform_data" "callback" {
   count = var.send_callback ? 1 : 0
 
-  triggers_replace = [local.callback_body]
+  # Reports again when the roles change, when any role's permissions or trust
+  # change, and when a new onboarding token is supplied: applying with a fresh
+  # token from Ravion is how to ask Ravion to check the roles again.
+  triggers_replace = [
+    local.callback_body,
+    sha256(jsonencode(local.ravion_policy_documents)),
+    sha256(var.onboarding_token),
+  ]
 
   provisioner "local-exec" {
     command = "curl --fail-with-body --silent --show-error --retry 5 --retry-all-errors --retry-delay 5 -X POST \"$RAVION_CALLBACK_URL\" -H \"Authorization: Bearer $RAVION_ONBOARDING_TOKEN\" -H 'Content-Type: application/json' --data \"$RAVION_CALLBACK_BODY\""

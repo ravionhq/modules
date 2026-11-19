@@ -43,7 +43,9 @@ variable "ravion_onboarding_token" {
 Apply it with credentials that can manage IAM in the account (the AWS
 provider configured as usual; IAM is global, so any region works). At the end
 the module reports the roles to Ravion, which checks it can assume each of
-them before it marks the account connected.
+them before it marks the account connected. If the check fails, Ravion shows
+which roles it could not assume; fix them, then apply again with a new
+onboarding token from the dialog, which makes the module report again.
 
 | Variable             | Default | Purpose                                                                                                                                                            |
 | -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -65,7 +67,7 @@ them before it marks the account connected.
 | Roles `rvn-<ravion_id>-deployments`, `-terraform`, `-sandboxes` and their policies   | One role per product you enable. Each holds only the permissions of that product.                                                                                                         |
 | Inline policy `RavionPolicy` on every role                                           | `EnforceBrokerSourceIp` denies any call that does not come from Ravion's credentials broker. `ProtectRavionStackRoles` stops a Ravion role from changing Ravion's own roles and policies. |
 | Trust policy of every role                                                           | Only Ravion's issuer, only tokens for this `ravion_id`, only from the broker's addresses.                                                                                                 |
-| `terraform_data.callback`                                                            | `curl`s `callback_url` with `Authorization: Bearer <onboarding_token>` and the role ARNs and version. Re-runs whenever they change.                                                       |
+| `terraform_data.callback`                                                            | `curl`s `callback_url` with `Authorization: Bearer <onboarding_token>` and the role ARNs and version. Re-runs when they, the roles' permissions or trust, or the onboarding token change. |
 | `terraform_data.disconnect`                                                          | On `terraform destroy`, tells Ravion the roles are going away before they are deleted. Best effort.                                                                                       |
 
 The callback body:
