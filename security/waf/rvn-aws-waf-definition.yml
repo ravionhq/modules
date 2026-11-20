@@ -1,0 +1,181 @@
+definition:
+  type: rvn-aws-waf
+  name: AWS WAF
+  description: WAFv2 web ACL for Application Load Balancers or CloudFront distributions, with IP reputation, per-path rate limits, anonymous IP blocking and Bot Control.
+release:
+  version: 0.1.0
+  description: New module. Creates a WAFv2 web ACL that blocks AWS's IP reputation list, rate-limits each IP on chosen paths such as sign-up, blocks VPNs, Tor and hosting providers on those paths, and can run AWS Bot Control on a few paths. Attaches to Application Load Balancers, or exposes a global web ACL for CloudFront distributions.
+module:
+  inputs:
+    - $include: ../../partials/inputs/aws-account.yml
+    - $merge:
+        - ../../partials/inputs/aws-region.yml
+      description: Region of the load balancers. CloudFront web ACLs are always created in us-east-1.
+    - id: section_web_acl
+      label: Web ACL
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      id: name
+      immutable: true
+      label: Name
+      patterns:
+        - message: 1-128 letters, numbers, hyphens or underscores.
+          pattern: ^[A-Za-z0-9_-]{1,128}$
+      required: true
+      type: string
+    - default: alb
+      description: A CloudFront web ACL is not attached here; set its ARN as the distribution's WAF web ACL.
+      id: target
+      immutable: true
+      label: Protects
+      required: true
+      type: string
+      values:
+        - label: Application Load Balancers
+          value: alb
+        - label: CloudFront distributions
+          value: cloudfront
+    - add_button_label: Add load balancer
+      id: alb_arns
+      label: Load balancer ARNs
+      patterns:
+        - message: Use an Application Load Balancer ARN.
+          pattern: ^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:loadbalancer/app/
+      placeholder: arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/public/0123456789abcdef
+      show_when:
+        target: alb
+      type: string_array
+    - default: false
+      description: Count matching requests in CloudWatch instead of blocking them.
+      id: count_only
+      label: Count only
+      type: boolean
+    - id: section_rules
+      label: Rules
+      type: section
+    - default: true
+      description: Blocks known bots and malicious sources on every request.
+      id: ip_reputation_enabled
+      label: AWS IP reputation list
+      type: boolean
+    - add_button_label: Add path
+      description: Path prefixes that get the per-IP rate limit and the anonymous IP list, for example /auth/signup.
+      id: protected_paths
+      label: Protected paths
+      placeholder: /auth/signup
+      type: string_array
+    - default: 100
+      description: Requests one IP may send to the protected paths per window before getting 429.
+      id: rate_limit
+      label: Rate limit
+      max: 2000000000
+      min: 10
+      type: number
+    - default: 300
+      id: rate_limit_window_seconds
+      label: Rate limit window
+      type: number
+      values:
+        - label: 1 minute
+          value: 60
+        - label: 2 minutes
+          value: 120
+        - label: 5 minutes
+          value: 300
+        - label: 10 minutes
+          value: 600
+    - default: true
+      description: Blocks VPNs, Tor, proxies and hosting providers on the protected paths only.
+      id: anonymous_ip_enabled
+      label: AWS anonymous IP list
+      type: boolean
+    - add_button_label: Add path
+      description: Path prefixes inspected by AWS Bot Control. Billed per inspected request, so keep this to a few paths such as sign-up.
+      id: bot_control_paths
+      label: Bot control paths
+      placeholder: /auth/signup
+      type: string_array
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+    - $merge:
+        - ../../partials/inputs/execution-environment.yml
+      description: Override the execution environment for Terraform runners. Must use the same AWS account as selected above.
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: security/waf
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        name: << module.input.name >>
+        target: << module.input.target >>
+        region: << module.input.aws_region >>
+        alb_arns: >-
+          << module.input.target == "alb" ? (module.input.alb_arns || []) : [] >>
+        count_only: << module.input.count_only || false >>
+        ip_reputation_enabled: << module.input.ip_reputation_enabled ?? true >>
+        protected_paths: << module.input.protected_paths || [] >>
+        rate_limit: << module.input.rate_limit || 100 >>
+        rate_limit_window_seconds: << module.input.rate_limit_window_seconds || 300 >>
+        anonymous_ip_enabled: << module.input.anonymous_ip_enabled ?? true >>
+        bot_control_paths: << module.input.bot_control_paths || [] >>
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+  ui:
+    links: |-
+      <<
+      stack.output.web_acl_id && stack.output.web_acl_name ?
+      [{"name":"Web ACL","href":"https://us-east-1.console.aws.amazon.com/wafv2/homev2/web-acl/" + stack.output.web_acl_name + "/" + stack.output.web_acl_id + "/overview?region=" + (stack.output.scope == "CLOUDFRONT" ? "global" : stack.output.region)}] :
+      []
+      >>
+  readme: |
+    WAFv2 web ACL for Application Load Balancers or CloudFront distributions.
+
+    ## Overview
+
+    Use this module to put AWS WAF in front of public endpoints. It creates one web ACL with a small set of managed and rate-based rules aimed at automated abuse of sensitive paths such as sign-up, login and verification, while leaving the rest of the site's traffic alone.
+
+    For Application Load Balancers the module creates a regional web ACL and associates it with every load balancer listed. For CloudFront it creates a global web ACL in us-east-1, as CloudFront requires; set its ARN as the distribution's WAF web ACL (the CloudFront module's WAF web ACL ARN input).
+
+    ## Rules
+
+    | Rule | Applies to | Action |
+    | --- | --- | --- |
+    | AWS IP reputation list | Every request | Block |
+    | Per-IP rate limit | Protected paths | 429 once one IP sends more than the rate limit in the window |
+    | AWS anonymous IP list (VPNs, Tor, proxies, hosting providers) | Protected paths | Block |
+    | AWS Bot Control, common level | Bot control paths | The managed group's actions |
+
+    Paths are prefixes matched against the lowercased URL path. The anonymous IP list never applies outside the protected paths, because CI systems, SDKs and other machine callers usually run on hosting providers. Bot Control is billed per inspected request, so give it only the few paths that need it.
+
+    Requests no rule matches are allowed.
+
+    ## Rolling out
+
+    Start with Count only on. Every rule then counts matches instead of blocking them, and each rule's CloudWatch metrics and sampled requests show what it would have blocked. Turn Count only off once no real users match.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | AWS account | Yes | None | AWS account of the protected resources. |
+    | Region | Yes | None | Region of the load balancers. CloudFront web ACLs are always in us-east-1. |
+    | Name | Yes | Project, environment, and module given IDs | Web ACL name and CloudWatch metric prefix. |
+    | Protects | Yes | Application Load Balancers | ALBs or CloudFront distributions. |
+    | Load balancer ARNs | No | Empty list | ALBs to associate. Only for Application Load Balancers. |
+    | Count only | No | false | Count instead of block. |
+    | AWS IP reputation list | No | true | Applies to every request. |
+    | Protected paths | No | Empty list | Path prefixes for the rate limit and the anonymous IP list. |
+    | Rate limit / Rate limit window | No | 100 per 5 minutes | Per IP, across all protected paths. |
+    | AWS anonymous IP list | No | true | Applies to the protected paths only. |
+    | Bot control paths | No | Empty list | Path prefixes inspected by Bot Control. |
+    | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
+    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
+
+    ## Learn more
+
+    - [AWS WAF web ACLs](https://docs.aws.amazon.com/waf/latest/developerguide/web-acl.html)
+    - [Rate-based rule statements](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html)
+    - [IP reputation rule groups](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-ip-rep.html)
+    - [Bot Control rule group](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-bot.html)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/security/waf)
