@@ -32,3 +32,18 @@ output "associated_alb_arns" {
   description = "Load balancers the web ACL is associated with."
   value       = sort([for association in aws_wafv2_web_acl_association.alb : association.resource_arn])
 }
+
+output "ip_set_arns" {
+  description = "IP sets created for ip_allow_list and ip_block_list, by key (allow-ipv4, allow-ipv6, block-ipv4, block-ipv6)."
+  value       = { for key, set in aws_wafv2_ip_set.this : key => set.arn }
+}
+
+output "custom_rule_group_arn" {
+  description = "ARN of the rule group holding custom_rules_json (null without custom rules)."
+  value       = try(aws_wafv2_rule_group.custom[0].arn, null)
+}
+
+output "logging_enabled" {
+  description = "Whether the web ACL logs to logging_destination_arn."
+  value       = var.logging_destination_arn != null
+}

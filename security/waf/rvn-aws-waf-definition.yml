@@ -180,7 +180,93 @@ module:
     | Block hosting providers | No | true | Off counts hosting-provider addresses instead of blocking them. |
     | Bot control paths | No | Empty list | Path prefixes inspected by Bot Control. |
     | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
-    | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |
+    | Advanced Terraform variables | No | Empty object | Settings the form does not cover; see below. |
+
+    ## Advanced Terraform variables
+
+    These settings are not in the form. Set them in Advanced Terraform variables; their defaults change nothing.
+
+    | Variable | What it does |
+    | --- | --- |
+    | `ip_allow_list` / `ip_block_list` | IPv4 and IPv6 CIDRs always allowed (priority 1) or blocked (2). |
+    | `blocked_country_codes` | Two-letter country codes to block (3). |
+    | `custom_rules_json` + `custom_rules_capacity` | Any rules, in the AWS WAF API JSON format, in a rule group evaluated at priority 5. |
+    | `managed_rule_groups` | More managed rule groups, each with its priority, optional path scope, count only and per-rule overrides. |
+    | `rule_action_overrides` | Per-rule actions in the module's own groups: `ip_reputation`, `anonymous_ip`, `bot_control`. |
+    | `rate_limit_aggregate_key` + `rate_limit_header_name` | Count the rate limit per `IP`, `FORWARDED_IP` or `HEADER`. |
+    | `rate_limit_response_body` + `rate_limit_response_content_type` | Body of the 429 response. |
+    | `bot_control_inspection_level` | `COMMON` or `TARGETED`. |
+    | `default_action` | `allow` or `block` requests no rule matches. |
+    | `rule_priorities` | Move the module's rules: `ip_allow`, `ip_block`, `geo_block`, `custom_rules`, `ip_reputation`, `rate_limit`, `anonymous_ip`, `bot_control`. |
+    | `logging_destination_arn` + `logging_redacted_fields` | Log every request to a CloudWatch Logs group, S3 bucket or Firehose stream. |
+
+    Every rule needs its own priority; the plan fails if two collide.
+
+    IP lists, countries and custom rules:
+
+    ```yaml
+    advanced_terraform_variables:
+      ip_allow_list: ["198.51.100.0/24", "2001:db8::/32"]
+      ip_block_list: ["203.0.113.7/32"]
+      blocked_country_codes: ["KP"]
+      custom_rules_capacity: 50
+      custom_rules_json: >-
+        [{"Name": "block-admin", "Priority": 0, "Action": {"Block": {}},
+          "Statement": {"ByteMatchStatement": {"SearchString": "/admin", "FieldToMatch": {"UriPath": {}},
+            "PositionalConstraint": "STARTS_WITH", "TextTransformations": [{"Priority": 0, "Type": "LOWERCASE"}]}},
+          "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "block-admin"}}]
+    ```
+
+    `custom_rules_capacity` reserves web ACL capacity units for the rule group and cannot change later without replacing it, so leave headroom.
+
+    More managed rule groups and overrides:
+
+    ```yaml
+    advanced_terraform_variables:
+      managed_rule_groups:
+        - name: AWSManagedRulesCommonRuleSet
+          priority: 60
+          rule_action_overrides:
+            SizeRestrictions_BODY: count
+        - name: AWSManagedRulesSQLiRuleSet
+          priority: 70
+          paths: ["/api/"]
+          count_only: true
+      rule_action_overrides:
+        bot_control:
+          CategoryHttpLibrary: count
+    ```
+
+    Rate limit key, response and Bot Control level:
+
+    ```yaml
+    advanced_terraform_variables:
+      rate_limit_aggregate_key: FORWARDED_IP
+      rate_limit_header_name: X-Forwarded-For
+      rate_limit_response_body: '{"error":"too many requests"}'
+      rate_limit_response_content_type: APPLICATION_JSON
+      bot_control_inspection_level: TARGETED
+    ```
+
+    Default action, priorities and logging:
+
+    ```yaml
+    advanced_terraform_variables:
+      default_action: block
+      rule_priorities:
+        rate_limit: 15
+      logging_destination_arn: arn:aws:logs:us-east-1:123456789012:log-group:aws-waf-logs-site
+      logging_redacted_fields:
+        - type: header
+          name: Authorization
+    ```
+
+    The logging destination must already exist and its name must start with `aws-waf-logs-`; for CloudFront, a log group or Firehose stream must be in us-east-1. The module does not create it.
+
+    ### Not covered
+
+    - The IP lists and country blocking match the connecting address. Behind a proxy or CDN in front of the ALB, put them on that layer's web ACL instead.
+    - CAPTCHA and challenge immunity times, token domains and request body inspection limits keep AWS's defaults.
 
     ## Learn more
 

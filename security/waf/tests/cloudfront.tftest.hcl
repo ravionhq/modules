@@ -11,6 +11,12 @@ mock_provider "aws" {
   mock_resource "aws_wafv2_web_acl" {
     defaults = { arn = "arn:aws:wafv2:us-east-1:123456789012:global/webacl/test/12345678-1234-1234-1234-123456789012" }
   }
+  mock_resource "aws_wafv2_ip_set" {
+    defaults = { arn = "arn:aws:wafv2:us-east-1:123456789012:global/ipset/test/12345678-1234-1234-1234-123456789012" }
+  }
+  mock_resource "aws_wafv2_rule_group" {
+    defaults = { arn = "arn:aws:wafv2:us-east-1:123456789012:global/rulegroup/test/12345678-1234-1234-1234-123456789012" }
+  }
 }
 
 variables {
@@ -76,4 +82,35 @@ run "rejects_unknown_targets" {
   }
 
   expect_failures = [var.target]
+}
+
+# Everything an advanced variable creates for CloudFront must be global and in
+# us-east-1 too.
+run "cloudfront_advanced_resources_are_global_in_us_east_1" {
+  command = apply
+
+  variables {
+    ip_block_list           = ["203.0.113.7/32"]
+    custom_rules_json       = "[]"
+    custom_rules_capacity   = 10
+    blocked_country_codes   = ["KP"]
+    logging_destination_arn = "arn:aws:firehose:us-east-1:123456789012:deliverystream/aws-waf-logs-cdn"
+  }
+
+  assert {
+    condition     = aws_wafv2_ip_set.this["block-ipv4"].scope == "CLOUDFRONT" && aws_wafv2_ip_set.this["block-ipv4"].region == "us-east-1"
+    error_message = "CloudFront IP sets must be global, in us-east-1."
+  }
+  assert {
+    condition     = aws_wafv2_rule_group.custom[0].scope == "CLOUDFRONT" && aws_wafv2_rule_group.custom[0].region == "us-east-1"
+    error_message = "The CloudFront custom rule group must be global, in us-east-1."
+  }
+  assert {
+    condition     = aws_wafv2_web_acl_logging_configuration.this[0].region == "us-east-1"
+    error_message = "CloudFront web ACL logging must be configured in us-east-1."
+  }
+  assert {
+    condition     = length([for r in aws_wafv2_web_acl.this.rule : r if r.name == "geo-block"]) == 1
+    error_message = "Country blocking must work for CloudFront too."
+  }
 }
