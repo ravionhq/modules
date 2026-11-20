@@ -1,0 +1,282 @@
+global: false
+definition:
+  type: rvn-aws-dev-box
+  name: Dev Box
+  description: A standalone EC2 instance to log in to and use as a cloud computer, with Session Manager access, a persistent encrypted disk, and an optional nightly stop.
+release:
+  version: 0.1.0
+  description: Run a personal or shared EC2 dev box you log in to with Session Manager or SSH, on a persistent encrypted disk that new base images never rebuild, with an optional scheduled stop to save cost.
+module:
+  inputs:
+    - id: network
+      immutable: true
+      label: VPC network
+      type: $ref:rvn-aws-network
+      description: Supplies the AWS account, region, VPC, and subnets for the dev box.
+      mapped_inputs:
+        - $template: ../../partials/templates/network-ref-mapped-inputs.yml
+          with:
+            aws_account_id_default: << ref.input.aws_account_id >>
+            aws_region_default: << ref.input.aws_region >>
+            execution_environment_default: << ref.input.execution_environment_id >>
+            private_subnet_ids_default: <<ref.stack.output.private_subnet_ids>>
+            public_subnet_ids_default: <<ref.stack.output.public_subnet_ids>>
+            vpc_id_default: <<ref.stack.output.vpc_id>>
+      required: true
+    - $merge:
+        - ../../partials/inputs/private-subnet-placement.yml
+      description: Recommended. Session Manager needs only outbound internet access, through a NAT gateway or equivalent. Turn off to give the box a public IP for direct SSH.
+      immutable: true
+    - id: section_dev_box
+      label: Dev box
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Prefixes the instance, security group, and IAM role names.
+      id: name
+      immutable: true
+      label: Name
+      patterns:
+        - message: 1-28 lowercase letters, numbers, and hyphens. Start and end with a letter or number.
+          pattern: ^[a-z0-9]([a-z0-9-]{0,26}[a-z0-9])?$
+      required: true
+      type: string
+    - description: Changing it stops and restarts the box; its disk is kept. Switching between x86 and Graviton (`g`) types is refused after creation, so choose the architecture up front. Burstable `t` types suit light, intermittent use.
+      id: instance_type
+      label: Instance type
+      no_options_message: Select a VPC network, or enter an AWS account and region, to load available EC2 instance types.
+      required: true
+      type: string
+      values: $values:aws/ec2/instances?awsAccountId=<<module.input.aws_account_id>>&region=<<module.input.aws_region>>
+    - default: ubuntu-24.04
+      description: The latest image at creation. Later image releases never rebuild the box; update packages from inside it.
+      id: operating_system
+      immutable: true
+      label: Operating system
+      required: true
+      type: string
+      values:
+        - label: Ubuntu 24.04 LTS
+          value: ubuntu-24.04
+        - label: Amazon Linux 2023
+          value: al2023
+    - default: 100
+      description: Encrypted, and kept across stops and restarts. Can be increased later, not shrunk.
+      id: root_volume_size
+      label: Disk size (GB)
+      max: 16384
+      min: 8
+      required: true
+      type: number
+    - collapsible: true
+      description: Overrides Operating system. Setting or changing it rebuilds the box and erases its disk.
+      id: ami_id
+      label: Custom AMI ID
+      placeholder: ami-...
+      required: false
+      type: string
+    - id: section_access
+      label: Access
+      type: section
+    - default: true
+      description: Log in from the AWS console or `aws ssm start-session`, with no SSH keys or open ports.
+      id: ssm_enabled
+      label: Session Manager access
+      type: boolean
+    - add_button_label: Add CIDR block
+      collapsible: true
+      description: Opens port 22 to these ranges. Leave empty to keep SSH closed.
+      id: ssh_allowed_cidr_blocks
+      label: SSH allowed CIDR blocks
+      placeholder: 203.0.113.10/32
+      required: false
+      type: string_array
+    - collapsible: true
+      description: Existing EC2 key pair for SSH. Changing it rebuilds the box and erases its disk.
+      id: key_name
+      label: SSH key pair name
+      required: false
+      type: string
+    - add_button_label: Add policy ARN
+      collapsible: true
+      description: AWS permissions for the box's instance role, for example to use the AWS CLI from it.
+      id: iam_policy_arns
+      label: IAM policy ARNs
+      placeholder: arn:aws:iam::aws:policy/ReadOnlyAccess
+      required: false
+      type: string_array
+    - add_button_label: Add security group ID
+      collapsible: true
+      description: For example, to reach databases that allow a specific security group.
+      id: additional_security_group_ids
+      label: Additional security groups
+      placeholder: sg-...
+      required: false
+      type: string_array
+    - id: section_auto_stop
+      label: Auto stop
+      type: section
+    - default: false
+      description: Stops the box on a schedule to save cost. Its disk is kept; start it again from the EC2 console.
+      id: auto_stop_enabled
+      label: Stop on a schedule
+      type: boolean
+    - default: cron(0 19 * * ? *)
+      description: EventBridge Scheduler cron expression. The default stops the box at 7 PM every day.
+      id: auto_stop_schedule_expression
+      label: Stop schedule
+      patterns:
+        - message: Use a cron() expression, such as cron(0 19 * * ? *).
+          pattern: ^cron\(.+\)$
+      required: true
+      show_when:
+        auto_stop_enabled: true
+      type: string
+    - default: UTC
+      description: IANA time zone, such as America/New_York.
+      id: auto_stop_timezone
+      label: Time zone
+      required: true
+      show_when:
+        auto_stop_enabled: true
+      type: string
+    - id: section_customization
+      label: Customization
+      type: section
+    - collapsible: true
+      description: Runs as root on the first boot only, for example to install tools. Later edits are ignored.
+      id: user_data
+      label: First boot script
+      required: false
+      type: text
+    - collapsible: true
+      default: false
+      description: Blocks terminating the instance outside Ravion. Turn off before deleting the module.
+      id: termination_protection_enabled
+      label: Termination protection
+      type: boolean
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/tags.yml
+    - $include: ../../partials/inputs/terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack.yml
+    with:
+      base_path: compute/dev_box
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        additional_security_group_ids: << module.input.additional_security_group_ids || [] >>
+        ami_id: << module.input.ami_id || nil >>
+        auto_stop_enabled: << module.input.auto_stop_enabled >>
+        auto_stop_schedule_expression: << module.input.auto_stop_schedule_expression || "cron(0 19 * * ? *)" >>
+        auto_stop_timezone: << module.input.auto_stop_timezone || "UTC" >>
+        iam_policy_arns: << module.input.iam_policy_arns || [] >>
+        instance_type: << module.input.instance_type >>
+        key_name: << module.input.key_name || nil >>
+        name: << module.input.name >>
+        operating_system: << module.input.operating_system >>
+        public_ip_assignment_enabled: "<< module.input.private_subnet_placement_enabled ? false : true >>"
+        region: << module.input.aws_region >>
+        root_volume_size: << module.input.root_volume_size >>
+        ssh_allowed_cidr_blocks: << module.input.ssh_allowed_cidr_blocks || [] >>
+        ssm_enabled: << module.input.ssm_enabled >>
+        subnet_ids: "<< module.input.private_subnet_placement_enabled ? module.input.private_subnet_ids : module.input.public_subnet_ids >>"
+        tags:
+          $include: ../../partials/stack/ravion-tags.yml
+        termination_protection_enabled: << module.input.termination_protection_enabled >>
+        user_data: << module.input.user_data || "" >>
+        vpc_id: << module.input.vpc_id >>
+  ui:
+    links: |-
+      <<
+      stack.output.instance_id && stack.output.region ?
+      concat(
+        [{"name":"Instance","href":"https://" + stack.output.region + ".console.aws.amazon.com/ec2/home?region=" + stack.output.region + "#InstanceDetails:instanceId=" + stack.output.instance_id}],
+        stack.output.ssm_start_session_command ?
+        [{"name":"Connect","href":"https://" + stack.output.region + ".console.aws.amazon.com/systems-manager/session-manager/" + stack.output.instance_id + "?region=" + stack.output.region}] :
+        []
+      ) :
+      []
+      >>
+  readme: |
+    A standalone EC2 instance to log in to and use as a cloud computer.
+
+    ## Overview
+
+    Use this module for a dev box: a machine you open a shell on to write code, run builds, test against private resources in the VPC, or keep long-running terminal sessions. It does not deploy or supervise any application. There is no load balancer, Auto Scaling group, or deploy pipeline, just one instance with a persistent disk.
+
+    The box runs in a private subnet by default and you log in with AWS Systems Manager Session Manager, so no inbound ports or SSH keys are needed. SSH from specific CIDR blocks is optional.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Cloud development environment | A larger machine than a laptop, close to the team's AWS resources. |
+    | Private network access | Reach databases, caches, and internal services in the VPC without a VPN. |
+    | Long-running jobs | Keep builds, data migrations, or `tmux` sessions running after you disconnect. |
+    | Shared jump box | One place for a team to run operational tooling with a controlled IAM role. |
+
+    ## Logging in
+
+    With **Session Manager access** on, open the **Connect** link on the module page, or run:
+
+    ```bash
+    aws ssm start-session --region <region> --target <instance-id>
+    ```
+
+    The `ssm_start_session_command` stack output contains the full command. Sessions start as `ssm-user`, which has passwordless `sudo`. Run `sudo su - ubuntu` (Ubuntu) or `sudo su - ec2-user` (Amazon Linux) to switch to the image's default user. The AWS CLI needs the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html), which also lets SSH and VS Code Remote-SSH tunnel through Session Manager with no open ports.
+
+    For direct SSH, add your IP range to **SSH allowed CIDR blocks** and set **SSH key pair name**. A box in a private subnet is reachable only from inside the VPC or a connected network; turn off **Run in private subnets** to give it a public IP. The public IP changes whenever the box is stopped and started.
+
+    ## Persistence
+
+    The box is meant to live for a long time, so the module avoids rebuilding it:
+
+    - The disk is an encrypted EBS volume kept across stops, restarts, and instance type changes. It is deleted only when the module is deleted or the box is rebuilt.
+    - **Operating system** picks the latest Ubuntu 24.04 LTS or Amazon Linux 2023 image when the box is created. Newer image releases are ignored; update packages from inside the box.
+    - **First boot script** runs once, on the first boot. Later edits do not rerun or rebuild anything.
+    - **Disk size** can be increased in place. Grow the filesystem afterwards with `sudo growpart` and `sudo resize2fs` or `sudo xfs_growfs`.
+
+    Setting or changing **Custom AMI ID** or **SSH key pair name** rebuilds the box and erases its disk. Back up anything you need first.
+
+    ## Auto stop
+
+    Turn on **Stop on a schedule** to stop the box every evening, or on any EventBridge Scheduler `cron()` expression in your time zone. A stopped box keeps its disk and costs only for storage. Start it again from the EC2 console or with `aws ec2 start-instances --instance-ids <instance-id>`.
+
+    ## Permissions
+
+    The instance role has only Session Manager permissions by default. Add **IAM policy ARNs** to give the box AWS access, for example `ReadOnlyAccess` for browsing or a narrower custom policy for a specific task. Anyone who can log in to the box can use these permissions.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | VPC network | Yes | None | Supplies the account, region, VPC, and subnets. The box runs in the first subnet. |
+    | Run in private subnets | No | On | Off places the box in a public subnet with a public IP. |
+    | Name | Yes | Project, environment, and module given IDs | Prefixes resource names. |
+    | Instance type | Yes | None | Changing it stops and restarts the box. x86 and Graviton cannot be swapped after creation. |
+    | Operating system | Yes | Ubuntu 24.04 LTS | Fixed after creation. |
+    | Disk size (GB) | Yes | 100 | Can grow, not shrink. |
+    | Custom AMI ID | No | None | Rebuilds the box when set or changed. |
+    | Session Manager access | No | On | No open ports needed. |
+    | SSH allowed CIDR blocks | No | None | Opens port 22. |
+    | SSH key pair name | No | None | Rebuilds the box when changed. |
+    | IAM policy ARNs | No | None | Extra AWS permissions for the box. |
+    | Additional security groups | No | None | Attached alongside the module's security group. |
+    | Stop on a schedule | No | Off | Stops the box on the schedule below. |
+    | Stop schedule | No | `cron(0 19 * * ? *)` | EventBridge Scheduler cron expression. |
+    | Time zone | No | UTC | IANA time zone for the schedule. |
+    | First boot script | No | None | Runs once as root. |
+    | Termination protection | No | Off | Turn off before deleting the module. |
+    | Tags | No | Standard Ravion tags | Merged with Ravion ownership tags. |
+
+    ## Design decisions
+
+    A single instance, rather than an Auto Scaling group, keeps the disk attached to the same machine for its whole life. Outbound traffic is open so the box can install packages and reach external services; inbound traffic is closed unless SSH CIDR blocks are set. Instance metadata requires IMDSv2, with a hop limit of 2 so containers on the box can still read the instance role's credentials.
+
+    Advanced Terraform variables expose the root volume type (`gp3` or `gp2`) and KMS key.
+
+    ## Learn more
+
+    - [AWS Systems Manager Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html)
+    - [SSH through Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-getting-started-enable-ssh-connections.html)
+    - [EventBridge Scheduler cron expressions](https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html#cron-based)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/dev_box)

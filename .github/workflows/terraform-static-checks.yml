@@ -178,6 +178,11 @@ jobs:
               tofu -chdir=networking/alternat init -backend=false
               tofu -chdir=networking/alternat test
 
+          - name: Dev box module
+            run: |
+              tofu -chdir=compute/dev_box init -backend=false
+              tofu -chdir=compute/dev_box test
+
           - name: ECR module
             run: |
               tofu -chdir=containers/ecr init -backend=false

@@ -87,6 +87,13 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     definitionTypes: ["rvn-aws-ami"],
   },
   {
+    givenId: "dev-box",
+    name: "Dev box",
+    description: "For cloud machines that engineers log in to and work on, rather than servers that run deployed code.",
+    sortOrder: 97,
+    definitionTypes: ["rvn-aws-dev-box"],
+  },
+  {
     givenId: "network",
     name: "Network",
     description: "For private subnets, internet access, service connectivity, and shared load balancers.",
