@@ -193,6 +193,11 @@ jobs:
               tofu -chdir=database/clickhouse init -backend=false
               tofu -chdir=database/clickhouse test
 
+          - name: WAF module
+            run: |
+              tofu -chdir=security/waf init -backend=false
+              tofu -chdir=security/waf test
+
           # The provider waits 30 seconds after every apply, so this takes minutes.
           # Pull requests run it only when they touch the module or this workflow.
           - name: PlanetScale Vitess lifecycle

@@ -1,3 +1,4 @@
+global: false
 definition:
   type: rvn-aws-waf
   name: AWS WAF

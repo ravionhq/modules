@@ -57,6 +57,10 @@ run "associates_every_alb_in_the_acl_region" {
     error_message = "Each ALB must be associated with the web ACL."
   }
   assert {
+    condition     = join(",", sort(keys(aws_wafv2_web_acl_association.alb))) == "0,1"
+    error_message = "Associations must be keyed by position, so ARNs unknown until apply still plan."
+  }
+  assert {
     condition     = alltrue([for a in aws_wafv2_web_acl_association.alb : a.region == "eu-central-1" && a.web_acl_arn == aws_wafv2_web_acl.this.arn])
     error_message = "Associations must point at this web ACL, in its region."
   }
