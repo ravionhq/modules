@@ -18,6 +18,7 @@ Every deployment is **versioned**. A CloudFront KeyValueStore holds a `host -> v
 - **Access logging on by default** — CloudWatch Logs delivery (standard logging v2, via cdn/cloudfront), with legacy S3 delivery available for cost-sensitive high-traffic sites.
 - **Optional CI deploy role** with least-privilege `s3:Put*` + KVS `PutKey`/`DeleteKey` + `cloudfront:CreateInvalidation`.
 - **Origin Shield** support.
+- **Same-origin API routes** via `origin_routes`: send `/v1/*` (or any path pattern) to a load balancer or other backend while the SPA keeps its deep-link fallback.
 - **SSE-KMS** support on the hosting bucket.
 
 ## Architecture
@@ -153,6 +154,35 @@ module "site" {
   }
 }
 ```
+
+### SPA + API on one domain (`origin_routes`)
+
+Route API paths to a backend origin, such as an ECS service's load balancer, while every other path keeps the SPA fallback. The browser calls `/v1/...` on the site's own domain, so no CORS setup is needed.
+
+```hcl
+module "site" {
+  source = "git::https://github.com/ravionhq/ravion-modules.git//hosting/static_site?ref=v1.0.0"
+
+  name    = "my-app"
+  routing = "spa"
+
+  origin_routes = [{
+    path_patterns = ["/v1", "/v1/*"]
+    # With the default https-only, use a host name covered by the backend's TLS
+    # certificate (e.g. a DNS record pointing at the ALB), not the raw
+    # *.elb.amazonaws.com name, or CloudFront returns 502.
+    domain_name = "api-origin.example.com"
+    # Optional: a shared secret the API checks so it only accepts CloudFront traffic.
+    custom_headers = [{ name = "X-Origin-Auth", value = var.origin_secret }]
+  }]
+}
+```
+
+Each route creates one custom origin and one cache behavior per path pattern, ordered ahead of `no_cache_paths` and the default S3 behavior. Routed requests reach the backend with their original URI: the version rewrite and Cache-Control functions are not attached, and no response-headers policy is applied unless the route sets `response_headers_policy_id`. Defaults suit APIs: HTTPS only, all methods, `CachingDisabled`, and `AllViewerExceptHostHeader` (use `AllViewer`, `216adef6-5c7f-47e4-b989-5492eafa07d3`, when the backend routes by Host). Path patterns match exactly, so `/v1/*` does not match `/v1`.
+
+With `https-only`, CloudFront validates the backend certificate against `domain_name` (the Host header with `AllViewer`). An ALB's `*.elb.amazonaws.com` name is not covered by an application certificate, so point a DNS record such as `api-origin.example.com` at the ALB and use that name. For a plain-HTTP listener, set `origin_protocol_policy = "http-only"` and use the ALB DNS name directly; traffic between CloudFront and the backend is then unencrypted.
+
+CloudFront custom error responses apply to the whole distribution. With any route set, the module drops the `error_document` page and sets the error caching minimum TTL to 0 seconds for every cacheable error code (400, 403, 404, 405, 414, 416, 500-504), so backend errors such as a JSON 404 or a 401 pass through unchanged. With the default `CachingDisabled` policy CloudFront does not cache them; with an origin Cache-Control policy, a backend error carrying `max-age` or `s-maxage` can still be cached and shared, so send `Cache-Control: no-store` on error responses. Missing static files still return a plain 404.
 
 ## Deploy and rollback
 
@@ -451,11 +481,17 @@ No external apply-time tools required.
 | no_cache_paths | Path patterns served with CachingDisabled. | `list(string)` | `[]` |
 | default_root_object | Object name for `/` requests. | `string` | `"index.html"` |
 | error_document | Bucket-root key served with a 404 status when an object is missing. Empty string disables the custom page. | `string` | `"404.html"` |
-| error_caching_min_ttl | Seconds CloudFront caches 404 responses at the edge. | `number` | `86400` |
+| error_caching_min_ttl | Seconds CloudFront caches 404 responses at the edge. Ignored (0) when `origin_routes` is set. | `number` | `86400` |
 | cache_control_enabled | Attach the viewer-response Cache-Control function. | `bool` | `true` |
 | html_cache_control | Cache-Control value for HTML responses (no extension, `.html`/`.htm`, dotted segments, or `html_path_overrides`). | `string` | `"public, max-age=0, must-revalidate"` |
 | assets_cache_control | Cache-Control value for hashed asset responses (any non-html file extension not in `html_path_overrides`). | `string` | `"public, max-age=31536000, immutable"` |
 | html_path_overrides | Exact-match viewer URIs that always get `html_cache_control` regardless of extension. Defaults cover service-worker/PWA/SEO files. | `list(string)` | `["/service-worker.js", "/sw.js", "/manifest.json", "/manifest.webmanifest", "/favicon.ico", "/robots.txt", "/sitemap.xml"]` |
+
+### Origin Routes
+
+| Name | Description | Type | Default |
+|---|---|---|---|
+| origin_routes | Send path patterns to another origin on the same distribution (e.g. `/v1/*` to an API load balancer). Fields: `path_patterns`, `domain_name`, optional `origin_path`, `origin_protocol_policy` (`https-only`), `http_port`, `https_port`, `origin_read_timeout`, `origin_keepalive_timeout`, `connection_timeout`, `connection_attempts`, `custom_headers`, `allowed_methods` (all), `cache_policy_id` (CachingDisabled), `origin_request_policy_id` (AllViewerExceptHostHeader), `response_headers_policy_id`. Setting any route disables `error_document` and error caching. | `list(object)` | `[]` |
 
 ### KeyValueStore
 

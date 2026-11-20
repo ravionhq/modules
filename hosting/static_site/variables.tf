@@ -426,6 +426,88 @@ variable "default_root_object" {
 }
 
 ################################################################################
+# Origin routes (same-origin API and other backends)
+################################################################################
+
+variable "origin_routes" {
+  type = list(object({
+    path_patterns              = list(string)
+    domain_name                = string
+    origin_path                = optional(string)
+    origin_protocol_policy     = optional(string, "https-only")
+    http_port                  = optional(number, 80)
+    https_port                 = optional(number, 443)
+    origin_read_timeout        = optional(number)
+    origin_keepalive_timeout   = optional(number)
+    connection_timeout         = optional(number)
+    connection_attempts        = optional(number)
+    custom_headers             = optional(list(object({ name = string, value = string })), [])
+    allowed_methods            = optional(list(string), ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"])
+    cache_policy_id            = optional(string, "4135ea2d-6df8-44a3-9df3-4b5a84be39ad")
+    origin_request_policy_id   = optional(string, "b689b0a8-53d0-40ab-baf2-68738e2966ac")
+    response_headers_policy_id = optional(string)
+  }))
+  description = <<-EOT
+    Route viewer path patterns to another origin on the same distribution, e.g. send /v1/* to an API load balancer while the SPA serves every other path. Each entry creates one custom origin plus one cache behavior per path pattern, evaluated before the static site's default behavior. Requests reach the origin with their original URI: the version rewrite and Cache-Control functions are not attached.
+
+    Defaults suit APIs: all HTTP methods, AWS-managed CachingDisabled cache policy, and AllViewerExceptHostHeader origin request policy (forwards headers, cookies, and query strings, but not Host). Use AllViewer (216adef6-5c7f-47e4-b989-5492eafa07d3) when the origin routes by Host header.
+
+    CloudFront custom error responses apply to the whole distribution, so when any route is set the module stops replacing 404 bodies with error_document and sets the error caching minimum TTL to 0 seconds for every cacheable error code. Origin error responses then pass through unchanged and, with CachingDisabled, are not cached. With an origin Cache-Control cache policy, an error response carrying max-age or s-maxage can still be cached.
+
+    With https-only, domain_name (or the forwarded Host with AllViewer) must be covered by the backend's TLS certificate. A raw *.elb.amazonaws.com ALB name is not, so use a DNS record pointing at the ALB, or http-only for a plain-HTTP listener.
+
+    Path patterns match exactly: /v1/* does not match /v1, so add both when the bare prefix is a valid route.
+  EOT
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for r in var.origin_routes : length(r.path_patterns) > 0])
+    error_message = "Each origin_routes entry needs at least one path pattern."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for r in var.origin_routes : [for p in r.path_patterns : length(p) > 0 && length(p) <= 255 && !contains(["*", "/*"], p)]
+    ]))
+    error_message = "Each origin_routes path pattern must be 1-255 characters and must not be * or /* (that would route the whole site away from S3)."
+  }
+
+  validation {
+    condition = length(flatten([for r in var.origin_routes : r.path_patterns])) == length(distinct(flatten([
+      for r in var.origin_routes : r.path_patterns
+    ])))
+    error_message = "Each origin_routes path pattern may appear only once across all routes."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.origin_routes : length(trimspace(r.domain_name)) > 0 && !can(regex("^[a-zA-Z][a-zA-Z0-9+.-]*://", r.domain_name)) && !can(regex("/", r.domain_name))])
+    error_message = "Each origin_routes domain_name must be a bare host name such as api.example.com or an ALB DNS name, without a scheme or path. Use origin_path for a path prefix."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.origin_routes : r.origin_path == null || can(regex("^/.*[^/]$", r.origin_path))])
+    error_message = "The origin_routes origin_path must start with / and must not end with /."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.origin_routes : contains(["http-only", "https-only", "match-viewer"], r.origin_protocol_policy)])
+    error_message = "The origin_routes origin_protocol_policy must be 'http-only', 'https-only', or 'match-viewer'."
+  }
+
+  validation {
+    condition = alltrue([
+      for r in var.origin_routes : contains([
+        "GET,HEAD",
+        "GET,HEAD,OPTIONS",
+        "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
+      ], join(",", sort(r.allowed_methods)))
+    ])
+    error_message = "The origin_routes allowed_methods must be one of the CloudFront combinations: [GET, HEAD], [GET, HEAD, OPTIONS], or all seven methods."
+  }
+}
+
+################################################################################
 # Cache-Control (viewer-response CloudFront Function)
 #
 # A viewer-response function classifies every response by the rewritten URI
