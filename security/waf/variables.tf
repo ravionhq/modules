@@ -195,14 +195,16 @@ variable "custom_rules_json" {
   default     = null
 
   validation {
-    condition     = var.custom_rules_json == null || can(tolist(jsondecode(var.custom_rules_json)))
+    # concat accepts any JSON array (rules of different shapes share no
+    # element type) and rejects objects and scalars.
+    condition     = var.custom_rules_json == null || can(concat(jsondecode(var.custom_rules_json), []))
     error_message = "custom_rules_json must be a JSON array of rules."
   }
 }
 
 variable "custom_rules_capacity" {
   type        = number
-  description = "Web ACL capacity units reserved for the custom rule group. AWS cannot change it later without replacing the group, so leave headroom."
+  description = "Web ACL capacity units reserved for the custom rule group. Changing it replaces the group: the new one is created first and the old one deleted once the web ACL has switched."
   default     = null
 
   validation {

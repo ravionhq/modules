@@ -217,7 +217,7 @@ module:
           "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "block-admin"}}]
     ```
 
-    `custom_rules_capacity` reserves web ACL capacity units for the rule group and cannot change later without replacing it, so leave headroom.
+    `custom_rules_capacity` reserves web ACL capacity units for the rule group. Changing it replaces the group: the new one is created first, the web ACL switches to it, then the old one is deleted.
 
     More managed rule groups and overrides:
 

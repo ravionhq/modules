@@ -336,3 +336,62 @@ run "rejects_invalid_advanced_values" {
 
   expect_failures = [var.ip_block_list, var.blocked_country_codes, var.logging_destination_arn, var.default_action]
 }
+
+# Rules with different statement shapes have no common type; the check must
+# accept any JSON array.
+run "custom_rules_accept_rules_of_different_shapes" {
+  command = apply
+
+  variables {
+    custom_rules_capacity = 100
+    custom_rules_json = jsonencode([
+      {
+        Name             = "block-admin"
+        Priority         = 0
+        Action           = { Block = {} }
+        Statement        = { ByteMatchStatement = { SearchString = "/admin", FieldToMatch = { UriPath = {} }, PositionalConstraint = "STARTS_WITH", TextTransformations = [{ Priority = 0, Type = "NONE" }] } }
+        VisibilityConfig = { SampledRequestsEnabled = true, CloudWatchMetricsEnabled = true, MetricName = "block-admin" }
+      },
+      {
+        Name             = "limit-api"
+        Priority         = 1
+        Action           = { Block = {} }
+        Statement        = { RateBasedStatement = { Limit = 500, AggregateKeyType = "IP" } }
+        VisibilityConfig = { SampledRequestsEnabled = false, CloudWatchMetricsEnabled = true, MetricName = "limit-api" }
+      },
+    ])
+  }
+
+  assert {
+    condition     = length(jsondecode(aws_wafv2_rule_group.custom[0].rules_json)) == 2
+    error_message = "An array mixing rule shapes must be accepted."
+  }
+}
+
+run "custom_rules_must_be_an_array" {
+  command = plan
+
+  variables {
+    custom_rules_capacity = 10
+    custom_rules_json     = jsonencode({ Name = "not-an-array" })
+  }
+
+  expect_failures = [var.custom_rules_json]
+}
+
+# Capacity can only change by replacing the rule group, and AWS refuses to
+# delete a group the web ACL still references. A generated name lets the new
+# group exist next to the old one until the web ACL has switched.
+run "custom_rule_group_can_be_replaced_while_in_use" {
+  command = apply
+
+  variables {
+    custom_rules_capacity = 10
+    custom_rules_json     = "[]"
+  }
+
+  assert {
+    condition     = aws_wafv2_rule_group.custom[0].name_prefix == "test-waf-custom-"
+    error_message = "The custom rule group must take a generated name from a prefix, so a replacement can be created before the old group is deleted."
+  }
+}
