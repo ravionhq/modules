@@ -1,0 +1,6 @@
+description: Labels to assign to all resources that support them. Keys and values are lowercased; characters other than letters, numbers, hyphens, and underscores become hyphens. Default labels are `owner`, `ravion_project`, `ravion_environment`, `ravion_module`, `ravion_module_id`.
+id: labels
+label: Labels
+required: false
+type: keyvalue
+collapsible: true

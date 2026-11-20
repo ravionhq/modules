@@ -1,0 +1,30 @@
+- id: section_advanced
+  label: Terraform settings
+  type: section
+- collapsible: true
+  description: Override the environment's default version for this module
+  id: opentofu_version
+  label: OpenTofu version override
+  required: false
+  type: string
+  values: $values:opentofu/versions
+- collapsible: true
+  description: Override Terraform state backend workspace name. Defaults to project + environment + module given ids.
+  id: ravion_state_backend_workspace
+  immutable: true
+  label: Ravion Terraform workspace name
+  type: string
+- default: {}
+  description: Optional raw Terraform variable overrides for advanced module inputs or one-off overrides. Values here override the generated variables above.
+  id: advanced_terraform_variables
+  label: Advanced Terraform variables
+  required: false
+  type: object
+  collapsible: true
+- collapsible: true
+  description: Override the Google Cloud execution environment for Terraform runners. Must use the same GCP account as selected above.
+  id: execution_environment_id
+  label: Terraform execution environment
+  required: false
+  type: string
+  values: $values:ravion/execution_environments
