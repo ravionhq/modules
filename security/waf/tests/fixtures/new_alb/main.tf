@@ -15,6 +15,8 @@ resource "aws_lb" "this" {
   name               = "new-alb"
   load_balancer_type = "application"
   subnets            = ["subnet-1", "subnet-2"]
+
+  drop_invalid_header_fields = true
 }
 
 module "waf" {
