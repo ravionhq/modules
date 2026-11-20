@@ -1,0 +1,604 @@
+definition:
+  type: rvn-gcp-image
+  name: Compute Engine image
+  description: Creates what Compute Engine images are built with, and releases a new image with every deploy.
+release:
+  version: 0.1.0
+  description: Build, test, publish and retire Compute Engine images with every deploy.
+module:
+  outputs:
+    - id: project_id
+      type: string
+      label: Project ID
+    - id: zone
+      type: string
+      label: Build zone
+    - id: builder_service_account_email
+      type: string
+      label: Builder service account
+    - id: component_bucket
+      type: string
+      label: Component bucket
+    - id: module_instance_id
+      type: string
+      label: Module instance ID
+  inputs:
+    - $include: ../../partials/inputs/gcp-account.yml
+    - $merge:
+        - ../../partials/inputs/gcp-region.yml
+      description: Region of the component bucket and of the zone builds run in. Images themselves are global.
+    - id: section_general
+      label: General
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>-<<module.given_id>>
+      description: Prefix of the builder service account, the component bucket, and every builder VM and image name.
+      id: name
+      immutable: true
+      label: Name
+      patterns:
+        - message: 1-40 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+          pattern: ^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$
+      required: true
+      type: string
+    - description: Stored on every image, before the deploy's release tags.
+      id: description
+      label: Image description
+      patterns:
+        - message: 1024 characters or fewer.
+          pattern: ^.{0,1024}$
+      type: string
+    - id: section_parent_image
+      label: Parent image
+      type: section
+    - default: family
+      description: Build on the newest image of a family, looked up again by every deploy, or pin one image.
+      id: parent_image_source
+      label: Parent image source
+      required: true
+      type: string
+      values:
+        - label: Newest image in a family
+          description: Such as debian-13 in debian-cloud.
+          value: family
+        - label: Specific image
+          description: One image, by its path.
+          value: image
+    - default: debian-cloud
+      description: Project that publishes the family, such as debian-cloud or ubuntu-os-cloud, or your own project.
+      id: parent_image_project
+      label: Image project
+      patterns:
+        - message: Use a Google Cloud project ID.
+          pattern: ^[a-z][-a-z0-9.:]*[a-z0-9]$
+      required: true
+      show_when:
+        parent_image_source: family
+      type: string
+    - default: debian-13
+      id: parent_image_family
+      label: Image family
+      patterns:
+        - message: Use an image family name.
+          pattern: ^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+      required: true
+      show_when:
+        parent_image_source: family
+      type: string
+    - description: projects/<project>/global/images/<name>.
+      id: parent_image
+      label: Parent image
+      patterns:
+        - message: Use projects/<project>/global/images/<name>.
+          pattern: ^projects/[a-z][-a-z0-9.:]*[a-z0-9]/global/images/[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+      placeholder: projects/debian-cloud/global/images/debian-13-trixie-v20261110
+      required: true
+      show_when:
+        parent_image_source: image
+      type: string
+    - id: section_image
+      label: Image
+      type: section
+    - default: []
+      description: Components each deploy runs, in order. Build and validate steps run on the builder VM; test steps run on a VM booted from the finished image.
+      id: components
+      item_inputs:
+        - description: Used in the component script's name.
+          id: name
+          label: Name
+          patterns:
+            - message: 1-40 lowercase letters, numbers, hyphens, or underscores. Start and end with a letter or number.
+              pattern: ^[a-z0-9]([a-z0-9_-]{0,38}[a-z0-9])?$
+          placeholder: provision
+          required: true
+          type: string
+        - collapsible: true
+          description: Written at the top of the component script.
+          id: description
+          label: Description
+          placeholder: Installs the application runtime
+          type: string
+        - collapsible: true
+          default: []
+          description: Values the steps read as environment variables of the same name. Each deploy passes the values and can override them, so changing a value leaves the component alone.
+          id: parameter_definitions
+          item_inputs:
+            - description: Steps read it as $Name.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, or underscores. Start with a letter or underscore.
+                  pattern: ^[A-Za-z_][A-Za-z0-9_]{0,127}$
+              placeholder: ReleaseVersion
+              required: true
+              type: string
+            - description: Passed by each deploy unless the deploy overrides it. Leave blank to use the default.
+              id: value
+              label: Value
+              placeholder: v1.2.3
+              type: string
+            - collapsible: true
+              description: Used when a deploy passes none. A parameter with neither stays unset, and a step that reads it fails.
+              id: default
+              label: Default
+              type: string
+            - collapsible: true
+              id: description
+              label: Description
+              type: string
+          item_label: Parameter
+          item_title:
+            fallback: Parameter
+            template: "{name}"
+          label: Parameters
+          type: object_array
+        - default: []
+          description: Steps that build the image, in order.
+          id: build_steps
+          item_inputs:
+            - description: Unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - add_button_label: Add command
+              default: []
+              description: Bash commands run in order with set -euo pipefail. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: apt-get install -y nginx
+              required: true
+              type: string_array
+            - collapsible: true
+              description: Stop the step after this many seconds. Leave blank for no limit.
+              id: timeout_seconds
+              label: Timeout (seconds)
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Build steps
+          type: object_array
+        - collapsible: true
+          default: []
+          description: Checks run on the builder VM after every component's build steps.
+          id: validate_steps
+          item_inputs:
+            - description: Unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - add_button_label: Add command
+              default: []
+              description: Bash commands run in order with set -euo pipefail. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: apt-get install -y nginx
+              required: true
+              type: string_array
+            - collapsible: true
+              description: Stop the step after this many seconds. Leave blank for no limit.
+              id: timeout_seconds
+              label: Timeout (seconds)
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Validate steps
+          type: object_array
+        - collapsible: true
+          default: []
+          description: Checks run on a VM booted from the finished image. A failure deletes the image.
+          id: test_steps
+          item_inputs:
+            - description: Unique within the phase.
+              id: name
+              label: Name
+              patterns:
+                - message: 1-128 letters, numbers, hyphens, or underscores. Start with a letter or number.
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$
+              placeholder: InstallRuntime
+              required: true
+              type: string
+            - add_button_label: Add command
+              default: []
+              description: Bash commands run in order with set -euo pipefail. The step fails on the first one that exits non-zero.
+              id: commands
+              label: Commands
+              placeholder: apt-get install -y nginx
+              required: true
+              type: string_array
+            - collapsible: true
+              description: Stop the step after this many seconds. Leave blank for no limit.
+              id: timeout_seconds
+              label: Timeout (seconds)
+              min: 1
+              type: number
+          item_label: Step
+          item_title:
+            fallback: Step
+            template: "{name}"
+          label: Test steps
+          type: object_array
+      item_label: Component
+      item_title:
+        fallback: Component
+        template: "{name}"
+      label: Components
+      required: true
+      type: object_array
+    - collapsible: true
+      description: Family each published image joins. Unpublished images join none, so the family never resolves to one. Defaults to the name.
+      id: image_family
+      label: Image family
+      patterns:
+        - message: 1-63 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+          pattern: ^$|^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+      type: string
+    - collapsible: true
+      default:
+        - UEFI_COMPATIBLE
+        - GVNIC
+        - VIRTIO_SCSI_MULTIQUEUE
+      description: Guest OS features of every image. The parent image must support them.
+      id: guest_os_features
+      label: Guest OS features
+      type: string_array
+      values:
+        - value: UEFI_COMPATIBLE
+        - value: GVNIC
+        - value: VIRTIO_SCSI_MULTIQUEUE
+        - value: SEV_CAPABLE
+        - value: SEV_SNP_CAPABLE
+        - value: TDX_CAPABLE
+        - value: IDPF
+        - value: SECURE_BOOT
+        - value: MULTI_IP_SUBNET
+    - add_button_label: Add location
+      collapsible: true
+      default: []
+      description: Where image data is stored, such as us or us-central1. Leave empty for the multi-region nearest the build zone. Images can boot VMs in any region.
+      id: storage_locations
+      label: Storage locations
+      type: string_array
+    - id: section_build
+      label: Build VMs
+      type: section
+    - default: n2-standard-4
+      description: Machine type of the builder and test VMs.
+      id: machine_type
+      label: Machine type
+      required: true
+      type: string
+    - default: 20
+      description: The image's size, and so the smallest boot disk a VM booted from it can have.
+      id: boot_disk_size_gb
+      label: Boot disk size (GB)
+      max: 65536
+      min: 10
+      required: true
+      type: number
+    - default: pd-balanced
+      description: Must be one the machine type supports. C4, N4 and C3 machine types need a Hyperdisk type.
+      id: boot_disk_type
+      label: Boot disk type
+      required: true
+      type: string
+      values:
+        - value: pd-balanced
+        - value: pd-ssd
+        - value: pd-standard
+        - value: hyperdisk-balanced
+    - default: false
+      description: For components that run virtual machines themselves. The project's organization policy must allow it.
+      id: nested_virtualization
+      label: Nested virtualization
+      type: boolean
+    - collapsible: true
+      description: Leave blank for the first zone of the region that is up.
+      id: zone
+      label: Zone
+      patterns:
+        - message: Use a zone of the region, such as us-central1-a.
+          pattern: ^$|^[a-z]+-[a-z]+[0-9]+-[a-z]$
+      type: string
+    - collapsible: true
+      default: default
+      description: Ignored when a subnetwork is set.
+      id: network
+      label: VPC network
+      type: string
+    - collapsible: true
+      description: A subnetwork of the region. Leave blank to use the network's own, which needs an auto mode network.
+      id: subnetwork
+      label: Subnetwork
+      type: string
+    - collapsible: true
+      description: Project that owns the network or subnetwork, for a Shared VPC. Leave blank for the image project.
+      id: network_project_id
+      label: Network project
+      type: string
+    - collapsible: true
+      default: true
+      description: Off needs Cloud NAT or Private Google Access on the subnetwork for whatever the components download.
+      id: external_ip
+      label: External IP
+      type: boolean
+    - add_button_label: Add role
+      collapsible: true
+      default: []
+      description: Project roles for the builder service account, beyond writing logs and reading its components.
+      id: builder_roles
+      label: Builder roles
+      placeholder: roles/artifactregistry.reader
+      type: string_array
+    - add_button_label: Add bucket
+      collapsible: true
+      default: []
+      description: Cloud Storage buckets the builder may read, by name.
+      id: builder_bucket_readers
+      label: Buckets the builder reads
+      placeholder: my-releases
+      type: string_array
+    - add_button_label: Add principal
+      collapsible: true
+      default: []
+      description: Other principals that may start VMs as the builder service account.
+      id: deployer_members
+      label: Deployers
+      placeholder: serviceAccount:deployer@my-project.iam.gserviceaccount.com
+      type: string_array
+    - collapsible: true
+      default: 30
+      description: Days a replaced component script stays readable by builds that started before the change.
+      id: component_retention_days
+      label: Component retention (days)
+      min: 1
+      type: number
+    - id: section_retention
+      label: Retention
+      type: section
+    - default: 5
+      description: Newest published images kept public. Each deploy makes older published images private and deprecated.
+      id: retention_published_image_count
+      label: Published images to keep
+      max: 100
+      min: 1
+      required: true
+      type: number
+    - default: 10
+      description: Images kept after the published ones. Each deploy deletes older images.
+      id: retention_private_image_count
+      label: Private images to keep
+      max: 1000
+      min: 0
+      required: true
+      type: number
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/labels.yml
+    - $include: ../../partials/inputs/gcp-terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: compute/gce_image
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        builder_bucket_readers: << module.input.builder_bucket_readers || [] >>
+        builder_roles: << module.input.builder_roles || [] >>
+        component_retention_days: '<< module.input.component_retention_days != nil ? module.input.component_retention_days : 30 >>'
+        components: << module.input.components || [] >>
+        deployer_members: << module.input.deployer_members || [] >>
+        labels:
+          $include: ../../partials/stack/ravion-labels.yml
+        module_instance_id: << module.id >>
+        name: << module.input.name >>
+        network: '<< module.input.network || "default" >>'
+        network_project_id: << module.input.network_project_id || nil >>
+        project_id: << module.input.gcp_project_id >>
+        region: << module.input.gcp_region >>
+        subnetwork: << module.input.subnetwork || nil >>
+        zone: << module.input.zone || nil >>
+  deploy:
+    type: gcp:image
+    concurrency:
+      queue_overflow: oldest
+      queue_size: 1
+    inputs:
+      - id: component_parameters
+        label: Component parameters
+        type: object
+        description: 'Per-component parameter overrides for this deploy, as {component_name: {parameter_name: value}}. Left out, each component keeps its module-level values.'
+        default: {}
+        required: false
+      - id: extra_tags
+        label: Extra tags
+        type: keyvalue
+        description: Recorded on the deployment as given, and written on the image as labels after rewriting them to label syntax. The image description carries them as given.
+        default: {}
+        required: false
+      - id: publish
+        label: Publish
+        type: boolean
+        description: Grants every Google account use of this deploy's image and adds it to the family. Off keeps it private.
+        default: false
+      - id: parent_image
+        label: Parent image
+        type: string
+        description: An image path to build this deploy on in place of the module's parent image, such as the previous release.
+        required: false
+    infrastructure:
+      gcp_account_id: << module.input.gcp_account_id >>
+      project_id: << stack.output.project_id >>
+      zone: << stack.output.zone >>
+      builder_service_account_email: << stack.output.builder_service_account_email >>
+      components: << stack.output.component_refs >>
+      parent_image: >-
+        << module.input.parent_image_source == "family" ?
+        {"family": {"project": module.input.parent_image_project, "name": module.input.parent_image_family}} :
+        {"image": module.input.parent_image} >>
+      machine_type: << module.input.machine_type >>
+      boot_disk:
+        size_gb: << module.input.boot_disk_size_gb >>
+        type: << module.input.boot_disk_type >>
+      nested_virtualization: << module.input.nested_virtualization >>
+      network: << stack.output.network_self_link >>
+      subnetwork: << stack.output.subnetwork_self_link >>
+      external_ip: '<< module.input.external_ip != nil ? module.input.external_ip : true >>'
+      image:
+        family: << module.input.image_family || module.input.name >>
+        description: << module.input.description || nil >>
+        labels: << stack.output.labels >>
+        guest_os_features: << module.input.guest_os_features || [] >>
+        storage_locations: << module.input.storage_locations || [] >>
+      retention:
+        published_image_count: << module.input.retention_published_image_count >>
+        private_image_count: << module.input.retention_private_image_count >>
+    definition:
+      name: << module.input.name >>
+      component_parameters: << deploy.input.component_parameters || {} >>
+      tags: << deploy.input.extra_tags || {} >>
+      publish: << deploy.input.publish >>
+      parent_image: << deploy.input.parent_image || nil >>
+  ui:
+    links:
+      - name: Images in Google Cloud console
+        href: https://console.cloud.google.com/compute/images?project=<< module.input.gcp_project_id >>
+      - name: Builder and test VMs
+        href: https://console.cloud.google.com/compute/instances?project=<< module.input.gcp_project_id >>
+  readme: |
+    Creates what Compute Engine images are built with, and releases a new image with every deploy.
+
+    ## Overview
+
+    Use this module to turn a manual image bake into a repeatable release. Applying the module creates what every build shares: a builder service account, a bucket holding the component scripts, and the access the builds need. It creates no image. The only way to make a new image is a deploy.
+
+    Each deploy is one release. It:
+
+    1. Boots a builder VM from the parent image as the builder service account, runs every component's build steps and then its validate steps, and powers the VM off.
+    2. Creates an image from the builder's disk and deletes the builder.
+    3. Boots a test VM from the new image and runs every component's test steps. A failure deletes the image and fails the deploy.
+    4. When Publish is on, grants every Google account use of the image (`roles/compute.imageUser` for `allAuthenticatedUsers`) and adds it to the image family.
+    5. Retires older images past the retention counts.
+
+    A redeploy or a rollback releases an earlier deploy's image again without rebuilding it. Builder and test VMs are deleted when the deploy ends, whether it succeeded, failed, or was cancelled.
+
+    ## Use cases
+
+    | Scenario | Benefit |
+    | --- | --- |
+    | Golden images | Bake packages, agents, and hardening into an image so VMs boot ready to work. |
+    | Release images | Bake one application release per image and roll it out by changing an instance template. |
+    | Distributed software | Publish an image any Google Cloud project can boot. |
+
+    ## Components and parameters
+
+    A component is a list of named steps in three phases. Build and validate steps run on the builder VM, every component's build steps before any validate step. Test steps run on a VM booted from the finished image, so they check what the image carries and nothing else. Each step runs its bash commands in order with `set -euo pipefail` and stdin closed, and the phase stops at the first command that exits non-zero.
+
+    Declare the values that change between releases, such as a release version, under Parameters. A step reads one as an environment variable of the same name, `$ReleaseVersion`. Each deploy passes the parameter's value or its own override, and a parameter with neither takes its default.
+
+    The module writes each component into one bash script in the component bucket, named by a hash of its content. A changed component is a new script beside the old one, and the next deploy builds with it. A replaced script stays readable for Component retention (days), so a build that started before the change still finishes. Run a script by hand with `bash <component>.sh build|validate|test` to debug it on a VM of your own.
+
+    The builder and test VMs run the script through the Google guest environment's startup scripts. Build on a parent image that ships the guest environment, as every Google-published image does, and keep it in the image if you want its test steps to run.
+
+    ## Deploying
+
+    Start a deploy from a pipeline with a `deploy` step, from the dashboard, or with `ravion deploy create`. A build commonly takes 10-40 minutes.
+
+    ```yaml
+    - id: release_image
+      name: Release image
+      type: deploy
+      module_instance: << pipeline.variant.id >>.app-image
+      input:
+        component_parameters:
+          provision:
+            ReleaseVersion: << steps.build_app.output.version >>
+        extra_tags:
+          release: << steps.build_app.output.version >>
+        publish: true
+    ```
+
+    | Input | Default | What it does |
+    | --- | --- | --- |
+    | Component parameters | None | Parameter values for this deploy, as `{component: {parameter: value}}`. Each overrides the value the component sets here, key by key. |
+    | Parent image | None | An image path to build this deploy on in place of the module's parent image, such as the previous release. |
+    | Extra tags | None | Recorded on the deployment as given. Written on the image as labels in label syntax (`release: v1.2.3` becomes `release: v1-2-3`), and as given in its description. |
+    | Publish | Off | Grants every Google account use of the image and adds it to the family. Off keeps it private. |
+
+    ## Retention
+
+    Each deploy keeps the newest Published images to keep (5 by default) public, and the next Private images to keep (10 by default) private. Older published images lose public access, leave the family, and are marked deprecated with this release as their replacement. Images past both counts are deleted. VMs already running from a deleted image keep running; only new VMs cannot boot from it.
+
+    ## Public images
+
+    Images are global: one image boots VMs in every region, so there is nothing to copy between regions. Publishing grants `roles/compute.imageUser` to `allAuthenticatedUsers` on each published image, never on the project, so unpublished images stay private.
+
+    - An organization that enforces domain restricted sharing (`iam.allowedPolicyMemberDomains`) refuses that grant. Build in a project where the constraint is not enforced.
+    - Projects that boot the image and enforce trusted image projects (`compute.trustedImageProjects`) must allow this project.
+    - Labels and the description of a public image are visible to everyone who can use it. Keep anything private out of them.
+
+    ## Configuration
+
+    | Setting | Required | Default | Notes |
+    | --- | --- | --- | --- |
+    | GCP account and project | Yes | None | Project the builds run in and the images belong to. |
+    | Region | Yes | None | Region of the component bucket and the build zone. |
+    | Name | Yes | Project, environment, and module given IDs | Prefix of every resource and image name. |
+    | Parent image | Yes | `debian-cloud` / `debian-13` | The newest image of a family, or one image. |
+    | Components | Yes | None | Steps in run order. |
+    | Image family | No | The name | Published images only. |
+    | Guest OS features | No | UEFI, gVNIC, multiqueue SCSI | Must be ones the parent image supports. |
+    | Storage locations | No | Nearest multi-region | Where image data is stored. |
+    | Machine type, boot disk | Yes | `n2-standard-4`, 20 GB `pd-balanced` | The boot disk size becomes the image's size. |
+    | Nested virtualization | No | Off | For components that run VMs. |
+    | Network, subnetwork, external IP | No | Default network, external IP on | Builds need outbound access to whatever the components download. |
+    | Builder roles and buckets | No | None | What the components need to reach. |
+    | Published images to keep | Yes | 5 | |
+    | Private images to keep | Yes | 10 | |
+
+    ## Design decisions
+
+    The builder service account can write logs and read its own components, and nothing else unless you grant it. A build cannot reach more than it was given.
+
+    Builds are driven through instance metadata and the serial console. No SSH key, open port, or agent is needed on the builder.
+
+    The module never deletes images on destroy, as images in use by running VMs or other projects outlive the module.
+
+    ## Learn more
+
+    - [Custom images](https://cloud.google.com/compute/docs/images/create-custom)
+    - [Image families](https://cloud.google.com/compute/docs/images/image-families-best-practices)
+    - [Sharing images](https://cloud.google.com/compute/docs/images/managing-access-custom-images)
+    - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/gce_image)
