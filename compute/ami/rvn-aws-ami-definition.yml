@@ -3,8 +3,8 @@ definition:
   name: AMI
   description: Creates the EC2 Image Builder infrastructure an AMI is baked on, and releases a new AMI with every deploy.
 release:
-  version: 0.4.1
-  description: A component document longer than the 16,000 characters Image Builder takes is refused when the configuration is validated, not first at a deploy's plan.
+  version: 0.5.0
+  description: A Copy unpublished images input. Off, a deploy that does not publish keeps its image in the build region instead of copying it to every additional region.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -887,6 +887,12 @@ module:
       type: string_array
       values: $values:aws/regions
     - collapsible: true
+      default: true
+      description: Copy deploys that do not publish to the additional regions too. Turn off to keep those candidates in the build region; a deploy that publishes still copies its image to every additional region.
+      id: distribute_unpublished
+      label: Copy unpublished images
+      type: boolean
+    - collapsible: true
       description: AWS's block on public AMI sharing in the build region and every additional region. It is an account setting and covers every AMI the account owns in those regions. Unset, the module leaves it unchanged, and clearing it keeps the last state.
       id: image_block_public_access
       label: Block public access for AMIs
@@ -1006,6 +1012,7 @@ module:
         "throughput": (module.input.root_volume_type == "gp3" ? (module.input.root_volume_throughput || nil) : nil)
         }] : nil >>
       distribution_regions: << module.input.distribution_regions || [] >>
+      distribute_unpublished: << module.input.distribute_unpublished >>
       retention:
         published_image_count: << module.input.retention_published_image_count >>
         private_image_count: << module.input.retention_private_image_count >>
