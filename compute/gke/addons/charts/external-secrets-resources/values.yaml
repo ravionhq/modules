@@ -1,0 +1,4 @@
+# Set by compute/gke/addons (external_secrets.tf).
+name: ravion-gcp
+projectID: ""
+allowedNamespaces: []

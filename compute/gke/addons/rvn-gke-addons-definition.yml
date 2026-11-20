@@ -1,0 +1,268 @@
+global: true
+definition:
+  type: rvn-gke-addons
+  name: GKE Add-ons
+  description: Selectable add-ons for an existing GKE cluster.
+release:
+  version: 0.1.0
+  description: Install cert-manager, KEDA, and the External Secrets Operator with Secret Manager access through Workload Identity on a GKE cluster.
+module:
+  inputs:
+    - id: cluster
+      immutable: true
+      label: GKE cluster
+      mapped_inputs:
+        - id: section_gcp
+          label: GCP account & region
+          type: section
+        - default: << ref.input.gcp_account_id >>
+          id: gcp_account_id
+          immutable: true
+          label: GCP account
+          type: string
+          values: $values:ravion/gcp_accounts
+        - default: << ref.stack.output.project_id >>
+          id: project_id
+          immutable: true
+          label: Project ID
+          placeholder: my-project-123456
+          required: true
+          type: string
+        - default: << ref.input.gcp_region >>
+          id: gcp_region
+          immutable: true
+          label: Region
+          type: string
+          values: $values:gcp/regions
+        - collapsible: true
+          default: << ref.input.execution_environment_id >>
+          description: Execution environment used by OpenTofu. Choose one in the cluster's VPC when the cluster's DNS endpoint is closed to outside traffic.
+          id: execution_environment_id
+          label: Terraform execution environment
+          type: string
+          values: $values:ravion/execution_environments
+        - id: section_cluster
+          label: Cluster details
+          type: section
+        - default: << ref.stack.output.cluster_name >>
+          id: cluster_name
+          immutable: true
+          label: GKE cluster name
+          placeholder: my-gke-cluster
+          required: true
+          type: string
+        - collapsible: true
+          default: << ref.stack.output.dns_endpoint_external_access_enabled >>
+          description: Reach the Kubernetes API through the IAM-authorized DNS endpoint. Turn off only when the runner can reach the cluster's IP endpoint.
+          id: use_dns_endpoint
+          label: Use DNS endpoint
+          type: boolean
+        - collapsible: true
+          default: << ref.stack.output.system_node_labels >>
+          description: Add-on pods prefer nodes with these labels.
+          id: system_node_labels
+          label: System node labels
+          type: keyvalue
+      required: true
+      type: $ref:rvn-gke-cluster
+    - id: section_placement
+      label: Placement
+      type: section
+    - collapsible: true
+      default: true
+      description: Keep add-on pods off Spot nodes, prefer the system node pool, and tolerate CriticalAddonsOnly. Turn off only to supply your own affinity in Helm values.
+      id: addon_placement_enabled
+      label: Add-on placement
+      type: boolean
+    - id: section_keda
+      label: Event-driven autoscaling
+      type: section
+    - default: false
+      description: Install the event-driven autoscaler; each workload still needs a scaling trigger.
+      id: keda_enabled
+      label: KEDA
+      type: boolean
+    - collapsible: true
+      default: keda
+      id: keda_namespace
+      label: KEDA namespace
+      show_when:
+        keda_enabled: true
+      type: string
+    - collapsible: true
+      default: 2.20.2
+      id: keda_chart_version
+      label: KEDA chart version
+      show_when:
+        keda_enabled: true
+      type: string
+    - id: section_cert_manager
+      label: Certificates
+      type: section
+    - default: false
+      description: For TLS that ends inside the cluster, such as an ingress controller or mTLS. Google-managed certificates on Gateways don't need it. Define Issuers and Certificates with your workloads.
+      id: cert_manager_enabled
+      label: cert-manager
+      type: boolean
+    - collapsible: true
+      default: cert-manager
+      id: cert_manager_namespace
+      label: cert-manager namespace
+      show_when:
+        cert_manager_enabled: true
+      type: string
+    - collapsible: true
+      default: v1.21.2
+      id: cert_manager_chart_version
+      label: cert-manager chart version
+      show_when:
+        cert_manager_enabled: true
+      type: string
+    - description: Makes referenced Secret Manager secrets available as Kubernetes Secrets without sending their values through Ravion.
+      id: section_external_secrets
+      label: External secrets
+      type: section
+    - default: false
+      id: eso_enabled
+      label: External Secrets Operator
+      type: boolean
+    - add_button_label: Add namespace
+      description: Namespaces whose ExternalSecrets may use the shared store. Any pod in them can read every secret the operator can.
+      id: eso_allowed_namespaces
+      label: Allowed namespaces
+      placeholder: my-namespace
+      required: true
+      show_when:
+        eso_enabled: true
+        eso_cluster_secret_store_creation_enabled: true
+      type: string_array
+    - add_button_label: Add secret
+      collapsible: true
+      description: Secret IDs, or full names for secrets in other projects. Empty allows every secret in the project.
+      id: eso_secret_ids
+      label: Readable secrets
+      placeholder: projects/my-project-123456/secrets/db-password
+      show_when:
+        eso_enabled: true
+      type: string_array
+    - collapsible: true
+      default: true
+      description: Turn off to create your own SecretStores.
+      id: eso_cluster_secret_store_creation_enabled
+      label: Shared Secret Manager store
+      show_when:
+        eso_enabled: true
+      type: boolean
+    - collapsible: true
+      default: ravion-gcp
+      id: eso_cluster_secret_store_name
+      label: Store name
+      show_when:
+        eso_enabled: true
+        eso_cluster_secret_store_creation_enabled: true
+      type: string
+    - collapsible: true
+      description: External Secrets Helm chart version without a leading v, for example 2.11.0.
+      id: eso_chart_version
+      label: Chart version
+      placeholder: 2.11.0
+      show_when:
+        eso_enabled: true
+      type: string
+    - collapsible: true
+      description: Created if missing.
+      id: eso_namespace
+      label: Operator namespace
+      placeholder: external-secrets
+      show_when:
+        eso_enabled: true
+      type: string
+    - $include: ../../../partials/inputs/terraform-settings-gcp.yml
+  stack:
+    $template: ../../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: compute/gke/addons
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        cluster_name: << module.input.cluster_name >>
+        project_id: << module.input.project_id >>
+        region: << module.input.gcp_region >>
+        use_dns_endpoint: '<< module.input.use_dns_endpoint != nil ? module.input.use_dns_endpoint : true >>'
+        system_node_labels: << module.input.system_node_labels || {} >>
+        addon_placement_enabled: '<< module.input.addon_placement_enabled != nil ? module.input.addon_placement_enabled : true >>'
+        keda_enabled: << module.input.keda_enabled == true >>
+        keda_namespace: '<< module.input.keda_enabled == true && module.input.keda_namespace != nil ? module.input.keda_namespace : "keda" >>'
+        keda_chart_version: '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>'
+        cert_manager_enabled: << module.input.cert_manager_enabled == true >>
+        cert_manager_namespace: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_namespace != nil ? module.input.cert_manager_namespace : "cert-manager" >>'
+        cert_manager_chart_version: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_chart_version != nil ? module.input.cert_manager_chart_version : "v1.21.2" >>'
+        eso_enabled: << module.input.eso_enabled == true >>
+        eso_allowed_namespaces: << module.input.eso_allowed_namespaces || [] >>
+        eso_secret_ids: << module.input.eso_secret_ids || [] >>
+        eso_cluster_secret_store_creation_enabled: '<< module.input.eso_cluster_secret_store_creation_enabled != nil ? module.input.eso_cluster_secret_store_creation_enabled : true >>'
+        eso_cluster_secret_store_name: << module.input.eso_cluster_secret_store_name || "ravion-gcp" >>
+        eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
+        eso_namespace: << module.input.eso_namespace || "external-secrets" >>
+  ui:
+    links: |-
+      <<
+      (module.input.cluster_name ? [{"name":"GKE workloads","href":"https://console.cloud.google.com/kubernetes/workload/overview?project=" + module.input.project_id}] : [])
+      >>
+  readme: |-
+    Selectable add-ons for an existing GKE cluster, each toggled independently.
+
+    ## Overview
+
+    GKE already runs much of what the EKS Add-ons module installs: the load balancer controller (Gateway API and Ingress), the Persistent Disk CSI driver with a default StorageClass, the cluster autoscaler and node auto-provisioning, Cloud Logging, and Managed Prometheus. This module adds the controllers GKE doesn't provide:
+
+    | Add-on | Default | What it installs |
+    | --- | --- | --- |
+    | **KEDA** | Off | Operator, external metrics API server, admission webhooks, and CRDs from the official KEDA chart; workload triggers are separate |
+    | **cert-manager** | Off | Controller, webhook, CA injector, and CRDs from the official Jetstack chart; Issuers and Certificates are separate |
+    | **External Secrets Operator** | Off | The `external-secrets` chart, a per-cluster Google service account with read access to Secret Manager, and a shared `ravion-gcp` ClusterSecretStore |
+
+    Terraform source: [ravionhq/modules/compute/gke/addons](https://github.com/ravionhq/modules/tree/$local.module_tag/compute/gke/addons)
+
+    ## Cluster connectivity
+
+    The Terraform runner authenticates to the Kubernetes API with its own Google access token, as the Ravion runner service account, which needs `roles/container.admin` (add it to `runner_sa_roles` in Ravion's GCP setup). By default it uses the cluster's DNS-based endpoint, which is IAM-authorized and reachable from outside the VPC, so the runner needs no network path into the cluster. If the cluster closes that endpoint to outside traffic, run this module in an execution environment inside the cluster's VPC and turn off **Use DNS endpoint**.
+
+    ## External secrets
+
+    The operator's Kubernetes service account acts as a Google service account created for this cluster, through Workload Identity, and that account is granted `roles/secretmanager.secretAccessor`. No key is created. Every cluster in a project shares one Workload Identity pool, so a per-cluster account keeps removing one cluster's add-ons from revoking another cluster's access. Leave **Readable secrets** empty to allow every secret in the project, or list secrets (including full names in other projects) to grant access to only those.
+
+    The shared `ravion-gcp` ClusterSecretStore is limited to **Allowed namespaces**: any pod in an allowed namespace can read every secret the operator can, so the store is not created without them. Reference a secret from an ExternalSecret in one of those namespaces:
+
+    ```yaml
+    apiVersion: external-secrets.io/v1
+    kind: ExternalSecret
+    metadata:
+      name: db
+    spec:
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: ravion-gcp
+      target:
+        name: db
+      data:
+        - secretKey: password
+          remoteRef:
+            key: db-password
+    ```
+
+    The Secret Manager API is enabled on the project when the operator is installed.
+
+    ## Placement
+
+    Add-on controllers are what the cluster needs to recover, so by default each one requires a node that is neither Spot nor preemptible, prefers the system node pool (`role=system`), and tolerates `CriticalAddonsOnly`. Turn **Add-on placement** off before supplying your own affinity in Helm values.
+
+    ## Permissions the runner needs
+
+    Besides `roles/container.admin`, turning on the External Secrets Operator needs the runner to manage IAM: `roles/iam.serviceAccountAdmin` to let the controller act as its service account, and `roles/resourcemanager.projectIamAdmin` (or `roles/secretmanager.admin` when **Readable secrets** lists secrets) to grant Secret Manager access, in addition to Ravion's default `roles/editor`.
+
+    ## Learn more
+
+    - [KEDA](https://keda.sh/docs/) - Event-driven autoscaling
+    - [cert-manager](https://cert-manager.io/docs/) - Certificate management for Kubernetes
+    - [External Secrets Operator: Google Secret Manager](https://external-secrets.io/latest/provider/google-secrets-manager/) - Provider reference
+    - [Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) - Google identities for pods

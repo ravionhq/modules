@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Prepares a fresh Amp orb for this repository: the CLI tools CI uses (pinned to
+# the same versions), the module-definition tooling, the Terratest Go modules,
+# and a warm OpenTofu provider cache. Idempotent: a warm run only verifies.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+# Versions match .github/workflows (tofu, helm, go) or are pinned here
+# (tflint, trivy) because CI takes their latest release.
+TOFU_VERSION=1.12.3
+HELM_VERSION=3.16.3
+GO_VERSION=1.23.12
+GO_SHA256=d3847fef834e9db11bf64e3fb34db9c04db14e068eeb064f49af747010454f90
+TFLINT_VERSION=0.66.0
+TRIVY_VERSION=0.76.2
+
+bin_dir=/usr/local/bin
+plugin_cache="$HOME/.terraform.d/plugin-cache"
+
+step() {
+  local name="$1"
+  shift
+  local start=$SECONDS
+  echo "==> $name"
+  "$@"
+  echo "    $name took $((SECONDS - start))s"
+}
+
+# Downloads $1 into a fresh scratch dir and checks it against the line for
+# $3 in checksum file $2. Prints the scratch path of the verified file.
+fetch_verified() {
+  local url="$1" sums_url="$2" name="$3" dir
+  dir="$(mktemp -d)"
+  curl -fsSL --retry 3 "$url" -o "$dir/$name"
+  curl -fsSL --retry 3 "$sums_url" -o "$dir/sums"
+  (cd "$dir" && grep -E "[ *]$name\$" sums | sha256sum -c --status) || {
+    echo "Checksum mismatch for $name" >&2
+    return 1
+  }
+  echo "$dir/$name"
+}
+
+install_tofu() {
+  if tofu version 2>/dev/null | head -1 | grep -qx "OpenTofu v$TOFU_VERSION"; then return; fi
+  local name="tofu_${TOFU_VERSION}_linux_amd64.zip" file dir
+  file="$(fetch_verified "https://github.com/opentofu/opentofu/releases/download/v$TOFU_VERSION/$name" \
+    "https://github.com/opentofu/opentofu/releases/download/v$TOFU_VERSION/tofu_${TOFU_VERSION}_SHA256SUMS" "$name")"
+  dir="$(dirname "$file")"
+  unzip -q -o "$file" tofu -d "$dir"
+  sudo install -m 0755 "$dir/tofu" "$bin_dir/tofu"
+  rm -rf "$dir"
+}
+
+install_tflint() {
+  if tflint --version 2>/dev/null | head -1 | grep -qx "TFLint version $TFLINT_VERSION"; then return; fi
+  local name="tflint_linux_amd64.zip" file dir
+  file="$(fetch_verified "https://github.com/terraform-linters/tflint/releases/download/v$TFLINT_VERSION/$name" \
+    "https://github.com/terraform-linters/tflint/releases/download/v$TFLINT_VERSION/checksums.txt" "$name")"
+  dir="$(dirname "$file")"
+  unzip -q -o "$file" tflint -d "$dir"
+  sudo install -m 0755 "$dir/tflint" "$bin_dir/tflint"
+  rm -rf "$dir"
+}
+
+install_trivy() {
+  if trivy --version 2>/dev/null | head -1 | grep -qx "Version: $TRIVY_VERSION"; then return; fi
+  local name="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" file dir
+  file="$(fetch_verified "https://github.com/aquasecurity/trivy/releases/download/v$TRIVY_VERSION/$name" \
+    "https://github.com/aquasecurity/trivy/releases/download/v$TRIVY_VERSION/trivy_${TRIVY_VERSION}_checksums.txt" "$name")"
+  dir="$(dirname "$file")"
+  tar -xzf "$file" -C "$dir" trivy
+  sudo install -m 0755 "$dir/trivy" "$bin_dir/trivy"
+  rm -rf "$dir"
+}
+
+install_helm() {
+  if helm version --short 2>/dev/null | grep -q "^v$HELM_VERSION+"; then return; fi
+  local name="helm-v$HELM_VERSION-linux-amd64.tar.gz" dir
+  dir="$(mktemp -d)"
+  curl -fsSL --retry 3 "https://get.helm.sh/$name" -o "$dir/$name"
+  echo "$(curl -fsSL --retry 3 "https://get.helm.sh/$name.sha256sum" | awk '{print $1}')  $dir/$name" | sha256sum -c --status
+  tar -xzf "$dir/$name" -C "$dir" linux-amd64/helm
+  sudo install -m 0755 "$dir/linux-amd64/helm" "$bin_dir/helm"
+  rm -rf "$dir"
+}
+
+install_go() {
+  if /usr/local/go/bin/go version 2>/dev/null | grep -q "go$GO_VERSION "; then return; fi
+  local name="go$GO_VERSION.linux-amd64.tar.gz" dir
+  dir="$(mktemp -d)"
+  curl -fsSL --retry 3 "https://go.dev/dl/$name" -o "$dir/$name"
+  echo "$GO_SHA256  $dir/$name" | sha256sum -c --status
+  sudo rm -rf /usr/local/go
+  sudo tar -xzf "$dir/$name" -C /usr/local
+  rm -rf "$dir"
+}
+
+# Login shells (Amp, supervised services) get Go and the shared provider cache.
+persist_environment() {
+  local marker="# ravion-modules orb environment"
+  if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+    cat >>"$HOME/.bash_profile" <<EOF
+
+$marker
+case ":\$PATH:" in *:/usr/local/go/bin:*) ;; *) export PATH="/usr/local/go/bin:\$HOME/go/bin:\$PATH" ;; esac
+export TF_PLUGIN_CACHE_DIR="$plugin_cache"
+EOF
+  fi
+  mkdir -p "$plugin_cache"
+}
+
+install_tflint_plugin() {
+  bash tools/install-tflint-aws.sh
+}
+
+install_module_tools() {
+  # npm ci always deletes node_modules, so skip it when the lockfile matches
+  # what the last install recorded.
+  local lock=tools/ravion-modules/package-lock.json
+  local stamp=tools/ravion-modules/node_modules/.package-lock.json
+  if [[ ! -f "$stamp" ]] || ! cmp -s <(sha256sum <"$lock") tools/ravion-modules/node_modules/.amp-lock-sha 2>/dev/null; then
+    (cd tools/ravion-modules && npm ci --no-audit --no-fund)
+    sha256sum <"$lock" >tools/ravion-modules/node_modules/.amp-lock-sha
+  fi
+  (cd tools/ravion-modules && npx tsc)
+}
+
+download_go_modules() {
+  (cd test && /usr/local/go/bin/go mod download)
+}
+
+# Every module pins the same AWS provider (CI enforces it), and each copy is
+# about 770 MB, so warming the shared cache once makes every later init fast.
+warm_provider_cache() {
+  TF_PLUGIN_CACHE_DIR="$plugin_cache" tofu -chdir=networking/vpc init -backend=false -input=false -lockfile=readonly >/dev/null
+}
+
+step "OpenTofu $TOFU_VERSION" install_tofu
+step "TFLint $TFLINT_VERSION" install_tflint
+step "Trivy $TRIVY_VERSION" install_trivy
+step "Helm $HELM_VERSION" install_helm
+step "Go $GO_VERSION" install_go
+step "Login shell environment" persist_environment
+step "TFLint AWS plugin" install_tflint_plugin
+step "Module definition tooling" install_module_tools
+step "Terratest Go modules" download_go_modules
+step "OpenTofu provider cache" warm_provider_cache
+echo "==> Setup complete"

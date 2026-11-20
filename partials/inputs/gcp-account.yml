@@ -1,0 +1,19 @@
+- id: section_gcp
+  label: GCP account & region
+  type: section
+- id: gcp_account_id
+  immutable: true
+  label: GCP account
+  required: true
+  type: string
+  values: $values:ravion/gcp_accounts
+- description: ID of the project connected as the GCP account above.
+  id: project_id
+  immutable: true
+  label: Project ID
+  patterns:
+    - message: 6-30 lowercase letters, numbers, and hyphens. Start with a letter.
+      pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+  placeholder: my-project-123456
+  required: true
+  type: string
