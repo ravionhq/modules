@@ -32,22 +32,5 @@ infrastructure:
   execution_environment_overrides:
     security_group: << module.input.ravion_runner_security_group_id >>
 inputs:
-  - id: image_ref
-    label: Image tag or digest
-    type: string
-    description: >-
-      Tag or digest to deploy from the configured image repository. A value starting with
-      "sha256:" is used as a digest, anything else as a tag. Do not pass a full image URI.
-    placeholder: "sha256:... or latest"
-    required: true
-  - id: environment_variables
-    label: Environment variables
-    type: array
-    description: >-
-      Plain environment variables to set for this deploy. Only names listed in the module's
-      Deploy-provided environment variables input are applied; others are ignored. Can't replace
-      a runtime variable or secret.
-    placeholder: |-
-      - name: LOG_LEVEL
-        value: info
-    required: false
+  - $include: ./eks-workload-image-ref-input.yml
+  - $include: ./environment-variables-deploy-input.yml
