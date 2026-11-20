@@ -59,7 +59,7 @@ module "cdn" {
 | 30 | `aws-anonymous-ip` (AWSManagedRulesAnonymousIpList) | `protected_paths` | Block |
 | 40 | `aws-bot-control` (AWSManagedRulesBotControlRuleSet, common) | `bot_control_paths` | The managed group's actions |
 
-Paths are prefixes matched against the lowercased URL path. Requests no rule matches are allowed. The anonymous IP list stays off every other path on purpose: CI systems, SDKs and other machine callers usually run on hosting providers. Bot Control is billed per inspected request.
+Paths are prefixes matched against the lowercased URL path. Requests no rule matches are allowed. The anonymous IP list stays off every other path on purpose: CI systems, SDKs, agents and other machine callers usually run on hosting providers. When such callers use the protected paths too, set `anonymous_ip_block_hosting_providers = false` to count hosting-provider addresses while VPNs, Tor and proxies stay blocked. Bot Control is billed per inspected request.
 
 `count_only = true` switches every rule to count. Each rule publishes CloudWatch metrics named `<name>-<rule>` and keeps sampled requests, so you can check what would have been blocked before turning it off.
 
@@ -84,6 +84,7 @@ Paths are prefixes matched against the lowercased URL path. Requests no rule mat
 | rate_limit | Requests per IP per window on the protected paths. | `number` | `100` | no |
 | rate_limit_window_seconds | 60, 120, 300 or 600. | `number` | `300` | no |
 | anonymous_ip_enabled | Block anonymous IPs on the protected paths. | `bool` | `true` | no |
+| anonymous_ip_block_hosting_providers | `false` counts hosting-provider addresses instead of blocking them, for agents, CI and SDKs that run in the cloud. | `bool` | `true` | no |
 | bot_control_paths | Path prefixes inspected by Bot Control. | `list(string)` | `[]` | no |
 | tags | Additional tags. | `map(string)` | `{}` | no |
 

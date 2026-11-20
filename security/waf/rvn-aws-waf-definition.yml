@@ -89,6 +89,13 @@ module:
       id: anonymous_ip_enabled
       label: AWS anonymous IP list
       type: boolean
+    - default: true
+      description: Turn off to count hosting-provider addresses instead, so agents, CI and SDKs running in the cloud can still reach the protected paths. VPNs, Tor and proxies stay blocked.
+      id: anonymous_ip_block_hosting_providers
+      label: Block hosting providers
+      show_when:
+        anonymous_ip_enabled: true
+      type: boolean
     - add_button_label: Add path
       description: Path prefixes inspected by AWS Bot Control. Billed per inspected request, so keep this to a few paths such as sign-up.
       id: bot_control_paths
@@ -118,6 +125,7 @@ module:
         rate_limit: << module.input.rate_limit || 100 >>
         rate_limit_window_seconds: << module.input.rate_limit_window_seconds || 300 >>
         anonymous_ip_enabled: << module.input.anonymous_ip_enabled ?? true >>
+        anonymous_ip_block_hosting_providers: << module.input.anonymous_ip_block_hosting_providers ?? true >>
         bot_control_paths: << module.input.bot_control_paths || [] >>
         tags:
           $include: ../../partials/stack/ravion-tags.yml
@@ -146,7 +154,7 @@ module:
     | AWS anonymous IP list (VPNs, Tor, proxies, hosting providers) | Protected paths | Block |
     | AWS Bot Control, common level | Bot control paths | The managed group's actions |
 
-    Paths are prefixes matched against the lowercased URL path. The anonymous IP list never applies outside the protected paths, because CI systems, SDKs and other machine callers usually run on hosting providers. Bot Control is billed per inspected request, so give it only the few paths that need it.
+    Paths are prefixes matched against the lowercased URL path. The anonymous IP list never applies outside the protected paths, because CI systems, SDKs, agents and other machine callers usually run on hosting providers. If such callers use the protected paths too, turn off Block hosting providers: hosting-provider addresses are then counted while VPNs, Tor and proxies stay blocked. Bot Control is billed per inspected request, so give it only the few paths that need it.
 
     Requests no rule matches are allowed.
 
@@ -168,6 +176,7 @@ module:
     | Protected paths | No | Empty list | Path prefixes for the rate limit and the anonymous IP list. |
     | Rate limit / Rate limit window | No | 100 per 5 minutes | Per IP, across all protected paths. |
     | AWS anonymous IP list | No | true | Applies to the protected paths only. |
+    | Block hosting providers | No | true | Off counts hosting-provider addresses instead of blocking them. |
     | Bot control paths | No | Empty list | Path prefixes inspected by Bot Control. |
     | Tags | No | Standard Ravion tags | Additional tags merged with Ravion ownership and identity tags. |
     | Advanced Terraform variables | No | Empty object | Escape hatch for one-off Terraform variable overrides. |

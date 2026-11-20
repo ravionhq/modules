@@ -133,6 +133,18 @@ resource "aws_wafv2_web_acl" "this" {
           name        = "AWSManagedRulesAnonymousIpList"
           vendor_name = "AWS"
 
+          dynamic "rule_action_override" {
+            for_each = var.anonymous_ip_block_hosting_providers ? [] : ["HostingProviderIPList"]
+
+            content {
+              name = rule_action_override.value
+
+              action_to_use {
+                count {}
+              }
+            }
+          }
+
           scope_down_statement {
             regex_match_statement {
               regex_string = rule.value

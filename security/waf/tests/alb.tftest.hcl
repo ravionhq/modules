@@ -169,3 +169,37 @@ run "rejects_non_alb_arns" {
 
   expect_failures = [var.alb_arns]
 }
+
+# Agents, CI and SDKs often run on hosting providers; counting that part of the
+# anonymous IP list keeps them able to reach the protected paths while VPNs
+# and Tor stay blocked.
+run "hosting_providers_can_be_counted_instead_of_blocked" {
+  command = apply
+
+  variables {
+    protected_paths                      = ["/auth/signup"]
+    anonymous_ip_block_hosting_providers = false
+  }
+
+  assert {
+    condition     = [for o in one([for r in aws_wafv2_web_acl.this.rule : r if r.name == "aws-anonymous-ip"]).statement[0].managed_rule_group_statement[0].rule_action_override : o.name] == ["HostingProviderIPList"]
+    error_message = "Only the hosting provider rule of the anonymous IP list may be overridden."
+  }
+  assert {
+    condition     = length(one(one([for r in aws_wafv2_web_acl.this.rule : r if r.name == "aws-anonymous-ip"]).statement[0].managed_rule_group_statement[0].rule_action_override).action_to_use[0].count) == 1
+    error_message = "Hosting provider addresses must be counted, not blocked."
+  }
+}
+
+run "hosting_providers_are_blocked_by_default" {
+  command = apply
+
+  variables {
+    protected_paths = ["/auth/signup"]
+  }
+
+  assert {
+    condition     = length(one([for r in aws_wafv2_web_acl.this.rule : r if r.name == "aws-anonymous-ip"]).statement[0].managed_rule_group_statement[0].rule_action_override) == 0
+    error_message = "By default the whole anonymous IP list must apply."
+  }
+}

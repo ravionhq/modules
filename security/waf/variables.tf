@@ -100,6 +100,12 @@ variable "anonymous_ip_enabled" {
   default     = true
 }
 
+variable "anonymous_ip_block_hosting_providers" {
+  type        = bool
+  description = "Block hosting-provider addresses on the protected paths as part of the anonymous IP list. Set false to count them instead, so agents, CI systems and SDKs running in the cloud can still reach those paths while VPNs, Tor and proxies stay blocked."
+  default     = true
+}
+
 variable "bot_control_paths" {
   type        = list(string)
   description = "URL path prefixes inspected by AWS Bot Control (common level). Bot Control is billed per inspected request, so keep this to a few paths such as sign-up. Empty disables it."
