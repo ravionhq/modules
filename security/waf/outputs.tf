@@ -23,6 +23,14 @@ output "region" {
   value       = local.region
 }
 
+output "cloudwatch_metric_dimensions" {
+  description = "Dimensions of the web ACL's AWS/WAFV2 CloudWatch metrics. web_acl selects the totals across every rule (Rule ALL); rules leaves Rule out to split a metric by rule."
+  value = {
+    web_acl = merge(local.cloudwatch_metric_dimensions, { Rule = "ALL" })
+    rules   = local.cloudwatch_metric_dimensions
+  }
+}
+
 output "capacity" {
   description = "Web ACL capacity units the rules use (AWS allows 1,500 by default)."
   value       = aws_wafv2_web_acl.this.capacity

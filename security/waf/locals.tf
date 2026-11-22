@@ -18,6 +18,13 @@ locals {
   # CloudWatch metric names allow letters, digits, hyphens and underscores.
   metric_prefix = replace(var.name, "/[^A-Za-z0-9_-]/", "-")
 
+  # AWS/WAFV2 metrics of the web ACL itself. CloudFront web ACL metrics carry
+  # no Region dimension; regional ones need it.
+  cloudwatch_metric_dimensions = merge(
+    { WebACL = local.metric_prefix },
+    local.scope == "REGIONAL" ? { Region = local.region } : {},
+  )
+
   default_tags = {
     ManagedBy = "terraform"
     Module    = "security/waf"

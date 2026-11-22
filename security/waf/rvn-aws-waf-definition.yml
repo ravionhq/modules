@@ -4,8 +4,8 @@ definition:
   name: AWS WAF
   description: WAFv2 web ACL for Application Load Balancers or CloudFront distributions, with IP reputation, per-path rate limits, anonymous IP blocking and Bot Control.
 release:
-  version: 0.1.0
-  description: New module. Creates a WAFv2 web ACL that blocks AWS's IP reputation list, rate-limits each IP on chosen paths such as sign-up, blocks VPNs, Tor and hosting providers on those paths, and can run AWS Bot Control on a few paths. Attaches to Application Load Balancers, or exposes a global web ACL for CloudFront distributions.
+  version: 0.2.0
+  description: Charts allowed, blocked and counted requests, in total and by rule, on the module dashboard. Redeploy to show them.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -137,6 +137,56 @@ module:
       [{"name":"Web ACL","href":"https://us-east-1.console.aws.amazon.com/wafv2/homev2/web-acl/" + stack.output.web_acl_name + "/" + stack.output.web_acl_id + "/overview?region=" + (stack.output.scope == "CLOUDFRONT" ? "global" : stack.output.region)}] :
       []
       >>
+    # ?. keeps the rest of the UI resolving for web ACLs applied before the
+    # cloudwatch_metric_dimensions output existed; their charts stay pending
+    # until the next deploy.
+    metrics:
+      - id: allowed_requests
+        name: Allowed requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << stack.output.region >>
+          namespace: AWS/WAFV2
+          name: AllowedRequests
+          statistic: Sum
+          dimensions: << stack.output.cloudwatch_metric_dimensions?.web_acl >>
+      - id: blocked_requests
+        name: Blocked requests
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << stack.output.region >>
+          namespace: AWS/WAFV2
+          name: BlockedRequests
+          statistic: Sum
+          dimensions: << stack.output.cloudwatch_metric_dimensions?.web_acl >>
+      - id: blocked_requests_by_rule
+        name: Blocked requests by rule
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << stack.output.region >>
+          namespace: AWS/WAFV2
+          name: BlockedRequests
+          statistic: Sum
+          dimensions: << stack.output.cloudwatch_metric_dimensions?.rules >>
+          group_by: Rule
+      - id: counted_requests_by_rule
+        name: Counted requests by rule
+        type: line
+        source:
+          type: cloudwatch
+          aws_account_id: << module.input.aws_account_id >>
+          region: << stack.output.region >>
+          namespace: AWS/WAFV2
+          name: CountedRequests
+          statistic: Sum
+          dimensions: << stack.output.cloudwatch_metric_dimensions?.rules >>
+          group_by: Rule
   readme: |
     WAFv2 web ACL for Application Load Balancers or CloudFront distributions.
 
@@ -162,6 +212,19 @@ module:
     ## Rolling out
 
     Start with Count only on. Every rule then counts matches instead of blocking them, and each rule's CloudWatch metrics and sampled requests show what it would have blocked. Turn Count only off once no real users match.
+
+    ## Monitoring
+
+    The dashboard charts the web ACL's AWS WAF metrics, which AWS publishes to CloudWatch at no extra cost:
+
+    | Chart | Shows |
+    | --- | --- |
+    | Allowed requests | Requests the web ACL let through |
+    | Blocked requests | Requests any rule blocked, including the rate limit's 429 responses |
+    | Blocked requests by rule | Blocked requests split by rule, with `ALL` as the total |
+    | Counted requests by rule | Matches of rules that count instead of block, such as every rule while Count only is on |
+
+    Rules appear by their CloudWatch metric name, the web ACL name followed by the rule, for example `<name>-rate-limit`. A chart stays empty until a request matches, because AWS only publishes nonzero values.
 
     ## Configuration
 

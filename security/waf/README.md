@@ -185,6 +185,7 @@ The advanced variables are listed under [Advanced Terraform variables](#advanced
 | web_acl_name | Web ACL name. |
 | scope | `REGIONAL` or `CLOUDFRONT`. |
 | region | Region of the web ACL (us-east-1 for CloudFront). |
+| cloudwatch_metric_dimensions | AWS/WAFV2 metric dimensions: `web_acl` for totals across every rule, `rules` to split by rule. |
 | capacity | Web ACL capacity units used (AWS allows 1,500 by default). |
 | associated_alb_arns | Load balancers the web ACL is associated with. |
 | ip_set_arns | IP sets created for `ip_allow_list` and `ip_block_list`, by key. |

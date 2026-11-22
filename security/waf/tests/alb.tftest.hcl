@@ -68,6 +68,13 @@ run "associates_every_alb_in_the_acl_region" {
     condition     = aws_wafv2_web_acl.this.region == "eu-central-1"
     error_message = "region must place a regional web ACL."
   }
+  assert {
+    condition = output.cloudwatch_metric_dimensions == {
+      web_acl = { WebACL = aws_wafv2_web_acl.this.visibility_config[0].metric_name, Region = "eu-central-1", Rule = "ALL" }
+      rules   = { WebACL = aws_wafv2_web_acl.this.visibility_config[0].metric_name, Region = "eu-central-1" }
+    }
+    error_message = "Regional web ACL metrics must be addressed by the web ACL metric name and its region."
+  }
 }
 
 run "protected_paths_get_rate_limit_and_anonymous_ip_rules" {

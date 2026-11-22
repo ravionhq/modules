@@ -48,6 +48,13 @@ run "cloudfront_acl_is_global_in_us_east_1" {
     condition     = output.web_acl_arn == aws_wafv2_web_acl.this.arn
     error_message = "The web ACL ARN must be an output for the distribution to reference."
   }
+  assert {
+    condition = output.cloudwatch_metric_dimensions == {
+      web_acl = { WebACL = aws_wafv2_web_acl.this.visibility_config[0].metric_name, Rule = "ALL" }
+      rules   = { WebACL = aws_wafv2_web_acl.this.visibility_config[0].metric_name }
+    }
+    error_message = "CloudFront web ACL metrics have no Region dimension."
+  }
 }
 
 run "cloudfront_acl_carries_the_same_rules" {
