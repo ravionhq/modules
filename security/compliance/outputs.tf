@@ -46,3 +46,19 @@ output "registry_ids" {
   description = "Map of Region to the ECR registry ID managed by the compliance baseline."
   value       = { for region, configuration in aws_ecr_registry_scanning_configuration.this : region => configuration.registry_id }
 }
+
+output "access_analyzer_arns" {
+  description = "Map of Region to IAM Access Analyzer analyzer ARN, empty when disabled."
+  value       = { for region, analyzer in aws_accessanalyzer_analyzer.this : region => analyzer.arn }
+}
+
+output "account_settings" {
+  description = "Account-level settings this module manages and whether each is on."
+  value = {
+    access_analyzer            = var.access_analyzer_enabled
+    imdsv2_default             = var.imdsv2_default_enabled
+    ebs_encryption_by_default  = var.ebs_encryption_by_default_enabled
+    s3_public_acls_blocked     = var.s3_public_acls_blocked
+    s3_public_policies_blocked = var.s3_public_policies_blocked
+  }
+}

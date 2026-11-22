@@ -47,7 +47,7 @@ This repository contains reusable infrastructure modules designed for enterprise
 | `networking/` | `security-groups` | AWS Security Groups                                                    | v1.0.0  |
 | `networking/` | `vpc`             | AWS VPC with adaptive public and private subnets                       | v1.0.0  |
 | `security/`   | `acm_certificate` | AWS ACM public certificates with ordered domains, DNS validation, optional Route53, and optional wait | v1.0.0  |
-| `security/`   | `compliance`     | Account-level GuardDuty and registry-wide Basic ECR scan-on-push across selected Regions (includes the `rvn-aws-compliance` module definition) | v0.1.0 |
+| `security/`   | `compliance`     | Account-level GuardDuty, registry-wide Basic ECR scan-on-push, CloudTrail and secure account defaults across selected Regions (includes the `rvn-aws-compliance` module definition) | v0.1.0 |
 | `security/`   | `iam`             | AWS IAM roles and policies                                             | v1.0.0  |
 | `security/`   | `iam_policy`      | Reusable customer-managed AWS IAM policies                             | v1.0.0  |
 | `security/`   | `kms`             | AWS KMS keys (symmetric or asymmetric: signing, encryption, MAC, key agreement) (includes the `rvn-aws-kms` module definition) | v1.0.0  |
@@ -72,7 +72,7 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.5.1 | `networking/alb/` |
 | `rvn-aws-alternat` | alterNAT | v0.2.0 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.4.1 | `compute/ami/` |
-| `rvn-aws-compliance` | AWS Compliance | v1.0.0 | `security/compliance/` |
+| `rvn-aws-compliance` | AWS Compliance | v1.1.0 | `security/compliance/` |
 | `rvn-aws-ecr` | AWS ECR Repository | v1.0.0 | `containers/ecr/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.2 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.1.2 | `security/iam/` |

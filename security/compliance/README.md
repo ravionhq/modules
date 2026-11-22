@@ -1,6 +1,6 @@
 # AWS compliance module
 
-Manages GuardDuty threat detection, registry-wide Basic ECR image scanning on push, and regional CloudTrail audit trails for one AWS account. Deploy `rvn-aws-compliance` once per account with all required Regions. The Regions list controls all three services; the runner Region hosts the shared log bucket.
+Manages GuardDuty threat detection, registry-wide Basic ECR image scanning on push, regional CloudTrail audit trails, and secure account defaults for one AWS account. Deploy `rvn-aws-compliance` once per account with all required Regions. The Regions list controls all three services; the runner Region hosts the shared log bucket.
 
 ## Features
 
@@ -10,6 +10,7 @@ Manages GuardDuty threat detection, registry-wide Basic ECR image scanning on pu
 - Fails at plan time when a requested Region is not enabled (opted in) for the account.
 - Explicit per-Region protection plans: S3 Protection, EKS Protection, Malware Protection for EC2, RDS Protection, Lambda Protection, and Runtime Monitoring with automated agent management for EKS, ECS Fargate, and EC2.
 - Configurable finding publishing frequency.
+- Secure account defaults, each of which can be turned off: an IAM Access Analyzer external-access analyzer, IMDSv2 required for new instances and EBS encryption for new volumes in every selected Region, and the account-wide S3 public access block.
 - Default `ManagedBy` / `Module` tags merged with caller-supplied tags.
 
 ## Usage
@@ -64,7 +65,7 @@ module "compliance" {
 | OpenTofu | >= 1.10.0 |
 | aws | >= 6.0 |
 
-The AWS provider 6.x per-resource `region` argument is required. The credentials used for the apply need `ecr:GetRegistryScanningConfiguration`, `ecr:PutRegistryScanningConfiguration`, GuardDuty administration permissions plus `ec2:DescribeRegions` (used to verify the requested Regions are enabled) and `iam:CreateServiceLinkedRole` for the GuardDuty and Malware Protection service-linked roles on first use.
+The AWS provider 6.x per-resource `region` argument is required. The credentials used for the apply need `ecr:GetRegistryScanningConfiguration`, `ecr:PutRegistryScanningConfiguration`, GuardDuty administration permissions, Access Analyzer analyzer management (`access-analyzer:CreateAnalyzer`, `GetAnalyzer`, `DeleteAnalyzer`, `TagResource`, and `iam:CreateServiceLinkedRole` for its service-linked role), `ec2:ModifyInstanceMetadataDefaults`, `ec2:GetInstanceMetadataDefaults`, `ec2:EnableEbsEncryptionByDefault`, `ec2:DisableEbsEncryptionByDefault`, `ec2:GetEbsEncryptionByDefault`, `s3:PutAccountPublicAccessBlock`, `s3:GetAccountPublicAccessBlock` plus `ec2:DescribeRegions` (used to verify the requested Regions are enabled) and `iam:CreateServiceLinkedRole` for the GuardDuty and Malware Protection service-linked roles on first use.
 
 ## Inputs
 
@@ -93,7 +94,12 @@ A supplied KMS key encrypts trail deliveries and bucket objects. It must be in t
 | `lambda_protection_enabled` | Enable Lambda Protection (`LAMBDA_NETWORK_LOGS`). | `bool` | `true` | no |
 | `runtime_monitoring_enabled` | Enable Runtime Monitoring (`RUNTIME_MONITORING`). | `bool` | `false` | no |
 | `runtime_monitoring_automated_agents` | Workload types with GuardDuty-managed security agents: `EKS_ADDON_MANAGEMENT`, `ECS_FARGATE_AGENT_MANAGEMENT`, `EC2_AGENT_MANAGEMENT`. Ignored unless Runtime Monitoring is enabled. | `list(string)` | all three | no |
-| `tags` | Additional tags applied to every detector. | `map(string)` | `{}` | no |
+| `access_analyzer_enabled` | Create an IAM Access Analyzer external-access analyzer in each selected Region. | `bool` | `true` | no |
+| `imdsv2_default_enabled` | Require IMDSv2 by default in each selected Region, for instances launched without their own metadata options. | `bool` | `true` | no |
+| `ebs_encryption_by_default_enabled` | Encrypt new EBS volumes and snapshot copies by default in each selected Region. Turn off when sharing AMIs or snapshots publicly. | `bool` | `true` | no |
+| `s3_public_acls_blocked` | Block and ignore public ACLs on every S3 bucket in the account. | `bool` | `true` | no |
+| `s3_public_policies_blocked` | Block public bucket policies on every S3 bucket in the account. Turn off when a bucket is public by bucket policy. | `bool` | `true` | no |
+| `tags` | Additional tags applied to detectors, analyzers, trails and the trail bucket. | `map(string)` | `{}` | no |
 
 ## Outputs
 
@@ -108,6 +114,8 @@ A supplied KMS key encrypts trail deliveries and bucket objects. It must be in t
 | `account_id` | AWS account ID where the baseline is managed. |
 | `registry_ids` | Map of Region to ECR registry ID. |
 | `protection_plans` | Map of protection plan feature name to enabled flag. |
+| `access_analyzer_arns` | Map of Region to Access Analyzer analyzer ARN, empty when disabled. |
+| `account_settings` | Map of account setting to whether this module turns it on. |
 
 ## ECR scanning and ownership
 
@@ -118,6 +126,15 @@ Basic scanning checks operating-system vulnerabilities when new images are pushe
 ECR registry scanning and GuardDuty are account/Region-wide settings. Maintain one Terraform owner per account and Region. Do not deploy overlapping compliance modules or manage these resources from individual network or service modules. The ECR scanning resource does not support tags.
 
 Removing a Region or destroying the module resets ECR to Basic scanning without registry rules. ECR repositories and images are retained.
+
+## Account settings
+
+Each setting is managed only while its input is `true`. Setting one to `false`, or destroying the module, returns it to the AWS default; existing instances, volumes and buckets are not changed.
+
+- **Access Analyzer.** One `ACCOUNT` external-access analyzer named `account-external-access` per selected Region. It is free and does not replace or conflict with an analyzer the account already has.
+- **IMDSv2 default.** `aws_ec2_instance_metadata_defaults` with `http_tokens = "required"` per selected Region. A launch template or instance that sets its own metadata options keeps them.
+- **EBS encryption by default.** Per selected Region, with the Region's default EBS key. Encrypted snapshots cannot be shared publicly, so turn it off in an account that publishes public AMIs or snapshots.
+- **S3 account public access block.** One setting for the whole account, not one per Region, and it overrides every bucket's own setting. `s3_public_acls_blocked` sets `block_public_acls` and `ignore_public_acls`; `s3_public_policies_blocked` sets `block_public_policy` and `restrict_public_buckets`. With the defaults, applying stops public access to any bucket that relies on a public bucket policy or ACL.
 
 ## Existing GuardDuty detectors
 

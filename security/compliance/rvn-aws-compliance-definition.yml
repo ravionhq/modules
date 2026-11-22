@@ -1,10 +1,10 @@
 definition:
   type: rvn-aws-compliance
   name: AWS Compliance
-  description: Manages an AWS compliance baseline with GuardDuty, ECR image scanning, and regional CloudTrail audit trails.
+  description: Manages an AWS compliance baseline with GuardDuty, ECR image scanning, regional CloudTrail audit trails, and secure account defaults.
 release:
-  version: 1.0.0
-  description: Record management events with regional CloudTrail trails and private, versioned log storage; optionally omit Regions already covered by existing trails.
+  version: 1.1.0
+  description: Apply secure account defaults; IAM Access Analyzer, IMDSv2 for new instances, EBS encryption for new volumes and the S3 account public access block, each of which can be turned off.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -103,6 +103,34 @@ module:
       show_when:
         runtime_monitoring_enabled: true
       type: string_array
+    - id: section_account_settings
+      label: Account settings
+      type: section
+    - default: true
+      description: Reports resource policies that grant access outside the account. Free.
+      id: access_analyzer_enabled
+      label: IAM Access Analyzer
+      type: boolean
+    - default: true
+      description: Applies to instances launched without their own metadata options. Running instances are not changed.
+      id: imdsv2_default_enabled
+      label: Require IMDSv2 by default
+      type: boolean
+    - default: true
+      description: Applies to new volumes and snapshot copies. Turn off if this account shares AMIs or snapshots publicly.
+      id: ebs_encryption_by_default_enabled
+      label: Encrypt new EBS volumes by default
+      type: boolean
+    - default: true
+      description: Applies to every bucket in the account, overriding each bucket's own setting.
+      id: s3_public_acls_blocked
+      label: Block public S3 ACLs
+      type: boolean
+    - default: true
+      description: Applies to every bucket in the account. Turn off if a bucket is served publicly by bucket policy.
+      id: s3_public_policies_blocked
+      label: Block public S3 bucket policies
+      type: boolean
     - id: section_findings
       label: Findings
       type: section
@@ -131,12 +159,15 @@ module:
       base_path: security/compliance
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        access_analyzer_enabled: << module.input.access_analyzer_enabled >>
         cloudtrail_enabled: << module.input.cloudtrail_enabled >>
         cloudtrail_regions: "<< module.input.cloudtrail_regions != nil && len(module.input.cloudtrail_regions) > 0 ? module.input.cloudtrail_regions : nil >>"
         cloudtrail_log_retention_days: "<< module.input.cloudtrail_log_retention_days != nil ? module.input.cloudtrail_log_retention_days : 365 >>"
         cloudtrail_kms_key_arn: << module.input.cloudtrail_kms_key_arn || nil >>
+        ebs_encryption_by_default_enabled: << module.input.ebs_encryption_by_default_enabled >>
         eks_protection_enabled: << module.input.eks_protection_enabled >>
         finding_publishing_frequency: << module.input.finding_publishing_frequency || "FIFTEEN_MINUTES" >>
+        imdsv2_default_enabled: << module.input.imdsv2_default_enabled >>
         lambda_protection_enabled: << module.input.lambda_protection_enabled >>
         malware_protection_enabled: << module.input.malware_protection_enabled >>
         rds_protection_enabled: << module.input.rds_protection_enabled >>
@@ -144,6 +175,8 @@ module:
         runtime_monitoring_automated_agents: "<< module.input.runtime_monitoring_enabled ? (module.input.runtime_monitoring_automated_agents || []) : [] >>"
         runtime_monitoring_enabled: << module.input.runtime_monitoring_enabled >>
         s3_protection_enabled: << module.input.s3_protection_enabled >>
+        s3_public_acls_blocked: << module.input.s3_public_acls_blocked >>
+        s3_public_policies_blocked: << module.input.s3_public_policies_blocked >>
         tags:
           $include: ../../partials/stack/ravion-tags.yml
   ui:
@@ -155,7 +188,7 @@ module:
       }) : []
       >>
   readme: |
-    Manages an AWS compliance baseline with GuardDuty, ECR image scanning, and regional CloudTrail audit trails.
+    Manages an AWS compliance baseline with GuardDuty, ECR image scanning, regional CloudTrail audit trails, and secure account defaults.
 
     ## Account-level setup
 
@@ -189,6 +222,17 @@ module:
 
     Destroy fails while the bucket contains logs or object versions: force deletion is disabled. Disabling CloudTrail also attempts to remove its bucket, so preserve or explicitly remove retained logs before doing so.
 
+    ## Account settings
+
+    Four account defaults are on unless turned off. Each is managed only while it is on: turning one off, or destroying the module, returns that setting to the AWS default and leaves existing resources as they are.
+
+    - **IAM Access Analyzer** creates an external-access analyzer in each selected Region. It reports resource policies (S3, IAM roles, KMS, Lambda, Secrets Manager, SQS, SNS and others) that grant access to a principal outside the account. It is free, and an analyzer the account already has is left alone.
+    - **Require IMDSv2 by default** applies in each selected Region to instances launched without their own metadata options. A launch template or instance that sets its own options keeps them, and running instances are not changed.
+    - **Encrypt new EBS volumes by default** applies in each selected Region to new volumes and snapshot copies, using the Region's default EBS key. Existing volumes are not changed. Encrypted snapshots cannot be shared publicly, so turn this off in an account that publishes public AMIs or snapshots.
+    - **Block public S3 ACLs** and **Block public S3 bucket policies** set the S3 account public access block. It is one setting for the whole account, not one per Region, and it overrides every bucket's own setting. Turn the policy half off if a bucket is served publicly by bucket policy; a bucket behind CloudFront origin access control is not public and is unaffected.
+
+    When upgrading from 1.0.0, review these before applying: with the defaults, the first apply stops public access to any bucket that relies on a public bucket policy or ACL.
+
     ## Existing resources and ownership
 
     GuardDuty detectors and ECR scanning configurations are shared by the whole account in each Region. Keep exactly one Terraform owner per account and Region; do not deploy overlapping instances or also manage them from a VPC or service module.
@@ -215,11 +259,18 @@ module:
     | Runtime monitoring | Disabled | Optional workload security agents. |
     | Automated agent management | EKS, ECS Fargate, EC2 | Used when Runtime Monitoring is enabled. |
     | Finding publishing frequency | Every 15 minutes | Export cadence for updated GuardDuty findings. |
-    | Tags | Standard Ravion tags | Additional tags for GuardDuty, CloudTrail and its bucket; ECR registry scanning does not support tags. |
+    | IAM Access Analyzer | Enabled | External-access analyzer in each selected Region. |
+    | Require IMDSv2 by default | Enabled | Default for instances launched without their own metadata options. |
+    | Encrypt new EBS volumes by default | Enabled | Turn off when sharing AMIs or snapshots publicly. |
+    | Block public S3 ACLs | Enabled | Account-wide; overrides bucket settings. |
+    | Block public S3 bucket policies | Enabled | Account-wide; turn off when a bucket is public by bucket policy. |
+    | Tags | Standard Ravion tags | Additional tags for GuardDuty, Access Analyzer, CloudTrail and its bucket; ECR registry scanning does not support tags. |
 
     ## Learn more
 
     - [Amazon GuardDuty](https://docs.aws.amazon.com/guardduty/latest/ug/what-is-guardduty.html)
     - [GuardDuty protection plans](https://docs.aws.amazon.com/guardduty/latest/ug/guardduty-features-activation-model.html)
     - [ECR scanning filters](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-filters.html)
+    - [IAM Access Analyzer](https://docs.aws.amazon.com/IAM/latest/UserGuide/what-is-access-analyzer.html)
+    - [S3 block public access](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html)
     - [Source module](https://github.com/ravionhq/modules/tree/$local.module_tag/security/compliance)
