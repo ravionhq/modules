@@ -1,0 +1,25 @@
+# Placeholder values that may appear in this public repository. One value per line.
+# Ravion IDs whose first character after the prefix is 0 are placeholders already and need no entry.
+
+# AWS documentation-style placeholders.
+vpc-0123456789abcdef0
+subnet-0123456789abcdef0
+sg-0123456789abcdef0
+rtb-0123456789abcdef0
+nat-0123456789abcdef0
+i-0123456789abcdef0
+
+# Used in module tests and READMEs.
+nat-0000000000000000a
+nat-0000000000000000b
+nat-0fedcba9876543210
+sg-0aaaaaaaaaaaaaaaa
+sg-0bbbbbbbbbbbbbbbb
+subnet-0aaaaaaaaaaaaaaaa
+subnet-0bbbbbbbbbbbbbbbb
+subnet-0cccccccccccccccc
+subnet-0dddddddddddddddd
+subnet-0fedcba9876543210
+vpc-0123456789abcdee0
+vpc-0a1b2c3d4e5f67890
+vpc-0fedcba9876543210
