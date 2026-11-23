@@ -75,7 +75,6 @@ module:
       description: Turn on when alterNAT or another NAT instance takes over the private default routes, so deploys leave them on the instance instead of moving them back to the NAT gateway.
       id: nat_instance_route_takeover_enabled
       label: Allow NAT instance route takeover
-      required: false
       type: boolean
     - id: section_vpc_endpoints
       label: VPC endpoints
