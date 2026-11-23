@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.9.0
-  description: Create or reuse CloudFront static IPs for apex DNS and firewall allowlisting.
+  version: 1.10.0
+  description: Route paths like /v1/* to an API or other backend on the same domain while the site keeps its SPA fallback.
 module:
   build:
     builder: >-
@@ -308,6 +308,117 @@ module:
       id: no_cache_paths
       label: No-cache path patterns
       type: string_array
+    - id: section_origin_routes
+      label: Backend routes
+      type: section
+      description: Serve an API or other backend on the same domain as the site, such as /v1/* to an ECS load balancer, while every other path keeps the static routing.
+    - id: origin_routes
+      label: Backend routes
+      type: object_array
+      description: Matching paths skip S3 and reach the backend with their original URL. Adding a route turns off the custom 404 page and minimum error caching for the whole site so backend errors pass through unchanged.
+      required: false
+      item_label: Backend route
+      item_title:
+        template: "{domain_name}"
+      item_inputs:
+        - id: path_patterns
+          label: Path patterns
+          type: string_array
+          description: /v1/* does not match /v1; add both if the bare path is a route.
+          add_button_label: Add path pattern
+          placeholder: /v1/*
+          required: true
+          default: []
+        - id: domain_name
+          label: Backend domain name
+          type: string
+          description: Host name only. With HTTPS only, it must be covered by the backend certificate, so use a DNS record pointing at the load balancer, not its elb.amazonaws.com name.
+          placeholder: api-origin.example.com
+          required: true
+        - id: origin_protocol_policy
+          label: Origin protocol
+          type: string
+          description: HTTPS only requires the backend to serve a certificate valid for its domain name.
+          required: true
+          default: https-only
+          values:
+            - label: HTTPS only
+              value: https-only
+            - label: HTTP only
+              value: http-only
+            - label: Match viewer
+              value: match-viewer
+        - id: allowed_methods
+          label: Allowed methods
+          type: string
+          required: true
+          default: all
+          values:
+            - label: All methods
+              description: GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE
+              value: all
+            - label: Read and OPTIONS
+              description: GET, HEAD, OPTIONS
+              value: read_options
+            - label: Read only
+              description: GET, HEAD
+              value: read
+        - id: cache_policy_id
+          label: Cache policy
+          type: string
+          required: true
+          default: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          values:
+            - label: CachingDisabled
+              description: No edge caching. Recommended for APIs.
+              value: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            - label: UseOriginCacheControlHeaders
+              description: Cache according to the Cache-Control headers your backend returns.
+              value: 83da9c7e-98b4-4e11-a168-04f0df8e2c65
+            - label: UseOriginCacheControlHeaders-QueryStrings
+              description: Origin-controlled caching with query strings in the cache key.
+              value: 4cc15a8a-d715-48a4-82b8-cc0b614638fe
+        - id: origin_request_policy_id
+          label: Origin request policy
+          type: string
+          required: true
+          default: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          values:
+            - label: AllViewerExceptHostHeader
+              description: Forwards headers, cookies, and query strings, but not Host. Works with load balancer default listeners.
+              value: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            - label: AllViewer
+              description: Also forwards Host. Use when the backend routes by host name.
+              value: 216adef6-5c7f-47e4-b989-5492eafa07d3
+        - id: origin_read_timeout
+          label: Response timeout (seconds)
+          type: number
+          collapsible: true
+          description: Values above 60 need a CloudFront quota increase.
+          min: 1
+          max: 180
+          default: 30
+        - id: custom_headers
+          label: Custom headers
+          type: object_array
+          description: Headers CloudFront adds to every request sent to this backend, such as an origin secret.
+          collapsible: true
+          required: false
+          item_label: Custom header
+          item_title:
+            template: "{name}"
+          item_inputs:
+            - id: name
+              label: Header name
+              type: string
+              placeholder: X-Origin-Auth
+              required: true
+            - id: value
+              label: Header value
+              type: string
+              required: true
+          default: []
+      default: []
     - id: section_cloudwatch_alarms
       label: CloudWatch alarms
       type: section
@@ -453,6 +564,7 @@ module:
     | Custom 404 pages | Serving your build's 404.html with a proper 404 status |
     | Protecting the site | Attaching a WAF web ACL and default security headers |
     | Serving high traffic | Enabling Origin Shield to boost cache hit ratio |
+    | Serving a SPA and an API on one domain | Routing paths like /v1/* to a backend origin while every other path keeps the SPA fallback |
     | Auditing access | Viewing CloudFront access logs in Ravion or delivering them to S3 |
 
     ## Hosting and routing
@@ -535,6 +647,27 @@ module:
 
     Use Response headers policy ID to attach an existing CloudFront response headers policy. Use Managed response headers policy when this module should create one for security headers, CORS, custom headers, or removed headers. Either option replaces the Managed response headers selection, so carry equivalent security headers in your own policy. Avoid putting Cache-Control into a response headers policy unless you intentionally want to override the cache-control function.
 
+    ## Backend routes
+
+    Use Backend routes to serve an API or other backend on the same domain as the site. For example, a Vite SPA can call /v1/* on its own origin, with no CORS setup, while an ECS web service handles those requests.
+
+    Each route sends its path patterns to one backend domain, such as an ECS web service's load balancer DNS name. Matching requests skip S3 and reach the backend with their original URL. Every other path keeps the selected routing mode, so SPA deep links still load the app.
+
+    | Field | Default | Purpose |
+    | --- | --- | --- |
+    | Path patterns | none | CloudFront path patterns such as /v1/*. Patterns match exactly, so /v1/* does not match /v1; add both when the bare path is a route |
+    | Backend domain name | none | Host name only, without https:// or a path. With HTTPS only it must be covered by the backend certificate: use a DNS record pointing at the load balancer, not its elb.amazonaws.com name, or choose HTTP only for a plain-HTTP listener |
+    | Origin protocol | HTTPS only | HTTPS only requires the backend to serve a certificate valid for its domain name |
+    | Allowed methods | All methods | Read only or Read and OPTIONS limit what CloudFront forwards |
+    | Cache policy | CachingDisabled | Use an origin Cache-Control policy only for responses that are safe to share between viewers |
+    | Origin request policy | AllViewerExceptHostHeader | Forwards headers, cookies, and query strings, but not Host. Choose AllViewer when the backend routes by host name |
+    | Response timeout | 30 | Seconds CloudFront waits for the backend |
+    | Custom headers | none | Headers added to every backend request, such as a shared secret the backend checks |
+
+    CloudFront applies custom error responses to the whole distribution, not per path. When any backend route is set, the module turns off the custom 404 page and removes the minimum error caching time, so backend errors such as a JSON 404 or a 401 reach viewers unchanged. With CachingDisabled they are not cached; with an origin Cache-Control policy, send Cache-Control: no-store on error responses so they are not shared between viewers. Missing static files still return a plain 404.
+
+    Backend responses skip the site's Cache-Control function and managed response headers, so the backend controls its own headers.
+
     ## Monitoring
 
     The module dashboard shows the default CloudFront distribution metrics: requests, total error rate, 4xx error rate, 5xx error rate, bytes downloaded, and bytes uploaded. CloudFront publishes these at no additional CloudWatch cost. A 4xx spike usually means missing files or newly broken links; because missing files return real 404s and blocked requests return 403s, the two are distinguishable in the access logs.
@@ -612,6 +745,7 @@ module:
     | CloudFront settings | Origin Shield | No | false | Extra caching layer; region chosen automatically |
     | Cache and headers | Manage Cache-Control headers | No | true | Attaches the cache-control function |
     | Cache and headers | Managed response headers | No | Security headers | AWS managed header sets; add CORS or CORS with preflight |
+    | Backend routes | Backend routes | No | [] | Send path patterns to another origin, such as an API load balancer |
     | Access logging | CloudFront access logging | No | true | Delivers logs to CloudWatch Logs or S3 |
     | Access logging | Logging destination | No | CloudWatch Logs | Visible when logging is enabled; CloudWatch shows logs in Ravion |
     | Access logging | Logging retention days | No | 365 | Visible when logging is enabled; CloudWatch retention or S3 lifecycle expiry |
@@ -688,6 +822,14 @@ module:
         name: << module.input.name >>
         no_cache_paths: << module.input.no_cache_paths >>
         origin_request_policy_id: << module.input.origin_request_policy_id >>
+        origin_routes: >-
+          << module.input.origin_routes != nil ? map(module.input.origin_routes, {"path_patterns":
+          #.path_patterns, "domain_name": #.domain_name, "origin_protocol_policy":
+          #.origin_protocol_policy, "allowed_methods": (#.allowed_methods == "read" ? ["GET", "HEAD"] :
+          #.allowed_methods == "read_options" ? ["GET", "HEAD", "OPTIONS"] : ["DELETE", "GET", "HEAD",
+          "OPTIONS", "PATCH", "POST", "PUT"]), "cache_policy_id": #.cache_policy_id,
+          "origin_request_policy_id": #.origin_request_policy_id, "origin_read_timeout":
+          #.origin_read_timeout, "custom_headers": (#.custom_headers != nil ? #.custom_headers : [])}) : [] >>
         origin_shield_enabled: << module.input.origin_shield_enabled >>
         anycast_ip_list_mode: << module.input.anycast_ip_list_mode || "disabled" >>
         anycast_ip_list_id: '<< module.input.anycast_ip_list_mode == "existing" ? module.input.anycast_ip_list_id : nil >>'
