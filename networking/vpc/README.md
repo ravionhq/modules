@@ -86,6 +86,23 @@ module "vpc" {
 
 The list length must equal `1` when `nat_gateway_high_availability_enabled = false`, or the resolved subnet count when `nat_gateway_high_availability_enabled = true`. EIP allocations are consumed in order, so `allocation_ids[i]` is attached to the NAT Gateway in `availability_zones[i]`.
 
+### With alterNAT or another NAT instance
+
+alterNAT (`networking/alternat`) moves each private route table's `0.0.0.0/0` route from the NAT gateway to its own instances. By default the next apply of this module points that route back at the NAT gateway. Set `nat_instance_route_takeover_enabled` so applies leave it alone:
+
+```hcl
+module "vpc" {
+  source = "git::https://github.com/ravionhq/modules.git//networking/vpc?ref=v1.0.0"
+
+  name                                  = "my-vpc"
+  nat_gateway_enabled                   = true
+  nat_gateway_high_availability_enabled = true
+  nat_instance_route_takeover_enabled   = true # alterNAT owns the default routes
+}
+```
+
+The module reads each private route table's live default route on every plan. A route that targets a network interface (a NAT instance) keeps that target. Any other route, including one left on a NAT gateway that was since replaced, or a missing one in a new VPC, points at this module's NAT gateway, so alterNAT can still fail back to it. Turning the input on or off updates the routes in place; it never deletes and recreates them.
+
 ### With VPC Endpoints
 
 ```hcl
@@ -340,6 +357,7 @@ module "vpc" {
 | nat_gateway_high_availability_enabled | Deploy one NAT Gateway per AZ for high availability. Set to false (default) to use a single NAT Gateway for all private subnets (cost-effective) | `bool` | `false` | no |
 | single_nat_gateway | **DEPRECATED** — use `nat_gateway_high_availability_enabled` (inverted). When set non-null, takes precedence | `bool` | `null` | no |
 | nat_gateway_eip_allocation_ids | Pre-allocated EIP allocation IDs to attach to the NAT Gateway(s). When null, the module allocates new EIPs internally. Length must equal 1 when `nat_gateway_high_availability_enabled = false`, or the resolved subnet count when `true` | `list(string)` | `null` | no |
+| nat_instance_route_takeover_enabled | Let a NAT instance (for example alterNAT) keep the private `0.0.0.0/0` routes it takes over. Deploys leave a default route that targets a network interface in place; routes on a NAT gateway still point at this module's NAT gateway | `bool` | `false` | no |
 
 ### VPC Endpoints
 

@@ -72,7 +72,7 @@ The selection logic lives in `modules/fallback` and is covered by `tests/fallbac
 
 Failover keeps connectivity, but connections through a failed or replaced NAT instance are dropped. During failover, traffic leaves from the NAT gateway's public IP.
 
-When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its next apply points the route back at the NAT gateway; with `nat_restore_enabled` (default), alterNAT moves it back to the NAT instance within a minute.
+When the VPC's Terraform also manages a `0.0.0.0/0` route to a NAT gateway, its next apply points the route back at the NAT gateway; with `nat_restore_enabled` (default), alterNAT moves it back to the NAT instance within a minute. With the Ravion VPC module (`networking/vpc` 1.4.0 or later), set `nat_instance_route_takeover_enabled = true` there so its applies leave alterNAT's routes in place.
 
 ## Alarms
 
