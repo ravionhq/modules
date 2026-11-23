@@ -1,10 +1,27 @@
 {{- if not (and .Values.statefulSet.name .Values.statefulSet.namespace) }}
 {{- fail "statefulSet.name and statefulSet.namespace are required" }}
 {{- end }}
+{{- if lt (int .Values.statefulSet.maxReplicas) 1 }}
+{{- fail "statefulSet.maxReplicas must be at least 1" }}
+{{- end }}
 {{/*
 Ordinary (non-hook) resources: they exist before the post-install and
-post-upgrade hook runs. The Role can read and delete the one StatefulSet only.
+post-upgrade hook runs. The Role can read and delete the one StatefulSet and
+its pods, named by ordinal, and nothing else.
 */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  migrate.sh: |
+    {{- .Files.Get "files/migrate.sh" | nindent 4 }}
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -29,6 +46,13 @@ rules:
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     resourceNames: [{{ .Values.statefulSet.name | quote }}]
+    verbs: ["get", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    resourceNames:
+      {{- range $i := until (int .Values.statefulSet.maxReplicas) }}
+      - {{ printf "%s-%d" $.Values.statefulSet.name $i | quote }}
+      {{- end }}
     verbs: ["get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

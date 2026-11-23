@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: {{ .Chart.Name }}
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/script: {{ .Files.Get "files/migrate.sh" | sha256sum }}
     spec:
       serviceAccountName: {{ .Release.Name }}
       restartPolicy: Never
@@ -26,29 +28,65 @@ spec:
         runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
-      containers:
-        - name: kubectl
-          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # Orphaned, the pods keep serving until the owner recreates the
-          # StatefulSet, which adopts and then replaces them.
-          command: ["kubectl"]
-          args:
-            - delete
-            - statefulset
-            - {{ .Values.statefulSet.name }}
-            - --namespace={{ .Values.statefulSet.namespace }}
-            - --cascade=orphan
-            - --ignore-not-found
-            - --wait
+      # The kubectl image has no shell. busybox is statically linked, so it
+      # runs from the shared volume inside the kubectl container.
+      initContainers:
+        - name: tools
+          image: {{ .Values.busyboxImage.repository }}:{{ .Values.busyboxImage.tag }}
+          imagePullPolicy: {{ .Values.busyboxImage.pullPolicy }}
+          command: ["/bin/busybox", "sh", "-c", "cp /bin/busybox /tools/busybox && /tools/busybox --install -s /tools"]
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: tools
+              mountPath: /tools
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      containers:
+        - name: migrate
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/tools/sh", "/scripts/migrate.sh"]
+          env:
+            - name: PATH
+              value: /tools:/bin:/usr/local/bin:/usr/bin
+            - name: STATEFULSET
+              value: {{ .Values.statefulSet.name | quote }}
+            - name: NAMESPACE
+              value: {{ .Values.statefulSet.namespace | quote }}
+            - name: PERSISTENT
+              value: {{ .Values.persistent | toString | quote }}
+            - name: FLUSH_URL
+              value: {{ .Values.flushUrl | quote }}
+            - name: DELETE_TIMEOUT
+              value: {{ .Values.deleteTimeout | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tools
+              mountPath: /tools
+            - name: scripts
+              mountPath: /scripts
           resources:
             requests:
               cpu: 10m
               memory: 32Mi
             limits:
               memory: 64Mi
+      volumes:
+        - name: tools
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: scripts
+          configMap:
+            name: {{ .Release.Name }}
