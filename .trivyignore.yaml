@@ -44,3 +44,12 @@ misconfigurations:
     paths:
       - networking/alternat/.terraform/modules/alternat/Dockerfile
     statement: Upstream alterNAT Lambda image Dockerfile; unused because the wrapper deploys zip packages.
+
+  # The GCP project setup grants its runner service account roles/editor by
+  # default, so pipeline steps can apply the customer's own Terraform (the AWS
+  # setup's runner role is AdministratorAccess for the same reason). Customers
+  # narrow it with runner_sa_roles.
+  - id: GCP-0007
+    paths:
+      - gcp/setup/main.tf
+    statement: Runner default of roles/editor is documented and set by the customer through runner_sa_roles.
