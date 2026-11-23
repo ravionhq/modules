@@ -1,0 +1,593 @@
+definition:
+  type: rvn-gcp-network
+  name: GCP VPC Network
+  description: Production-ready Google Cloud VPC network with regional subnetworks, Cloud NAT, Private Service Access, and flow logs.
+release:
+  version: 0.1.0
+  description: Initial Google Cloud VPC network with regional subnetworks, GKE secondary ranges, Cloud NAT, Private Service Access, firewall rules, and flow logs.
+module:
+  outputs:
+    - id: project_id
+      type: string
+      label: Project ID
+    - id: region
+      type: string
+      label: Primary region
+    - id: regions
+      type: string_array
+      label: Regions
+      description: Every region with a subnetwork, primary region first.
+    - id: network_id
+      type: string
+      label: Network ID
+      description: projects/<project>/global/networks/<name>
+    - id: network_name
+      type: string
+      label: Network name
+    - id: network_self_link
+      type: string
+      label: Network self link
+    - id: subnetwork_id
+      type: string
+      label: Subnetwork ID
+      description: The primary region's subnetwork.
+    - id: subnetwork_self_link
+      type: string
+      label: Subnetwork self link
+      description: The primary region's subnetwork.
+    - id: subnetwork_ids
+      type: object
+      label: Subnetwork IDs by region
+    - id: subnetwork_self_links
+      type: object
+      label: Subnetwork self links by region
+    - id: subnetwork_cidrs
+      type: object
+      label: Subnetwork ranges by region
+    - id: pods_secondary_range_name
+      type: string
+      label: GKE pods secondary range name
+    - id: services_secondary_range_name
+      type: string
+      label: GKE services secondary range name
+    - id: proxy_only_subnetwork_cidrs
+      type: object
+      label: Proxy-only subnetwork ranges by region
+    - id: nat_router_names
+      type: object
+      label: Cloud Router names by region
+    - id: nat_ip_addresses
+      type: object
+      label: Cloud NAT IP addresses by region
+    - id: private_service_access_range_name
+      type: string
+      label: Private Service Access range name
+      description: Pass as the allocated IP range for Cloud SQL, AlloyDB, or Memorystore.
+    - id: private_service_access_cidr
+      type: string
+      label: Private Service Access range
+    - id: private_service_access_connection_id
+      type: string
+      label: Private Service Access connection ID
+  inputs:
+    - $include: ../../partials/inputs/gcp-account.yml
+    - $merge:
+        - ../../partials/inputs/gcp-region.yml
+      description: Primary region. The module creates a subnetwork, Cloud Router, and Cloud NAT here.
+    - id: section_network
+      label: VPC network
+      type: section
+    - default: <<project.given_id>>-<<environment.given_id>>
+      description: Network name and name prefix for every resource.
+      id: name
+      immutable: true
+      label: Name slug
+      patterns:
+        - message: 1-30 lowercase letters, numbers, and hyphens. Start with a letter and end with a letter or number.
+          pattern: ^[a-z]([a-z0-9-]{0,28}[a-z0-9])?$
+      required: true
+      type: string
+    - default: 10.0.0.0/12
+      description: Split into 8 blocks, one per region and one for Private Service Access. /8 to /14.
+      id: network_cidr
+      immutable: true
+      label: Network CIDR
+      required: false
+      type: string
+    - add_button_label: Add region
+      collapsible: true
+      description: Add new regions at the end. Address blocks are assigned by position, so removing or reordering a region changes the ranges of the regions after it. Up to 5.
+      id: additional_regions
+      label: Additional regions
+      required: false
+      type: string_array
+    - collapsible: true
+      default: true
+      description: Reserve pods and services ranges on each subnetwork for VPC-native GKE clusters. Free.
+      id: subnetwork_secondary_ranges_enabled
+      label: GKE secondary ranges
+      type: boolean
+    - collapsible: true
+      default: true
+      description: Lets VMs without external IP addresses reach Google APIs such as Cloud Storage and Artifact Registry without Cloud NAT.
+      id: private_google_access_enabled
+      label: Private Google Access
+      type: boolean
+    - collapsible: true
+      default: false
+      description: Needed by regional Application Load Balancers and proxy Network Load Balancers. The global external Application Load Balancer does not need one.
+      id: proxy_only_subnetwork_creation_enabled
+      label: Create proxy-only subnetworks
+      type: boolean
+    - collapsible: true
+      default: REGIONAL
+      description: Global advertises Cloud Router routes in every region, which hybrid connectivity across regions needs.
+      id: routing_mode
+      label: Dynamic routing mode
+      type: string
+      values:
+        - label: Regional
+          value: REGIONAL
+        - label: Global
+          value: GLOBAL
+    - id: section_nat
+      label: Cloud NAT
+      type: section
+    - default: true
+      description: Outbound internet for VMs, GKE nodes, and Cloud Run Direct VPC egress without external IP addresses. Billed per gateway hour and per GB processed.
+      id: nat_enabled
+      label: Cloud NAT
+      type: boolean
+    - default: 1
+      description: Per region. 0 lets Google allocate and scale addresses automatically, but those can change, so partners cannot allowlist them.
+      id: nat_static_ip_count
+      label: Static NAT IP addresses
+      max: 16
+      min: 0
+      show_when:
+        nat_enabled: true
+      type: number
+    - collapsible: true
+      description: |-
+        Existing reserved external addresses for Cloud NAT, keyed by region, as address self links or IDs, for example projects/acme-prod-123/regions/us-central1/addresses/partner-ip.
+
+        Keeps NAT IP addresses stable when the network is recreated. A region listed here uses these addresses instead of reserving its own.
+      id: nat_ip_self_links
+      label: Existing NAT IP addresses
+      required: false
+      show_when:
+        nat_enabled: true
+      type: object
+    - collapsible: true
+      default: 64
+      description: Raise it for workloads that open many concurrent connections to the same destination.
+      id: nat_min_ports_per_vm
+      label: Minimum NAT ports per VM
+      max: 65536
+      min: 2
+      show_when:
+        nat_enabled: true
+      type: number
+    - collapsible: true
+      default: true
+      id: nat_logging_enabled
+      label: Cloud NAT logging
+      show_when:
+        nat_enabled: true
+      type: boolean
+    - collapsible: true
+      default: ERRORS_ONLY
+      id: nat_logging_filter
+      label: Cloud NAT log filter
+      show_when:
+        nat_enabled: true
+        nat_logging_enabled: true
+      type: string
+      values:
+        - label: Errors only
+          description: Dropped connections.
+          value: ERRORS_ONLY
+        - label: Translations only
+          description: Successful connections.
+          value: TRANSLATIONS_ONLY
+        - label: All
+          value: ALL
+    - id: section_private_service_access
+      label: Private Service Access
+      type: section
+    - default: true
+      description: Gives Cloud SQL, AlloyDB, Memorystore, and Filestore private IP addresses in this network. Free.
+      id: private_service_access_enabled
+      label: Private Service Access
+      type: boolean
+    - collapsible: true
+      default: DELETE
+      description: Cloud SQL holds the connection for several days after an instance is deleted, so a delete can fail until then.
+      id: private_service_access_deletion_policy
+      label: Connection deletion policy
+      show_when:
+        private_service_access_enabled: true
+      type: string
+      values:
+        - label: Delete
+          description: Delete the connection. Fails while producers still use it.
+          value: DELETE
+        - label: Remove peering
+          description: If the delete fails, remove the VPC peering so the network can be destroyed. Only once every database using it is gone.
+          value: REMOVE_PEERING
+        - label: Abandon
+          description: Remove it from Terraform state only. The peering left behind blocks deleting the network.
+          value: ABANDON
+    - id: section_firewall
+      label: Firewall
+      type: section
+    - default: false
+      description: Allow all traffic between this network's own ranges. Ingress is denied by default and modules open what they need, so turn on only for ports no module opens.
+      id: firewall_internal_ingress_enabled
+      label: Allow internal traffic
+      type: boolean
+    - description: Extra VPC firewall rules for traffic no module opens, such as IAP SSH (35.235.240.0/20, tcp 22).
+      id: firewall_rules
+      item_inputs:
+        - default: INGRESS
+          id: direction
+          label: Direction
+          required: true
+          type: string
+          values:
+            - label: Ingress
+              value: INGRESS
+            - label: Egress
+              value: EGRESS
+        - default: allow
+          id: action
+          label: Action
+          required: true
+          type: string
+          values:
+            - label: Allow
+              value: allow
+            - label: Deny
+              value: deny
+        - default: tcp
+          id: protocol
+          label: Protocol
+          required: true
+          type: string
+          values:
+            - value: tcp
+            - value: udp
+            - value: icmp
+            - value: sctp
+            - value: esp
+            - value: ah
+            - value: ipip
+            - label: All protocols
+              value: all
+        - add_button_label: Add port
+          description: Ports or ranges such as 443 or 8000-8100. Empty means all ports.
+          id: ports
+          label: Ports
+          required: false
+          show_when:
+            protocol:
+              - tcp
+              - udp
+              - sctp
+          type: string_array
+        - add_button_label: Add source range
+          id: source_ranges
+          label: Source ranges
+          placeholder: 35.235.240.0/20
+          required: false
+          show_when:
+            direction: INGRESS
+          type: string_array
+        - add_button_label: Add source tag
+          collapsible: true
+          id: source_tags
+          label: Source network tags
+          required: false
+          show_when:
+            direction: INGRESS
+          type: string_array
+        - add_button_label: Add source service account
+          collapsible: true
+          id: source_service_accounts
+          label: Source service accounts
+          required: false
+          show_when:
+            direction: INGRESS
+          type: string_array
+        - add_button_label: Add destination range
+          id: destination_ranges
+          label: Destination ranges
+          required: true
+          show_when:
+            direction: EGRESS
+          type: string_array
+        - add_button_label: Add target tag
+          description: Empty with no target service accounts applies the rule to every instance.
+          id: target_tags
+          label: Target network tags
+          required: false
+          type: string_array
+        - add_button_label: Add target service account
+          collapsible: true
+          description: Use instead of target network tags, not together.
+          id: target_service_accounts
+          label: Target service accounts
+          required: false
+          type: string_array
+        - collapsible: true
+          default: 1000
+          description: Lower numbers take precedence. 0-65535.
+          id: priority
+          label: Priority
+          max: 65535
+          min: 0
+          type: number
+        - collapsible: true
+          default: false
+          id: logging_enabled
+          label: Firewall rule logging
+          type: boolean
+      item_label: Firewall rule
+      key:
+        label: Rule name
+      label: Firewall rules
+      required: false
+      type: object_map
+    - id: section_soc2
+      label: SOC 2
+      type: section
+    - default: true
+      description: Record network flow metadata from every subnetwork in Cloud Logging.
+      id: flow_logs_enabled
+      label: Flow logs
+      type: boolean
+    - collapsible: true
+      default: 50
+      description: Share of flows logged. Lower values cut Cloud Logging costs.
+      id: flow_logs_sampling_percent
+      label: Flow log sampling
+      show_when:
+        flow_logs_enabled: true
+      type: number
+      values:
+        - label: 10%
+          value: 10
+        - label: 25%
+          value: 25
+        - label: 50%
+          value: 50
+        - label: 100%
+          value: 100
+    - collapsible: true
+      default: INTERVAL_5_SEC
+      id: flow_logs_aggregation_interval
+      label: Flow log aggregation interval
+      show_when:
+        flow_logs_enabled: true
+      type: string
+      values:
+        - label: 5 seconds
+          value: INTERVAL_5_SEC
+        - label: 30 seconds
+          value: INTERVAL_30_SEC
+        - label: 1 minute
+          value: INTERVAL_1_MIN
+        - label: 5 minutes
+          value: INTERVAL_5_MIN
+        - label: 10 minutes
+          value: INTERVAL_10_MIN
+        - label: 15 minutes
+          value: INTERVAL_15_MIN
+    - id: section_peering
+      label: VPC Network Peering
+      type: section
+    - description: The peer network must create the matching peering back to this network before the peering becomes active.
+      id: network_peerings
+      item_inputs:
+        - description: Network self link or ID.
+          id: peer_network
+          label: Peer network
+          placeholder: projects/other-project/global/networks/shared
+          required: true
+          type: string
+        - collapsible: true
+          default: false
+          id: export_custom_routes
+          label: Export custom routes
+          type: boolean
+        - collapsible: true
+          default: false
+          id: import_custom_routes
+          label: Import custom routes
+          type: boolean
+      item_label: Peering
+      key:
+        label: Peering name
+      label: Peerings
+      required: false
+      type: object_map
+    - $include: ../../partials/inputs/misc-section.yml
+    - $include: ../../partials/inputs/labels.yml
+    - $include: ../../partials/inputs/gcp-terraform-settings.yml
+  stack:
+    $template: ../../partials/templates/opentofu-stack-gcp.yml
+    with:
+      base_path: networking/gcp_vpc
+      terraform_variables:
+        ...overrides: << module.input.advanced_terraform_variables >>
+        additional_regions: << module.input.additional_regions || [] >>
+        firewall_internal_ingress_enabled: << module.input.firewall_internal_ingress_enabled >>
+        firewall_rules: << module.input.firewall_rules || {} >>
+        flow_logs_aggregation_interval: '<< module.input.flow_logs_aggregation_interval || "INTERVAL_5_SEC" >>'
+        flow_logs_enabled: << module.input.flow_logs_enabled >>
+        flow_logs_sampling: '<< module.input.flow_logs_sampling_percent != nil ? module.input.flow_logs_sampling_percent / 100.0 : 0.5 >>'
+        labels:
+          $include: ../../partials/stack/ravion-labels.yml
+        name: << module.input.name >>
+        nat_enabled: << module.input.nat_enabled >>
+        nat_ip_self_links: << module.input.nat_ip_self_links || {} >>
+        nat_logging_enabled: '<< module.input.nat_logging_enabled != nil ? module.input.nat_logging_enabled : true >>'
+        nat_logging_filter: '<< module.input.nat_logging_filter || "ERRORS_ONLY" >>'
+        nat_min_ports_per_vm: '<< module.input.nat_min_ports_per_vm != nil ? module.input.nat_min_ports_per_vm : 64 >>'
+        nat_static_ip_count: '<< module.input.nat_static_ip_count != nil ? module.input.nat_static_ip_count : 1 >>'
+        network_cidr: << module.input.network_cidr >>
+        network_peerings: << module.input.network_peerings || {} >>
+        private_google_access_enabled: << module.input.private_google_access_enabled >>
+        private_service_access_deletion_policy: '<< module.input.private_service_access_deletion_policy || "DELETE" >>'
+        private_service_access_enabled: << module.input.private_service_access_enabled >>
+        project_id: << module.input.gcp_project_id >>
+        proxy_only_subnetwork_creation_enabled: << module.input.proxy_only_subnetwork_creation_enabled >>
+        region: << module.input.gcp_region >>
+        routing_mode: << module.input.routing_mode >>
+        subnetwork_secondary_ranges_enabled: << module.input.subnetwork_secondary_ranges_enabled >>
+  ui:
+    links:
+      - name: VPC network in Google Cloud console
+        href: https://console.cloud.google.com/networking/networks/details/<< module.input.name >>?project=<< module.input.gcp_project_id >>
+      - name: Flow logs in Logs Explorer
+        href: https://console.cloud.google.com/logs/query;query=logName%3D%22projects%2F<< module.input.gcp_project_id >>%2Flogs%2Fcompute.googleapis.com%252Fvpc_flows%22?project=<< module.input.gcp_project_id >>
+  readme: |
+    Production-ready Google Cloud VPC network with regional subnetworks, Cloud NAT, Private Service Access, and flow logs.
+
+    ## Overview
+
+    A VPC network is the foundational networking layer for your Google Cloud workloads. This module creates a custom-mode VPC network with one subnetwork per region, outbound internet through Cloud NAT, private IP access to managed databases, and flow logs.
+
+    The module provides:
+
+    - **Regional subnetworks** in a primary region and up to 5 additional regions, carved automatically from one network range
+    - **GKE secondary ranges** (pods and services) on every subnetwork, ready for VPC-native GKE clusters
+    - **Cloud NAT** with static or automatically allocated IP addresses for outbound internet access
+    - **Private Google Access** so workloads without external IPs reach Google APIs
+    - **Private Service Access** so Cloud SQL, AlloyDB, Memorystore, and Filestore get private IP addresses in this network
+    - **Firewall rules** for traffic no workload module opens
+    - **VPC Flow Logs** in Cloud Logging for network auditing and SOC 2
+    - **VPC Network Peering** to other VPC networks
+
+    Terraform source: [ravionhq/modules/networking/gcp_vpc](https://github.com/ravionhq/modules/tree/$local.module_tag/networking/gcp_vpc)
+
+    ## Use cases
+
+    | Scenario | The network helps by... |
+    | --- | --- |
+    | Running production workloads | Keeping VMs, GKE nodes, and Cloud Run egress off public IPs, with Cloud NAT for outbound traffic |
+    | Deploying GKE clusters | Providing subnetworks with pods and services secondary ranges |
+    | Connecting to Cloud SQL, AlloyDB, or Memorystore | Reserving a Private Service Access range so databases get private IPs |
+    | Partner IP allowlisting | Using static Cloud NAT IP addresses, optionally reserved outside this module |
+    | Multi-region architecture | Adding subnetworks and Cloud NAT in more regions of the same global network |
+    | SOC 2 compliance | Enabling flow logs for network traffic auditing |
+
+    ## Public and private subnets on Google Cloud
+
+    AWS VPCs split each availability zone into a public subnet (routed to an internet gateway) and a private subnet (routed to a NAT gateway). Google Cloud has no such split:
+
+    - A **VPC network is global** and a **subnetwork is regional**, spanning every zone in its region. One subnetwork per region replaces the AWS public/private subnet pairs per availability zone.
+    - **Public or private is a property of the resource, not the subnetwork.** A VM or load balancer is reachable from the internet only when it has an external IP address. Everything else is private and reaches the internet through Cloud NAT.
+    - **Public load balancers do not live in a subnetwork.** Global external Application Load Balancers and external passthrough Network Load Balancers use Google's edge, so there is nothing equivalent to AWS public subnets to place them in. Regional Envoy-based load balancers need a **proxy-only subnetwork**, which this module can create.
+
+    Modules that ran in AWS private subnets use the subnetwork for their region with no external IP. Modules that put load balancers in AWS public subnets use the load balancer's own external address instead.
+
+    ## Address plan
+
+    The Network CIDR (default `10.0.0.0/12`) is split into 8 equal blocks. Block N holds the ranges of the Nth region, primary region first, and the last block holds the Private Service Access range. With the default:
+
+    | Range | Primary region | Second region |
+    | --- | --- | --- |
+    | GKE pods (secondary) | `10.0.0.0/16` | `10.2.0.0/16` |
+    | Subnetwork | `10.1.0.0/20` | `10.3.0.0/20` |
+    | GKE services (secondary) | `10.1.16.0/20` | `10.3.16.0/20` |
+    | Proxy-only subnetwork | `10.1.32.0/23` | `10.3.32.0/23` |
+    | Private Service Access | `10.14.0.0/16` (shared) | |
+
+    Blocks are assigned by position, so add regions at the end of Additional regions. Removing or reordering a region changes the ranges of the regions after it and replaces their subnetworks.
+
+    ## Cloud NAT
+
+    Cloud NAT is a managed, highly available service, so there is no single-versus-HA choice as with NAT gateways on AWS, and no NAT instance module is needed. The module creates a Cloud Router and Cloud NAT gateway in every region and translates the subnetwork and its GKE secondary ranges.
+
+    | Static NAT IP addresses | Behavior |
+    | --- | --- |
+    | 1 or more (default 1) | The module reserves that many static addresses per region. Partners can allowlist them. |
+    | 0 | Google allocates and scales addresses automatically. They can change. |
+
+    To keep NAT IP addresses even if you recreate the network, reserve addresses outside this module and list them in Existing NAT IP addresses for their region.
+
+    Cloud NAT is billed per gateway hour and per GB processed. Private Google Access keeps traffic to Google APIs off Cloud NAT.
+
+    ## Private Service Access
+
+    Cloud SQL, AlloyDB, Memorystore, and Filestore run in a Google-managed producer network and reach yours through a VPC peering. Private Service Access reserves the internal range they allocate from and creates that peering. It is on by default and free.
+
+    Google keeps the connection in use for several days after a Cloud SQL instance is deleted, so deleting the connection can fail until then. Connection deletion policy controls what happens:
+
+    | Policy | Behavior |
+    | --- | --- |
+    | Delete (default) | Delete the connection. Fails while producers still hold it. |
+    | Remove peering | If deleting fails, remove the VPC peering so the network can be destroyed. Use only after every database using it is gone. |
+    | Abandon | Drop it from Terraform state. The leftover peering blocks deleting the network. |
+
+    ## Firewall
+
+    Google Cloud has no security group object to attach to resources. Ingress is denied and egress is allowed by default, and each workload module creates the firewall rules it needs, targeting its instances by network tag or service account.
+
+    Use Firewall rules for traffic no module opens, such as SSH through IAP (`35.235.240.0/20`, tcp port 22, targeting a network tag). Allow internal traffic opens all ports between this network's own ranges; leave it off unless workloads talk to each other on ports no module opens.
+
+    ## Configuration
+
+    | Field | Required | Default | Description |
+    | --- | --- | --- | --- |
+    | GCP account | Yes | None | Ravion GCP account the Terraform runner uses |
+    | Project ID | Yes | None | Project of the connected GCP account |
+    | Region | Yes | None | Primary region |
+    | Name slug | Yes | `{project}-{env}` | Network name and resource name prefix (1-30 characters) |
+    | Network CIDR | No | `10.0.0.0/12` | Range every subnetwork and the Private Service Access range come from |
+    | Additional regions | No | None | Up to 5 more regions with their own subnetwork and Cloud NAT |
+    | GKE secondary ranges | No | `true` | Pods and services ranges on each subnetwork |
+    | Private Google Access | No | `true` | Google API access without external IPs |
+    | Create proxy-only subnetworks | No | `false` | Needed by regional Envoy-based load balancers |
+    | Dynamic routing mode | No | Regional | Global for hybrid connectivity across regions |
+    | Cloud NAT | No | `true` | Outbound internet without external IPs |
+    | Static NAT IP addresses | No | `1` | Per region; 0 for automatic allocation |
+    | Existing NAT IP addresses | No | None | Reserved addresses by region |
+    | Minimum NAT ports per VM | No | `64` | Raise for many concurrent connections |
+    | Cloud NAT logging | No | `true` | NAT logs in Cloud Logging |
+    | Cloud NAT log filter | No | Errors only | Which NAT events to log |
+    | Private Service Access | No | `true` | Private IPs for managed databases |
+    | Connection deletion policy | No | Delete | See Private Service Access |
+    | Allow internal traffic | No | `false` | Open all ports between this network's ranges |
+    | Firewall rules | No | None | Extra VPC firewall rules |
+    | Flow logs | No | `true` | VPC Flow Logs on every subnetwork |
+    | Flow log sampling | No | 50% | Share of flows logged |
+    | Flow log aggregation interval | No | 5 seconds | How long flows are aggregated |
+    | Peerings | No | None | VPC Network Peering connections |
+    | Labels | No | Standard Ravion labels | Labels on resources that support them |
+
+    ## VPC Network Peering
+
+    Each peering connects this network to another VPC network, in this project or another. The peering becomes active only after the peer network creates the matching peering back to this network; this module cannot manage the peer side. Export and import custom routes when the peer needs routes such as VPN routes learned by Cloud Router.
+
+    ## SOC 2 compliance
+
+    **Flow logs** are on by default and record source and destination addresses, ports, protocols, byte and packet counts, and VM and GKE metadata for every subnetwork. They are stored in Cloud Logging under `compute.googleapis.com/vpc_flows`, with the retention of the project's log bucket. Lower sampling or a longer aggregation interval cuts Cloud Logging costs.
+
+    ## Design decisions
+
+    - **Custom-mode network:** The module never uses auto-mode subnetworks, so every range is planned and does not overlap with peers.
+    - **One subnetwork per region:** Subnetworks span every zone in their region, so zone redundancy needs no extra subnetworks.
+    - **Network name and range are immutable:** Changing them replaces the network and everything in it.
+    - **Default routes kept:** The internet default route stays in place; workloads without external IPs use it through Cloud NAT.
+    - **APIs enabled:** The module enables the Compute Engine and Service Networking APIs and leaves them enabled on destroy.
+
+    ## Learn more
+
+    - [VPC networks](https://cloud.google.com/vpc/docs/vpc)
+    - [Subnets](https://cloud.google.com/vpc/docs/subnets)
+    - [Cloud NAT overview](https://cloud.google.com/nat/docs/overview)
+    - [Private services access](https://cloud.google.com/vpc/docs/private-services-access)
+    - [VPC firewall rules](https://cloud.google.com/firewall/docs/firewalls)
+    - [VPC Flow Logs](https://cloud.google.com/vpc/docs/flow-logs)

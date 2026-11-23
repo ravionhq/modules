@@ -1,0 +1,8 @@
+# GCP labels allow only lowercase letters, numbers, hyphens, and underscores.
+# Modules lowercase and sanitize keys and values before applying them.
+...overrides: << module.input.labels >>
+owner: ravion
+ravion_project: <<project.given_id>>
+ravion_environment: <<environment.given_id>>
+ravion_module: <<module.given_id>>
+ravion_module_id: <<module.id>>

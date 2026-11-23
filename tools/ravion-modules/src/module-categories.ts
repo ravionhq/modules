@@ -91,14 +91,14 @@ export const MODULE_CATEGORIES: readonly ModuleCategorySpec[] = [
     name: "Network",
     description: "For private subnets, internet access, service connectivity, and shared load balancers.",
     sortOrder: 100,
-    definitionTypes: ["rvn-aws-alb", "rvn-aws-alternat", "rvn-aws-network"],
+    definitionTypes: ["rvn-aws-alb", "rvn-aws-alternat", "rvn-aws-network", "rvn-gcp-network"],
   },
   {
     givenId: "domain",
     name: "Domain",
     description: "For custom domains, DNS records, and HTTPS certificates.",
     sortOrder: 110,
-    definitionTypes: ["rvn-acm-certificate", "rvn-route53"],
+    definitionTypes: ["rvn-acm-certificate", "rvn-gcp-dns", "rvn-route53"],
   },
   {
     givenId: "cdn",
