@@ -193,10 +193,11 @@ locals {
   # Edge endpoint paths are answered by the caller's function alone: no version
   # rewrite (the function decides what the path means) and no caching (the
   # answer may differ per viewer). Listed first so a caller-chosen path wins
-  # over the broader no-cache patterns.
+  # over the broader no-cache patterns, and in the caller's order because
+  # CloudFront uses the first behavior that matches.
   edge_endpoint_behaviors = [
-    for path_pattern, endpoint in local.edge_endpoints : {
-      path_pattern           = path_pattern
+    for endpoint in var.edge_endpoints : {
+      path_pattern           = endpoint.path_pattern
       target_origin_id       = local.origin_id
       viewer_protocol_policy = "redirect-to-https"
       allowed_methods        = ["GET", "HEAD", "OPTIONS"]
@@ -205,13 +206,13 @@ locals {
       cache_policy_id        = local.managed_cache_disabled_id
       origin_request_policy_id = (
         length(endpoint.cloudfront_headers) > 0
-        ? aws_cloudfront_origin_request_policy.edge_endpoint[path_pattern].id
+        ? aws_cloudfront_origin_request_policy.edge_endpoint[endpoint.path_pattern].id
         : var.origin_request_policy_id
       )
       response_headers_policy_id = local.effective_response_headers_policy_id
       function_associations = [{
         event_type   = "viewer-request"
-        function_arn = aws_cloudfront_function.edge_endpoint[path_pattern].arn
+        function_arn = aws_cloudfront_function.edge_endpoint[endpoint.path_pattern].arn
       }]
       lambda_function_associations = []
       realtime_log_config_arn      = null

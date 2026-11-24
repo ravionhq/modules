@@ -267,6 +267,7 @@ Tune the headers via `html_cache_control` and `assets_cache_control`. Add or rem
 - The behavior uses the AWS-managed `CachingDisabled` policy and allows `GET`, `HEAD` and `OPTIONS`.
 - A function that returns a response object answers at the edge and never reaches S3. A function that returns the request continues to the bucket with the URI as the function left it, with no version prefix added.
 - Edge endpoint behaviors are evaluated before `no_cache_paths` and the default behavior.
+- Edge endpoints are matched in the order you list them, and CloudFront uses the first match. List a specific path such as `/api/health` before a wildcard such as `/api/*` that also matches it.
 
 ```hcl
 module "site" {

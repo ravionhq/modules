@@ -1233,6 +1233,26 @@ run "edge_endpoint_cloudfront_headers_create_an_origin_request_policy" {
   }
 }
 
+run "edge_endpoint_behaviors_keep_the_callers_order" {
+  command = plan
+
+  variables {
+    edge_endpoints = [
+      { path_pattern = "/api/health", code = "function handler(event) { return { statusCode: 200 }; }" },
+      { path_pattern = "/api/*", code = "function handler(event) { return { statusCode: 404 }; }" },
+    ]
+  }
+
+  assert {
+    condition     = local.ordered_behaviors[0].path_pattern == "/api/health" && local.ordered_behaviors[1].path_pattern == "/api/*"
+    error_message = "Edge endpoint behaviors must keep the caller's order: CloudFront uses the first matching behavior, so a specific path listed before a wildcard must stay ahead of it."
+  }
+  assert {
+    condition     = local.ordered_behaviors[0].function_associations[0].function_arn == aws_cloudfront_function.edge_endpoint["/api/health"].arn && local.ordered_behaviors[1].function_associations[0].function_arn == aws_cloudfront_function.edge_endpoint["/api/*"].arn
+    error_message = "Each edge endpoint behavior must run the function for its own path."
+  }
+}
+
 run "edge_endpoint_path_must_start_with_slash" {
   command = plan
   variables {
