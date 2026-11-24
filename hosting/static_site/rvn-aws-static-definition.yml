@@ -232,8 +232,7 @@ module:
       id: origin_shield_enabled
       label: Origin Shield
       type: boolean
-    - add_button_label: Add edge endpoint
-      collapsible: true
+    - collapsible: true
       default: []
       description: Paths answered by your own CloudFront Function code instead of a file from the bucket. Each path runs only your function, is never cached, and skips the version rewrite.
       id: edge_endpoints
