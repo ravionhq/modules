@@ -48,6 +48,20 @@ mock_provider "aws" {
   }
 
   override_resource {
+    target = aws_cloudfront_function.edge_endpoint
+    values = {
+      arn = "arn:aws:cloudfront::123456789012:function/test-edge-endpoint"
+    }
+  }
+
+  override_resource {
+    target = aws_cloudfront_origin_request_policy.edge_endpoint
+    values = {
+      id = "edge-endpoint-orp-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    }
+  }
+
+  override_resource {
     target = aws_cloudfront_key_value_store.this
     values = {
       arn = "arn:aws:cloudfront::123456789012:key-value-store/12345678-1234-1234-1234-123456789012"
@@ -1137,4 +1151,123 @@ run "response_headers_policy_id_alone_works_without_module_policy" {
     condition     = length(aws_cloudfront_function.cache_control) == 1
     error_message = "The cache-control function must coexist with a caller-supplied response-headers policy — they handle orthogonal concerns."
   }
+}
+
+#-------------------------------------------------------------------------------
+# Edge endpoints
+#-------------------------------------------------------------------------------
+
+run "edge_endpoints_absent_by_default" {
+  command = plan
+  assert {
+    condition     = length(aws_cloudfront_function.edge_endpoint) == 0 && length(aws_cloudfront_origin_request_policy.edge_endpoint) == 0
+    error_message = "No edge endpoint resources may exist unless edge_endpoints is set."
+  }
+  assert {
+    condition     = length(local.edge_endpoint_behaviors) == 0
+    error_message = "No edge endpoint cache behavior may exist unless edge_endpoints is set."
+  }
+}
+
+run "edge_endpoint_runs_only_the_callers_function_uncached" {
+  command = apply
+  variables {
+    no_cache_paths = ["/api/*"]
+    edge_endpoints = [{
+      path_pattern = "/whoami"
+      code         = "function handler(event) { return { statusCode: 200 }; }"
+    }]
+  }
+  assert {
+    condition     = aws_cloudfront_function.edge_endpoint["/whoami"].code == "function handler(event) { return { statusCode: 200 }; }" && aws_cloudfront_function.edge_endpoint["/whoami"].runtime == "cloudfront-js-2.0"
+    error_message = "The edge endpoint function must carry the caller's code unchanged on the cloudfront-js-2.0 runtime."
+  }
+  assert {
+    condition     = local.ordered_behaviors[0].path_pattern == "/whoami" && local.ordered_behaviors[1].path_pattern == "/api/*"
+    error_message = "Edge endpoint behaviors must come before no-cache path behaviors."
+  }
+  assert {
+    condition     = local.ordered_behaviors[0].cache_policy_id == local.managed_cache_disabled_id
+    error_message = "Edge endpoint behaviors must not cache."
+  }
+  assert {
+    condition     = length(local.ordered_behaviors[0].function_associations) == 1 && local.ordered_behaviors[0].function_associations[0].event_type == "viewer-request" && local.ordered_behaviors[0].function_associations[0].function_arn == aws_cloudfront_function.edge_endpoint["/whoami"].arn
+    error_message = "An edge endpoint behavior must run only the caller's function, on viewer-request."
+  }
+  assert {
+    condition     = length(aws_cloudfront_origin_request_policy.edge_endpoint) == 0 && local.ordered_behaviors[0].origin_request_policy_id == var.origin_request_policy_id
+    error_message = "An edge endpoint without cloudfront_headers must not create an origin request policy."
+  }
+  assert {
+    condition     = output.edge_endpoint_function_arns["/whoami"] == aws_cloudfront_function.edge_endpoint["/whoami"].arn
+    error_message = "The edge endpoint function ARN must be output by path pattern."
+  }
+}
+
+run "edge_endpoint_cloudfront_headers_create_an_origin_request_policy" {
+  command = apply
+  variables {
+    edge_endpoints = [
+      {
+        path_pattern       = "/country"
+        code               = "function handler(event) { return { statusCode: 200 }; }"
+        cloudfront_headers = ["CloudFront-Viewer-Country"]
+      },
+      {
+        path_pattern = "/ping"
+        code         = "function handler(event) { return { statusCode: 204 }; }"
+      },
+    ]
+  }
+  assert {
+    condition     = length(aws_cloudfront_origin_request_policy.edge_endpoint) == 1 && one(aws_cloudfront_origin_request_policy.edge_endpoint["/country"].headers_config[0].headers[0].items) == "CloudFront-Viewer-Country"
+    error_message = "Only the endpoint that lists cloudfront_headers gets an origin request policy, allowing exactly those headers."
+  }
+  assert {
+    condition     = one([for b in local.edge_endpoint_behaviors : b.origin_request_policy_id if b.path_pattern == "/country"]) == aws_cloudfront_origin_request_policy.edge_endpoint["/country"].id
+    error_message = "The endpoint's behavior must use its own origin request policy."
+  }
+  assert {
+    condition     = aws_cloudfront_function.edge_endpoint["/country"].name != aws_cloudfront_function.edge_endpoint["/ping"].name && length(aws_cloudfront_function.edge_endpoint["/country"].name) <= 64
+    error_message = "Edge endpoint function names must be unique per path and fit CloudFront's 64-character limit."
+  }
+}
+
+run "edge_endpoint_path_must_start_with_slash" {
+  command = plan
+  variables {
+    edge_endpoints = [{ path_pattern = "whoami", code = "function handler(event) { return event.request; }" }]
+  }
+  expect_failures = [var.edge_endpoints]
+}
+
+run "edge_endpoint_paths_must_be_unique" {
+  command = plan
+  variables {
+    edge_endpoints = [
+      { path_pattern = "/whoami", code = "function handler(event) { return event.request; }" },
+      { path_pattern = "/whoami", code = "function handler(event) { return event.request; }" },
+    ]
+  }
+  expect_failures = [var.edge_endpoints]
+}
+
+run "edge_endpoint_code_must_not_be_empty" {
+  command = plan
+  variables {
+    edge_endpoints = [{ path_pattern = "/whoami", code = "  " }]
+  }
+  expect_failures = [var.edge_endpoints]
+}
+
+run "edge_endpoint_headers_must_be_cloudfront_generated" {
+  command = plan
+  variables {
+    edge_endpoints = [{
+      path_pattern       = "/whoami"
+      code               = "function handler(event) { return event.request; }"
+      cloudfront_headers = ["Authorization"]
+    }]
+  }
+  expect_failures = [var.edge_endpoints]
 }

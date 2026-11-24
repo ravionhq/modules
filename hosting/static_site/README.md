@@ -18,6 +18,7 @@ Every deployment is **versioned**. A CloudFront KeyValueStore holds a `host -> v
 - **Access logging on by default** — CloudWatch Logs delivery (standard logging v2, via cdn/cloudfront), with legacy S3 delivery available for cost-sensitive high-traffic sites.
 - **Optional CI deploy role** with least-privilege `s3:Put*` + KVS `PutKey`/`DeleteKey` + `cloudfront:CreateInvalidation`.
 - **Origin Shield** support.
+- **Edge endpoints**: answer chosen paths with your own CloudFront Function code, without reaching S3.
 - **SSE-KMS** support on the hosting bucket.
 
 ## Architecture
@@ -241,6 +242,7 @@ Two CloudFront Functions split responsibilities cleanly:
 |---|---|---|
 | (default) | module-managed (1y TTL) | The rewriter pins every URL to `/<version>/...`, so each response has a version-unique cache key — safe to cache at the edge for a year regardless of HTML vs asset. |
 | `no_cache_paths` | AWS-managed `CachingDisabled` | Optional escape hatch — versioning makes per-path cache busting unnecessary in most cases. |
+| `edge_endpoints` | AWS-managed `CachingDisabled` | The caller's function decides the answer per request. |
 
 **Browser-side `Cache-Control`** (written by the viewer-response function when `cache_control_enabled = true`, the default):
 
@@ -256,6 +258,64 @@ Tune the headers via `html_cache_control` and `assets_cache_control`. Add or rem
 > **Why no `s-maxage` or `stale-while-revalidate` in the HTML default:** headers written in viewer-response are invisible to CloudFront's own caching — edge TTLs come from origin headers (S3 sends none, so the cache policy's default TTL applies) and edge freshness comes from the versioned cache key. The only consumer of this header is the browser, and browsers ignore `s-maxage`. `stale-while-revalidate` *is* honored by browsers, which is exactly why it's excluded: it would let the browser show a stale page on the first navigation after a version flip, buying nothing in return since revalidation is already a cheap edge-answered `304`.
 
 > **Why the function lives in viewer-response, not viewer-request:** CloudFront resolves which cache behavior (and therefore which response-headers policy) to use from the **original viewer URI**, before any viewer-request function runs. SPA routes like `/dashboard` have no extension, so a static `*.html` ordered behavior cannot match them; the default behavior's response-headers policy is the only thing that ever gets attached. That's how [ENG-4785](https://linear.app/flightcontrol/issue/ENG-4785/) happened — the immutable assets policy on the default behavior leaked onto every HTML response. Setting `Cache-Control` in viewer-response sidesteps cache-behavior matching entirely and keys off the rewritten URI shape, where HTML vs asset is unambiguous from the file extension.
+
+## Edge endpoints
+
+`edge_endpoints` answers chosen paths with your own [CloudFront Function](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cloudfront-functions.html) code. Each entry creates one `cloudfront-js-2.0` function and one cache behavior for its `path_pattern`:
+
+- The function is the only viewer-request function on the path. The version rewriter and the Cache-Control function do not run there.
+- The behavior uses the AWS-managed `CachingDisabled` policy and allows `GET`, `HEAD` and `OPTIONS`.
+- A function that returns a response object answers at the edge and never reaches S3. A function that returns the request continues to the bucket with the URI as the function left it, with no version prefix added.
+- Edge endpoint behaviors are evaluated before `no_cache_paths` and the default behavior.
+
+```hcl
+module "site" {
+  source = "git::https://github.com/ravionhq/ravion-modules.git//hosting/static_site?ref=v1.0.0"
+
+  name = "example-site"
+
+  edge_endpoints = [
+    {
+      path_pattern = "/healthz"
+      code         = <<-JS
+        function handler(event) {
+          return {
+            statusCode: 200,
+            headers: { "content-type": { value: "text/plain" } },
+            body: "ok",
+          };
+        }
+      JS
+    },
+  ]
+}
+```
+
+To read CloudFront-generated request headers in the function, list them in `cloudfront_headers`. The module then creates an origin request policy for that path that adds them to the request:
+
+```hcl
+edge_endpoints = [
+  {
+    path_pattern       = "/country"
+    cloudfront_headers = ["CloudFront-Viewer-Country"]
+    code               = <<-JS
+      function handler(event) {
+        var country = event.request.headers["cloudfront-viewer-country"];
+        return {
+          statusCode: 200,
+          headers: {
+            "content-type": { value: "text/plain" },
+            "cache-control": { value: "no-store" },
+          },
+          body: country ? country.value : "",
+        };
+      }
+    JS
+  },
+]
+```
+
+Each endpoint counts against the account's CloudFront Functions quota and the distribution's cache behavior quota; an endpoint with `cloudfront_headers` also counts against the origin request policy quota.
 
 ## 404 handling
 
@@ -449,6 +509,7 @@ No external apply-time tools required.
 | response_headers_policy_id | Externally-managed response-headers policy ID (e.g. an org-wide CSP). Wins over `response_headers_policy` when both are set. | `string` | `null` |
 | response_headers_policy | Declarative module-managed response-headers policy: HSTS, CSP, X-Frame-Options, Referrer-Policy, CORS, custom headers, removed headers. See README for the full shape and an example. | `object(...)` | `null` |
 | no_cache_paths | Path patterns served with CachingDisabled. | `list(string)` | `[]` |
+| edge_endpoints | Paths answered by caller-supplied CloudFront Function code. Each entry has `path_pattern`, `code` and optional `cloudfront_headers`. See [Edge endpoints](#edge-endpoints). | `list(object(...))` | `[]` |
 | default_root_object | Object name for `/` requests. | `string` | `"index.html"` |
 | error_document | Bucket-root key served with a 404 status when an object is missing. Empty string disables the custom page. | `string` | `"404.html"` |
 | error_caching_min_ttl | Seconds CloudFront caches 404 responses at the edge. | `number` | `86400` |
@@ -506,6 +567,7 @@ No external apply-time tools required.
 | managed_domain_records | Map of distribution key -> routing records to add at your DNS provider, one per managed domain. |
 | cloudfront_function_arn | ARN of the viewer-request rewriter function. |
 | cache_control_function_arn | ARN of the viewer-response Cache-Control writer function. Null when `cache_control_enabled = false`. |
+| edge_endpoint_function_arns | Map of edge endpoint path pattern -> function ARN. Empty when `edge_endpoints` is empty. |
 | cache_policy_id | ID of the cache policy attached to the default behavior (caller-supplied when set, otherwise module-managed). |
 | response_headers_policy_id | ID of the response-headers policy attached to the default behavior (caller-supplied id when set, otherwise the module-managed one, otherwise null). |
 | module_response_headers_policy_id | ID of the module-managed response-headers policy. Null when `var.response_headers_policy` is null. |
