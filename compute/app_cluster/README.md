@@ -16,7 +16,7 @@ The apps run in sandboxes on the sandbox pool of an existing execution environme
 | Custom domain certificate and domains | One certificate for every entry of `domains`, attached to the TLS listener beside the wildcard certificate, and one `ravion_domain` per entry pointed at the load balancer. Created only with `domains` |
 | Two security groups | One for the load balancer, one for the router |
 | Router IAM role and instance profile | Lets the router publish its metrics to CloudWatch in the `Ravion/AppRouter` namespace. With `ssm_enabled`, also Session Manager access for operators. Ravion launches the router with the instance profile |
-| Secret reader role | Created when `app_secret_and_parameter_arns` lists something. Named `rvn-app-secrets-<module instance id>`. Ravion assumes it to read the secrets an app names under `secrets` in `ravion-app.yaml`, and it can read only the listed secrets and parameters. Only the role Ravion deploys with, in this account, may assume it |
+| Secrets role | Always created, named `rvn-ci-app-secrets-<module instance id>` under the path `/rvn-ci/`. Each app's sandbox reads the secrets its `ravion-app.yaml` names under `secrets` as this role, and it can read only the secrets and parameters `app_secret_and_parameter_arns` lists (nothing, while that is empty). Only the role of the cluster's sandbox hosts (`rvn-sandbox-host-<execution environment id>`), in this account, may assume it. Ravion's own roles are not trusted |
 
 The module creates no sandbox pool, hosts or hosts' security group: those are the execution environment's. It creates no router instance, launch template or Auto Scaling group either. Ravion launches the router in `router_subnet_ids` with the router's security group and instance profile, registers it in both target groups once it holds its routes, and replaces it the same way: the new router is registered before the old one is drained and terminated.
 
@@ -133,9 +133,9 @@ The module's definition charts these on the Metrics tab beside the load balancer
 | ingress_cidr_blocks | IPv4 CIDR blocks allowed to reach the load balancer on 443 and 80. An empty list allows none | `list(string)` | `["0.0.0.0/0"]` | no |
 | ssl_policy | Security policy of the TLS listener | `string` | `"ELBSecurityPolicy-TLS13-1-2-2021-06"` | no |
 | ssm_enabled | Add Session Manager access to the router's role | `bool` | `true` | no |
-| app_secret_and_parameter_arns | Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the apps may read through `secrets` in `ravion-app.yaml`. Empty creates no reader role | `list(string)` | `[]` | no |
+| app_secret_and_parameter_arns | Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the apps may read through `secrets` in `ravion-app.yaml`. Empty leaves the secrets role with no policy | `list(string)` | `[]` | no |
+| execution_environment_id | The Ravion execution environment whose sandbox pool runs the apps. Only its sandbox hosts may assume the secrets role | `string` | n/a | yes |
 | app_secret_kms_key_arns | Customer-managed KMS keys those secrets and parameters are encrypted with | `list(string)` | `[]` | no |
-| app_secrets_trusted_principal_arns | IAM principal ARN patterns of this account that may assume the reader role. Empty means the role Ravion deploys with (`rvn-*-deployments`) | `list(string)` | `[]` | no |
 | ravion_api_url | Origin of the Ravion API. A port other than 443 is added to the router's outbound rules. Injected as `TF_VAR_ravion_api_url` inside a stack run | `string` | `null` | no |
 | ravion_domain_name | Name leaf of the wildcard domain: Ravion issues `*.<name>.<apex>`. Null uses the module instance given id | `string` | `null` | no |
 | module_instance_given_id | The module instance's given id, the default leaf of the wildcard domain. Injected as `TF_VAR_module_instance_given_id` inside a stack run | `string` | `null` | no |
@@ -154,7 +154,7 @@ The module's definition charts these on the Metrics tab beside the load balancer
 | router_subnet_ids | The subnets Ravion may launch the router in |
 | router_security_group_id | ID of the router's security group |
 | router_instance_profile_name | Name of the router's instance profile; its role has the same name |
-| app_secrets_role_name | Name of the role Ravion reads the apps' secrets as. Null when no secret or parameter is listed |
+| app_secrets_role_arn | ARN of the role the apps' sandboxes read their secrets as |
 | traffic_target_group_arn | ARN of the target group the TLS listener forwards to |
 | redirect_target_group_arn | ARN of the target group the HTTP listener forwards to |
 | certificate_arn | ARN of the wildcard certificate on the TLS listener |

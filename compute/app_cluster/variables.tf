@@ -176,9 +176,20 @@ variable "ssm_enabled" {
 # App secrets
 ################################################################################
 
+variable "execution_environment_id" {
+  type        = string
+  description = "The Ravion execution environment (ee_*) whose sandbox pool runs the apps. Only the role of its sandbox hosts (rvn-sandbox-host-<execution environment id>) may assume the apps' secrets role."
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]+$", var.execution_environment_id))
+    error_message = "execution_environment_id must be a Ravion execution environment ID, e.g. 'ee_01abc'."
+  }
+}
+
 variable "app_secret_and_parameter_arns" {
   type        = list(string)
-  description = "Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the cluster's apps may read through `secrets:` in ravion-app.yaml. Ravion reads them as a role this module creates, which can read nothing else. An empty list creates no role, and the cluster's apps read no secrets."
+  description = "Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the cluster's apps may read through `secrets:` in ravion-app.yaml. Each app's sandbox reads them itself, as a role this module creates, which can read nothing else. Ravion's own roles are not trusted by it. With an empty list the role has no policy, and the cluster's apps read no secrets."
   default     = []
   nullable    = false
 
@@ -197,17 +208,5 @@ variable "app_secret_kms_key_arns" {
   validation {
     condition     = alltrue([for arn in var.app_secret_kms_key_arns : can(regex("^arn:[^:]*:kms:", arn))])
     error_message = "All app_secret_kms_key_arns must be KMS key ARNs."
-  }
-}
-
-variable "app_secrets_trusted_principal_arns" {
-  type        = list(string)
-  description = "IAM principal ARN patterns of this account that may assume the apps' secret reader role. Empty means the role Ravion deploys with (rvn-*-deployments)."
-  default     = []
-  nullable    = false
-
-  validation {
-    condition     = alltrue([for arn in var.app_secrets_trusted_principal_arns : can(regex("^arn:[^:]*:iam::[0-9]{12}:", arn))])
-    error_message = "All app_secrets_trusted_principal_arns must be IAM ARNs of an AWS account."
   }
 }

@@ -113,7 +113,7 @@ output "region" {
   value       = local.region
 }
 
-output "app_secrets_role_name" {
-  description = "Name of the role Ravion reads the apps' secrets as. Null when app_secret_and_parameter_arns is empty."
-  value       = try(aws_iam_role.app_secrets[0].name, null)
+output "app_secrets_role_arn" {
+  description = "ARN of the role the apps' sandboxes read their secrets as. The sandbox host assumes it for each app's sandbox."
+  value       = aws_iam_role.app_secrets.arn
 }

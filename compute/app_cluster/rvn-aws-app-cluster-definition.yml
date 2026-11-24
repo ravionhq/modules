@@ -5,7 +5,7 @@ definition:
   description: Runs the apps you deploy with ravion deploy, each in its own sandbox on an execution environment's sandbox pool, and serves them under a managed wildcard domain and your own domains through a Network Load Balancer and a router that wakes a paused app on request.
 release:
   version: 0.2.0
-  description: 'Apps can read secrets: list the Secrets Manager secrets and Parameter Store parameters the cluster''s apps may read, and name them under `secrets` in ravion-app.yaml. Ravion reads them as a new role, rvn-app-secrets-<module instance id>, which can read only what you list.'
+  description: 'Apps can read secrets: list the Secrets Manager secrets and Parameter Store parameters the cluster''s apps may read, and name them under `secrets` in ravion-app.yaml. Each app''s sandbox reads them itself, as a new role, rvn-ci-app-secrets-<module instance id>, which can read only what you list. Only the cluster''s sandbox hosts, in your account, may assume the role. Ravion''s own roles cannot.'
 module:
   outputs:
     - id: wildcard_domain_name
@@ -177,7 +177,7 @@ module:
     - id: app_secret_and_parameter_arns
       label: Secrets and parameters apps may read
       type: string_array
-      description: ARNs of the Secrets Manager secrets and Parameter Store parameters the apps may read through secrets in ravion-app.yaml. Wildcards are allowed. Ravion reads them as a role that can read nothing else. Leave empty and the apps read no secrets.
+      description: ARNs of the Secrets Manager secrets and Parameter Store parameters the apps may read through secrets in ravion-app.yaml. Wildcards are allowed. Each app's sandbox reads them as a role that can read nothing else, which Ravion's own roles cannot assume. Leave empty and the apps read no secrets.
       add_button_label: Add ARN
       collapsible: true
       placeholder: arn:aws:secretsmanager:us-east-1:111122223333:secret:shop/*
@@ -273,6 +273,7 @@ module:
       base_path: compute/app_cluster
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        execution_environment_id: << module.input.execution_environment_id >>
         app_secret_and_parameter_arns: << module.input.app_secret_and_parameter_arns || [] >>
         app_secret_kms_key_arns: << module.input.app_secret_kms_key_arns || [] >>
         domains: << module.input.domains || [] >>
@@ -294,6 +295,7 @@ module:
     vpcId: << module.input.vpc_id >>
     domain: << module.output.wildcard_domain_name >>
     customDomains: << module.output.custom_domain_apexes >>
+    secretsRoleArn: << module.output.app_secrets_role_arn >>
     loadBalancer:
       tlsListenerArn: << module.output.tls_listener_arn >>
       dnsName: << module.output.load_balancer_dns_name >>

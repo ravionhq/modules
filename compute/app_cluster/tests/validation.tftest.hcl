@@ -52,13 +52,14 @@ mock_provider "ravion" {
 }
 
 variables {
-  name               = "apps"
-  module_instance_id = "minst_test"
-  ravion_domain_name = "apps"
-  ravion_api_url     = "https://api.example.test"
-  vpc_id             = "vpc-12345678"
-  public_subnet_ids  = ["subnet-0a", "subnet-0b"]
-  router_subnet_ids  = ["subnet-1a", "subnet-1b"]
+  name                     = "apps"
+  module_instance_id       = "minst_test"
+  execution_environment_id = "ee_test"
+  ravion_domain_name       = "apps"
+  ravion_api_url           = "https://api.example.test"
+  vpc_id                   = "vpc-12345678"
+  public_subnet_ids        = ["subnet-0a", "subnet-0b"]
+  router_subnet_ids        = ["subnet-1a", "subnet-1b"]
 }
 
 run "plain_http_control_plane_is_refused" {
