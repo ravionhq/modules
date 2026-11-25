@@ -21,6 +21,18 @@ resource "aws_wafv2_rule_group" "custom" {
   rules_json  = var.custom_rules_json
   tags        = local.tags
 
+  # Bodies the custom rules refer to with CustomResponseBodyKey. AWS scopes
+  # response bodies to the rule group or web ACL that defines them.
+  dynamic "custom_response_body" {
+    for_each = var.custom_rules_response_bodies
+
+    content {
+      key          = custom_response_body.key
+      content      = custom_response_body.value.content
+      content_type = custom_response_body.value.content_type
+    }
+  }
+
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name                = "${local.metric_prefix}-custom"
