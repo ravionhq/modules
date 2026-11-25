@@ -107,10 +107,14 @@ advanced_terraform_variables:
     user-agent-required:
       content: '{"code":"USER_AGENT_REQUIRED","message":"Send a User-Agent header."}'
       content_type: APPLICATION_JSON
+  custom_rules_capacity: 10
   custom_rules_json: >-
     [{"Name": "limit-no-user-agent", "Priority": 0,
       "Action": {"Block": {"CustomResponse": {"ResponseCode": 429, "CustomResponseBodyKey": "user-agent-required"}}},
-      ...}]
+      "Statement": {"RateBasedStatement": {"Limit": 10, "EvaluationWindowSec": 300, "AggregateKeyType": "IP",
+        "ScopeDownStatement": {"NotStatement": {"Statement": {"SizeConstraintStatement": {"FieldToMatch": {"SingleHeader": {"Name": "user-agent"}},
+          "ComparisonOperator": "GT", "Size": 0, "TextTransformations": [{"Priority": 0, "Type": "NONE"}]}}}}}},
+      "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "limit-no-user-agent"}}]
 ```
 
 `custom_rules_capacity` reserves web ACL capacity units for the rule group. Changing it replaces the group: the new one is created first, the web ACL switches to it, then the old one is deleted.
