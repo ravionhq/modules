@@ -4,8 +4,8 @@ definition:
   name: AWS WAF
   description: WAFv2 web ACL for Application Load Balancers or CloudFront distributions, with IP reputation, per-path rate limits, anonymous IP blocking and Bot Control.
 release:
-  version: 0.2.0
-  description: Charts allowed, blocked and counted requests, in total and by rule, on the module dashboard. Redeploy to show them.
+  version: 0.3.0
+  description: Custom rules can answer with their own response bodies, set in the custom_rules_response_bodies advanced variable.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -254,6 +254,7 @@ module:
     | `ip_allow_list` / `ip_block_list` | IPv4 and IPv6 CIDRs always allowed (priority 1) or blocked (2). |
     | `blocked_country_codes` | Two-letter country codes to block (3). |
     | `custom_rules_json` + `custom_rules_capacity` | Any rules, in the AWS WAF API JSON format, in a rule group evaluated at priority 5. |
+    | `custom_rules_response_bodies` | Response bodies the custom rules can send, by key (`content`, `content_type`). A custom rule refers to one with `CustomResponseBodyKey`. |
     | `managed_rule_groups` | More managed rule groups, each with its priority, optional path scope, count only and per-rule overrides. |
     | `rule_action_overrides` | Per-rule actions in the module's own groups: `ip_reputation`, `anonymous_ip`, `bot_control`. |
     | `rate_limit_aggregate_key` + `rate_limit_header_name` | Count the rate limit per `IP`, `FORWARDED_IP` or `HEADER`. |
@@ -278,6 +279,20 @@ module:
           "Statement": {"ByteMatchStatement": {"SearchString": "/admin", "FieldToMatch": {"UriPath": {}},
             "PositionalConstraint": "STARTS_WITH", "TextTransformations": [{"Priority": 0, "Type": "LOWERCASE"}]}},
           "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "block-admin"}}]
+    ```
+
+    A custom rule can answer with its own body. AWS only lets a rule group's rules use bodies defined on that group, so define them in `custom_rules_response_bodies` rather than `rate_limit_response_body`:
+
+    ```yaml
+    advanced_terraform_variables:
+      custom_rules_response_bodies:
+        user-agent-required:
+          content: '{"code":"USER_AGENT_REQUIRED","message":"Send a User-Agent header."}'
+          content_type: APPLICATION_JSON
+      custom_rules_json: >-
+        [{"Name": "limit-no-user-agent", "Priority": 0,
+          "Action": {"Block": {"CustomResponse": {"ResponseCode": 429, "CustomResponseBodyKey": "user-agent-required"}}},
+          ...}]
     ```
 
     `custom_rules_capacity` reserves web ACL capacity units for the rule group. Changing it replaces the group: the new one is created first, the web ACL switches to it, then the old one is deleted.

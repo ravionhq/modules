@@ -72,6 +72,7 @@ These settings are not in the form. Set them in Advanced Terraform variables; th
 | `ip_allow_list` / `ip_block_list` | IPv4 and IPv6 CIDRs always allowed (priority 1) or blocked (2). |
 | `blocked_country_codes` | Two-letter country codes to block (3). |
 | `custom_rules_json` + `custom_rules_capacity` | Any rules, in the AWS WAF API JSON format, in a rule group evaluated at priority 5. |
+| `custom_rules_response_bodies` | Response bodies the custom rules can send, by key (`content`, `content_type`). A custom rule refers to one with `CustomResponseBodyKey`. |
 | `managed_rule_groups` | More managed rule groups, each with its priority, optional path scope, count only and per-rule overrides. |
 | `rule_action_overrides` | Per-rule actions in the module's own groups: `ip_reputation`, `anonymous_ip`, `bot_control`. |
 | `rate_limit_aggregate_key` + `rate_limit_header_name` | Count the rate limit per `IP`, `FORWARDED_IP` or `HEADER`. |
@@ -96,6 +97,20 @@ advanced_terraform_variables:
       "Statement": {"ByteMatchStatement": {"SearchString": "/admin", "FieldToMatch": {"UriPath": {}},
         "PositionalConstraint": "STARTS_WITH", "TextTransformations": [{"Priority": 0, "Type": "LOWERCASE"}]}},
       "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "block-admin"}}]
+```
+
+A custom rule can answer with its own body. AWS only lets a rule group's rules use bodies defined on that group, so define them in `custom_rules_response_bodies` rather than `rate_limit_response_body`:
+
+```yaml
+advanced_terraform_variables:
+  custom_rules_response_bodies:
+    user-agent-required:
+      content: '{"code":"USER_AGENT_REQUIRED","message":"Send a User-Agent header."}'
+      content_type: APPLICATION_JSON
+  custom_rules_json: >-
+    [{"Name": "limit-no-user-agent", "Priority": 0,
+      "Action": {"Block": {"CustomResponse": {"ResponseCode": 429, "CustomResponseBodyKey": "user-agent-required"}}},
+      ...}]
 ```
 
 `custom_rules_capacity` reserves web ACL capacity units for the rule group. Changing it replaces the group: the new one is created first, the web ACL switches to it, then the old one is deleted.
