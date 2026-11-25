@@ -11,6 +11,11 @@ mock_provider "aws" {
   mock_data "aws_caller_identity" {
     defaults = { account_id = "123456789012" }
   }
+  # The metrics runs install Mimir, whose Pod Identity association needs a
+  # parseable role ARN.
+  mock_resource "aws_iam_role" {
+    defaults = { arn = "arn:aws:iam::123456789012:role/test-cluster-observability" }
+  }
   mock_data "aws_eks_cluster" {
     defaults = {
       arn                   = "arn:aws:eks:us-east-2:123456789012:cluster/test-cluster"
@@ -111,5 +116,84 @@ run "disabling_keda_removes_the_release" {
   assert {
     condition     = length(helm_release.keda) == 0 && output.keda_enabled == false
     error_message = "Disabling KEDA must remove the release and clear the enabled output."
+  }
+}
+
+################################################################################
+# KEDA's own metrics — collected only while KEDA and the metrics collector both
+# run, from every operator replica.
+################################################################################
+
+run "keda_metrics_are_not_collected_without_a_metrics_pipeline" {
+  command = plan
+
+  variables {
+    keda_enabled = true
+  }
+
+  assert {
+    condition     = length(helm_release.otel_collector) == 0 && alltrue([for doc in helm_release.keda[0].values : !strcontains(doc, "keda-operator-prometheus")])
+    error_message = "Without a metrics collector, KEDA must not expose a scrape Service."
+  }
+}
+
+run "keda_metrics_are_not_scraped_without_keda" {
+  command = plan
+
+  variables {
+    metrics_providers = ["mimir"]
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.otel_collector[0].values[0], "job_name: keda-operator")
+    error_message = "The collector must not scrape KEDA while KEDA is not installed."
+  }
+}
+
+run "keda_metrics_are_scraped_from_every_operator_replica" {
+  command = plan
+
+  variables {
+    keda_enabled      = true
+    keda_namespace    = "keda-test"
+    metrics_providers = ["mimir"]
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.keda[0].values[2]).prometheus.operator.enabled && yamldecode(helm_release.keda[0].values[2]).prometheus.operator.port == 8080
+    error_message = "KEDA's operator must serve Prometheus metrics on port 8080 while the collector runs."
+  }
+
+  assert {
+    condition = (
+      yamldecode(helm_release.keda[0].values[2]).extraObjects[0].kind == "Service" &&
+      yamldecode(helm_release.keda[0].values[2]).extraObjects[0].metadata.namespace == "keda-test" &&
+      yamldecode(helm_release.keda[0].values[2]).extraObjects[0].spec.clusterIP == "None" &&
+      yamldecode(helm_release.keda[0].values[2]).extraObjects[0].spec.selector == { "app.kubernetes.io/name" = "keda-operator", "app.kubernetes.io/instance" = "keda" } &&
+      yamldecode(helm_release.keda[0].values[2]).extraObjects[0].spec.ports[0].port == 8080
+    )
+    error_message = "A headless Service must select every KEDA operator pod on its metrics port, so the standby and the leader are both scraped."
+  }
+
+  assert {
+    condition = anytrue([
+      for job in yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.prometheus.config.scrape_configs :
+      job.job_name == "keda-operator" &&
+      job.dns_sd_configs[0].names == ["keda-operator-prometheus.keda-test.svc.cluster.local"] &&
+      job.dns_sd_configs[0].type == "A" &&
+      job.dns_sd_configs[0].port == 8080
+    ])
+    error_message = "The collector must discover KEDA operator pods through the headless Service's DNS records."
+  }
+
+  assert {
+    condition = anytrue([
+      for job in yamldecode(helm_release.otel_collector[0].values[0]).config.receivers.prometheus.config.scrape_configs :
+      job.job_name == "keda-operator" && alltrue([
+        for name in ["keda_scaler_metrics_value", "keda_scaler_active", "keda_scaler_detail_errors_total", "keda_scaler_errors_total", "keda_scaled_object_errors_total", "keda_scaled_object_paused", "up"] :
+        can(regex("^(?:${job.metric_relabel_configs[0].regex})$", name))
+      ]) && !can(regex("^(?:${job.metric_relabel_configs[0].regex})$", "keda_scaler_http_request_duration_seconds_bucket")) && !can(regex("^(?:${job.metric_relabel_configs[0].regex})$", "controller_runtime_reconcile_total"))
+    ])
+    error_message = "The KEDA job must keep the scaler and ScaledObject families and drop the operator's runtime and HTTP histogram series."
   }
 }

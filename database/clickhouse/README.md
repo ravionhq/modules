@@ -108,9 +108,10 @@ operator, so nothing still running needs them then.
 
 ## Database engine
 
-With `database_name` set, a post-install job creates it on every server once all of them have joined the
-cluster. `Replicated` (the default) replicates `CREATE TABLE` and `ALTER` to every replica on its own;
-with `Atomic`, run DDL with `ON CLUSTER main`. Either way, use the `Replicated*MergeTree` engines for
+With `database_name` set, a job creates it on every server after each install and upgrade, connecting to
+each replica in turn, so a replica added later, or one that missed it, gets it on the next upgrade.
+`Replicated` (the default) replicates `CREATE TABLE` and `ALTER` to every replica on its own; with
+`Atomic`, run DDL with `ON CLUSTER main`. Either way, use the `Replicated*MergeTree` engines for
 tables whose data should be replicated.
 
 ## Shards and replicas

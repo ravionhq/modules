@@ -3,8 +3,8 @@ definition:
   name: VPC Network
   description: Production-ready AWS VPC with public and private subnets, NAT gateways, and compliance-ready flow logs.
 release:
-  version: 1.3.2
-  description: Correct the documented flow logs default to on, matching the input default.
+  version: 1.4.0
+  description: Let alterNAT and other NAT instances keep the private default routes they take over across network deploys.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -70,6 +70,12 @@ module:
       label: NAT gateway Elastic IP allocation IDs
       required: false
       type: string_array
+    - collapsible: true
+      default: false
+      description: Turn on when alterNAT or another NAT instance takes over the private default routes, so deploys leave them on the instance instead of moving them back to the NAT gateway.
+      id: nat_instance_route_takeover_enabled
+      label: Allow NAT instance route takeover
+      type: boolean
     - id: section_vpc_endpoints
       label: VPC endpoints
       type: section
@@ -298,6 +304,7 @@ module:
     | NAT Gateway                    | No       | `true`               | Enable outbound internet from private subnets                          |
     | NAT Gateway High Availability  | No       | `false`              | Deploy one NAT per AZ instead of a single shared NAT                   |
     | NAT Gateway EIP Allocation IDs | No       | —                    | Pre-allocated EIPs for stable NAT public IPs                           |
+    | NAT instance route takeover    | No       | `false`              | Keep private default routes a NAT instance (alterNAT) has taken over   |
     | S3 gateway endpoint            | No       | `true`               | Free gateway endpoint keeping S3 traffic off the NAT gateway           |
     | DynamoDB gateway endpoint      | No       | `false`              | Free gateway endpoint keeping DynamoDB traffic off the NAT gateway     |
     | Interface endpoints            | No       | —                    | Interface VPC endpoints (PrivateLink) for private AWS service access   |
@@ -340,6 +347,7 @@ module:
     - **DNS enabled:** DNS support and hostnames are enabled for service discovery
     - **Single route table for public:** All public subnets share one route table with an Internet Gateway route
     - **Per-AZ route tables when HA NAT:** Each private subnet gets its own route table pointing to the NAT in its AZ
+    - **NAT instances can take over egress:** With **Allow NAT instance route takeover** on, a deploy leaves a private default route that points at a network interface (for example an alterNAT instance) in place. Routes on a NAT gateway, including a replaced one, still point at this network's NAT gateway, so failing back keeps working
 
     ## Learn more
 
@@ -365,6 +373,7 @@ module:
         name: << module.input.name >>
         nat_gateway_eip_allocation_ids: << module.input.nat_gateway_eip_allocation_ids >>
         nat_gateway_high_availability_enabled: << module.input.nat_gateway_high_availability_enabled >>
+        nat_instance_route_takeover_enabled: << module.input.nat_instance_route_takeover_enabled >>
         region: << module.input.aws_region >>
         subnet_count: << module.input.subnet_count >>
         tags:

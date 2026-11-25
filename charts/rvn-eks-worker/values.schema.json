@@ -273,6 +273,37 @@
             }
           }
         },
+        "scaleDown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stabilizationWindowSeconds",
+            "podsPerPeriod",
+            "percentPerPeriod",
+            "periodSeconds"
+          ],
+          "properties": {
+            "stabilizationWindowSeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600
+            },
+            "podsPerPeriod": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "percentPerPeriod": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "periodSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1800
+            }
+          }
+        },
         "triggers": {
           "type": "array",
           "items": {
@@ -323,6 +354,9 @@
                 ]
               },
               "useCachedMetrics": {
+                "type": "boolean"
+              },
+              "subtractBaseline": {
                 "type": "boolean"
               },
               "name": {

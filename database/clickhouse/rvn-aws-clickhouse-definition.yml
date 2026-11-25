@@ -4,8 +4,8 @@ definition:
   name: ClickHouse
   description: Self-hosted, replicated ClickHouse on an EKS cluster, with ClickHouse Keeper, scheduled S3 backups and an S3 cold tier, all in your own AWS account.
 release:
-  version: 0.1.0
-  description: Run replicated ClickHouse on your EKS cluster with generated users, scheduled S3 backups, an S3 cold tier, Prometheus metrics and TLS from your choice of CA.
+  version: 0.1.1
+  description: Create the database on every replica, including one that missed it when the cluster was first created, so queries no longer fail on that replica.
 module:
   inputs:
     - id: cluster

@@ -3,8 +3,8 @@ definition:
   name: alterNAT
   description: Highly available alterNAT instances that replace NAT gateway data processing charges and fail over to a NAT gateway automatically.
 release:
-  version: 0.2.0
-  description: Alarm on the error rate of the alterNAT Lambda functions, so a failing connectivity tester or failover hook is noticed.
+  version: 0.2.1
+  description: Recommend the VPC network setting that keeps alterNAT routes in place across network deploys.
 module:
   inputs:
     - id: network
@@ -352,7 +352,9 @@ module:
 
     ## Using it with a Ravion VPC network
 
-    The VPC network manages its private route tables' `0.0.0.0/0` route to its NAT gateway. After alterNAT takes over that route, the next VPC network deploy points it back at the NAT gateway. With **Restore to alterNAT instance** on (the default), alterNAT moves it back within a minute. To avoid the round trip entirely, turn off the VPC network's NAT gateway and set **Fallback NAT gateway** to **Create**.
+    The VPC network manages its private route tables' `0.0.0.0/0` route to its NAT gateway. Turn on the VPC network's **Allow NAT instance route takeover** (VPC Network 1.4.0 or later), so its deploys leave the routes alterNAT has taken over on the alterNAT instances. Failover to the VPC network's NAT gateway keeps working.
+
+    Without that setting, each VPC network deploy points the routes back at the NAT gateway, and traffic leaves from the NAT gateway's IP until **Restore to alterNAT instance** (on by default) moves them back, usually within a minute.
 
     ## Configuration
 

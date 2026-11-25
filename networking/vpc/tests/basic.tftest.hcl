@@ -519,8 +519,8 @@ run "public_subnet_settings" {
   command = plan
 
   assert {
-    condition     = aws_subnet.public[0].map_public_ip_on_launch == true
-    error_message = "Public subnets should auto-assign public IPs"
+    condition     = aws_subnet.public[0].map_public_ip_on_launch == false
+    error_message = "Public subnets must not auto-assign public IPs"
   }
 
   assert {

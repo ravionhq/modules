@@ -197,17 +197,77 @@ test_spot_burst_chart() {
     assert_eq "${chart}: configured minimum sets the KEDA ScaledObject floor (${min_replicas})" \
       "${min_replicas}" "$(q "${min_burst}" '.[] | select(.kind == "ScaledObject") | .spec.minReplicaCount')"
   done
-  assert_eq "${chart}: KEDA scale-down stabilization and restore policy are fixed" \
-    "300 false" \
-    "$(q "${burst}" "${scaled} | [.spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleDown.stabilizationWindowSeconds, .spec.advanced.restoreToOriginalReplicaCount] | join(\" \")")"
-  assert_eq "${chart}: scaler receives the configured external trigger unchanged" \
-    "prometheus vector(0)" \
-    "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query] | join(\" \")")"
+  # Without scale-down policies the HPA removes every excess pod in one step
+  # once the stabilization window passes, so a pool at its maximum drops to its
+  # minimum while work is still queued. The pool must shrink a few pods at a
+  # time instead: at most podsPerPeriod or percentPerPeriod, whichever is fewer.
+  local default_window=300
+  [[ "${chart}" == "rvn-eks-worker" ]] && default_window=600
+  local scale_down="${scaled} | .spec.advanced.horizontalPodAutoscalerConfig.behavior.scaleDown"
+  assert_eq "${chart}: KEDA scale-down waits the stabilization window and does not restore replicas" \
+    "${default_window} false" \
+    "$(q "${burst}" "[(${scale_down} | .stabilizationWindowSeconds), (${scaled} | .spec.advanced.restoreToOriginalReplicaCount)] | join(\" \")")"
+  assert_eq "${chart}: KEDA scale-down removes at most 2 pods or 25% per minute, whichever is fewer" \
+    "Min Pods:2:60 Percent:25:60" \
+    "$(q "${burst}" "${scale_down} | [.selectPolicy] + (.policies | map(.type + \":\" + (.value | tostring) + \":\" + (.periodSeconds | tostring))) | join(\" \")")"
+  assert_eq "${chart}: KEDA scale-up keeps the Kubernetes default" \
+    "false" "$(q "${burst}" "${scaled} | .spec.advanced.horizontalPodAutoscalerConfig.behavior | has(\"scaleUp\")")"
+  assert_eq "${chart}: scale-down window and rate are configurable" \
+    "900 Min Pods:5:30 Percent:50:30" \
+    "$(q "$(render "${chart}" scale-down-custom \
+      --values "${CHARTS_DIR}/${chart}/ci/spot-burst-scale-down-values.yaml")" \
+      "${scale_down} | [(.stabilizationWindowSeconds | tostring), .selectPolicy] + (.policies | map(.type + \":\" + (.value | tostring) + \":\" + (.periodSeconds | tostring))) | join(\" \")")"
+  expect_template_failure "${chart}" "${chart}: scale-down must remove at least one pod per period" \
+    --values "${values}" --set spotBurst.scaleDown.podsPerPeriod=0
+  expect_template_failure "${chart}" "${chart}: scale-down percent cannot exceed 100" \
+    --values "${values}" --set spotBurst.scaleDown.percentPerPeriod=101
+  expect_template_failure "${chart}" "${chart}: scale-down window cannot exceed one hour" \
+    --values "${values}" --set spotBurst.scaleDown.stabilizationWindowSeconds=3601
+  # Every pod serves a trigger's demand, the On-Demand baseline included, while
+  # KEDA sizes only the Spot pool. A Prometheus AverageValue trigger therefore
+  # has the baseline's capacity (baselineReplicas * threshold) taken off its
+  # query, or the pool runs baselineReplicas pods more than demand needs.
+  assert_eq "${chart}: a Prometheus trigger asks only for pods beyond the On-Demand baseline" \
+    "prometheus clamp_min((vector(0)) - 3 * 1, 0) 1" \
+    "$(q "${burst}" "${scaled} | [.spec.triggers[0].type, .spec.triggers[0].metadata.query, .spec.triggers[0].metadata.threshold] | join(\" \")")"
+  local prom_meta='"serverAddress":"http://example.invalid:9090","activationThreshold":"0","ignoreNullValues":"false"'
+  local subtracted
+  subtracted="$(render "${chart}" subtract-baseline --values "${values}" --set spotBurst.baselineReplicas=2 \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"query\":\"  (sum(a) or vector(0))\\n+ (sum(b) or vector(0))  \",\"threshold\":\" 500 \"}},{\"type\":\"prometheus\",\"subtractBaseline\":false,\"metadata\":{${prom_meta},\"query\":\"sum(backlog) or vector(0)\",\"threshold\":\"200\"}},{\"type\":\"prometheus\",\"subtractBaseline\":true,\"metricType\":\"Value\",\"metadata\":{${prom_meta},\"query\":\"sum(c)\",\"threshold\":\"0.5\"}},{\"type\":\"aws-sqs-queue\",\"metadata\":{\"queueURL\":\"https://sqs.us-east-1.amazonaws.com/123456789012/q\",\"queueLength\":\"5\"}}]")"
+  assert_eq "${chart}: the baseline count and threshold set the capacity subtracted from a multi-line query" \
+    "clamp_min(((sum(a) or vector(0))
++ (sum(b) or vector(0))) - 2 * 500, 0)" \
+    "$(q "${subtracted}" "${scaled} | .spec.triggers[0].metadata.query")"
+  # PromQL comments run to the end of the line, so the closing parenthesis
+  # must start a new line or the comment swallows it and the query is invalid.
+  assert_eq "${chart}: a query ending in a PromQL comment keeps its closing parenthesis on a new line" \
+    "clamp_min((sum(active_requests) # total demand
+) - 3 * 100, 0)" \
+    "$(q "$(render "${chart}" subtract-comment --values "${values}" \
+      --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"query\":\"sum(active_requests) # total demand\",\"threshold\":\"100\"}}]")" \
+      "${scaled} | .spec.triggers[0].metadata.query")"
+  assert_eq "${chart}: subtractBaseline false keeps a backlog query as written" \
+    "sum(backlog) or vector(0)" "$(q "${subtracted}" "${scaled} | .spec.triggers[1].metadata.query")"
+  assert_eq "${chart}: a Value metric type is not subtracted" \
+    "sum(c)" "$(q "${subtracted}" "${scaled} | .spec.triggers[2].metadata.query")"
+  assert_eq "${chart}: other scaler types pass through unchanged" \
+    "aws-sqs-queue 5" "$(q "${subtracted}" "${scaled} | .spec.triggers[3] | [.type, .metadata.queueLength] | join(\" \")")"
+  assert_eq "${chart}: subtractBaseline never reaches KEDA" \
+    "0" "$(q "${subtracted}" "[${scaled} | .spec.triggers[] | select(has(\"subtractBaseline\"))] | length")"
+  expect_template_failure "${chart}" "${chart}: a subtracted trigger needs a numeric threshold" \
+    --values "${values}" \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"query\":\"vector(0)\",\"threshold\":\"1e3\"}}]"
+  expect_template_failure "${chart}" "${chart}: a subtracted trigger needs a query" \
+    --values "${values}" \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"metadata\":{${prom_meta},\"threshold\":\"1\"}}]"
+  expect_template_failure "${chart}" "${chart}: subtractBaseline must be a boolean" \
+    --values "${values}" \
+    --set-json "spotBurst.triggers=[{\"type\":\"prometheus\",\"subtractBaseline\":\"no\",\"metadata\":{${prom_meta},\"query\":\"vector(0)\",\"threshold\":\"1\"}}]"
   local utilization
   utilization="$(render "${chart}" utilization-metric-type --values "${values}" \
     --set-json 'spotBurst.triggers=[{"type":"prometheus","metadata":{"serverAddress":"http://example.invalid:9090","query":"vector(0)","threshold":"1","activationThreshold":"0","ignoreNullValues":"false"},"metricType":"Utilization"}]')"
-  assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering" \
-    "Utilization" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0].metricType')"
+  assert_eq "${chart}: KEDA Utilization metric type survives schema validation and rendering unsubtracted" \
+    "Utilization vector(0)" "$(q "${utilization}" '.[] | select(.kind == "ScaledObject") | .spec.triggers[0] | [.metricType, .metadata.query] | join(" ")')"
 
   # When KEDA cannot read its metrics (Prometheus down in ravion-prod), the
   # pool must never shrink, and is topped up to a safe floor: the maximum
@@ -1153,6 +1213,43 @@ test_ebs_storage() {
     "$(count "${class_only}" StorageClass) $(count "${class_only}" MutatingAdmissionPolicy) $(count "${class_only}" Deployment)"
 }
 
+# run_database_job runs a rendered clickhouse-cluster database Job's script
+# against a stub clickhouse-client and prints one sorted line per query it
+# sent to a server: "<host> <secure|plain> <query>". The stub answers every
+# server's SELECT 1 at once, so the script never waits.
+run_database_job() {
+  local rendered="$1" label="$2"
+  local dir="${WORK_DIR}/database-job-${label}"
+  mkdir -p "${dir}/bin"
+  cat >"${dir}/bin/clickhouse-client" <<'STUB'
+#!/usr/bin/env bash
+host="" query="" mode=plain
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --host) host="$2"; shift 2 ;;
+    --query) query="$2"; shift 2 ;;
+    --secure) mode=secure; shift ;;
+    *) shift ;;
+  esac
+done
+[[ "${query}" == "SELECT 1" ]] && exit 0
+echo "${host} ${mode} ${query}" >>"${DATABASE_JOB_LOG}"
+STUB
+  chmod +x "${dir}/bin/clickhouse-client"
+  # The script writes its TLS client config to /tmp; keep it in the work dir.
+  q "${rendered}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].command[2]' |
+    sed "s#/tmp/client.xml#${dir}/client.xml#g" >"${dir}/job.sh"
+  : >"${dir}/queries.log"
+  (
+    while IFS='=' read -r name value; do
+      export "${name}=${value}"
+    done < <(q "${rendered}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.value != null) | .name + "=" + .value')
+    export CLICKHOUSE_USER=admin CLICKHOUSE_PASSWORD=secret DATABASE_JOB_LOG="${dir}/queries.log"
+    PATH="${dir}/bin:${PATH}" bash "${dir}/job.sh" >/dev/null
+  )
+  sort "${dir}/queries.log"
+}
+
 test_clickhouse_cluster() {
   local chart=clickhouse-cluster
   local ci default full minimal prefixed nodes chi chk
@@ -1226,9 +1323,26 @@ test_clickhouse_cluster() {
   assert_eq "${chart}: allowed namespaces reach only HTTP and native" \
     "apps,jobs 8123,9000" \
     "$(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].from[0].namespaceSelector.matchExpressions[0].values | join(",")') $(q "${full}" '.[] | select(.kind == "NetworkPolicy" and .metadata.name == "analytics-clickhouse") | .spec.ingress[3].ports | map(.port) | join(",")')"
-  assert_eq "${chart}: Atomic database is created ON CLUSTER" \
+  assert_eq "${chart}: Atomic database is created with the Atomic engine" \
     "Atomic" \
     "$(q "${full}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "ENGINE") | .value')"
+  # ON CLUSTER reaches only the servers the receiving one lists at that
+  # moment, so the job creates the database on each replica's own Service,
+  # whose name the server certificate covers.
+  local db_script
+  db_script="$(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].command[2]')"
+  assert_eq "${chart}: database job creates the database on each replica, not ON CLUSTER" \
+    "0 1 1 analytics main 1 2" \
+    "$(grep -c "ON CLUSTER '" <<<"${db_script}") $(grep -c 'host="chi-${INSTALLATION}-${CLUSTER}-${shard}-${replica}"' <<<"${db_script}") $(grep -c -- '--host "$host"' <<<"${db_script}") $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "INSTALLATION") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "CLUSTER") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "SHARDS") | .value') $(q "${default}" '.[] | select(.kind == "Job") | .spec.template.spec.containers[0].env[] | select(.name == "REPLICAS") | .value')"
+
+  local replicated="CREATE DATABASE IF NOT EXISTS \`events\` ENGINE = Replicated('/clickhouse/databases/events', '{shard}', '{replica}')"
+  assert_eq "${chart}: database job creates a Replicated database on each replica of a shard" \
+    "chi-analytics-main-0-0 plain ${replicated}
+chi-analytics-main-0-1 plain ${replicated}" \
+    "$(run_database_job "${default}" default)"
+  assert_eq "${chart}: database job creates an Atomic database on every replica of every shard" \
+    "$(for s in 0 1; do for r in 0 1 2; do echo "chi-analytics-main-${s}-${r} plain CREATE DATABASE IF NOT EXISTS \`events\` ENGINE = Atomic"; done; done)" \
+    "$(run_database_job "${full}" full)"
 
   assert_eq "${chart}: without a bucket there is no backup, cold tier or database job" \
     "0 0  1" \
@@ -1237,6 +1351,9 @@ test_clickhouse_cluster() {
   local tls keep_plain
   tls="$(render "${chart}" tls -n analytics -f "${ci}/tls-values.yaml")"
   keep_plain="$(render "${chart}" tls-plain -n analytics -f "${ci}/full-values.yaml" --set tls.enabled=true)"
+  assert_eq "${chart}: with TLS the database job reaches every replica over TLS" \
+    "$(for s in 0 1; do for r in 0 1; do echo "chi-analytics-main-${s}-${r} secure ${replicated}"; done; done)" \
+    "$(run_database_job "${tls}" tls)"
 
   assert_eq "${chart}: TLS off renders no certificates, service template or cluster security" \
     "0 0  " \

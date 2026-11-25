@@ -70,14 +70,14 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-acm-certificate` | ACM Certificate | v1.1.2 | `security/acm_certificate/` |
 | `rvn-aurora` | Aurora Database | v1.7.0 | `database/aurora/` |
 | `rvn-aws-alb` | AWS Application Load Balancer | v1.5.1 | `networking/alb/` |
-| `rvn-aws-alternat` | alterNAT | v0.2.0 | `networking/alternat/` |
+| `rvn-aws-alternat` | alterNAT | v0.2.1 | `networking/alternat/` |
 | `rvn-aws-ami` | AMI | v0.5.0 | `compute/ami/` |
 | `rvn-aws-compliance` | AWS Compliance | v1.0.0 | `security/compliance/` |
 | `rvn-aws-ecr` | AWS ECR Repository | v1.0.0 | `containers/ecr/` |
 | `rvn-aws-iam-policy` | AWS IAM Policy | v1.1.2 | `security/iam_policy/` |
 | `rvn-aws-iam-role` | AWS IAM Role | v1.1.2 | `security/iam/` |
 | `rvn-aws-kms` | AWS KMS Key | v0.2.1 | `security/kms/` |
-| `rvn-aws-network` | VPC Network | v1.3.2 | `networking/vpc/` |
+| `rvn-aws-network` | VPC Network | v1.4.0 | `networking/vpc/` |
 | `rvn-aws-secret` | AWS Secret | v1.1.1 | `security/secret/` |
 | `rvn-aws-static` | Static Hosting | v1.9.0 | `hosting/static_site/` |
 | `rvn-cloudfront` | CloudFront CDN | v1.9.0 | `cdn/cloudfront/` |
@@ -87,11 +87,11 @@ sync by `node tools/ravion-modules/dist/src/cli.js readme` (enforced in CI, and 
 | `rvn-ecs-web` | ECS Web Service | v2.10.0 | `compute/ecs_service/` |
 | `rvn-ecs-worker` | ECS Worker | v2.6.0 | `compute/ecs_service/` |
 | `rvn-efs` | EFS File System | v1.1.1 | `storage/efs/` |
-| `rvn-eks-addons` | EKS Add-ons | v1.4.1 | `compute/eks/addons/` |
+| `rvn-eks-addons` | EKS Add-ons | v1.5.0 | `compute/eks/addons/` |
 | `rvn-eks-chart` | EKS Helm Chart | v1.0.0 | `compute/eks_service/` |
 | `rvn-eks-cluster` | EKS Cluster | v1.0.0 | `compute/eks/` |
-| `rvn-eks-web` | EKS Web Service | v1.18.0 | `compute/eks_service/` |
-| `rvn-eks-worker` | EKS Worker | v1.1.0 | `compute/eks_service/` |
+| `rvn-eks-web` | EKS Web Service | v2.0.0 | `compute/eks_service/` |
+| `rvn-eks-worker` | EKS Worker | v2.0.0 | `compute/eks_service/` |
 | `rvn-elasticache` | ElastiCache | v1.1.2 | `cache/elasticache/` |
 | `rvn-lambda` | Lambda Function | v2.4.0 | `compute/lambda/` |
 | `rvn-rds` | RDS Database | v1.6.0 | `database/rds/` |

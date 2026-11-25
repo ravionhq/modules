@@ -4,8 +4,8 @@ definition:
   name: EKS Web Service
   description: Web server on EKS for running any HTTP application on your Kubernetes cluster behind a shared load balancer, with no Kubernetes manifests or Helm charts to write.
 release:
-  version: 1.18.0
-  description: Alarm on unhealthy targets in the service's load balancer target group, with optional notification actions.
+  version: 2.0.0
+  description: Size the Spot burst pool for demand beyond the On-Demand baseline. Prometheus triggers no longer count the baseline pods' capacity as Spot demand, so the pool stops running extra Spot pods for work the baseline already serves. When upgrading, remove any baseline subtraction your queries already do, and add subtractBaseline false to triggers that measure a backlog of waiting work.
 module:
   inputs:
     - id: section_cluster
@@ -438,6 +438,18 @@ module:
           not: true
       default: 2
     - $include: ../../partials/inputs/eks-workload-spot-burst-inputs.yml
+    - id: spot_burst_scale_down_window
+      label: Scale-down delay (secs)
+      type: number
+      collapsible: true
+      description: Seconds demand must stay lower before the Spot pool starts shrinking. The pool then shrinks gradually rather than all at once.
+      max: 3600
+      min: 0
+      show_when:
+        compute_target: on_demand
+        spot_burst_enabled: true
+      default: 300
+    - $include: ../../partials/inputs/eks-workload-spot-burst-scale-down-inputs.yml
     - $include: ../../partials/inputs/eks-workload-runtime-inputs.yml
     - $include: ../../partials/inputs/eks-workload-iam-inputs.yml
     - id: section_deployments
@@ -683,6 +695,10 @@ module:
                   triggers: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_triggers != nil ? module.input.spot_burst_triggers : [] >>'
                   fallback:
                     replicas: '<< module.input.spot_burst_enabled == true && module.input.compute_target == "on_demand" && module.input.spot_burst_fallback_replicas != nil ? module.input.spot_burst_fallback_replicas : nil >>'
+                  scaleDown:
+                    stabilizationWindowSeconds: '<< module.input.spot_burst_scale_down_window != nil ? module.input.spot_burst_scale_down_window : 300 >>'
+                    podsPerPeriod: '<< module.input.spot_burst_scale_down_pods != nil ? module.input.spot_burst_scale_down_pods : 2 >>'
+                    percentPerPeriod: '<< module.input.spot_burst_scale_down_percent != nil ? module.input.spot_burst_scale_down_percent : 25 >>'
   ui:
     links: |-
       <<
@@ -977,7 +993,7 @@ module:
 
     ### KEDA Spot burst
 
-    **Spot burst** is optional and off by default. Enable it only with **Compute target** set to **EC2 on-demand**; configure **Baseline pods** (default 2, minimum 1), **Minimum Spot pods** (default 0), **Maximum Spot pods** (default 8, minimum 1), **Polling interval (secs)** (default 30), **Cooldown period (secs)** (default 300), and the required **KEDA triggers** array. The On-Demand baseline remains fixed while a separate Spot Deployment starts at the configured minimum. If that minimum is zero, CPU- or memory-only triggers cannot wake the pool; choose a signal that reports demand with no Spot application pods running, and set thresholds with baseline capacity in mind.
+    **Spot burst** is optional and off by default. Enable it only with **Compute target** set to **EC2 on-demand**; configure **Baseline pods** (default 2, minimum 1), **Minimum Spot pods** (default 0), **Maximum Spot pods** (default 8, minimum 1), **Polling interval (secs)** (default 30), **Cooldown period (secs)** (default 300), and the required **KEDA triggers** array. The On-Demand baseline remains fixed while a separate Spot Deployment starts at the configured minimum. When demand falls, the pool waits **Scale-down delay (secs)** (default 300) and then shrinks gradually, by at most **Spot pods removed per minute** (default 2) or **Spot pool removed per minute (%)** (default 25), whichever is fewer, so a pool at its maximum never drops to its minimum in one step while work is still arriving. Scale-up is not limited. If that minimum is zero, CPU- or memory-only triggers cannot wake the pool; choose a signal that reports demand with no Spot application pods running. A Prometheus trigger counts demand that every pod serves, the baseline included, so the module takes the baseline's capacity off it: KEDA scales on `clamp_min((query) - Baseline pods * threshold, 0)`. Set `threshold` to what one pod handles, and the Spot pool runs only the pods needed beyond the baseline. Add `subtractBaseline: false` to a trigger whose metric already leaves out what running pods serve, such as a backlog of waiting work. The query must return an instant vector, as KEDA's Prometheus scaler requires, and other trigger types are passed through unchanged.
 
     Select **KEDA** in the EKS add-ons module and apply the add-ons before enabling burst mode. Authentication resources and any referenced Kubernetes Secrets must be provisioned separately in the appropriate namespace or cluster scope. Put references, not credentials, in the trigger configuration; this module does not create trigger IAM permissions. KEDA 2.20.2's published Kubernetes test matrix covers versions 1.33–1.35; verify compatibility with newer clusters, including 1.36, in staging.
 
@@ -1114,9 +1130,12 @@ module:
     | Baseline pods | No | 2 | Fixed On-Demand replicas during Spot burst; minimum 1 |
     | Minimum Spot pods | No | 0 | Lower bound for the KEDA-managed Spot pool |
     | Maximum Spot pods | No | 8 | Maximum Spot replicas during burst; minimum 1 |
-    | KEDA triggers | Yes (when Spot burst is enabled) | - | If Minimum Spot pods is zero, a trigger must work with zero Spot replicas; CPU or memory alone cannot wake the pool |
+    | KEDA triggers | Yes (when Spot burst is enabled) | - | If Minimum Spot pods is zero, a trigger must work with zero Spot replicas; CPU or memory alone cannot wake the pool. Prometheus triggers have the baseline's capacity subtracted unless they set `subtractBaseline: false` |
     | Polling interval (secs) | No | 30 | KEDA trigger polling interval |
-    | Cooldown period (secs) | No | 300 | Delay before KEDA scales Spot replicas down |
+    | Cooldown period (secs) | No | 300 | Delay before KEDA scales the Spot pool to zero; applies only when Minimum Spot pods is 0 |
+    | Scale-down delay (secs) | No | 300 | Time demand must stay lower before the Spot pool starts shrinking; maximum 3600 |
+    | Spot pods removed per minute | No | 2 | Most Spot pods removed in any minute; the smaller of this and the percentage applies |
+    | Spot pool removed per minute (%) | No | 25 | Most of the Spot pool removed in any minute; at least one pod is always removed |
     | Stop timeout (secs) | No | 30 | Time a pod has after SIGTERM before it is killed, including the pre-stop delay |
     | Pre-stop delay (secs) | No | 10 | Time a stopping pod keeps serving before SIGTERM, so the load balancer deregisters it first; must be less than the grace period |
     | Disruption budget | No | true | Render a PodDisruptionBudget limiting voluntary evictions |

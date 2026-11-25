@@ -174,6 +174,20 @@ variable "nat_gateway_eip_allocation_ids" {
   }
 }
 
+variable "nat_instance_route_takeover_enabled" {
+  type        = bool
+  description = <<-EOT
+    Let a NAT instance (for example alterNAT) keep the private route tables'
+    0.0.0.0/0 route after it takes the route over. When true, a deploy leaves a
+    default route that points at a network interface in place instead of
+    pointing it back at the NAT gateway. Routes that point at a NAT gateway,
+    including one that was replaced, are still pointed at this module's NAT
+    gateway, so failing back to it keeps working.
+  EOT
+  default     = false
+  nullable    = false
+}
+
 ################################################################################
 # VPC Endpoints
 ################################################################################

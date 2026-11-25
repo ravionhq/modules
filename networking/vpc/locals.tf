@@ -53,6 +53,18 @@ locals {
   create_nat_eips                             = var.nat_gateway_enabled && local.supplied_nat_eip_allocation_ids == null
   nat_gateway_eip_allocation_ids              = local.supplied_nat_eip_allocation_ids != null && local.supplied_nat_eip_allocation_ids_match_count ? local.supplied_nat_eip_allocation_ids : aws_eip.nat[*].allocation_id
 
+  # Network interface each private default route points at when a NAT
+  # instance has taken it over, or null to point it at this module's NAT
+  # gateway. Always null unless nat_instance_route_takeover_enabled.
+  private_nat_route_instance_targets = [
+    for i in range(local.nat_gateway_count) :
+    var.nat_instance_route_takeover_enabled ? one([
+      for route in data.aws_route_table.private_nat_live[i].routes :
+      route.network_interface_id
+      if route.cidr_block == "0.0.0.0/0" && route.network_interface_id != null && route.network_interface_id != ""
+    ]) : null
+  ]
+
   # VPC Endpoints
   # Callers that template tfvars often can't omit the key, so treat null the
   # same as an empty list (no interface endpoints).
