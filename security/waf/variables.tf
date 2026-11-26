@@ -202,6 +202,24 @@ variable "custom_rules_json" {
   }
 }
 
+variable "custom_rules_response_bodies" {
+  type = map(object({
+    content      = string
+    content_type = optional(string, "APPLICATION_JSON")
+  }))
+  description = "Response bodies the custom rules can send, by key. A rule in custom_rules_json uses one with \"CustomResponse\": {\"ResponseCode\": 429, \"CustomResponseBodyKey\": \"<key>\"} in its Block action. AWS only lets a rule group's rules use bodies defined on that group, so the web ACL's rate_limit_response_body is not available to them. content_type is TEXT_PLAIN, TEXT_HTML or APPLICATION_JSON."
+  default     = {}
+
+  validation {
+    condition = alltrue([for key, body in var.custom_rules_response_bodies :
+      can(regex("^[A-Za-z0-9_-]{1,128}$", key)) &&
+      length(body.content) >= 1 && length(body.content) <= 10240 &&
+      contains(["TEXT_PLAIN", "TEXT_HTML", "APPLICATION_JSON"], body.content_type)
+    ])
+    error_message = "Each custom_rules_response_bodies key must be 1-128 letters, digits, _ or -, with 1-10240 characters of content and a content_type of TEXT_PLAIN, TEXT_HTML or APPLICATION_JSON."
+  }
+}
+
 variable "custom_rules_capacity" {
   type        = number
   description = "Web ACL capacity units reserved for the custom rule group. Changing it replaces the group: the new one is created first and the old one deleted once the web ACL has switched."

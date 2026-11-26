@@ -157,6 +157,64 @@ run "custom_rules_go_into_a_rule_group" {
   }
 }
 
+run "custom_rules_can_send_their_own_response_bodies" {
+  command = apply
+
+  variables {
+    custom_rules_capacity = 10
+    custom_rules_json = jsonencode([{
+      Name             = "limit-no-user-agent"
+      Priority         = 0
+      Action           = { Block = { CustomResponse = { ResponseCode = 429, CustomResponseBodyKey = "user-agent-required" } } }
+      Statement        = { RateBasedStatement = { Limit = 10, AggregateKeyType = "IP" } }
+      VisibilityConfig = { SampledRequestsEnabled = true, CloudWatchMetricsEnabled = true, MetricName = "limit-no-user-agent" }
+    }])
+    custom_rules_response_bodies = {
+      user-agent-required = { content = "{\"code\":\"USER_AGENT_REQUIRED\"}" }
+      plain               = { content = "slow down", content_type = "TEXT_PLAIN" }
+    }
+  }
+
+  assert {
+    condition     = one([for b in aws_wafv2_rule_group.custom[0].custom_response_body : b if b.key == "user-agent-required"]).content == "{\"code\":\"USER_AGENT_REQUIRED\"}" && one([for b in aws_wafv2_rule_group.custom[0].custom_response_body : b if b.key == "user-agent-required"]).content_type == "APPLICATION_JSON"
+    error_message = "A custom rules response body must be defined on the rule group, as JSON by default."
+  }
+  assert {
+    condition     = one([for b in aws_wafv2_rule_group.custom[0].custom_response_body : b if b.key == "plain"]).content_type == "TEXT_PLAIN"
+    error_message = "A custom rules response body must keep its content_type."
+  }
+  assert {
+    condition     = length(aws_wafv2_web_acl.this.custom_response_body) == 0
+    error_message = "Custom rules response bodies belong to the rule group, not the web ACL."
+  }
+}
+
+run "custom_rules_response_bodies_default_to_none" {
+  command = apply
+
+  variables {
+    custom_rules_capacity = 10
+    custom_rules_json     = "[]"
+  }
+
+  assert {
+    condition     = length(aws_wafv2_rule_group.custom[0].custom_response_body) == 0
+    error_message = "Without custom_rules_response_bodies the rule group must define no response bodies."
+  }
+}
+
+run "custom_rules_response_bodies_need_a_valid_content_type" {
+  command = plan
+
+  variables {
+    custom_rules_capacity        = 10
+    custom_rules_json            = "[]"
+    custom_rules_response_bodies = { bad = { content = "x", content_type = "TEXT_XML" } }
+  }
+
+  expect_failures = [var.custom_rules_response_bodies]
+}
+
 run "custom_rules_need_a_capacity" {
   command = plan
 
