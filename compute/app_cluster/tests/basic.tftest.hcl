@@ -606,17 +606,23 @@ run "no_listed_secrets_leaves_the_secrets_role_without_a_policy" {
     condition     = aws_iam_role.app_secrets.name == "rvn-ci-app-secrets-minst_test" && length(aws_iam_role_policy.app_secrets_read) == 0
     error_message = "A cluster that lists no secrets must still have its secrets role, with no policy"
   }
+
+  assert {
+    condition     = output.app_secrets == []
+    error_message = "A cluster that lists no secrets hands Ravion none"
+  }
 }
 
 run "apps_read_only_the_listed_secrets_as_a_role_only_the_sandbox_hosts_assume" {
   command = plan
 
   variables {
-    app_secret_and_parameter_arns = [
-      "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/*",
-      "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token",
+    secrets = [
+      { name = "DATABASE_URL", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:DATABASE_URL::" },
+      { name = "DATABASE_PASSWORD", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:password::" },
+      { name = "API_TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" },
     ]
-    app_secret_kms_key_arns = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"]
+    secret_kms_key_arns = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"]
   }
 
   assert {
@@ -636,11 +642,20 @@ run "apps_read_only_the_listed_secrets_as_a_role_only_the_sandbox_hosts_assume" 
 
   assert {
     condition = jsondecode(aws_iam_role_policy.app_secrets_read[0].policy).Statement == [
-      { Sid = "ReadListedSecrets", Action = ["secretsmanager:GetSecretValue"], Effect = "Allow", Resource = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/*"] },
+      { Sid = "ReadListedSecrets", Action = ["secretsmanager:GetSecretValue"], Effect = "Allow", Resource = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf"] },
       { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/token"] },
       { Sid = "DecryptWithListedKeys", Action = ["kms:Decrypt"], Effect = "Allow", Resource = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"] },
     ]
-    error_message = "The secrets role must read the listed secrets and parameters, decrypt with the listed keys, and nothing else"
+    error_message = "The secrets role must read the secrets the cluster lists, each once and without its JSON key, decrypt with the listed keys, and nothing else"
+  }
+
+  assert {
+    condition = output.app_secrets == [
+      { name = "DATABASE_URL", valueFrom = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:DATABASE_URL::" },
+      { name = "DATABASE_PASSWORD", valueFrom = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:password::" },
+      { name = "API_TOKEN", valueFrom = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" },
+    ]
+    error_message = "The module must hand Ravion each secret's name and where it is read from, as listed"
   }
 
   assert {
@@ -653,12 +668,12 @@ run "a_cluster_that_lists_only_parameters_grants_no_secrets_manager_read" {
   command = plan
 
   variables {
-    app_secret_and_parameter_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/*"]
+    secrets = [{ name = "API_TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" }]
   }
 
   assert {
     condition = jsondecode(aws_iam_role_policy.app_secrets_read[0].policy).Statement == [
-      { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/*"] },
+      { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/token"] },
     ]
     error_message = "A list with parameters only must grant no Secrets Manager read"
   }

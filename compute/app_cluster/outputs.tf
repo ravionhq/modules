@@ -117,3 +117,8 @@ output "app_secrets_role_arn" {
   description = "ARN of the role the apps' sandboxes read their secrets as. The sandbox host assumes it for each app's sandbox."
   value       = aws_iam_role.app_secrets.arn
 }
+
+output "app_secrets" {
+  description = "The secrets the cluster's apps may read: each one's name and where it is read from, never a value."
+  value       = local.app_secrets
+}

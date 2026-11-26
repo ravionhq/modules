@@ -187,26 +187,39 @@ variable "execution_environment_id" {
   }
 }
 
-variable "app_secret_and_parameter_arns" {
-  type        = list(string)
-  description = "Secrets Manager secret and SSM parameter ARNs (wildcards allowed) the cluster's apps may read through `secrets:` in ravion-app.yaml. Each app's sandbox reads them itself, as a role this module creates, which can read nothing else. Ravion's own roles are not trusted by it. With an empty list the role has no policy, and the cluster's apps read no secrets."
+variable "secrets" {
+  type = list(object({
+    name       = string
+    value_from = string
+  }))
+  description = "Secrets the cluster's apps may read, each as the environment variable `name`. An app names the ones it wants under `secrets:` in ravion-app.yaml. value_from is the ARN of a Secrets Manager secret, optionally followed by `:<JSON key>:<version stage>:<version ID>`, or the ARN of an SSM parameter. Each app's sandbox reads them itself, as a role this module creates, which can read these and nothing else. Ravion's own roles are not trusted by it."
   default     = []
   nullable    = false
 
   validation {
-    condition     = alltrue([for arn in var.app_secret_and_parameter_arns : can(regex("^arn:[^:]*:(secretsmanager:[^:]*:[0-9]{12}:secret:|ssm:[^:]*:[0-9]{12}:parameter/).+", arn))])
-    error_message = "All app_secret_and_parameter_arns must be Secrets Manager secret or SSM parameter ARNs, e.g. 'arn:aws:secretsmanager:us-east-2:111122223333:secret:shop/*' or 'arn:aws:ssm:us-east-2:111122223333:parameter/shop/*'."
+    condition     = alltrue([for s in var.secrets : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", s.name)) && !startswith(s.name, "RAVION_")])
+    error_message = "Each secret name must be a valid environment variable name that does not start with RAVION_."
+  }
+
+  validation {
+    condition     = length(distinct([for s in var.secrets : s.name])) == length(var.secrets)
+    error_message = "Each secret name must be listed once."
+  }
+
+  validation {
+    condition     = alltrue([for s in var.secrets : can(regex("^arn:[^:]*:(secretsmanager:[^:]*:[0-9]{12}:secret:[^:*?]+(:[^:*?]*){0,3}|ssm:[^:]*:[0-9]{12}:parameter/[^:*?]+)$", s.value_from))])
+    error_message = "Each value_from must be the full ARN of one Secrets Manager secret, optionally followed by :<JSON key>:<version stage>:<version ID>, or of one SSM parameter, without wildcards, e.g. 'arn:aws:secretsmanager:us-east-2:111122223333:secret:shop-AbCdEf:DATABASE_URL::' or 'arn:aws:ssm:us-east-2:111122223333:parameter/shop/token'."
   }
 }
 
-variable "app_secret_kms_key_arns" {
+variable "secret_kms_key_arns" {
   type        = list(string)
-  description = "Customer-managed KMS key ARNs the apps' secrets and parameters are encrypted with. Only needed for a customer-managed key; the AWS-managed aws/secretsmanager and aws/ssm keys need no grant."
+  description = "Customer-managed KMS key ARNs the secrets are encrypted with. Only needed for a customer-managed key; the AWS-managed aws/secretsmanager and aws/ssm keys need no grant."
   default     = []
   nullable    = false
 
   validation {
-    condition     = alltrue([for arn in var.app_secret_kms_key_arns : can(regex("^arn:[^:]*:kms:", arn))])
-    error_message = "All app_secret_kms_key_arns must be KMS key ARNs."
+    condition     = alltrue([for arn in var.secret_kms_key_arns : can(regex("^arn:[^:]*:kms:", arn))])
+    error_message = "All secret_kms_key_arns must be KMS key ARNs."
   }
 }

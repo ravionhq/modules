@@ -5,7 +5,7 @@ definition:
   description: Runs the apps you deploy with ravion deploy, each in its own sandbox on an execution environment's sandbox pool, and serves them under a managed wildcard domain and your own domains through a Network Load Balancer and a router that wakes a paused app on request.
 release:
   version: 0.2.0
-  description: 'Apps can read secrets: list the Secrets Manager secrets and Parameter Store parameters the cluster''s apps may read, and name them under `secrets` in ravion-app.yaml. Each app''s sandbox reads them itself, as a new role, rvn-ci-app-secrets-<module instance id>, which can read only what you list. Only the cluster''s sandbox hosts, in your account, may assume the role. Ravion''s own roles cannot.'
+  description: 'Apps can read secrets: list each secret the cluster''s apps may read, with the environment variable name they read it as, and an app names the ones it wants under `secrets` in ravion-app.yaml. Each app''s sandbox reads them itself, as a new role, rvn-ci-app-secrets-<module instance id>, which can read only the secrets you list. Only the cluster''s sandbox hosts, in your account, may assume the role. Ravion''s own roles cannot.'
 module:
   outputs:
     - id: wildcard_domain_name
@@ -171,20 +171,20 @@ module:
       add_button_label: Add CIDR block
       collapsible: true
       placeholder: 0.0.0.0/0
-    - id: section_app_secrets
-      label: App secrets
+    - id: section_secrets
+      label: Secrets
       type: section
-    - id: app_secret_and_parameter_arns
-      label: Secret and parameter ARNs
-      type: string_array
-      description: Secrets Manager secrets and Parameter Store parameters that apps may read through secrets in ravion-app.yaml. Wildcards are allowed. Use an empty list to allow none.
-      add_button_label: Add ARN
-      collapsible: true
-      placeholder: arn:aws:secretsmanager:us-east-1:111122223333:secret:shop/*
-    - id: app_secret_kms_key_arns
+    - id: secrets
+      label: Secrets
+      type: array
+      description: Secrets the apps may read, as an array of objects with `name` and `value_from` keys. An app reads the ones it names under secrets in ravion-app.yaml, each as the environment variable `name`. value_from is a Secrets Manager secret ARN, optionally followed by `:<JSON key>:<version stage>:<version ID>`, or a Parameter Store parameter ARN.
+      placeholder: |-
+        - name: DATABASE_URL
+          value_from: arn:aws:secretsmanager:us-east-1:111122223333:secret:shop-AbCdEf:DATABASE_URL::
+    - id: secret_kms_key_arns
       label: KMS key ARNs
       type: string_array
-      description: Customer-managed KMS keys that encrypt those secrets and parameters. Leave empty for AWS-managed keys.
+      description: Customer-managed KMS keys that encrypt those secrets. Leave empty for AWS-managed keys.
       add_button_label: Add KMS key ARN
       collapsible: true
       placeholder: arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
@@ -274,8 +274,8 @@ module:
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
         execution_environment_id: << module.input.execution_environment_id >>
-        app_secret_and_parameter_arns: << module.input.app_secret_and_parameter_arns || [] >>
-        app_secret_kms_key_arns: << module.input.app_secret_kms_key_arns || [] >>
+        secrets: << module.input.secrets || [] >>
+        secret_kms_key_arns: << module.input.secret_kms_key_arns || [] >>
         domains: << module.input.domains || [] >>
         ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
         module_instance_id: << module.id >>
@@ -296,6 +296,7 @@ module:
     domain: << module.output.wildcard_domain_name >>
     customDomains: << module.output.custom_domain_apexes >>
     secretsRoleArn: << module.output.app_secrets_role_arn >>
+    secrets: << module.output.app_secrets >>
     loadBalancer:
       tlsListenerArn: << module.output.tls_listener_arn >>
       dnsName: << module.output.load_balancer_dns_name >>

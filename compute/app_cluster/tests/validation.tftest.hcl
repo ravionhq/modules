@@ -198,22 +198,55 @@ run "router_needs_a_subnet" {
   expect_failures = [var.router_subnet_ids]
 }
 
-run "an_app_secret_arn_of_another_service_is_refused" {
+run "a_secret_read_from_another_service_is_refused" {
   command = plan
 
   variables {
-    app_secret_and_parameter_arns = ["arn:aws:s3:::shop-secrets/token"]
+    secrets = [{ name = "TOKEN", value_from = "arn:aws:s3:::shop-secrets/token" }]
   }
 
-  expect_failures = [var.app_secret_and_parameter_arns]
+  expect_failures = [var.secrets]
 }
 
-run "an_app_secret_named_without_its_arn_is_refused" {
+run "a_secret_named_without_its_arn_is_refused" {
   command = plan
 
   variables {
-    app_secret_and_parameter_arns = ["shop/token"]
+    secrets = [{ name = "TOKEN", value_from = "shop/token" }]
   }
 
-  expect_failures = [var.app_secret_and_parameter_arns]
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_read_from_a_wildcard_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "TOKEN", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/*" }]
+  }
+
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_name_that_is_no_environment_variable_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "api-token", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" }]
+  }
+
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_name_listed_twice_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [
+      { name = "TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" },
+      { name = "TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/other" },
+    ]
+  }
+
+  expect_failures = [var.secrets]
 }
