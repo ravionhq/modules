@@ -31,3 +31,10 @@
   add_button_label: Add env var name
   collapsible: true
   required: false
+- id: deploy_environment_variable_required_names
+  label: Required deploy-provided environment variables
+  type: string_array
+  description: Every deploy must supply a non-empty value for each name.
+  add_button_label: Add required name
+  collapsible: true
+  required: false

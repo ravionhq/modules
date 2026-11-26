@@ -18,11 +18,13 @@ imagePullSecrets: >-
 command: '<< module.input.start_command != nil ? module.input.start_command : [] >>'
 args: '<< module.input.start_command_args != nil ? module.input.start_command_args : [] >>'
 # A deploy step may add plain env vars only for names allowlisted in
-# deploy_environment_variable_names, never replacing a module-defined variable or secret.
+# deploy_environment_variable_names or deploy_environment_variable_required_names, never
+# replacing a module-defined variable or secret.
 env: >-
   << (module.input.environment_variables != nil ? module.input.environment_variables : []) |
-  concat(module.input.deploy_environment_variable_names != nil && deploy.input.environment_variables != nil ?
-  map(filter(deploy.input.environment_variables, #.name in module.input.deploy_environment_variable_names &&
+  concat(deploy.input.environment_variables != nil ?
+  map(filter(deploy.input.environment_variables, #.name in concat(module.input.deploy_environment_variable_names ?? [],
+  module.input.deploy_environment_variable_required_names ?? []) &&
   #.value != nil && !(#.name in map(module.input.environment_variables ?? [], .name)) &&
   !(#.name in map(module.input.secrets ?? [], .name))), {"name": #.name, "value": string(#.value)}) : []) >>
 resources:
