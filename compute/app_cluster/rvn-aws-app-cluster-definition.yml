@@ -64,6 +64,14 @@ module:
       type: string
       label: HTTPS target group ARN suffix
       description: The TargetGroup dimension of the router's health metrics.
+    - id: app_secrets_role_arn
+      type: string
+      label: Secrets role ARN
+      description: The role the apps' sandboxes read their secrets as.
+    - id: app_secrets
+      type: array
+      label: Secrets
+      description: Each secret's name and where it is read from, never a value.
     - id: aws_account_id
       type: string
       label: AWS account ID
