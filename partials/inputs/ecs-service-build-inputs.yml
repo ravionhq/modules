@@ -70,3 +70,16 @@
   placeholder: Railpack default
   show_when:
     build_source: railpack
+- id: soci_enabled
+  label: SOCI lazy loading
+  description: Indexes the image so Fargate tasks start sooner. Turn off to shorten builds where task start time matters less, such as staging.
+  type: boolean
+  default: true
+  collapsible: true
+  show_when:
+    build_source:
+      - dockerfile
+      - railpack
+    capacity_provider:
+      - fargate
+      - fargate_spot

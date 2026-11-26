@@ -3,8 +3,8 @@ definition:
   name: ECS Network Service
   description: Network Load Balanced ECS service for exposing one to five TCP, UDP, or TLS ports through an ECS cluster Network Load Balancer.
 release:
-  version: 2.7.0
-  description: Set Minimum tasks and Maximum tasks to 0 to stop the service without deleting it.
+  version: 2.8.0
+  description: Turn off SOCI lazy loading on Fargate services to shorten image builds.
 module:
   inputs:
     - id: section_cluster
@@ -347,7 +347,7 @@ module:
   build:
     $merge:
       - ../../partials/build/ecs-service-image-build.yml
-    soci_enabled: << module.input.capacity_provider == "fargate" || module.input.capacity_provider == "fargate_spot" >>
+    soci_enabled: << (module.input.capacity_provider == "fargate" || module.input.capacity_provider == "fargate_spot") && module.input.soci_enabled != false >>
   deploy:
     $merge:
       - ../../partials/deploy/ecs-service-deploy-common.yml
