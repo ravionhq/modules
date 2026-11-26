@@ -175,17 +175,17 @@ module:
       label: App secrets
       type: section
     - id: app_secret_and_parameter_arns
-      label: Secrets and parameters apps may read
+      label: Secret and parameter ARNs
       type: string_array
-      description: ARNs of the Secrets Manager secrets and Parameter Store parameters the apps may read through secrets in ravion-app.yaml. Wildcards are allowed. Each app's sandbox reads them as a role that can read nothing else, which Ravion's own roles cannot assume. Leave empty and the apps read no secrets.
+      description: Secrets Manager secrets and Parameter Store parameters that apps may read through secrets in ravion-app.yaml. Wildcards are allowed. Use an empty list to allow none.
       add_button_label: Add ARN
       collapsible: true
       placeholder: arn:aws:secretsmanager:us-east-1:111122223333:secret:shop/*
     - id: app_secret_kms_key_arns
-      label: KMS keys of those secrets
+      label: KMS key ARNs
       type: string_array
-      description: ARNs of the customer-managed KMS keys those secrets and parameters are encrypted with. Leave empty for the AWS-managed keys.
-      add_button_label: Add key ARN
+      description: Customer-managed KMS keys that encrypt those secrets and parameters. Leave empty for AWS-managed keys.
+      add_button_label: Add KMS key ARN
       collapsible: true
       placeholder: arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
     - id: section_router
