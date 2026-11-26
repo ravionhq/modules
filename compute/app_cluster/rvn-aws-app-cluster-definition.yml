@@ -4,8 +4,8 @@ definition:
   name: App Cluster
   description: Runs the apps you deploy with ravion deploy, each in its own sandbox on an execution environment's sandbox pool, and serves them under a managed wildcard domain and your own domains through a Network Load Balancer and a router that wakes a paused app on request.
 release:
-  version: 0.1.1
-  description: 'Lock the AWS provider to 6.69.1 (from 6.69.0), fixing plans that failed with `bufio.Scanner: token too long` on large AWS responses (e.g. Lambda functions with many published versions).'
+  version: 0.2.0
+  description: 'Apps can read secrets: list each secret the cluster''s apps may read, with the environment variable name they read it as, and an app names the ones it wants under `secrets` in ravion-app.yaml. Each app''s sandbox reads them itself, as a new role, rvn-ci-app-secrets-<module instance id>, which can read only the secrets you list. Only the cluster''s sandbox hosts, in your account, may assume the role. Ravion''s own roles cannot.'
 module:
   outputs:
     - id: wildcard_domain_name
@@ -64,6 +64,14 @@ module:
       type: string
       label: HTTPS target group ARN suffix
       description: The TargetGroup dimension of the router's health metrics.
+    - id: app_secrets_role_arn
+      type: string
+      label: Secrets role ARN
+      description: The role the apps' sandboxes read their secrets as.
+    - id: app_secrets
+      type: array
+      label: Secrets
+      description: Each secret's name and where it is read from, never a value.
     - id: aws_account_id
       type: string
       label: AWS account ID
@@ -171,6 +179,23 @@ module:
       add_button_label: Add CIDR block
       collapsible: true
       placeholder: 0.0.0.0/0
+    - id: section_secrets
+      label: Secrets
+      type: section
+    - id: secrets
+      label: Secrets
+      type: array
+      description: Secrets the apps may read, as an array of objects with `name` and `value_from` keys. An app reads the ones it names under secrets in ravion-app.yaml, each as the environment variable `name`. value_from is a Secrets Manager secret ARN, optionally followed by `:<JSON key>:<version stage>:<version ID>`, or a Parameter Store parameter ARN.
+      placeholder: |-
+        - name: DATABASE_URL
+          value_from: arn:aws:secretsmanager:us-east-1:111122223333:secret:shop-AbCdEf:DATABASE_URL::
+    - id: secret_kms_key_arns
+      label: KMS key ARNs
+      type: string_array
+      description: Customer-managed KMS keys that encrypt those secrets. Leave empty for AWS-managed keys.
+      add_button_label: Add KMS key ARN
+      collapsible: true
+      placeholder: arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
     - id: section_router
       label: Router
       type: section
@@ -256,6 +281,9 @@ module:
       base_path: compute/app_cluster
       terraform_variables:
         ...overrides: << module.input.advanced_terraform_variables >>
+        execution_environment_id: << module.input.execution_environment_id >>
+        secrets: << module.input.secrets || [] >>
+        secret_kms_key_arns: << module.input.secret_kms_key_arns || [] >>
         domains: << module.input.domains || [] >>
         ingress_cidr_blocks: '<< module.input.ingress_cidr_blocks != nil ? module.input.ingress_cidr_blocks : ["0.0.0.0/0"] >>'
         module_instance_id: << module.id >>
@@ -275,6 +303,8 @@ module:
     vpcId: << module.input.vpc_id >>
     domain: << module.output.wildcard_domain_name >>
     customDomains: << module.output.custom_domain_apexes >>
+    secretsRoleArn: << module.output.app_secrets_role_arn >>
+    secrets: << module.output.app_secrets >>
     loadBalancer:
       tlsListenerArn: << module.output.tls_listener_arn >>
       dnsName: << module.output.load_balancer_dns_name >>

@@ -104,15 +104,16 @@ mock_provider "ravion" {
 }
 
 variables {
-  name                  = "apps"
-  module_instance_id    = "minst_test"
-  ravion_aws_account_id = "aws_testaccount"
-  ravion_domain_name    = "apps"
-  ravion_api_url        = "https://api.example.test"
-  region                = "us-east-2"
-  vpc_id                = "vpc-12345678"
-  public_subnet_ids     = ["subnet-0a", "subnet-0b"]
-  router_subnet_ids     = ["subnet-1a", "subnet-1b"]
+  name                     = "apps"
+  module_instance_id       = "minst_test"
+  execution_environment_id = "ee_test"
+  ravion_aws_account_id    = "aws_testaccount"
+  ravion_domain_name       = "apps"
+  ravion_api_url           = "https://api.example.test"
+  region                   = "us-east-2"
+  vpc_id                   = "vpc-12345678"
+  public_subnet_ids        = ["subnet-0a", "subnet-0b"]
+  router_subnet_ids        = ["subnet-1a", "subnet-1b"]
 }
 
 run "load_balancer_terminates_tls_with_the_wildcard_certificate" {
@@ -595,5 +596,85 @@ run "outputs_describe_the_load_balancer_and_where_it_runs" {
   assert {
     condition     = output.aws_account_id == "123456789012" && output.region == "us-east-2"
     error_message = "The account and region outputs must describe where the resources live"
+  }
+}
+
+run "no_listed_secrets_leaves_the_secrets_role_without_a_policy" {
+  command = plan
+
+  assert {
+    condition     = aws_iam_role.app_secrets.name == "rvn-ci-app-secrets-minst_test" && length(aws_iam_role_policy.app_secrets_read) == 0
+    error_message = "A cluster that lists no secrets must still have its secrets role, with no policy"
+  }
+
+  assert {
+    condition     = output.app_secrets == []
+    error_message = "A cluster that lists no secrets hands Ravion none"
+  }
+}
+
+run "apps_read_only_the_listed_secrets_as_a_role_only_the_sandbox_hosts_assume" {
+  command = plan
+
+  variables {
+    secrets = [
+      { name = "DATABASE_URL", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:DATABASE_URL::" },
+      { name = "DATABASE_PASSWORD", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:password::" },
+      { name = "API_TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" },
+    ]
+    secret_kms_key_arns = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"]
+  }
+
+  assert {
+    condition     = aws_iam_role.app_secrets.name == "rvn-ci-app-secrets-minst_test" && aws_iam_role.app_secrets.path == "/rvn-ci/"
+    error_message = "A sandbox host may assume only roles under /rvn-ci/ named rvn-ci-*"
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role.app_secrets.assume_role_policy).Statement == [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::123456789012:root" }
+      Condition = { ArnEquals = { "aws:PrincipalArn" = "arn:aws:iam::123456789012:role/rvn-sandbox-host-ee_test" } }
+    }]
+    error_message = "Only the role of the cluster's sandbox hosts, in this account, may assume the secrets role: no role of Ravion's"
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role_policy.app_secrets_read[0].policy).Statement == [
+      { Sid = "ReadListedSecrets", Action = ["secretsmanager:GetSecretValue"], Effect = "Allow", Resource = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf"] },
+      { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/token"] },
+      { Sid = "DecryptWithListedKeys", Action = ["kms:Decrypt"], Effect = "Allow", Resource = ["arn:aws:kms:us-east-2:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"] },
+    ]
+    error_message = "The secrets role must read the secrets the cluster lists, each once and without its JSON key, decrypt with the listed keys, and nothing else"
+  }
+
+  assert {
+    condition = output.app_secrets == [
+      { name = "DATABASE_URL", valueFrom = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:DATABASE_URL::" },
+      { name = "DATABASE_PASSWORD", valueFrom = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/api-AbCdEf:password::" },
+      { name = "API_TOKEN", valueFrom = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" },
+    ]
+    error_message = "The module must hand Ravion each secret's name and where it is read from, as listed"
+  }
+
+  assert {
+    condition     = output.app_secrets_role_arn == aws_iam_role.app_secrets.arn
+    error_message = "The module must hand Ravion the ARN of the secrets role"
+  }
+}
+
+run "a_cluster_that_lists_only_parameters_grants_no_secrets_manager_read" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "API_TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" }]
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role_policy.app_secrets_read[0].policy).Statement == [
+      { Sid = "ReadListedParameters", Action = ["ssm:GetParameter"], Effect = "Allow", Resource = ["arn:aws:ssm:us-east-2:123456789012:parameter/shop/token"] },
+    ]
+    error_message = "A list with parameters only must grant no Secrets Manager read"
   }
 }

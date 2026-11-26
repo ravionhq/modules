@@ -115,6 +115,8 @@ describe("rvn-aws-app-cluster module definition", () => {
       "loadBalancer",
       "region",
       "router",
+      "secrets",
+      "secretsRoleArn",
       "vpcId",
     ]);
     assert.deepEqual(Object.keys(record(apps.loadBalancer)).sort(), ["dnsName", "tlsListenerArn", "zoneId"]);
@@ -153,6 +155,10 @@ describe("rvn-aws-app-cluster module definition", () => {
     assert.equal(apps.vpcId, "<< module.input.vpc_id >>");
     assert.equal(apps.domain, "<< module.output.wildcard_domain_name >>");
     assert.equal(apps.customDomains, "<< module.output.custom_domain_apexes >>");
+    // The role and the list come from the stack: the policy of the first is
+    // made from the second, so an app can name only what the role can read.
+    assert.equal(apps.secretsRoleArn, "<< module.output.app_secrets_role_arn >>");
+    assert.equal(apps.secrets, "<< module.output.app_secrets >>");
     assert.deepEqual(record(apps.loadBalancer), {
       tlsListenerArn: "<< module.output.tls_listener_arn >>",
       dnsName: "<< module.output.load_balancer_dns_name >>",
@@ -246,6 +252,8 @@ describe("rvn-aws-app-cluster module definition", () => {
     assert.equal(outputs.find((output) => output.id === "router_subnet_ids")?.type, "string_array");
     assert.equal(outputs.find((output) => output.id === "custom_domain_apexes")?.type, "string_array");
     assert.equal(outputs.find((output) => output.id === "tls_listener_arn")?.type, "string");
+    assert.equal(outputs.find((output) => output.id === "app_secrets_role_arn")?.type, "string");
+    assert.equal(outputs.find((output) => output.id === "app_secrets")?.type, "array");
     for (const id of ["execution_environment_id", "host_security_group_id"]) {
       assert.equal(declared.has(id), false, `unexpected output ${id}`);
       assert.equal(outputsFile.includes(`output "${id}"`), false, `unexpected Terraform output ${id}`);

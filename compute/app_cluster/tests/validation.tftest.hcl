@@ -52,13 +52,14 @@ mock_provider "ravion" {
 }
 
 variables {
-  name               = "apps"
-  module_instance_id = "minst_test"
-  ravion_domain_name = "apps"
-  ravion_api_url     = "https://api.example.test"
-  vpc_id             = "vpc-12345678"
-  public_subnet_ids  = ["subnet-0a", "subnet-0b"]
-  router_subnet_ids  = ["subnet-1a", "subnet-1b"]
+  name                     = "apps"
+  module_instance_id       = "minst_test"
+  execution_environment_id = "ee_test"
+  ravion_domain_name       = "apps"
+  ravion_api_url           = "https://api.example.test"
+  vpc_id                   = "vpc-12345678"
+  public_subnet_ids        = ["subnet-0a", "subnet-0b"]
+  router_subnet_ids        = ["subnet-1a", "subnet-1b"]
 }
 
 run "plain_http_control_plane_is_refused" {
@@ -195,4 +196,57 @@ run "router_needs_a_subnet" {
   }
 
   expect_failures = [var.router_subnet_ids]
+}
+
+run "a_secret_read_from_another_service_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "TOKEN", value_from = "arn:aws:s3:::shop-secrets/token" }]
+  }
+
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_named_without_its_arn_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "TOKEN", value_from = "shop/token" }]
+  }
+
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_read_from_a_wildcard_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "TOKEN", value_from = "arn:aws:secretsmanager:us-east-2:123456789012:secret:shop/*" }]
+  }
+
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_name_that_is_no_environment_variable_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [{ name = "api-token", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" }]
+  }
+
+  expect_failures = [var.secrets]
+}
+
+run "a_secret_name_listed_twice_is_refused" {
+  command = plan
+
+  variables {
+    secrets = [
+      { name = "TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/token" },
+      { name = "TOKEN", value_from = "arn:aws:ssm:us-east-2:123456789012:parameter/shop/other" },
+    ]
+  }
+
+  expect_failures = [var.secrets]
 }
