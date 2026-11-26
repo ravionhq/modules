@@ -116,6 +116,11 @@ output "cloudfront_function_arn" {
   value       = aws_cloudfront_function.rewrite.arn
 }
 
+output "edge_endpoint_function_arns" {
+  description = "ARNs of the edge endpoint functions, keyed by path pattern. Empty when edge_endpoints is empty."
+  value       = { for path_pattern, fn in aws_cloudfront_function.edge_endpoint : path_pattern => fn.arn }
+}
+
 output "cache_control_function_arn" {
   description = "ARN of the viewer-response Cache-Control writer function. Null when cache_control_enabled = false."
   value       = try(aws_cloudfront_function.cache_control[0].arn, null)

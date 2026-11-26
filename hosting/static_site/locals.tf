@@ -177,7 +177,49 @@ locals {
     }
   ]
 
-  ordered_behaviors = concat(local.no_cache_behaviors, local.error_document_behaviors)
+  # Keyed by path pattern so adding or removing one endpoint never recreates
+  # another. Function and policy names are account-wide in CloudFront, so they
+  # carry a hash of the site name and the path.
+  edge_endpoints = {
+    for endpoint in var.edge_endpoints : endpoint.path_pattern => merge(endpoint, {
+      resource_name = format(
+        "%s-%s-edge",
+        substr(replace(var.name, "/[^a-zA-Z0-9-_]/", "-"), 0, 46),
+        substr(sha1("${var.name}:${endpoint.path_pattern}"), 0, 8),
+      )
+    })
+  }
+
+  # Edge endpoint paths are answered by the caller's function alone: no version
+  # rewrite (the function decides what the path means) and no caching (the
+  # answer may differ per viewer). Listed first so a caller-chosen path wins
+  # over the broader no-cache patterns, and in the caller's order because
+  # CloudFront uses the first behavior that matches.
+  edge_endpoint_behaviors = [
+    for endpoint in var.edge_endpoints : {
+      path_pattern           = endpoint.path_pattern
+      target_origin_id       = local.origin_id
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+      cached_methods         = ["GET", "HEAD"]
+      compression_enabled    = true
+      cache_policy_id        = local.managed_cache_disabled_id
+      origin_request_policy_id = (
+        length(endpoint.cloudfront_headers) > 0
+        ? aws_cloudfront_origin_request_policy.edge_endpoint[endpoint.path_pattern].id
+        : var.origin_request_policy_id
+      )
+      response_headers_policy_id = local.effective_response_headers_policy_id
+      function_associations = [{
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.edge_endpoint[endpoint.path_pattern].arn
+      }]
+      lambda_function_associations = []
+      realtime_log_config_arn      = null
+    }
+  ]
+
+  ordered_behaviors = concat(local.edge_endpoint_behaviors, local.no_cache_behaviors, local.error_document_behaviors)
 
   cff_request_rewrite_name = format(
     "%s-%s-request-rewrite",

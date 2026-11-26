@@ -419,6 +419,36 @@ variable "no_cache_paths" {
   default     = []
 }
 
+variable "edge_endpoints" {
+  type = list(object({
+    path_pattern       = string
+    code               = string
+    cloudfront_headers = optional(list(string), [])
+  }))
+  description = "Paths handled by caller-supplied CloudFront Function code. Each entry creates a cloudfront-js-2.0 function from `code` and attaches it as the viewer-request function of a dedicated, uncached cache behavior for `path_pattern`; the version rewriter and the Cache-Control function do not run on these paths. A function that returns a response answers at the edge without reaching S3. `cloudfront_headers` lists CloudFront-generated request headers (such as CloudFront-Viewer-Country) to add to requests for the path through a module-managed origin request policy."
+  default     = []
+
+  validation {
+    condition     = alltrue([for e in var.edge_endpoints : can(regex("^/", e.path_pattern))])
+    error_message = "Each edge_endpoints path_pattern must start with '/'."
+  }
+
+  validation {
+    condition     = length(distinct([for e in var.edge_endpoints : e.path_pattern])) == length(var.edge_endpoints)
+    error_message = "Each edge_endpoints path_pattern must be unique."
+  }
+
+  validation {
+    condition     = alltrue([for e in var.edge_endpoints : length(trimspace(e.code)) > 0])
+    error_message = "Each edge_endpoints code must not be empty."
+  }
+
+  validation {
+    condition     = alltrue(flatten([for e in var.edge_endpoints : [for h in e.cloudfront_headers : can(regex("^(?i)cloudfront-[a-z0-9-]+$", h))]]))
+    error_message = "Each edge_endpoints cloudfront_headers entry must be a CloudFront-generated header name starting with 'CloudFront-'."
+  }
+}
+
 variable "default_root_object" {
   type        = string
   description = "Object name resolved when a viewer requests '/'. Defaults to 'index.html'."

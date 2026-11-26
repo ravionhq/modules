@@ -3,8 +3,8 @@ definition:
   name: Static Hosting
   description: Static file hosting for S3-backed sites and assets delivered through CloudFront.
 release:
-  version: 1.9.0
-  description: Create or reuse CloudFront static IPs for apex DNS and firewall allowlisting.
+  version: 1.10.0
+  description: Answer chosen paths at the CloudFront edge with your own CloudFront Function code.
 module:
   build:
     builder: >-
@@ -232,6 +232,41 @@ module:
       id: origin_shield_enabled
       label: Origin Shield
       type: boolean
+    - collapsible: true
+      default: []
+      description: Paths answered by your own CloudFront Function code instead of a file from the bucket. Each path runs only your function, is never cached, and skips the version rewrite.
+      id: edge_endpoints
+      item_inputs:
+        - description: CloudFront path pattern the function handles, such as /healthz or /api/*.
+          id: path_pattern
+          label: Path pattern
+          placeholder: /healthz
+          required: true
+          type: string
+        - description: CloudFront Function code (cloudfront-js-2.0 runtime) run on every viewer request for the path. Return a response object to answer at the edge, or the request to continue to the bucket.
+          id: code
+          label: Function code
+          placeholder: |-
+            function handler(event) {
+              return {
+                statusCode: 200,
+                headers: { "content-type": { value: "text/plain" } },
+                body: "ok",
+              };
+            }
+          required: true
+          type: text
+        - add_button_label: Add header
+          default: []
+          description: CloudFront-generated request headers to add to requests for the path, such as CloudFront-Viewer-Country.
+          id: cloudfront_headers
+          label: CloudFront request headers
+          required: false
+          type: string_array
+      item_label: Edge endpoint
+      label: Edge endpoints
+      required: false
+      type: object_array
     - id: section_cache_headers
       label: Cache and headers
       type: section
@@ -654,6 +689,7 @@ module:
         logging_bucket_creation_enabled: << module.input.logging_enabled >>
         default_root_object: << module.input.default_root_object >>
         default_version: << module.input.default_version >>
+        edge_endpoints: << module.input.edge_endpoints || [] >>
         distributions:
           main:
             acm_certificate_arn: >-
