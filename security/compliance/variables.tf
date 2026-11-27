@@ -148,11 +148,50 @@ variable "runtime_monitoring_automated_agents" {
 }
 
 ################################################################################
+# Account settings
+################################################################################
+
+variable "access_analyzer_enabled" {
+  type        = bool
+  description = "Create an IAM Access Analyzer external-access analyzer in each selected Region. It reports resource policies that grant access outside the account."
+  default     = true
+  nullable    = false
+}
+
+variable "imdsv2_default_enabled" {
+  type        = bool
+  description = "Require IMDSv2 by default in each selected Region. Applies to instances launched without their own metadata options; running instances are not changed."
+  default     = true
+  nullable    = false
+}
+
+variable "ebs_encryption_by_default_enabled" {
+  type        = bool
+  description = "Encrypt new EBS volumes and snapshot copies by default in each selected Region. Turn off for accounts that share AMIs or snapshots publicly, which encrypted snapshots do not allow."
+  default     = true
+  nullable    = false
+}
+
+variable "s3_public_acls_blocked" {
+  type        = bool
+  description = "Block and ignore public ACLs on every S3 bucket in the account (block_public_acls and ignore_public_acls)."
+  default     = true
+  nullable    = false
+}
+
+variable "s3_public_policies_blocked" {
+  type        = bool
+  description = "Block public bucket policies on every S3 bucket in the account (block_public_policy and restrict_public_buckets). Turn off for accounts that serve a bucket publicly by bucket policy."
+  default     = true
+  nullable    = false
+}
+
+################################################################################
 # Tags
 ################################################################################
 
 variable "tags" {
   type        = map(string)
-  description = "A map of additional tags applied to GuardDuty detectors, CloudTrail trails and their bucket."
+  description = "A map of additional tags applied to GuardDuty detectors, Access Analyzer analyzers, CloudTrail trails and their bucket."
   default     = {}
 }
