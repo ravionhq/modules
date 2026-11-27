@@ -1,0 +1,26 @@
+# opentofu-stack.yml for modules that deploy into a connected GCP account:
+# the change and destroy pipelines run on that account's runners, as its
+# ravion-runner service account.
+type: opentofu
+ravion_state_backend_workspace: >-
+  << module.input.ravion_state_backend_workspace || project.given_id + "-" + environment.given_id + "-"
+  + module.given_id + "-" + stack.id>>
+pipelines:
+  defaults:
+    input:
+      base_path: $with.base_path
+      branch: main
+      execution_environment_id: << module.input.execution_environment_id >>
+      gcp_account_id: "<< module.input.execution_environment_id ? null : module.input.gcp_account_id >>"
+      gcp_region: "<< module.input.execution_environment_id ? null : module.input.gcp_region >>"
+      ref: $local.module_tag
+      repo: https://github.com/ravionhq/modules
+      stack_id: <<stack.id>>
+      terraform_variables: $with.terraform_variables
+      tool: opentofu
+      tool_version: << module.input.opentofu_version || defaults.opentofu_version >>
+    variant: standard
+  change:
+    pipeline_id: << defaults.change_pipeline_id >>
+  destroy:
+    pipeline_id: << defaults.destroy_pipeline_id >>
