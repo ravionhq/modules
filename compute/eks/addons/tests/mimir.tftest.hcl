@@ -73,7 +73,7 @@ run "mimir_runs_classic_on_s3_with_three_copies" {
   }
 
   assert {
-    condition     = helm_release.mimir[0].chart == "mimir-distributed" && helm_release.mimir[0].repository == "https://grafana.github.io/helm-charts" && helm_release.mimir[0].version == "6.2.0" && helm_release.mimir[0].namespace == "ravion-operator"
+    condition     = helm_release.mimir[0].chart == "mimir-distributed" && helm_release.mimir[0].repository == "https://grafana.github.io/helm-charts" && helm_release.mimir[0].version == "6.2.2" && helm_release.mimir[0].namespace == "ravion-operator"
     error_message = "Mimir must install the pinned grafana/mimir-distributed chart into the observability namespace."
   }
 

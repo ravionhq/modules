@@ -127,7 +127,7 @@ module "lambda_with_integrations" {
 | Name | Version |
 |------|---------|
 | opentofu/terraform | >= 1.10.0 |
-| aws | >= 5.0 |
+| aws | >= 6.58 |
 
 ## Inputs
 

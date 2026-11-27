@@ -6,8 +6,8 @@ terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
-      # 6.19 is the first release that accepts the nodejs24.x Lambda runtime.
-      version = ">= 6.19"
+      # 6.58 is the first release that accepts the nodejs26.x and python3.15 Lambda runtimes.
+      version = ">= 6.58"
     }
   }
 }

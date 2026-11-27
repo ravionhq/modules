@@ -65,7 +65,7 @@ Each replica requests `prometheus_resources`, so two double that cost, and both 
 
 ### Grafana Mimir
 
-`mimir` in `metrics_providers` installs [Grafana Mimir](https://grafana.com/docs/mimir/latest/) (`mimir-distributed` 6.2.0, Mimir 3.2.0) for clusters that outgrow one Prometheus, which holds every series in one server's memory. Mimir spreads them across ingesters instead and adds more as a cluster grows. Prometheus remains the right choice for most clusters: Mimir runs about 18 pods where Prometheus and Thanos run 6.
+`mimir` in `metrics_providers` installs [Grafana Mimir](https://grafana.com/docs/mimir/latest/) (`mimir-distributed` 6.2.2, Mimir 3.2.0) for clusters that outgrow one Prometheus, which holds every series in one server's memory. Mimir spreads them across ingesters instead and adds more as a cluster grows. Prometheus remains the right choice for most clusters: Mimir runs about 18 pods where Prometheus and Thanos run 6.
 
 - **Three copies of every sample.** Distributors write each sample to three ingesters. Two copies never share a node, and the copies spread across zones where they can. Set `metrics_mimir.zones` to three or more availability zones to pin one copy to each, so losing a zone loses nothing; this adds Grafana's rollout-operator, which drives the zoned rollouts.
 - **No Kafka.** The chart's default ingest path runs Kafka; the module uses Mimir's classic path, which writes straight to the ingesters, so there is no extra stateful system to run.
@@ -96,7 +96,7 @@ Set `keda_enabled = true` to install KEDA through this add-ons module. KEDA scal
 |---|---|---|---|
 | `keda_enabled` | `bool` | `false` | Install KEDA |
 | `keda_namespace` | `string` | `"keda"` | Controller namespace |
-| `keda_chart_version` | `string` | `"2.20.2"` | Pinned official chart version |
+| `keda_chart_version` | `string` | `"2.21.1"` | Pinned official chart version |
 | `keda_helm_values` | `list(string)` | `[]` | Advanced values overrides, without credentials |
 
 Outputs are `keda_enabled`, `keda_namespace` and `keda_chart_version`; the last two are null when disabled. Install the add-ons before deploying a workload's `ScaledObject`. Configure scaler authentication separately with narrowly scoped access and Secret references; installation grants no AWS data-source permissions. Do not copy credentials into Helm values or trigger metadata.
@@ -115,7 +115,7 @@ Set `cert_manager_enabled = true` to install [cert-manager](https://cert-manager
 |---|---|---|---|
 | `cert_manager_enabled` | `bool` | `false` | Install cert-manager |
 | `cert_manager_namespace` | `string` | `"cert-manager"` | Controller namespace |
-| `cert_manager_chart_version` | `string` | `"v1.21.2"` | Pinned official chart version |
+| `cert_manager_chart_version` | `string` | `"v1.21.3"` | Pinned official chart version |
 | `cert_manager_helm_values` | `list(string)` | `[]` | Advanced values overrides, such as webhook replicas, without credentials |
 
 Outputs are `cert_manager_enabled`, `cert_manager_namespace` and `cert_manager_chart_version`; the last two are null when disabled. Install the add-ons before applying Issuers or Certificates.
@@ -777,12 +777,12 @@ failed during initialization have no provider resources to migrate.
 | karpenter_enabled | Install Karpenter end to end. | `bool` | `true` | no |
 | ravion_runner_role_arn | IAM role assumed by `aws eks get-token` for Kubernetes API authentication. | `string` | `null` | no |
 | aws_load_balancer_controller_enabled | Install the AWS Load Balancer Controller without any shared load balancer (it installs automatically with one). | `bool` | `false` | no |
-| aws_load_balancer_controller_chart_version | aws-load-balancer-controller chart version. CRDs are upgraded from the same version and retained on uninstall. | `string` | `"3.5.0"` | no |
+| aws_load_balancer_controller_chart_version | aws-load-balancer-controller chart version. CRDs are upgraded from the same version and retained on uninstall. | `string` | `"3.7.0"` | no |
 | aws_load_balancer_controller_namespace / aws_load_balancer_controller_service_account | Must match the Pod Identity association from `compute/eks`. | `string` | `"kube-system"` / `"aws-load-balancer-controller"` | no |
 | aws_load_balancer_controller_helm_values | Extra YAML docs merged into the chart values. | `list(string)` | `[]` | no |
 | karpenter_controller_namespace | Namespace for the controller and its Pod Identity association. | `string` | `"kube-system"` | no |
 | karpenter_controller_service_account | Service account for the controller and its Pod Identity association. | `string` | `"karpenter"` | no |
-| karpenter_chart_version | Karpenter (and karpenter-crd) chart version. | `string` | `"1.14.1"` | no |
+| karpenter_chart_version | Karpenter (and karpenter-crd) chart version. | `string` | `"1.15.3"` | no |
 | karpenter_node_role_additional_managed_policy_arns | Extra managed policies on the Karpenter node role. | `list(string)` | `[]` | no |
 | karpenter_interruption_queue_name | Override interruption queue name (`karpenter-<cluster>` when null). | `string` | `null` | no |
 | karpenter_interruption_queue_message_retention_seconds | Interruption queue retention. | `number` | `300` | no |
@@ -797,7 +797,7 @@ failed during initialization have no provider resources to migrate.
 | karpenter_default_node_pool | Default NodePool settings (capacity types, categories, arch, CPU limit, expiry, consolidation, smallest instance memory in MiB: 8192 by default, 0 for no floor). | `object` | `{}` | no |
 | karpenter_spot_warm_min_instances | Minimum warm Spot instances in a static NodePool; zero removes it. | `number` | `0` | no |
 | eso_enabled | Install the External Secrets Operator, its Pod Identity role, and the Ravion ClusterSecretStores. | `bool` | `true` | no |
-| eso_chart_version | external-secrets chart version. | `string` | `"2.11.0"` | no |
+| eso_chart_version | external-secrets chart version. | `string` | `"2.15.0"` | no |
 | eso_namespace | Namespace the operator is installed into (created if missing). | `string` | `"external-secrets"` | no |
 | eso_service_account | Controller service account; must match the Pod Identity association. | `string` | `"external-secrets"` | no |
 | eso_secret_and_parameter_arns | Secrets Manager / SSM ARNs (wildcards allowed) the operator may read. Empty means account- and region-wide read. | `list(string)` | `[]` | no |
@@ -829,10 +829,10 @@ failed during initialization have no provider resources to migrate.
 | logs_opensearch | `{ endpoint, index_prefix }`. The domain endpoint and index; requests are signed with `logs_opensearch_role_arn`. | `object` | `{}` | no |
 | logs_splunk | `{ hec_url, hec_token_secret_arn, index }`. | `object` | `{}` | no |
 | metrics_prometheus | `{ retention_days, storage_size, storage_class, endpoint, s3_storage_enabled, s3_bucket_name, s3_retention_days }`: 15 days locally, 50Gi, the managed `gp3` class or the cluster default, and Thanos history in S3 for 365 days. `endpoint` points at a Prometheus you already run and skips every managed metrics store. | `object` | `{}` | no |
-| prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.33.0"` / `[]` | no |
+| prometheus_chart_version / prometheus_helm_values | prometheus-community/prometheus chart version and value overrides. | `string` / `list(string)` | `"29.49.0"` / `[]` | no |
 | prometheus_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each Prometheus server replica; Karpenter sizes its node from the request. Applied with `addon_resilience_enabled`. | `object` | 500m / 10Gi, limit 10Gi | no |
 | metrics_mimir | `{ retention_days, s3_bucket_name, storage_class, zones }`: 365 days of history, a created bucket, the managed `gp3` class or the cluster default, and no zone pinning. `zones` takes three or more availability zones, one copy of every sample in each. | `object` | `{}` | no |
-| mimir_chart_version / mimir_helm_values | grafana/mimir-distributed chart version and value overrides: caches, other per-component resources. | `string` / `list(string)` | `"6.2.0"` / `[]` | no |
+| mimir_chart_version / mimir_helm_values | grafana/mimir-distributed chart version and value overrides: caches, other per-component resources. | `string` / `list(string)` | `"6.2.2"` / `[]` | no |
 | mimir_ingester_resources | `{ requests = { cpu, memory }, limits = { memory } }` for each ingester; also sets `GOMEMLIMIT` (90%) and the early compaction threshold. Applied with `addon_resilience_enabled`. | `object` | 1 / 6Gi, limit 6Gi | no |
 | mimir_ingester_replicas | Number of ingesters, at least 3. | `number` | `3` | no |
 | mimir_ingester_max_series | In-memory series one ingester holds before refusing new ones. `0` is no limit. | `number` | `0` | no |
@@ -850,13 +850,13 @@ failed during initialization have no provider resources to migrate.
 | metrics_namespace | Namespace for the metrics components. Null shares Ravion Operator's namespace. | `string` | `null` | no |
 | scrape_interval_seconds | Scrape interval for every job (15-300). The first cost lever. | `number` | `60` | no |
 | metrics_additional_allowlist | Extra whole-name metric regexes appended to the curated allow-list on every job. | `list(string)` | `[]` | no |
-| otel_collector_chart_version | Community opentelemetry-collector chart version. | `string` | `"0.173.1"` | no |
+| otel_collector_chart_version | Community opentelemetry-collector chart version. | `string` | `"0.183.2"` | no |
 | otel_collector_image_repository / otel_collector_image_tag / otel_collector_command_name | Metrics collector image and entrypoint. Null lets the module choose: the AWS Distro (which ships `sigv4auth`) for an AMP-only selection, contrib when a vendor exporter it lacks is selected. | `string` | `null` | no |
 | otel_collector_service_account | Collector service account; the Pod Identity association binds to this name. | `string` | `"ravion-otel-collector"` | no |
 | otel_collector_resources | Collector requests and limits. A memory limit is set by default because `memory_limiter` sizes itself against it. | `object` | requests `100m`/`256Mi`, limit `512Mi` | no |
 | otel_collector_helm_values | Extra YAML docs merged into the collector chart values. | `list(string)` | `[]` | no |
 | kube_state_metrics_enabled | Install kube-state-metrics alongside the collector (the source of every `kube_*` series). | `bool` | `true` | no |
-| kube_state_metrics_chart_version | prometheus-community/kube-state-metrics chart version. | `string` | `"8.5.0"` | no |
+| kube_state_metrics_chart_version | prometheus-community/kube-state-metrics chart version. | `string` | `"8.8.0"` | no |
 | kube_state_metrics_helm_values | Extra YAML docs merged into the kube-state-metrics chart values. | `list(string)` | `[]` | no |
 | grafana_role_creation_enabled | Create the IAM role Amazon Managed Grafana assumes to read the workspace and log groups. | `bool` | `false` | no |
 | grafana_source_account_id | Account whose Grafana workspaces may assume that role (`aws:SourceAccount`). Null uses this account. | `string` | `null` | no |
@@ -870,17 +870,17 @@ failed during initialization have no provider resources to migrate.
 | log_retention_days | How long logs stay queryable. Enforced by Loki's compactor; the bucket expires a week later as a backstop. | `number` | `365` | no |
 | load_balancer_access_logs_retention_days | Days the created load balancer access log buckets keep their objects. | `number` | `365` | no |
 | logs_namespace | Namespace for Loki and Alloy. Null shares Ravion Operator's namespace. | `string` | `null` | no |
-| loki_chart_version | grafana/loki chart version. | `string` | `"7.3.0"` | no |
+| loki_chart_version | grafana/loki chart version. | `string` | `"7.7.0"` | no |
 | loki_service_account | Loki's service account; the Pod Identity association binds to this name. | `string` | `"ravion-loki"` | no |
 | loki_resources | Loki requests and limits. `GOMEMLIMIT` is 90% of a memory limit in Mi or Gi. | `object` | requests `200m`/`512Mi`, limit `1Gi` | no |
 | loki_persistence_enabled | Give Loki a PVC. Null turns it on whenever the gp3 StorageClass exists (`ebs_csi_driver_enabled`); off mounts an `emptyDir` at `/var/loki`. Switching recreates the StatefulSet. | `bool` | `null` | no |
 | loki_persistence_size | Size of Loki's local working volume — PVC size when persistence is on, `emptyDir` size limit when off. | `string` | `"10Gi"` | no |
 | loki_helm_values | Extra YAML docs merged into the Loki chart values. | `list(string)` | `[]` | no |
-| alloy_chart_version | grafana/alloy chart version. | `string` | `"1.12.1"` | no |
+| alloy_chart_version | grafana/alloy chart version. | `string` | `"1.16.0"` | no |
 | alloy_resources | Per-node Alloy requests and limits (multiplied by node count). | `object` | requests `100m`/`128Mi`, limit `512Mi` | no |
 | alloy_helm_values | Extra YAML docs merged into the Alloy chart values. | `list(string)` | `[]` | no |
 | grafana_enabled | Install Grafana in the cluster, preprovisioned with a datasource per selected Loki, Prometheus, Tempo and AMP store. | `bool` | `false` | no |
-| grafana_chart_version | grafana chart version, from the grafana-community repository. Chart 13 runs the distroless image with a read-only root filesystem, so `GF_*__FILE` variables and `GF_INSTALL_PLUGINS` passed through `grafana_helm_values` no longer work. | `string` | `"13.2.5"` | no |
+| grafana_chart_version | grafana chart version, from the grafana-community repository. Chart 13 runs the distroless image with a read-only root filesystem, so `GF_*__FILE` variables and `GF_INSTALL_PLUGINS` passed through `grafana_helm_values` no longer work. | `string` | `"13.7.0"` | no |
 | grafana_namespace | Namespace for the in-cluster Grafana. Null shares Ravion Operator's namespace. | `string` | `null` | no |
 | grafana_service_account | Grafana's service account; the AMP Pod Identity association binds to this name. | `string` | `"ravion-grafana"` | no |
 | grafana_helm_values | Extra YAML docs merged into the Grafana chart values (admin secret, plugins, volume size). | `list(string)` | `[]` | no |

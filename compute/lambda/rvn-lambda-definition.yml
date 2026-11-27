@@ -3,8 +3,8 @@ definition:
   name: Lambda Function
   description: AWS Lambda function with zip or container image deployments, alias-based releases, IAM, logs, and optional function URLs.
 release:
-  version: 2.4.0
-  description: Automatically size sandbox build CPU, memory, and disk from previous builds, with an option to use fixed sizes.
+  version: 2.5.0
+  description: Add Node.js 26.x, Python 3.15, Python 3.14, Ruby 4.0, Java 25, and .NET 10 Lambda runtimes, and make Node.js 26.x the default for new Zip functions.
 module:
   inputs:
     - $include: ../../partials/inputs/aws-account.yml
@@ -87,28 +87,40 @@ module:
       default: $values:first
       show_when:
         package_type: Zip
-      placeholder: nodejs24.x
+      placeholder: nodejs26.x
       values:
+        - label: Node.js 26.x
+          value: nodejs26.x
         - label: Node.js 24.x
           value: nodejs24.x
         - label: Node.js 22.x
           value: nodejs22.x
         - label: Node.js 20.x
           value: nodejs20.x
+        - label: Python 3.15
+          value: python3.15
+        - label: Python 3.14
+          value: python3.14
         - label: Python 3.13
           value: python3.13
         - label: Python 3.12
           value: python3.12
         - label: Python 3.11
           value: python3.11
+        - label: Ruby 4.0
+          value: ruby4.0
         - label: Ruby 3.4
           value: ruby3.4
         - label: Ruby 3.3
           value: ruby3.3
+        - label: Java 25
+          value: java25
         - label: Java 21
           value: java21
         - label: Java 17
           value: java17
+        - label: .NET 10
+          value: dotnet10
         - label: .NET 8
           value: dotnet8
         - label: Go provided AL2023
@@ -1345,7 +1357,7 @@ module:
     | Lambda function | Lambda type | Yes | Regional Lambda | Immutable because Lambda@Edge must be created in us-east-1 |
     | Lambda function | Package type | Yes | Zip package | Immutable AWS package type |
     | Lambda function | Handler | Zip only | index.handler | Zip package entrypoint |
-    | Lambda function | Runtime | Zip only | nodejs24.x | Lambda runtime string |
+    | Lambda function | Runtime | Zip only | nodejs26.x | Lambda runtime string |
     | Lambda function | Memory | Yes | 128 MB | Also affects CPU allocation |
     | Lambda function | Timeout | Yes | 5 seconds | Maximum invocation runtime |
     | Build config | Build source | Yes | Dockerfile | Zip packages support Dockerfile, Nixpacks, or Pull from S3. Container images support Dockerfile, Nixpacks, or Pull from image registry |

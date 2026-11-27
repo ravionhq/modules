@@ -4,8 +4,8 @@ definition:
   name: EKS Add-ons
   description: Selectable add-ons for an existing EKS cluster.
 release:
-  version: 1.5.0
-  description: KEDA scaling decisions and scaler errors are now observable. With KEDA and a metrics destination both on, each scaler's value, active state and errors are collected as keda_* metrics.
+  version: 1.5.1
+  description: Update default Helm chart versions for EKS add-ons and observability components to their latest compatible releases.
 module:
   inputs:
     - id: cluster
@@ -463,7 +463,7 @@ module:
       collapsible: true
       id: aws_load_balancer_controller_chart_version
       label: Load balancer controller chart version
-      placeholder: 3.5.0
+      placeholder: 3.7.0
       type: string
     - description: Provides just-in-time node autoscaling and an optional general-purpose NodePool.
       id: section_karpenter
@@ -474,10 +474,10 @@ module:
       label: Karpenter
       type: boolean
     - collapsible: true
-      description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.14.1.
+      description: Karpenter and Karpenter CRD Helm chart version without a leading v, for example 1.15.3.
       id: karpenter_chart_version
       label: Chart version
-      placeholder: 1.14.1
+      placeholder: 1.15.3
       show_when:
         karpenter_enabled: true
       type: string
@@ -646,7 +646,7 @@ module:
       id: keda_chart_version
       label: KEDA chart version
       type: string
-      default: 2.20.2
+      default: 2.21.1
       show_when:
         keda_enabled: true
     - id: section_cert_manager
@@ -668,7 +668,7 @@ module:
       id: cert_manager_chart_version
       label: cert-manager chart version
       type: string
-      default: v1.21.2
+      default: v1.21.3
       show_when:
         cert_manager_enabled: true
     - id: section_ebs_csi
@@ -1427,10 +1427,10 @@ module:
             destination: tempo
           type: string
         - collapsible: true
-          description: For example 3.1.0.
+          description: For example 3.2.1.
           id: chart_version
           label: Chart version
-          placeholder: 3.1.0
+          placeholder: 3.2.1
           show_when:
             destination: tempo
           type: string
@@ -1884,10 +1884,10 @@ module:
         eso_enabled: true
       type: string_array
     - collapsible: true
-      description: External Secrets Helm chart version without a leading v, for example 2.11.0.
+      description: External Secrets Helm chart version without a leading v, for example 2.15.0.
       id: eso_chart_version
       label: Chart version
-      placeholder: 2.11.0
+      placeholder: 2.15.0
       show_when:
         eso_enabled: true
       type: string
@@ -1913,10 +1913,10 @@ module:
         region: << module.input.aws_region >>
         keda_enabled: << module.input.keda_enabled == true >>
         keda_namespace: '<< module.input.keda_enabled == true && module.input.keda_namespace != nil ? module.input.keda_namespace : "keda" >>'
-        keda_chart_version: '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>'
+        keda_chart_version: '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.21.1" >>'
         cert_manager_enabled: << module.input.cert_manager_enabled == true >>
         cert_manager_namespace: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_namespace != nil ? module.input.cert_manager_namespace : "cert-manager" >>'
-        cert_manager_chart_version: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_chart_version != nil ? module.input.cert_manager_chart_version : "v1.21.2" >>'
+        cert_manager_chart_version: '<< module.input.cert_manager_enabled == true && module.input.cert_manager_chart_version != nil ? module.input.cert_manager_chart_version : "v1.21.3" >>'
         karpenter_enabled: << module.input.karpenter_enabled >>
         karpenter_interruption_queue_alarm_creation_enabled: '<< module.input.karpenter_interruption_queue_alarm_creation_enabled != nil ? module.input.karpenter_interruption_queue_alarm_creation_enabled : true >>'
         karpenter_interruption_queue_alarm_age_threshold_seconds: '<< module.input.karpenter_interruption_queue_alarm_age_threshold_seconds != nil ? module.input.karpenter_interruption_queue_alarm_age_threshold_seconds : 60 >>'
@@ -1924,7 +1924,7 @@ module:
         karpenter_interruption_queue_alarm_ok_actions: '<< module.input.karpenter_interruption_queue_alarm_ok_actions != nil ? module.input.karpenter_interruption_queue_alarm_ok_actions : [] >>'
         karpenter_controller_namespace: << module.input.karpenter_controller_namespace || "kube-system" >>
         karpenter_controller_service_account: << module.input.karpenter_controller_service_account || "karpenter" >>
-        karpenter_chart_version: << module.input.karpenter_chart_version || "1.14.1" >>
+        karpenter_chart_version: << module.input.karpenter_chart_version || "1.15.3" >>
         karpenter_helm_values: []
         karpenter_default_node_pool_creation_enabled: '<< module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true >>'
         karpenter_spot_warm_min_instances: '<< module.input.karpenter_enabled == true && (module.input.karpenter_default_node_pool_creation_enabled != nil ? module.input.karpenter_default_node_pool_creation_enabled : true) && module.input.karpenter_spot_warm_min_instances != nil ? module.input.karpenter_spot_warm_min_instances : 0 >>'
@@ -1941,7 +1941,7 @@ module:
           role: system
         cluster_security_group_id: << module.input.cluster_security_group_id >>
         ravion_runner_role_arn: << module.input.ravion_runner_role_arn >>
-        aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.5.0" >>
+        aws_load_balancer_controller_chart_version: << module.input.aws_load_balancer_controller_chart_version || "3.7.0" >>
         ebs_csi_driver_enabled: << module.input.ebs_csi_driver_enabled >>
         ebs_csi_addon_version: << module.input.ebs_csi_addon_version >>
         ebs_default_storage_class_enabled: '<< module.input.ebs_default_storage_class_enabled != nil ? module.input.ebs_default_storage_class_enabled : true >>'
@@ -2050,7 +2050,7 @@ module:
           memory_request: << module.input.grafana_memory_request || "256Mi" >>
           memory_limit: << module.input.grafana_memory_limit || "512Mi" >>
         eso_enabled: '<< module.input.eso_enabled != nil ? module.input.eso_enabled : true >>'
-        eso_chart_version: << module.input.eso_chart_version || "2.11.0" >>
+        eso_chart_version: << module.input.eso_chart_version || "2.15.0" >>
         eso_namespace: << module.input.eso_namespace || "external-secrets" >>
         eso_secret_and_parameter_arns: '<< module.input.eso_secret_and_parameter_arns != nil ? module.input.eso_secret_and_parameter_arns : [] >>'
         # Full-cluster Operator mode (the default) manages no specific namespaces,
@@ -2288,7 +2288,7 @@ module:
 
     KEDA owns the external metrics API, so check for an existing adapter before installing. Remove dependent ScaledObjects and TriggerAuthentications before disabling it. CRDs are managed by the Helm chart; follow the selected version's upgrade and removal guidance.
 
-    **KEDA chart version** defaults to `2.20.2`. Its published Kubernetes test matrix covers 1.33–1.35; verify newer cluster versions, including 1.36, in staging before production adoption. Advanced chart settings can be supplied through `keda_helm_values` in **Advanced Terraform variables**.
+    **KEDA chart version** defaults to `2.21.1`. Its published Kubernetes test matrix covers 1.33–1.35; verify newer cluster versions, including 1.36, in staging before production adoption. Advanced chart settings can be supplied through `keda_helm_values` in **Advanced Terraform variables**.
 
     ## Certificates
 
@@ -2296,7 +2296,7 @@ module:
 
     The CRDs are kept when cert-manager is turned off, because deleting them would delete every Certificate and Issuer in the cluster and the Secrets they own. Check for an existing cert-manager installation before enabling: a cluster can run only one.
 
-    **cert-manager chart version** defaults to `v1.21.2`. Check the version's supported Kubernetes releases against your cluster before enabling or upgrading. Advanced chart settings, such as webhook replicas, can be supplied through `cert_manager_helm_values` in **Advanced Terraform variables**.
+    **cert-manager chart version** defaults to `v1.21.3`. Check the version's supported Kubernetes releases against your cluster before enabling or upgrading. Advanced chart settings, such as webhook replicas, can be supplied through `cert_manager_helm_values` in **Advanced Terraform variables**.
 
     ## Logs, metrics and traces destinations
 
@@ -2441,21 +2441,21 @@ module:
     | ---------------------- | -------- | -------------------- | ------------------------------------------------------ |
     | EKS cluster            | Yes      | -                    | Existing EKS Cluster module                            |
     | Karpenter              | No       | `true`               | Autoscaling end to end (IAM, queue, controller, NodePool) |
-    | Chart version          | No       | `1.14.1`             | Karpenter and karpenter-crd Helm chart version         |
+    | Chart version          | No       | `1.15.3`             | Karpenter and karpenter-crd Helm chart version         |
     | Default NodePool       | No       | `true`               | General-purpose NodePool and EC2NodeClass              |
     | Minimum warm Spot instances | No    | `0`                | Optional static Spot NodePool floor; zero removes it   |
     | KEDA                   | No       | `false`              | Event-driven workload autoscaler and its CRDs          |
     | KEDA namespace         | No       | `keda`               | Namespace for the KEDA components                     |
-    | KEDA chart version     | No       | `2.20.2`             | Pinned official Helm chart                            |
+    | KEDA chart version     | No       | `2.21.1`             | Pinned official Helm chart                            |
     | cert-manager           | No       | `false`              | TLS certificate controller and its CRDs                |
     | cert-manager namespace | No       | `cert-manager`       | Namespace for the cert-manager components              |
-    | cert-manager chart version | No   | `v1.21.2`            | Pinned official Helm chart                            |
+    | cert-manager chart version | No   | `v1.21.3`            | Pinned official Helm chart                            |
     | Capacity types         | Yes*     | On-demand and Spot   | Capacity Karpenter may provision                       |
     | EC2 instance categories | Yes*   | `c`, `m`, `r`        | Instance-family categories Karpenter may choose        |
     | CPU architectures      | Yes*     | x86_64               | Architectures Karpenter may provision                  |
     | CPU limit              | Yes*     | `100`                | Maximum vCPUs provisioned through the default NodePool |
     | Node lifetime          | Yes*     | `720h`               | Maximum age before Karpenter replaces a node           |
-    | Load balancer controller chart version | No | `3.5.0`     | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
+    | Load balancer controller chart version | No | `3.7.0`     | aws-load-balancer-controller Helm chart version (controller installed automatically with any load balancer) |
     | External Secrets Operator | No    | `true`               | Reference-only secrets, ClusterSecretStores, and a scoped Pod Identity role |
     | Readable secret ARNs   | No       | Account + region     | Scopes which Secrets Manager secrets and SSM parameters the operator may read |
     | EBS CSI driver         | No       | `true`               | EBS persistent volumes add-on and Pod Identity role    |

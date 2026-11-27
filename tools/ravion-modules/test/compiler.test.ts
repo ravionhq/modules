@@ -940,7 +940,7 @@ describe("compiler", () => {
     );
     assert.equal(
       getTerraformVariable(addons.module, "keda_chart_version"),
-      '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.20.2" >>',
+      '<< module.input.keda_enabled == true && module.input.keda_chart_version != nil ? module.input.keda_chart_version : "2.21.1" >>',
     );
     const addonsCluster = findInput(addonsInputs, "cluster");
     const addonsClusterMappedInputs = (addonsCluster.mapped_inputs as unknown[]).map((input) =>

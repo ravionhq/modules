@@ -82,12 +82,12 @@ variable "aws_load_balancer_controller_enabled" {
 variable "aws_load_balancer_controller_chart_version" {
   type        = string
   description = "Version of the aws-load-balancer-controller Helm chart to install. CRDs are upgraded from the same version and retained on uninstall; the controller's TargetGroupBinding requeue setting needs 3.2.0 or newer."
-  default     = "3.5.0"
+  default     = "3.7.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.aws_load_balancer_controller_chart_version))
-    error_message = "The aws_load_balancer_controller_chart_version must be a semantic version like '3.5.0' (no leading 'v')."
+    error_message = "The aws_load_balancer_controller_chart_version must be a semantic version like '3.7.0' (no leading 'v')."
   }
 }
 
@@ -190,12 +190,12 @@ variable "eso_enabled" {
 variable "eso_chart_version" {
   type        = string
   description = "Version of the external-secrets Helm chart to install."
-  default     = "2.11.0"
+  default     = "2.15.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.eso_chart_version))
-    error_message = "The eso_chart_version must be a semantic version like '2.11.0' (no leading 'v')."
+    error_message = "The eso_chart_version must be a semantic version like '2.15.0' (no leading 'v')."
   }
 }
 
@@ -317,12 +317,12 @@ variable "karpenter_node_role_additional_managed_policy_arns" {
 variable "karpenter_chart_version" {
   type        = string
   description = "Version of the Karpenter Helm chart (and karpenter-crd chart) to install."
-  default     = "1.14.1"
+  default     = "1.15.3"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.karpenter_chart_version))
-    error_message = "The karpenter_chart_version must be a semantic version like '1.14.1' (no leading 'v')."
+    error_message = "The karpenter_chart_version must be a semantic version like '1.15.3' (no leading 'v')."
   }
 }
 
@@ -376,7 +376,7 @@ variable "keda_namespace" {
 variable "keda_chart_version" {
   type        = string
   description = "Pinned KEDA Helm chart version. Verify Kubernetes compatibility before upgrading or enabling."
-  default     = "2.20.2"
+  default     = "2.21.1"
   nullable    = false
 
   validation {
@@ -413,13 +413,13 @@ variable "cert_manager_namespace" {
 
 variable "cert_manager_chart_version" {
   type        = string
-  description = "Pinned cert-manager Helm chart version, such as v1.21.2. Verify Kubernetes compatibility before upgrading or enabling."
-  default     = "v1.21.2"
+  description = "Pinned cert-manager Helm chart version, such as v1.21.3. Verify Kubernetes compatibility before upgrading or enabling."
+  default     = "v1.21.3"
   nullable    = false
 
   validation {
     condition     = can(regex("^v?[0-9]+\\.[0-9]+\\.[0-9]+$", var.cert_manager_chart_version))
-    error_message = "The cert_manager_chart_version must be a pinned major.minor.patch version, such as v1.21.2."
+    error_message = "The cert_manager_chart_version must be a pinned major.minor.patch version, such as v1.21.3."
   }
 }
 
@@ -1232,12 +1232,12 @@ variable "metrics_additional_allowlist" {
 variable "otel_collector_chart_version" {
   type        = string
   description = "Version of the community opentelemetry-collector Helm chart used to run the collector."
-  default     = "0.173.1"
+  default     = "0.183.2"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.otel_collector_chart_version))
-    error_message = "The otel_collector_chart_version must be a semantic version like '0.173.1' (no leading 'v')."
+    error_message = "The otel_collector_chart_version must be a semantic version like '0.183.2' (no leading 'v')."
   }
 }
 
@@ -1295,12 +1295,12 @@ variable "kube_state_metrics_enabled" {
 variable "kube_state_metrics_chart_version" {
   type        = string
   description = "Version of the prometheus-community/kube-state-metrics Helm chart to install."
-  default     = "8.5.0"
+  default     = "8.8.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.kube_state_metrics_chart_version))
-    error_message = "The kube_state_metrics_chart_version must be a semantic version like '8.5.0' (no leading 'v')."
+    error_message = "The kube_state_metrics_chart_version must be a semantic version like '8.8.0' (no leading 'v')."
   }
 }
 
@@ -1364,12 +1364,12 @@ variable "logs_namespace" {
 variable "loki_chart_version" {
   type        = string
   description = "Version of the grafana/loki Helm chart to install."
-  default     = "7.3.0"
+  default     = "7.7.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.loki_chart_version))
-    error_message = "The loki_chart_version must be a semantic version like '7.3.0' (no leading 'v')."
+    error_message = "The loki_chart_version must be a semantic version like '7.7.0' (no leading 'v')."
   }
 }
 
@@ -1434,12 +1434,12 @@ variable "loki_helm_values" {
 variable "alloy_chart_version" {
   type        = string
   description = "Version of the grafana/alloy Helm chart to install."
-  default     = "1.12.1"
+  default     = "1.16.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.alloy_chart_version))
-    error_message = "The alloy_chart_version must be a semantic version like '1.12.1' (no leading 'v')."
+    error_message = "The alloy_chart_version must be a semantic version like '1.16.0' (no leading 'v')."
   }
 }
 
@@ -1476,12 +1476,12 @@ variable "grafana_enabled" {
 variable "grafana_chart_version" {
   type        = string
   description = "Version of the grafana Helm chart to install, from the grafana-community repository - the maintained home of this chart since Grafana Labs deprecated their copy in January 2026."
-  default     = "13.2.5"
+  default     = "13.7.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.grafana_chart_version))
-    error_message = "The grafana_chart_version must be a semantic version like '13.2.5' (no leading 'v')."
+    error_message = "The grafana_chart_version must be a semantic version like '13.7.0' (no leading 'v')."
   }
 }
 
@@ -1711,7 +1711,7 @@ variable "traces_destinations" {
   type        = any
   description = <<-EOT
     Where workload traces go, one entry per destination. A non-empty list runs the OpenTelemetry collector with an OTLP receiver (gRPC on 4317, HTTP on 4318) at an in-cluster Service, whether or not metrics are on. While metrics are on, the receiver also takes workload OTLP metrics into metrics_providers, without the scrape allow-list. The receiver authenticates no sender: any pod that reaches its Service can send spans under any service name, so every workload in the cluster is trusted with the trace data.
-    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.1.0); cpu_request, memory_request and memory_limit size the pod (blank for tempo_resources); helm_values, any other chart values as an object.
+    - tempo: Tempo in the cluster. retention_days (30); storage_backend s3 (the default: s3_bucket_name, or a created bucket) or local (Tempo's own volume, a single replica only, with no AWS access; switching an existing Tempo to local deletes the bucket the module created, and its traces); persistence_enabled puts the volume on a PersistentVolumeClaim (needs a StorageClass, ebs_csi_driver_enabled), persistence_size is its size or the emptyDir's limit (10Gi), and storage_class its StorageClass (managed gp3, or the cluster default when EBS CSI is off); metrics_generator_enabled writes service graphs and span metrics to the in-cluster Prometheus or, without it, AMP; chart_version (3.2.1); cpu_request, memory_request and memory_limit size the pod (blank for tempo_resources); helm_values, any other chart values as an object.
     - xray: AWS X-Ray, in region (the cluster's when null).
     - grafana_cloud: the stack's OTLP endpoint (url), instance id (user) and a Secrets Manager ARN holding a token with traces:write.
     - datadog: site and a Secrets Manager ARN holding the API key.
@@ -2134,12 +2134,12 @@ variable "otel_contrib_command_name" {
 variable "prometheus_chart_version" {
   type        = string
   description = "Version of the prometheus-community/prometheus Helm chart installed for the in-cluster prometheus provider."
-  default     = "29.33.0"
+  default     = "29.49.0"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.prometheus_chart_version))
-    error_message = "The prometheus_chart_version must be a semantic version like '29.33.0' (no leading 'v')."
+    error_message = "The prometheus_chart_version must be a semantic version like '29.49.0' (no leading 'v')."
   }
 }
 
@@ -2170,12 +2170,12 @@ variable "prometheus_helm_values" {
 variable "mimir_chart_version" {
   type        = string
   description = "Version of the grafana/mimir-distributed Helm chart installed for the mimir metrics provider. Needs Kubernetes 1.32 or later."
-  default     = "6.2.0"
+  default     = "6.2.2"
   nullable    = false
 
   validation {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+", var.mimir_chart_version))
-    error_message = "The mimir_chart_version must be a semantic version like '6.2.0' (no leading 'v')."
+    error_message = "The mimir_chart_version must be a semantic version like '6.2.2' (no leading 'v')."
   }
 }
 

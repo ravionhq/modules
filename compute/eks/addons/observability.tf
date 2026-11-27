@@ -111,7 +111,7 @@ locals {
     persistence_size          = try(trimspace(local.trace.tempo.persistence_size), "") == "" ? "10Gi" : trimspace(local.trace.tempo.persistence_size)
     metrics_generator_enabled = coalesce(try(local.trace.tempo.metrics_generator_enabled, null), false)
     storage_class             = try(trimspace(local.trace.tempo.storage_class), "") != "" ? trimspace(local.trace.tempo.storage_class) : (local.ebs_default_storage_class_enabled ? "gp3" : null)
-    chart_version             = try(trimspace(local.trace.tempo.chart_version), "") == "" ? "3.1.0" : trimspace(local.trace.tempo.chart_version)
+    chart_version             = try(trimspace(local.trace.tempo.chart_version), "") == "" ? "3.2.1" : trimspace(local.trace.tempo.chart_version)
     helm_values               = try(merge({}, local.trace.tempo.helm_values), {})
     # The card's sizing, or tempo_resources for a field left blank.
     cpu_request    = try(trimspace(local.trace.tempo.cpu_request), "") != "" ? trimspace(local.trace.tempo.cpu_request) : var.tempo_resources.cpu_request
