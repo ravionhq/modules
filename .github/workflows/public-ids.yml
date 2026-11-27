@@ -1,0 +1,47 @@
+name: Public IDs
+
+# This repository is public. Fails a pull request whose title, description or added lines carry an
+# ID copied from a real Ravion or AWS resource. See .github/scripts/check-public-ids.mjs.
+#
+# pull_request_target runs this file and the script from the base branch, so a pull request cannot
+# change the check, and the PUBLIC_REPO_BLOCKED_STRINGS secret is available to forks too. The job
+# reads the pull request through the API only; it never checks out or runs code from the head.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: public-ids-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: No real resource IDs
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ravion/ee=github-actions-other/type=sandbox/cpu=auto/memory=auto/disk=auto/id=${{ github.run_id }}-public-ids/interruptible=true
+    steps:
+      - name: Check out the base branch's check
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/check-public-ids.mjs
+            .github/public-id-allowlist.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Check the title, description and changed files
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          # Newline-separated values that must never appear in this repository. Kept in an
+          # organization secret so this public file does not publish them.
+          PUBLIC_REPO_BLOCKED_STRINGS: ${{ secrets.PUBLIC_REPO_BLOCKED_STRINGS }}
+          ALLOWLIST_PATH: ${{ github.workspace }}/.github/public-id-allowlist.txt
+        with:
+          script: |
+            const {run} = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/check-public-ids.mjs`)
+            await run({github, context, core})
